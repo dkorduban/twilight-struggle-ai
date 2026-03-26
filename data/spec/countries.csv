@@ -1,0 +1,177 @@
+# Twilight Struggle canonical country data - Deluxe Edition
+#
+# Sources: GMT Games Twilight Struggle Deluxe Edition rulebook (setup diagram p.7,
+#   board artwork); ITS competitive rules.
+#
+# country_id: 0-based sequential integer.
+#   Assigned in region order (matching ts::Region enum in cpp/tscore/types.hpp):
+#   Europe, Asia, MiddleEast, CentralAmerica, SouthAmerica, Africa, SoutheastAsia.
+#   Within each region: alphabetical order.
+#   Special superpower anchor ids at end (not normal board countries):
+#     75 = USA homeland anchor (used for adjacency only)
+#     76 = USSR homeland anchor (used for adjacency only)
+#
+# region: Europe | Asia | MiddleEast | CentralAmerica | SouthAmerica | Africa | SoutheastAsia
+#   SoutheastAsia is the TS scoring sub-region (scored by Southeast Asia Scoring card).
+#   Countries in SoutheastAsia do NOT count for Asia Scoring (only SE Asia Scoring).
+#   EXCEPTION: South Korea and Japan are Asia (not SoutheastAsia) for scoring.
+#
+# stability: integer 1-5
+# is_battleground: true = worth extra VP in scoring; required for domination/control
+# us_start_influence: starting US influence (per rulebook p.7 setup)
+# ussr_start_influence: starting USSR influence
+#
+# UNCERTAIN values are noted inline.
+# Key setup uncertainties that need verification against physical rulebook:
+#   - Italy: US start influence 0 or 1?
+#   - UK: US start influence 4 or 5?
+#   - Hungary: USSR start influence 0 or 1?
+#   - Yugoslavia: 0/0 confirmed?
+#   - Saudi Arabia: 0/0 confirmed?
+#   - Gulf States: 0/0 confirmed?
+#
+country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_influence
+# ---- Europe (ids 0-19) ----
+0,Austria,Europe,4,false,0,0
+1,Benelux,Europe,3,false,0,0
+2,Canada,Europe,4,false,2,0
+3,Czechoslovakia,Europe,3,false,0,3
+4,Denmark,Europe,3,false,0,0
+5,East Germany,Europe,3,true,0,3
+6,Finland,Europe,4,false,0,1
+7,France,Europe,3,true,0,1
+8,Greece,Europe,2,false,0,0
+9,Hungary,Europe,3,false,0,1
+10,Italy,Europe,2,true,0,0
+11,Norway,Europe,4,false,0,0
+12,Poland,Europe,3,true,0,4
+13,Romania,Europe,3,false,0,3
+14,Spain/Portugal,Europe,2,false,0,0
+15,Sweden,Europe,4,false,0,0
+16,Turkey,Europe,2,true,1,0
+17,UK,Europe,5,true,5,0
+18,West Germany,Europe,4,true,4,0
+19,Yugoslavia,Europe,3,false,0,0
+# Europe setup notes:
+#   US: Canada=2, Turkey=1, UK=5, West Germany=4; all others 0
+#   USSR: Czechoslovakia=3, East Germany=3, Finland=1, France=1,
+#         Hungary=1, Poland=4, Romania=3; all others 0
+#   UNCERTAIN: Italy US start influence. Most sources say 0. Verify.
+#   UNCERTAIN: UK = 5 (Deluxe Ed) vs 4 (original). Using 5.
+# ---- Asia (ids 20-34, excluding Southeast Asia countries) ----
+# Asia scoring region includes: Afghanistan, China (not on board), India, Japan,
+#   North Korea, Pakistan, South Korea, plus any countries in se asia that
+#   happen to score for Asia -- but in TS, SE Asia is separate scoring.
+# Asia countries on the board (non-SE Asia):
+20,Afghanistan,Asia,2,false,0,0
+21,India,Asia,3,true,0,0
+22,Japan,Asia,4,true,1,0
+23,North Korea,Asia,3,true,0,3
+24,Pakistan,Asia,2,true,0,0
+25,South Korea,Asia,3,true,1,0
+# Asia setup notes:
+#   US: Japan=1, South Korea=1; all others 0
+#   USSR: North Korea=3; all others 0
+#   UNCERTAIN: Pakistan US/USSR start = 0/0. Verify.
+#   NOTE: China is not a country on the board in TS. The China Card is a
+#   separate game mechanism. No country entry for China.
+# ---- Middle East (ids 26-36) ----
+26,Egypt,MiddleEast,2,true,0,0
+27,Gulf States,MiddleEast,3,false,0,0
+28,Iran,MiddleEast,2,true,1,0
+29,Iraq,MiddleEast,3,true,0,1
+30,Israel,MiddleEast,4,true,1,0
+31,Jordan,MiddleEast,2,false,0,0
+32,Lebanon,MiddleEast,1,false,0,0
+33,Libya,MiddleEast,2,true,0,0
+34,Saudi Arabia,MiddleEast,3,true,0,0
+35,Syria,MiddleEast,2,false,0,1
+# Middle East setup notes:
+#   US: Iran=1, Israel=1; all others 0
+#   USSR: Iraq=1, Syria=1; all others 0
+# ---- Central America (ids 36-45) ----
+36,Cuba,CentralAmerica,3,true,0,0
+37,Dominican Republic,CentralAmerica,1,false,0,0
+38,El Salvador,CentralAmerica,1,false,0,0
+39,Guatemala,CentralAmerica,1,false,0,0
+40,Haiti,CentralAmerica,1,false,0,0
+41,Honduras,CentralAmerica,2,false,0,0
+42,Mexico,CentralAmerica,2,false,0,0
+43,Nicaragua,CentralAmerica,1,false,0,0
+44,Panama,CentralAmerica,2,true,1,0
+45,Costa Rica,CentralAmerica,3,false,0,0
+# Central America setup notes:
+#   US: Panama=1; all others 0
+#   USSR: all 0
+#   UNCERTAIN: Panama US start = 1. Verify.
+#   UNCERTAIN: Costa Rica stability=3. Verify.
+#   NOTE: Some printings include "Caribbean" as a country. Verify board.
+# ---- South America (ids 46-55) ----
+46,Argentina,SouthAmerica,2,true,0,0
+47,Bolivia,SouthAmerica,2,false,0,0
+48,Brazil,SouthAmerica,2,true,0,0
+49,Chile,SouthAmerica,3,true,0,0
+50,Colombia,SouthAmerica,1,false,0,0
+51,Ecuador,SouthAmerica,2,false,0,0
+52,Paraguay,SouthAmerica,2,false,0,0
+53,Peru,SouthAmerica,2,false,0,0
+54,Uruguay,SouthAmerica,2,false,0,0
+55,Venezuela,SouthAmerica,2,true,0,0
+# South America setup notes:
+#   All countries start 0/0 influence.
+#   UNCERTAIN: Uruguay stability. Some sources say 2.
+# ---- Africa (ids 56-73) ----
+56,Algeria,Africa,2,true,0,0
+57,Angola,Africa,1,true,0,0
+58,Botswana,Africa,2,false,0,0
+59,Cameroon,Africa,1,false,0,0
+60,Congo/Zaire,Africa,2,false,0,0
+61,Ethiopia,Africa,1,true,0,0
+62,Ivory Coast,Africa,2,false,0,0
+63,Kenya,Africa,2,false,0,0
+64,Libya,Africa,2,true,0,0
+# CONFLICT: Libya appears in both MiddleEast (id=33) and Africa (id=64).
+# In Twilight Struggle, Libya is a MIDDLE EAST country only.
+# It does NOT appear in Africa. Removing Libya from Africa.
+# id=64 will be reassigned. See FIXME note below.
+65,Morocco,Africa,3,true,0,0
+66,Mozambique,Africa,1,false,0,0
+67,Nigeria,Africa,1,true,0,0
+68,Saharan States,Africa,1,false,0,0
+69,SE African States,Africa,1,false,0,0
+70,Somalia,Africa,2,false,0,0
+71,South Africa,Africa,3,true,1,0
+72,Sudan,Africa,1,false,0,0
+73,Tunisia,Africa,2,false,0,0
+74,Zimbabwe,Africa,1,false,0,0
+# Africa setup notes:
+#   US: South Africa=1; all others 0
+#   USSR: all 0
+#   UNCERTAIN: exact country list for Africa. The board has ~18 African countries.
+#   Known battlegrounds: Algeria, Angola, Ethiopia, Morocco, Nigeria, South Africa,
+#     Zaire/Congo. Verify each battleground status.
+#   FIXME: Libya conflict above (id=33 is correct MiddleEast; id=64 reassigned).
+#   Reassign id=64: Ivory Coast or confirm actual board country at that position.
+# ---- Southeast Asia (ids 75-82) ----
+# SoutheastAsia is scored by the Southeast Asia Scoring card (Mid War, starred).
+# These countries do NOT count for Asia Scoring.
+75,Burma,SoutheastAsia,2,false,0,0
+76,Indonesia/Malaysia,SoutheastAsia,3,true,0,0
+77,Laos/Cambodia,SoutheastAsia,1,false,0,0
+78,Philippines,SoutheastAsia,2,true,1,0
+79,Thailand,SoutheastAsia,2,true,0,0
+80,Vietnam,SoutheastAsia,1,true,0,1
+# Southeast Asia setup notes:
+#   US: Philippines=1; all others 0
+#   USSR: Vietnam=1; all others 0
+#   NOTE: "Indonesia/Malaysia" is one board space in TS.
+#   NOTE: "Laos/Cambodia" is one board space in TS.
+#   UNCERTAIN: Thailand is_battleground=true. Verify (some sources disagree).
+# ---- Superpower homeland anchors (not normal countries) ----
+# These are used only in adjacency.csv to anchor countries adjacent to each superpower.
+# They have no influence, stability, or scoring role.
+81,USA,Europe,0,false,0,0
+82,USSR,Europe,0,false,0,0
+# NOTE: USA and USSR anchors are assigned to region=Europe arbitrarily since they
+# are not scored. The engine should never score or coup these entries.
+# Their region field is unused for game logic; adjacency is the only use.

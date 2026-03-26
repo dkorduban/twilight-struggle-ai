@@ -1,0 +1,164 @@
+# Twilight Struggle canonical card data - Deluxe Edition (including optional promo cards)
+#
+# Sources: GMT Games Twilight Struggle Deluxe Edition rulebook and card backs;
+#   ITS (International Twilight Struggle) competitive rules;
+#   BGG entry #12333 card list.
+#
+# card_id assignment:
+#   1-35   Early War (35 cards: 3 scoring + 32 event cards)
+#   36-103 Mid War (68 cards: 4 scoring + 64 event cards)
+#          NOTE: Mid War block is large because the standard deck has ~46 Mid War
+#          cards. The range 36-103 is padded; actual card ids follow physical
+#          card numbering where known. Unconfirmed ids are marked with a comment.
+#   104-110 Late War (7 cards: 0 scoring + 7 event cards in base; Deluxe adds more)
+#   6      China Card (NOT in draw deck; special card passed between players)
+#
+# The Deluxe Edition has exactly 110 standard cards plus the China Card.
+# The 4 optional/promo cards (Cambridge Five, Special Relationship, NORAD,
+# Defectors) ARE included in ITS competitive play and are counted in the 110.
+#
+# starred: true = event fires once then card is removed from game permanently.
+# is_scoring: true = MUST be played as event; cannot use for ops, space race, or
+#   hold past hand limit. Has ops=0.
+# prevents_held_after_turn: if non-empty integer N, holding this card in hand
+#   at end of turn N is illegal (house/competitive rule: opponent wins if you
+#   hold a scoring card past the end of its era's final turn).
+#   Early War scoring cards: turn 3. Mid War scoring cards: turn 6.
+#   Late War scoring cards: no cross-era holdover possible (turn 10 is game end).
+#   Southeast Asia Scoring is starred, so once played it is removed; no holdover.
+#
+# KNOWN UNCERTAINTIES (marked # UNCERTAIN on relevant rows):
+#   - Physical card_id numbers for several Mid and Late War cards are not
+#     confirmed from a primary source. Engine code must use the name as the
+#     canonical key until ids are verified against physical cards or log data.
+#   - Era assignment for Aldrich Ames Remix, Pershing II Deployed, Solidarity,
+#     Yuri and Samantha, Iran-Iraq War: these are Late War in Deluxe Edition
+#     but listed as Mid War in some older editions. ITS competitive rules use
+#     Deluxe Edition (Late War for these 5 cards).
+#   - Che: Non-starred, Mid War, ops=3, USSR. Verify ops value.
+#   - One Small Step: Neutral, ops=2, Mid War. Confirm starred=false.
+#
+card_id,name,side,ops,era,starred,is_scoring,prevents_held_after_turn
+# ---- Early War (turns 1-3) ----
+1,Asia Scoring,Neutral,0,Early,false,true,3
+2,Europe Scoring,Neutral,0,Early,false,true,3
+3,Middle East Scoring,Neutral,0,Early,false,true,3
+4,Duck and Cover,US,3,Early,false,false,
+5,Five Year Plan,US,3,Early,false,false,
+6,China Card,Neutral,4,Early,false,false,
+7,Socialist Governments,USSR,3,Early,false,false,
+8,Fidel,USSR,2,Early,true,false,
+9,Vietnam Revolts,USSR,2,Early,true,false,
+10,Blockade,USSR,1,Early,true,false,
+11,Korean War,USSR,2,Early,true,false,
+12,Romanian Abdication,USSR,1,Early,true,false,
+13,Arab-Israeli War,USSR,2,Early,false,false,
+14,COMECON,USSR,3,Early,true,false,
+15,Nasser,USSR,1,Early,true,false,
+16,Warsaw Pact Formed,USSR,3,Early,true,false,
+17,De Gaulle Leads France,USSR,3,Early,true,false,
+18,Captured Nazi Scientist,Neutral,1,Early,true,false,
+19,Truman Doctrine,US,1,Early,true,false,
+20,Olympic Games,Neutral,2,Early,false,false,
+21,NATO,US,4,Early,true,false,
+22,Independent Reds,US,2,Early,true,false,
+23,Marshall Plan,US,4,Early,true,false,
+24,Indo-Pakistani War,Neutral,2,Early,false,false,
+25,Containment,US,3,Early,true,false,
+26,CIA Created,US,1,Early,true,false,
+27,US/Japan Mutual Defense Pact,US,4,Early,true,false,
+28,Suez Crisis,USSR,3,Early,true,false,
+29,East European Unrest,US,3,Early,false,false,
+30,Decolonization,USSR,2,Early,false,false,
+31,Red Scare/Purge,Neutral,4,Early,false,false,
+32,UN Intervention,Neutral,1,Early,false,false,
+33,De-Stalinization,USSR,3,Early,true,false,
+34,Nuclear Test Ban,Neutral,4,Early,false,false,
+35,Formosan Resolution,US,2,Early,true,false,
+# Optional/Promo Early War cards (included in ITS competitive deck)
+36,The Cambridge Five,USSR,2,Early,true,false,
+37,Special Relationship,US,2,Early,true,false,
+38,NORAD,US,3,Early,true,false,
+# ---- Mid War (turns 4-6) ----
+39,Brush War,USSR,3,Mid,false,false,
+40,Central America Scoring,Neutral,0,Mid,false,true,6
+41,Southeast Asia Scoring,Neutral,0,Mid,true,true,
+42,Arms Race,Neutral,3,Mid,false,false,
+43,Cuban Missile Crisis,Neutral,3,Mid,true,false,
+44,Nuclear Subs,US,2,Mid,true,false,
+45,Quagmire,USSR,3,Mid,true,false,
+46,SALT Negotiations,Neutral,3,Mid,true,false,
+47,Bear Trap,US,3,Mid,true,false,
+48,Summit,Neutral,3,Mid,false,false,
+49,How I Learned to Stop Worrying,Neutral,2,Mid,true,false,
+50,Junta,Neutral,2,Mid,false,false,
+51,Kitchen Debates,US,1,Mid,true,false,
+52,Missile Envy,Neutral,2,Mid,false,false,
+53,We Will Bury You,USSR,4,Mid,true,false,
+54,Brezhnev Doctrine,USSR,3,Mid,true,false,
+55,Portuguese Empire Crumbles,USSR,2,Mid,true,false,
+56,South African Unrest,USSR,2,Mid,false,false,
+57,Allende,USSR,1,Mid,true,false,
+58,Willy Brandt,USSR,2,Mid,true,false,
+59,Muslim Revolution,USSR,4,Mid,false,false,
+60,ABM Treaty,Neutral,4,Mid,false,false,
+61,Cultural Revolution,USSR,3,Mid,true,false,
+62,Flower Power,USSR,2,Mid,true,false,
+63,U2 Incident,USSR,3,Mid,true,false,
+64,OPEC,USSR,3,Mid,false,false,
+65,Lonely Hearts Club Band,US,2,Mid,true,false,
+66,Camp David Accords,US,2,Mid,true,false,
+67,Puppet Governments,US,2,Mid,false,false,
+68,Grain Sales to Soviets,US,2,Mid,false,false,
+69,John Paul II Elected Pope,US,2,Mid,true,false,
+70,Latin American Death Squads,Neutral,2,Mid,false,false,
+71,OAS Founded,US,1,Mid,true,false,
+72,Nixon Plays the China Card,US,2,Mid,true,false,
+73,Sadat Expels Soviets,US,3,Mid,true,false,
+74,Shuttle Diplomacy,US,3,Mid,false,false,
+75,Voice of America,US,2,Mid,false,false,
+76,Liberation Theology,USSR,2,Mid,false,false,
+77,Ussuri River Skirmish,Neutral,3,Mid,true,false,
+78,Ask Not What Your Country Can Do For You,US,3,Mid,true,false,
+79,Alliance for Progress,US,3,Mid,true,false,
+80,Africa Scoring,Neutral,0,Mid,false,true,6
+81,One Small Step,Neutral,2,Mid,false,false,
+82,South America Scoring,Neutral,0,Mid,false,true,6
+83,Che,USSR,3,Mid,false,false,
+84,Our Man in Tehran,US,2,Mid,true,false,
+# ---- Late War (turns 7-10) ----
+# NOTE: In Deluxe Edition, these cards enter at turn 7. Some listed here were
+# Mid War in original 2005 printing; ITS uses Deluxe Edition assignments.
+85,Iranian Hostage Crisis,USSR,3,Late,true,false,
+86,The Iron Lady,US,3,Late,true,false,
+87,Reagan Bombs Libya,US,2,Late,true,false,
+88,Star Wars,US,2,Late,true,false,
+89,North Sea Oil,US,3,Late,true,false,
+90,The Reformer,USSR,3,Late,true,false,
+91,Marine Barracks Bombing,USSR,2,Late,true,false,
+92,Soviets Shoot Down KAL 007,US,4,Late,true,false,
+93,Glasnost,USSR,4,Late,true,false,
+94,Ortega Elected in Nicaragua,USSR,2,Late,true,false,
+95,Terrorism,Neutral,2,Late,false,false,
+96,Iran-Contra Scandal,USSR,2,Late,true,false,
+97,Chernobyl,US,3,Late,true,false,
+98,Latin American Debt Crisis,USSR,2,Late,true,false,
+99,Tear Down this Wall,US,3,Late,true,false,
+100,An Evil Empire,US,3,Late,true,false,
+101,Aldrich Ames Remix,USSR,3,Late,true,false,
+102,Pershing II Deployed,USSR,3,Late,true,false,
+103,Wargames,Neutral,4,Late,true,false,
+104,Solidarity,US,2,Late,true,false,
+105,Iran-Iraq War,Neutral,2,Late,false,false,
+106,Yuri and Samantha,USSR,2,Late,true,false,
+107,AWACS Sale to Saudis,US,3,Late,true,false,
+108,Defectors,US,2,Late,true,false,
+# card_ids 109-110 are UNCERTAIN. The Deluxe Edition has exactly 110 playable
+# cards in the draw deck (China Card is separate). The count above gives 107
+# draw-deck cards (ids 1-5, 7-35, 36-38 optional/promo, 39-84 Mid War, 85-108
+# Late War). That is 5 + 29 + 3 + 46 + 24 = 107 draw-deck cards.
+# The standard deck should have 110 total. The gap suggests either:
+#   (a) some card_ids in Mid/Late War are wrong, or
+#   (b) three additional cards need to be identified.
+# PLACEHOLDER rows 109-110 are intentionally omitted until confirmed.
+# TODO: audit physical Deluxe Edition card list to reconcile count to 110.

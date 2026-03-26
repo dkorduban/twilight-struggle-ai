@@ -205,3 +205,31 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# C++ build artifacts
+build/
+*.o
+*.a
+*.d
+compile_commands.json
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+_deps/
+
+# Parquet / derived datasets (large, reproducible)
+data/parquet/*.parquet
+data/parquet/*.arrow
+
+# Raw and golden logs are kept; parquet is derived
+# data/raw_logs/ - DO NOT ignore
+# data/golden_logs/ - DO NOT ignore
+
+# PyTorch checkpoints
+*.pt
+*.pth
+checkpoints/
+
+# Weights & Biases
+wandb/

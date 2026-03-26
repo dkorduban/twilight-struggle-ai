@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Agent(Explore)",
+      "Agent(Plan)",
+      "Agent(replay-forensics)",
+      "Agent(rules-lawyer)",
+      "Agent(cpp-engine-builder)",
+      "Agent(dataset-plumber)",
+      "Agent(pytorch-trainer)",
+      "Agent(eval-referee)",
+      "Agent(architecture-skeptic)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git rev-parse *)",
+      "Bash(ls *)",
+      "Bash(pwd)",
+      "Bash(find . *)",
+      "Bash(rg *)",
+      "Bash(fd *)",
+      "Bash(sed -n *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(which *)",
+      "Bash(cmake -S . -B build*)",
+      "Bash(cmake --build build*)",
+      "Bash(ctest --test-dir build*)",
+      "Bash(pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(uv run pytest *)",
+      "Bash(python -m pip list)",
+      "Bash(python scripts/*)"
+    ],
+    "ask": [
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(gh *)",
+      "Bash(rm *)",
+      "Bash(mv *)",
+      "Bash(cp -r *)"
+    ],
+    "deny": [
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./config/credentials.json)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./build/**)",
+      "Read(./dist/**)",
+      "Read(./out/**)",
+      "Read(./artifacts/**)",
+      "Read(./checkpoints/**)",
+      "Read(./wandb/**)",
+      "Read(./.venv/**)",
+      "Read(./venv/**)",
+      "Read(./node_modules/**)",
+      "Read(./.pytest_cache/**)",
+      "Read(./.mypy_cache/**)",
+      "Read(./.ruff_cache/**)",
+      "Read(./.git/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/prevent_dangerous_bash.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/prevent_protected_writes.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/run-targeted-checks.py",
+            "async": true,
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "matcher": "project_settings|local_settings|skills",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/log_config_change.py"
+          }
+        ]
+      }
+    ]
+  }
+}

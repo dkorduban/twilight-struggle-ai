@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tsrl"
+version = "0.1.0"
+description = "Twilight Struggle Reinforcement Learning"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.0",
+    "polars>=0.20",
+    "pyarrow>=14",
+    "pydantic>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7",
+    "pytest-cov",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[tool.uv]
+# Lock file is checked in for reproducibility.
+# Use `uv sync` to install; `uv run` to execute scripts.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+addopts = "-q"
