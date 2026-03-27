@@ -96,11 +96,22 @@ When in doubt:
 - if a task becomes mostly log parsing, dataset QA, or test output triage, delegate to a subagent instead of filling the main context with noise
 
 ## Delegation rules
-Use built-in agents proactively:
+
+### Skills (preferred paths for implementation and debugging work)
+Use these slash-command workflows for most implementation, debugging, and rules work.
+They delegate to Codex on the happy path and only escalate to Claude subagents on failure.
+
+- **/spec-writer** — explore codebase + synthesize a tight spec file before coding. Output feeds `/feature-coder` or `/tdd-fixer`.
+- **/feature-coder** — implement a spec via Codex (reads spec → Codex implements → verify → code-review).
+- **/tdd-fixer** — make failing tests green via Codex without a spec. Happy path ≈4 main turns.
+- **/autonomous-debugger** — diagnose and fix a failure or regression via Codex. No spec needed.
+- **/rules-batcher** — answer 5-20 rules/card questions in one Haiku agent call (reads PDF + code once).
+
+### Built-in agents
 - **Explore** for repo scanning, file discovery, and read-only codebase understanding.
 - **Plan** in plan mode for research before proposing a multi-step implementation.
 
-Use project agents proactively:
+### Project agents (used internally by skills, or directly for specialized work)
 - **replay-forensics** for replay/log grammar, parser failures, unknown lines, and data-quality audits.
 - **rules-lawyer** for official-rules interpretation, edge cases, and regression-test ideas.
 - **cpp-engine-builder** for `cpp/`, `include/`, `bindings/`, and `CMakeLists.txt`.

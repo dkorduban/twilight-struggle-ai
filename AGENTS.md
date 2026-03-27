@@ -85,6 +85,19 @@ Treat these as Claude-owned unless explicitly delegated:
 - cross-layer interface decisions
 - major directory reshapes
 
+## How Claude delegates work to Codex
+Claude uses skill workflows in `.claude/skills/` to drive Codex:
+- `/feature-coder` — Claude reads a spec from `.claude/plan/`, calls `mcp__codex__codex` to implement it, verifies with pytest, runs code-reviewer.
+- `/tdd-fixer` — Claude runs failing tests, calls Codex with output, verifies green. No spec needed.
+- `/autonomous-debugger` — Claude captures a failure, Codex diagnoses and fixes, Claude verifies. No spec needed.
+- `/spec-writer` — Haiku Explore subagent does discovery; Claude synthesizes a spec file for Codex.
+
+When you receive a task via one of these workflows:
+- The task prompt will contain either a full spec or raw pytest failure output.
+- Read the files it names. Fix the implementation only. Do not modify tests.
+- Verify with `uv run pytest <failing_tests> -q`, then `uv run pytest tests/python/ -q 2>&1 | tail -5`.
+- Report the output contract sections at the end.
+
 ## Preferred task types
 Good Codex tasks in this repo:
 - implement one already-specified event effect in one engine layer
