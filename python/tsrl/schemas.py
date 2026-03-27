@@ -24,6 +24,15 @@ class Side(IntEnum):
     NEUTRAL = 2
 
 
+class ActionMode(IntEnum):
+    """How a card is being used at a decision point."""
+    INFLUENCE = 0   # play card for ops → place influence
+    COUP      = 1   # play card for ops → attempt coup
+    REALIGN   = 2   # play card for ops → attempt realignment(s)
+    SPACE     = 3   # play card for space race attempt
+    EVENT     = 4   # play card for its event effect
+
+
 class Era(IntEnum):
     EARLY = 0
     MID = 1
@@ -38,6 +47,31 @@ class Region(IntEnum):
     SOUTH_AMERICA = 4
     AFRICA = 5
     SOUTHEAST_ASIA = 6  # sub-region of Asia for scoring
+
+
+# ---------------------------------------------------------------------------
+# Action encoding
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ActionEncoding:
+    """Factorized action for one decision point.
+
+    card_id:  Card being played (1..111).
+    mode:     How the card is used.
+    targets:  Country IDs the ops are applied to, in order.
+
+      - INFLUENCE: each entry receives 1 influence point;
+        len(targets) == card.ops (full-ops use) or ≤ card.ops.
+      - COUP:      len(targets) == 1; all ops applied to that country.
+      - REALIGN:   len(targets) == card.ops; one attempt per country.
+      - SPACE:     len(targets) == 0.
+      - EVENT:     len(targets) == 0 (event effects handled separately).
+    """
+    card_id: int
+    mode: ActionMode
+    targets: tuple[int, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +118,13 @@ class EventKind(IntEnum):
     MILOPS_CHANGE = 42
     CHINA_CARD_PASS = 43
 
+    # Ongoing effect tracking
+    CARD_IN_PLAY = 44   # e.g. "NATO* is now in play."
+    CARD_EXPIRED = 45   # e.g. "Containment* is no longer in play."
+
+    # Setup / handicap
+    HANDICAP = 46       # competitive bidding handicap grant ("Handicap influence: US +2")
+
     # Unknown / unparsed
     UNKNOWN = 255
 
@@ -100,13 +141,20 @@ class ReplayEvent:
     turn: int                        # 1-10; 0 = setup
     ar: int                          # action round; 0 = setup/headline
     phasing: Side                    # who is acting (USSR/US/NEUTRAL for scoring)
-    card_id: int | None = None       # primary card involved (None if not applicable)
-    country_id: int | None = None    # primary country target (None if not applicable)
-    amount: int | None = None        # e.g. influence delta, VP delta, DEFCON delta
+    card_id: int | None = None       # primary card involved (None until resolver pass)
+    country_id: int | None = None    # primary country target (None until resolver pass)
+    amount: int | None = None        # e.g. influence delta, VP delta, DEFCON value
     aux_card_ids: tuple[int, ...] = field(default_factory=tuple)  # secondary cards
     aux_country_ids: tuple[int, ...] = field(default_factory=tuple)
     raw_line: str = ""               # original log line for debugging
     line_number: int = 0
+    # Raw string names, populated by parser; converted to IDs by resolver pass.
+    card_name: str | None = None
+    country_name: str | None = None
+    # Absolute bracket values logged after an influence change (PLACE/REMOVE_INFLUENCE).
+    # Populated by parser; used for reducer-vs-log cross-validation.
+    us_bracket: int | None = None
+    ussr_bracket: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +193,50 @@ class PublicState:
     discard: frozenset[int] = field(default_factory=frozenset)   # card ids in discard
     removed: frozenset[int] = field(default_factory=frozenset)   # removed from game
     # deck_remaining is implied: all cards not in discard/removed/known-in-hand
+
+    # Per-turn space action counter; used by Yuri and Samantha (card 106).
+    # Resets to [0, 0] at end of each turn.
+    space_attempts: list[int] = field(default_factory=lambda: [0, 0])  # [USSR, US]
+
+    # --- Persistent effect flags (game-scoped unless noted) ---
+    nato_active: bool = False          # NATO (21): blocks USSR coups/realigns in US-controlled WE
+    de_gaulle_active: bool = False     # De Gaulle (17): France excluded from NATO protection
+    willy_brandt_active: bool = False  # Willy Brandt (58): W.Germany excluded from NATO
+    us_japan_pact_active: bool = False # US/Japan Pact (27): Japan blocked from USSR coups/realigns
+    nuclear_subs_active: bool = False  # Nuclear Subs (44): US coups don't degrade DEFCON
+    norad_active: bool = False         # NORAD (38): US free inf if DEFCON=2 after USSR AR
+    shuttle_diplomacy_active: bool = False  # Shuttle Diplomacy (74): next scoring ignores top BG
+    flower_power_active: bool = False  # Flower Power (62): USSR gains 2VP per US war card event
+    flower_power_cancelled: bool = False  # An Evil Empire (100) cancels Flower Power
+    salt_active: bool = False          # SALT Negotiations (46): DEFCON+2, discard visibility
+    opec_cancelled: bool = False       # Iron Lady (86) / North Sea Oil (89) cancel OPEC
+    awacs_active: bool = False         # AWACS Sale (107): Saudi Arabia excluded from OPEC (GAME-SCOPED)
+    north_sea_oil_extra_ar: bool = False  # North Sea Oil (89): US gets one extra AR this turn (TURN-SCOPED)
+    glasnost_extra_ar: bool = False    # Glasnost (93): USSR gets one extra AR when SALT active (TURN-SCOPED)
+    formosan_active: bool = False      # Formosan Resolution (35): Taiwan counts as BG for scoring
+    cuban_missile_crisis_active: bool = False  # CMC (43): DEFCON locked, BG coups = game over
+    vietnam_revolts_active: bool = False  # Vietnam Revolts (9): USSR +1 ops bonus (TURN-SCOPED)
+
+    # Trap / hostage state
+    bear_trap_active: bool = False   # Bear Trap (47): USSR trapped, must use ops each AR
+    quagmire_active: bool = False    # Quagmire (45): US trapped, must use ops each AR
+    iran_hostage_crisis_active: bool = False  # Iranian Hostage Crisis (85): Terrorism discards 2 cards
+
+    # Competitive handicap (bid amount) — 0 in standard games.
+    handicap_ussr: int = 0   # extra influence granted to USSR at setup
+    handicap_us: int = 0     # extra influence granted to US at setup
+
+    # Turn-scoped ops modifiers (reset at end of each turn).
+    # Index 0 = USSR, 1 = US. Positive = bonus, negative = penalty. Min effective ops = 1.
+    ops_modifier: list[int] = field(default_factory=lambda: [0, 0])
+
+    # Chernobyl (97): US designates one region per turn; USSR cannot place ops-influence there.
+    # Reset to None at end of turn.
+    chernobyl_blocked_region: "Region | None" = None
+
+    # Latin American Death Squads (70): this side gets +1 on C/S America coup rolls; opponent gets -1.
+    # Reset to None at end of turn.
+    latam_coup_bonus: "Side | None" = None
 
     # Zobrist hash of this state (updated by reducer)
     state_hash: int = 0

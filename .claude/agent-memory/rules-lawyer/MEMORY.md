@@ -1,0 +1,4 @@
+- [Regional scoring VP tables and rules](reference_scoring_rules.md) — exact Presence/Domination/Control VP amounts, control condition, SE Asia special format, Europe auto-win
+- [Countries.csv issues](project_countries_csv_issues.md) — Libya duplicate, Bulgaria late-add, Thailand double-VP, superpower anchor exclusions
+- [Adjacency.csv issues](project_adjacency_issues.md) — France--Algeria missing (id 7,56), cross-region edge inventory, verified-absent connections, starting influence resolved
+- [Superpower adjacency legality](reference_superpower_adjacency_legality.md) — "adj to a Superpower" means EITHER superpower for both players; Cuba accessible to USSR, NK to US from T1

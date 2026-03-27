@@ -173,10 +173,10 @@ The `HandKnowledge` reducer updates the support mask on each event:
 
 ## 5. Golden corpus
 
-See `data/golden_logs/` for curated regression games.
+See `data/raw_logs/` for curated regression games.
 
 Each golden log must have an associated expected output in
-`data/golden_logs/<game_id>_expected.json` containing:
+`data/raw_logs/<game_id>_expected.json` containing:
 - Final VP
 - Final DEFCON
 - State hash at turn-end for each turn

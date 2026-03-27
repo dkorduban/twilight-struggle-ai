@@ -218,13 +218,11 @@ cmake_install.cmake
 CTestTestfile.cmake
 _deps/
 
-# Parquet / derived datasets (large, reproducible)
+# Derived datasets (large, reproducible — regenerate from raw_logs)
 data/parquet/*.parquet
 data/parquet/*.arrow
-
-# Raw and golden logs are kept; parquet is derived
-# data/raw_logs/ - DO NOT ignore
-# data/golden_logs/ - DO NOT ignore
+data/selfplay/*.parquet
+data/selfplay/*.arrow
 
 # PyTorch checkpoints
 *.pt
@@ -233,3 +231,6 @@ checkpoints/
 
 # Weights & Biases
 wandb/
+
+# Extra / private raw logs (original 7 sample logs, not checked in)
+data/raw_log_extras/

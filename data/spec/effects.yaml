@@ -1,0 +1,294 @@
+# Twilight Struggle persistent card effects
+#
+# This file documents effects that persist beyond the turn the card is played.
+# Effects triggered by events that only matter at the moment of play are NOT listed here.
+#
+# Fields:
+#   card: canonical card name
+#   trigger: when the effect activates
+#     - event_fires: when the event text resolves
+#     - held_in_hand: passive while card is in a player's hand (rare)
+#   effect_type:
+#     - persistent_ability    : grants an ongoing rule modification
+#     - one_time_placement    : places influence once (not truly persistent, but tracked)
+#     - restriction           : prohibits or limits an action
+#     - automatic_trigger     : fires automatically on a condition each turn/action
+#   affects: which player(s) benefit or are constrained (US / USSR / both)
+#   cancels_with: card that removes this effect (if any)
+#   era: which era the card appears in
+#   description: plain English description of the persisting effect
+#
+# UNCERTAIN values noted inline. Verify against official ITS rulebook.
+
+effects:
+
+  # ---- Early War ----
+
+  - card: "NATO"
+    trigger: event_fires
+    effect_type: persistent_ability
+    affects: US
+    era: Early
+    cancels_with: null
+    description: >
+      US-controlled European countries cannot be the target of Realignment rolls or Coups
+      by the USSR. Prerequisite: Marshall Plan OR Truman Doctrine must have been played first.
+    notes: "Cancels De Gaulle Leads France partial effect. Does not protect neutral countries."
+
+  - card: "Marshall Plan"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: US
+    era: Early
+    cancels_with: null
+    description: >
+      Adds 1 US influence in each of up to 7 non-USSR-controlled Western European countries.
+      Also enables NATO (NATO can now be played by US).
+    notes: "The NATO-enablement is a persistent state flag, not just influence placement."
+
+  - card: "Truman Doctrine"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: US
+    era: Early
+    cancels_with: null
+    description: >
+      Removes all USSR influence from one uncontrolled European country.
+      Also enables NATO.
+    notes: "Starred event — removed after firing."
+
+  - card: "NORAD"
+    trigger: event_fires
+    effect_type: persistent_ability
+    affects: US
+    era: Early
+    cancels_with: "Terrorist States"
+    description: >
+      If DEFCON is at 2 at the end of the USSR player's action round, the US player may
+      add 1 influence to any country that already contains US influence.
+    notes: >
+      Optional/promo card included in ITS competitive play.
+      UNCERTAIN: exact timing — 'end of USSR action round' vs 'end of USSR turn'.
+      Verify against ITS FAQ.
+
+  - card: "US/Japan Mutual Defense Pact"
+    trigger: event_fires
+    effect_type: persistent_ability
+    affects: US
+    era: Early
+    cancels_with: null
+    description: >
+      Japan cannot be the target of Realignment rolls or Coups by the USSR for the
+      remainder of the game.
+
+  - card: "De-Stalinization"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: USSR
+    era: Early
+    cancels_with: null
+    description: >
+      USSR may relocate up to 4 influence from any countries to any other countries
+      (cannot exceed Stability + 1 in a country that already has US control).
+    notes: "Starred event — removed after firing."
+
+  - card: "COMECON"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: USSR
+    era: Early
+    cancels_with: null
+    description: >
+      Adds 1 USSR influence in each of up to 4 non-US-controlled Eastern European countries.
+    notes: "Starred event — removed after firing."
+
+  - card: "Containment"
+    trigger: event_fires
+    effect_type: persistent_ability
+    affects: US
+    era: Early
+    cancels_with: null
+    description: >
+      For the remainder of this turn, all US-played cards are worth +1 Operations point.
+    notes: "Starred event — removed after firing. Effect is only for the current turn."
+
+  - card: "Red Scare/Purge"
+    trigger: event_fires
+    effect_type: persistent_ability
+    affects: USSR  # reduces opponent ops
+    era: Early
+    cancels_with: null
+    description: >
+      For the remainder of this turn, all opponent (US) cards are worth -1 Operations point
+      (minimum 1 OP).
+    notes: "Starred event — removed after firing. Effect is only for the current turn."
+
+  - card: "SEATO"
+    trigger: event_fires
+    effect_type: restriction
+    affects: US
+    era: Early
+    cancels_with: null
+    description: >
+      Adds 1 US influence in each of: South Korea, Thailand, Philippines, Pakistan,
+      India, Australia (if on board), Burma, and Indonesia/Malaysia.
+    notes: >
+      UNCERTAIN: exact country list varies by edition. Some lists include Australia
+      which is not a standard board country in all versions. Verify against physical board.
+      Starred event — removed after firing.
+
+  - card: "Warsaw Pact Formed"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: USSR
+    era: Early
+    cancels_with: null
+    description: >
+      Removes all US influence from 4 Eastern European countries, OR adds 5 USSR influence
+      distributed among Eastern European countries.
+    notes: "Also enables Soviet Bloc card (if in game). Starred event."
+
+  - card: "Formosan Resolution"
+    trigger: event_fires
+    effect_type: restriction
+    affects: US
+    era: Early
+    cancels_with: "China Card played by USSR for event"
+    description: >
+      Taiwan is treated as a Battleground country for scoring purposes as long as the US
+      player controls it. (Taiwan is not normally on the board as a standard country.)
+    notes: >
+      UNCERTAIN: exact board representation. Some editions include Taiwan as a space;
+      others treat it as an implicit region. Starred event — removed if China Card event fires.
+
+  # ---- Mid War ----
+
+  - card: "Brush War"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: USSR
+    era: Mid
+    cancels_with: null
+    description: >
+      USSR attacks any country with stability 1 or 2. Roll die: 3-6 USSR gains control,
+      1-2 no effect; additionally USSR may remove up to 2 US influence on a successful roll.
+    notes: "Not strictly persistent — immediate effect only. Listed here for completeness."
+
+  - card: "Cultural Revolution"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: USSR
+    era: Mid
+    cancels_with: null
+    description: >
+      If the US has the China Card, the US must give it to the USSR (face up).
+      Otherwise, the USSR receives 1 VP.
+    notes: "Starred event."
+
+  - card: "De Gaulle Leads France"
+    trigger: event_fires
+    effect_type: persistent_ability
+    affects: USSR
+    era: Mid
+    cancels_with: "NATO"
+    description: >
+      Removes 2 US influence from France and adds 1 USSR influence to France.
+      Additionally, NATO does not protect France while this card is in effect.
+    notes: >
+      UNCERTAIN: some rules interpretations say De Gaulle only removes the NATO
+      protection for France specifically, not cancels NATO entirely.
+      Starred event — removed after firing but the France-exception to NATO persists.
+
+  - card: "Solidarity"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: US
+    era: Mid
+    cancels_with: null
+    description: >
+      Adds 3 US influence to Poland. Can only be played after John Paul II Elected Pope
+      has been played.
+    notes: "Starred event. Prerequisite: John Paul II Elected Pope."
+
+  - card: "John Paul II Elected Pope"
+    trigger: event_fires
+    effect_type: persistent_ability
+    affects: US
+    era: Mid
+    cancels_with: null
+    description: >
+      Removes 2 USSR influence from Poland and adds 1 US influence to Poland.
+      Enables the Solidarity card for future play.
+    notes: "Starred event. The Solidarity enablement is a persistent state flag."
+
+  - card: "Muslim Revolution"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: USSR
+    era: Mid
+    cancels_with: null
+    description: >
+      Removes all US influence from 2 of: Sudan, Iran, Iraq, Egypt, Libya, Saudi Arabia,
+      Syria, Jordan. USSR player chooses which 2.
+    notes: "Starred event."
+
+  - card: "Terrorism"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: USSR
+    era: Mid
+    cancels_with: null
+    description: >
+      The US player must randomly discard 1 card from their hand.
+      If the Defectors card is discarded this way, its event does not fire.
+    notes: "Not persistent — immediate effect."
+
+  # ---- Late War ----
+
+  - card: "Wargames"
+    trigger: event_fires
+    effect_type: persistent_ability
+    affects: both
+    era: Late
+    cancels_with: null
+    description: >
+      May only be played if DEFCON is 2. The player who plays this card loses 6 VP
+      (the opponent gains 6 VP) but the game does not end in nuclear war.
+    notes: >
+      Starred event. This is a voluntary triggered effect, not automatic.
+      UNCERTAIN: exact ruling on whether 'playing for ops' is possible at DEFCON 2.
+
+  - card: "Aldrich Ames Remix"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: USSR
+    era: Late
+    cancels_with: null
+    description: >
+      The US player exposes their hand to the USSR player.
+      The USSR player then discards any 1 card from the US hand.
+    notes: "Starred event. Not strictly persistent but hand-knowledge impact is tracked."
+
+  - card: "Yeltsin"
+    trigger: event_fires
+    effect_type: one_time_placement
+    affects: US
+    era: Late
+    cancels_with: null
+    description: >
+      USSR player loses 3 VP and may not play the Bear Trap card for the rest of the game
+      (or an equivalent restriction per edition).
+    notes: "UNCERTAIN: exact Yeltsin effect. Verify against Deluxe Edition card text."
+
+# ---------------------------------------------------------------------------
+# Notes on tracking persistent effects in the engine:
+#
+# The PublicState struct should track which persistent effects are active via
+# a bitset or flag set. Recommended approach:
+#   - Define an enum PersistentEffect { NATO_ACTIVE, NORAD_ACTIVE, JAPAN_DEFENSE_PACT, ... }
+#   - Add bitset<N_EFFECTS> active_effects to PublicState
+#   - The reducer sets/clears bits when cards fire or are cancelled
+#
+# Effects like "Containment" and "Red Scare/Purge" that last only one turn
+# should be tracked as turn-scoped flags (cleared at TURN_END), not persistent.
+# ---------------------------------------------------------------------------

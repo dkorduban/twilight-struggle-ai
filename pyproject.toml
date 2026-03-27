@@ -16,8 +16,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pypdf>=6.9.2",
     "pytest>=7",
     "pytest-cov",
+    "pytest-xdist>=3.8.0",
     "ruff",
 ]
 
@@ -37,4 +39,11 @@ select = ["E", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
-addopts = "-q"
+# -n auto: parallel workers (one per CPU), work-stealing load distribution.
+# No module grouping needed — all tests are stateless pure functions.
+# Workers are niced to avoid starving interactive processes (see conftest.py).
+# Debugging override: uv run pytest -n 0   (or -p no:xdist)
+addopts = "-q -n auto"
+markers = [
+    "serial: run in the serial worker (use for tests with shared filesystem state or ordering dependencies)",
+]

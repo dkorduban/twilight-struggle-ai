@@ -153,12 +153,14 @@ card_id,name,side,ops,era,starred,is_scoring,prevents_held_after_turn
 106,Yuri and Samantha,USSR,2,Late,true,false,
 107,AWACS Sale to Saudis,US,3,Late,true,false,
 108,Defectors,US,2,Late,true,false,
-# card_ids 109-110 are UNCERTAIN. The Deluxe Edition has exactly 110 playable
-# cards in the draw deck (China Card is separate). The count above gives 107
-# draw-deck cards (ids 1-5, 7-35, 36-38 optional/promo, 39-84 Mid War, 85-108
-# Late War). That is 5 + 29 + 3 + 46 + 24 = 107 draw-deck cards.
-# The standard deck should have 110 total. The gap suggests either:
-#   (a) some card_ids in Mid/Late War are wrong, or
-#   (b) three additional cards need to be identified.
-# PLACEHOLDER rows 109-110 are intentionally omitted until confirmed.
-# TODO: audit physical Deluxe Edition card list to reconcile count to 110.
+# Deluxe Edition promo cards (Mid War). Confirmed present in TSEspionage logs.
+# UNCERTAIN: exact side / starred status — derived from log evidence + game knowledge.
+#   Lone Gunman: USSR event (US plays it = opponent plays enemy card); 1 op confirmed.
+#   Colonial Rear Guards: USSR event; 2 ops confirmed from "Space Race (2 Ops)".
+#   Panama Canal Returned: US starred event; 1 op confirmed from "Coup (1 Ops)".
+109,Lone Gunman,USSR,1,Mid,true,false,
+110,Colonial Rear Guards,USSR,2,Mid,false,false,
+111,Panama Canal Returned,US,1,Mid,true,false,
+# Total draw-deck cards: 110 (ids 1-5, 7-35, 36-38 Deluxe promo Early War,
+#   39-84 Mid War, 85-108 Late War, 109-111 Deluxe promo Mid War).
+# China Card (id=6) is separate and NOT in the draw deck.

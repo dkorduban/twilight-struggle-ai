@@ -2,21 +2,47 @@
 
 ## Goal
 Build a strong Twilight Struggle AI with a plausible path to top-1%-human strength on a modest budget using:
-- replay warm-start from human logs
-- exact C++ state/engine core
-- Python/PyTorch training
-- selective stronger search / distillation later
+- a small replay warm-start from human logs when available
+- an exact C++ state / engine core
+- Python / PyTorch training
+- earlier self-play and selective stronger search / distillation
 - minimum unnecessary complexity in Month 1
 
 Preferred strategy:
-- learn a strong offline baseline first
-- make public-state reconstruction exact before chasing model quality
+- be **engine-first**, not replay-first
+- make public-state reconstruction and legality exact before chasing model quality
+- treat human logs as a small, high-value seed dataset, not the backbone
 - handle hidden information with exact support masks before probabilistic belief machinery
-- use local self-play and stronger search only after the reducer/data path is trustworthy
+- prepare play-mode / self-play scaffolding in Month 1 so Month 2 does not depend on a large replay corpus
+- use teacher search selectively on curated hard states, not everywhere
 - use cloud bursts only when they buy clear strength per dollar
 
+## Strategic assumptions
+Assume these unless explicitly overridden:
+- there is **no guaranteed public bulk replay archive** to rely on
+- human logs are **helpful but optional**
+- the core long-term strength sources are exact engine quality, self-play, and teacher-generated targets
+- replay data is best used for parser validation, opening / headline priors, hand-reconstruction experiments, and eval suites
+- the project should build a **private data flywheel** over time:
+  - collect every local game log
+  - accept opt-in contributed logs
+  - parse and deduplicate all logs
+  - mine hard positions
+  - run teacher search on those positions later
+  - distill those targets back into the student
+
+## 3-month arc
+### Month 1
+Foundations + offline baseline + play-mode scaffold.
+
+### Month 2
+Earlier autonomous self-play, sparse teacher search on curated hard states, teacher-target cache, and online evaluation ladder.
+
+### Month 3
+Strength push: better distillation quality, league stability, evaluation quality, benchmark report, and release-candidate bot.
+
 ## Current focus
-We are in **Month 1: foundations + offline baseline**.
+We are in **Month 1: foundations + offline baseline + play-mode scaffold**.
 
 Highest-priority deliverables, in order:
 1. replay grammar and parser
@@ -24,10 +50,17 @@ Highest-priority deliverables, in order:
 3. causal `HandKnowledge` reducer
 4. offline smoother for actor-hand labels
 5. exact unseen-card support masks
-6. dataset builder
-7. first small PyTorch policy/value baseline
+6. dataset builder for a **small curated corpus**
+7. first small PyTorch policy / value baseline
+8. legal-action API and minimal play-mode scaffolding for Month 2 self-play / teacher search
 
-Do **not** spend time on fancy search, distributed training, architecture experiments, or UI/deployment work until the reducer and dataset path are trustworthy.
+Suggested Month-1 time allocation:
+- 40% engine / reducer correctness
+- 25% replay ingest + hand reconstruction
+- 20% offline baseline
+- 15% legal-action / play-mode scaffolding
+
+Do **not** spend Month-1 time on full teacher search, distributed training, architecture experiments, or UI / deployment work until the reducer, legality, and dataset path are trustworthy.
 
 ## Default working style
 - Keep changes small, layer-local, and reversible.
@@ -35,7 +68,7 @@ Do **not** spend time on fancy search, distributed training, architecture experi
 - Do not mix parser, engine, dataset, and trainer changes in one pass unless the task explicitly requires it.
 - Before editing multiple layers or crossing ownership boundaries, first summarize the intended interface boundary in 3-8 bullets.
 - Prefer deterministic scripts and tests over notebooks for anything that will be reused.
-- Prefer C++/Python/PyTorch. Do not introduce JAX or Rust unless asked or unless there is a specific, quantified benefit.
+- Prefer C++ / Python / PyTorch. Do not introduce JAX or Rust unless asked or unless there is a specific, quantified benefit.
 - Prefer explicit data models over implicit conventions.
 - Prefer boring exact code over clever fragile code.
 - Keep online-safe state and offline labels strictly separated.
@@ -90,14 +123,16 @@ If a task crosses boundaries, name the boundary explicitly before editing.
 - Correctness first.
 - Determinism first.
 - Small vertical slices.
-- Public-state correctness is more important than clever modeling in Month 1.
+- Engine / reducer correctness matters more than clever modeling in Month 1.
+- Public-state correctness is more important than model quality in Month 1.
 - Hidden-information features should start with exact support masks before probabilistic belief machinery.
 - Preserve reproducibility: deterministic seeds, explicit config files, stable dataset splits, and hashable state snapshots.
 - Raw logs are immutable inputs.
 - Normalized events and datasets are derived artifacts.
 - Prefer flat files / Parquet over unnecessary infra.
 - Never vendor or copy GPL parser code directly into the repo.
-- Replay/log tooling may be used as a reference oracle, validator, or external preprocessing step, but not copied blindly.
+- Replay / log tooling may be used as a reference oracle, validator, or external preprocessing step, but not copied blindly.
+- Avoid assumptions that depend on having a large human corpus.
 
 ## Game / rules ground truth
 Assume competitive / ITS-style Twilight Struggle rules unless explicitly overridden.
@@ -113,10 +148,10 @@ If implementation behavior conflicts with rules or replay evidence, stop and sur
 
 ## Architecture
 ### Language split
-- **C++20**: exact game core, replay reduction, hashing, legality, dataset extraction hot paths
+- **C++20**: exact game core, replay reduction, hashing, legality, play-mode stepping, dataset extraction hot paths
 - **Python 3.11+**: ETL, training, evaluation, orchestration
 - **PyTorch 2.x**: baseline learning stack
-- **pybind11**: C++/Python boundary
+- **pybind11**: C++ / Python boundary
 - **Parquet / Arrow**: datasets
 
 ### Repository shape
@@ -124,7 +159,7 @@ Prefer this layout:
 - `cpp/tscore/` - exact C++ core
 - `python/tsrl/` - Python ETL / training / eval
 - `data/raw_logs/` - immutable raw replay logs
-- `data/golden_logs/` - curated regression corpus
+- `data/raw_logs/` - curated regression corpus
 - `data/parquet/` - derived datasets
 - `tests/cpp/`
 - `tests/python/`
@@ -141,7 +176,7 @@ Maintain three distinct layers:
 
 1. `PublicState`
    - public board state only
-   - influence, VP, DEFCON, MilOps, Space, China, discard/removed/public reveals, public effects
+   - influence, VP, DEFCON, MilOps, Space, China, discard / removed / public reveals, public effects
 
 2. `HandKnowledge`
    - online-safe hidden-information state for one player
@@ -159,7 +194,7 @@ Use event-driven reducers:
 
 `next_state = reduce(prev_state, event)`
 
-Do not encode hand reconstruction as shortcut arithmetic identities. Twilight Struggle has too many special cases; use an explicit event/state machine.
+Do not encode hand reconstruction as shortcut arithmetic identities. Twilight Struggle has too many special cases; use an explicit event / state machine.
 
 ### Core schema expectations
 Create explicit schemas early for:
@@ -190,6 +225,27 @@ Outputs:
 
 Use a **factorized action model**, not one giant flat action vocabulary.
 
+## Replay / data strategy
+Treat replay data as a **small boutique dataset**.
+
+Use logs mainly for:
+- opening / headline priors
+- parser validation
+- action-factorization debugging
+- actor-hand smoothing experiments
+- eval suites
+
+Preferred data tiers:
+1. your own logged Playdek / TSEspionage games
+2. parser test logs and public sample logs
+3. opt-in contributed logs from collaborators / stronger players
+4. weakly structured human material only later, if clearly worth it
+
+Do not design the repo around the assumption that tens of thousands of clean logs will appear.
+
+## Permanently out of scope / not supported
+- **Promo cards** (Lone Gunman #109, Colonial Rear Guards #110, Panama Canal Returned #111): IDs exist in cards.csv for log-parsing completeness, but their event effects are **not implemented** and they are excluded from self-play and training. Do not implement promo card events.
+
 ## Out of scope for now
 Do not build these in the Month-1 critical path:
 - full teacher / root search
@@ -199,6 +255,11 @@ Do not build these in the Month-1 critical path:
 - SQL backends / service infra
 - large architecture search
 - premature UI / deployment work
+
+But do build enough for Month 2:
+- legal-action API
+- play-mode stepping / transition scaffold
+- clean interfaces for later self-play and teacher labeling
 
 ## Coding standards
 ### General
@@ -231,6 +292,11 @@ Do not build these in the Month-1 critical path:
 - When changing reducers, add or update:
   - at least one focused unit test
   - at least one golden-log or integration regression if behavior changes on real replays
+- Tests run in parallel by default (`-n auto`).  Keep tests
+  stateless and side-effect free.  Use `@pytest.mark.serial` only for tests
+  that truly require serial execution (shared filesystem writes, ordering
+  dependencies).  Use `tmp_path` (pytest fixture) for any test that writes
+  files so workers get isolated directories automatically.
 
 ## Replay / data rules
 - Split train / val / test by **game**, not by row.
@@ -249,7 +315,7 @@ Hand-relevant event classes that matter early:
 - `reshuffle`
 
 ## Testing and validation
-Every meaningful change should preserve or improve determinism and replay correctness.
+Every meaningful change should preserve or improve determinism, legality, and replay correctness.
 
 Minimum required checks:
 - parser tests for known line patterns
@@ -259,6 +325,7 @@ Minimum required checks:
 - hand-size accounting checks
 - support-mask false exclusion rate must stay **0**
 - illegal-action rate after masking must stay **0**
+- legal-action API consistency checks for play-mode scaffolding
 
 ## Metrics that matter early
 Track these first.
@@ -269,6 +336,7 @@ Parser / reducer:
 - `unknown_line_count`
 - `deterministic_replay_hash_match`
 - `public_state_reconstruction_accuracy`
+- `legal_action_api_consistency`
 
 Hand reconstruction:
 - `exact_hand_label_rate`
@@ -288,24 +356,26 @@ Model:
 
 ## Optimization order
 Optimize for these in order:
-1. correct replay ingestion
-2. deterministic public-state reconstruction
-3. exact unseen-card support masks
-4. stable dataset generation
+1. exact engine / reducer correctness
+2. deterministic replay ingestion and public-state reconstruction
+3. exact unseen-card support masks and causal hand knowledge
+4. stable dataset generation from a small curated corpus
 5. simple offline baseline
-6. later: search and stronger belief modeling
+6. legal-action / play-mode readiness for self-play
+7. later: teacher-generated targets, self-play league, and stronger belief modeling
 
 ## First tasks if the repo is still empty
 1. create repo skeleton and build / test plumbing
 2. freeze card / country / effect dictionaries
 3. define `ReplayEvent` schema and replay grammar doc
-4. ingest a small golden corpus of replay logs
+4. ingest a **small golden corpus** of replay logs
 5. implement parser + parser coverage report
 6. implement `PublicState` + deterministic replay hashing
 7. implement `HandKnowledge` + exact unseen-card support mask
 8. implement offline smoother + label quality tags
 9. build first Parquet dataset
 10. train first baseline and compare against trivial heuristics
+11. implement legal-action API + minimal play-mode step interface
 
 ## Definition of done for Month 1
 Month 1 is successful only if we have all of the following:
@@ -317,6 +387,7 @@ Month 1 is successful only if we have all of the following:
 - exact unseen-card support masks
 - clean offline dataset
 - first baseline model that beats trivial heuristics
+- enough play-mode / legality scaffolding to start Month-2 self-play and selective teacher search without rebuilding the core
 
 ## Preferred commands
 Target commands for the initial repo:
@@ -324,7 +395,8 @@ Target commands for the initial repo:
 - build: `cmake --build build -j`
 - C++ tests: `ctest --test-dir build --output-on-failure`
 - Python env setup: `uv sync` (installs all deps including dev group)
-- Python tests: `uv run pytest`
+- Python tests: `uv run pytest`  (parallel: `-n auto` is the default)
+- Python tests (serial / debug): `uv run pytest -n 0`
 - Python lint / format: `uv run ruff check . && uv run ruff format .`
 - C++ format: `clang-format -i <files>`
 - Run a script: `uv run python -m tsrl.etl.parser <args>` or `uv run python scripts/foo.py`

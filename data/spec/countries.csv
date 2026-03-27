@@ -51,7 +51,7 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 16,Turkey,Europe,2,true,1,0
 17,UK,Europe,5,true,5,0
 18,West Germany,Europe,4,true,4,0
-19,Yugoslavia,Europe,3,false,0,0
+19,Yugoslavia,Europe,3,false,0,1
 # Europe setup notes:
 #   US: Canada=2, Turkey=1, UK=5, West Germany=4; all others 0
 #   USSR: Czechoslovakia=3, East Germany=3, Finland=1, France=1,
@@ -79,7 +79,7 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 26,Egypt,MiddleEast,2,true,0,0
 27,Gulf States,MiddleEast,3,false,0,0
 28,Iran,MiddleEast,2,true,1,0
-29,Iraq,MiddleEast,3,true,0,1
+29,Iraq,MiddleEast,3,true,0,3
 30,Israel,MiddleEast,4,true,1,0
 31,Jordan,MiddleEast,2,false,0,0
 32,Lebanon,MiddleEast,1,false,0,0
@@ -88,7 +88,7 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 35,Syria,MiddleEast,2,false,0,1
 # Middle East setup notes:
 #   US: Iran=1, Israel=1; all others 0
-#   USSR: Iraq=1, Syria=1; all others 0
+#   USSR: Iraq=3, Syria=1; all others 0
 # ---- Central America (ids 36-45) ----
 36,Cuba,CentralAmerica,3,true,0,0
 37,Dominican Republic,CentralAmerica,1,false,0,0
@@ -96,7 +96,7 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 39,Guatemala,CentralAmerica,1,false,0,0
 40,Haiti,CentralAmerica,1,false,0,0
 41,Honduras,CentralAmerica,2,false,0,0
-42,Mexico,CentralAmerica,2,false,0,0
+42,Mexico,CentralAmerica,2,true,0,0
 43,Nicaragua,CentralAmerica,1,false,0,0
 44,Panama,CentralAmerica,2,true,1,0
 45,Costa Rica,CentralAmerica,3,false,0,0
@@ -125,15 +125,12 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 57,Angola,Africa,1,true,0,0
 58,Botswana,Africa,2,false,0,0
 59,Cameroon,Africa,1,false,0,0
-60,Congo/Zaire,Africa,2,false,0,0
+60,Congo/Zaire,Africa,2,true,0,0
 61,Ethiopia,Africa,1,true,0,0
 62,Ivory Coast,Africa,2,false,0,0
 63,Kenya,Africa,2,false,0,0
-64,Libya,Africa,2,true,0,0
-# CONFLICT: Libya appears in both MiddleEast (id=33) and Africa (id=64).
-# In Twilight Struggle, Libya is a MIDDLE EAST country only.
-# It does NOT appear in Africa. Removing Libya from Africa.
-# id=64 will be reassigned. See FIXME note below.
+# id=64: Libya was incorrectly placed in Africa. Libya is MiddleEast only (id=33).
+# id=64 is reserved for future reassignment. See FIXME note below.
 65,Morocco,Africa,3,true,0,0
 66,Mozambique,Africa,1,false,0,0
 67,Nigeria,Africa,1,true,0,0
@@ -156,7 +153,7 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 # SoutheastAsia is scored by the Southeast Asia Scoring card (Mid War, starred).
 # These countries do NOT count for Asia Scoring.
 75,Burma,SoutheastAsia,2,false,0,0
-76,Indonesia/Malaysia,SoutheastAsia,3,true,0,0
+76,Indonesia,SoutheastAsia,1,true,0,0
 77,Laos/Cambodia,SoutheastAsia,1,false,0,0
 78,Philippines,SoutheastAsia,2,true,1,0
 79,Thailand,SoutheastAsia,2,true,0,0
@@ -164,7 +161,11 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 # Southeast Asia setup notes:
 #   US: Philippines=1; all others 0
 #   USSR: Vietnam=1; all others 0
-#   NOTE: "Indonesia/Malaysia" is one board space in TS.
+#   NOTE: Indonesia and Malaysia are SEPARATE countries in the TSEspionage mod.
+#         Stability confirmed from coup logs:
+#           Indonesia: 5 + 1 - 2x1 = 4  → stab=1 (battleground)
+#           Malaysia:  4 + 3 - 2x2 = 3  → stab=2 (non-battleground)
+#         The physical board combines them as "Indonesia/Malaysia" but the mod separates them.
 #   NOTE: "Laos/Cambodia" is one board space in TS.
 #   UNCERTAIN: Thailand is_battleground=true. Verify (some sources disagree).
 # ---- Superpower homeland anchors (not normal countries) ----
@@ -175,3 +176,10 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 # NOTE: USA and USSR anchors are assigned to region=Europe arbitrarily since they
 # are not scored. The engine should never score or coup these entries.
 # Their region field is unused for game logic; adjacency is the only use.
+# ---- Additional European country missing from id 0-19 range ----
+# Bulgaria is on the standard TS board but was omitted from the Europe id block.
+# Assigned id=83 (after superpowers). Adjacent to Romania, Yugoslavia, Turkey, Greece.
+83,Bulgaria,Europe,3,false,0,3
+# Malaysia is id=84 (separate from Indonesia, as seen in TSEspionage mod logs).
+# Adjacent to Indonesia (76) and Thailand (79). Non-battleground, stability=2.
+84,Malaysia,SoutheastAsia,2,false,0,0
