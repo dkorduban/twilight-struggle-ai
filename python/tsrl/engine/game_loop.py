@@ -128,6 +128,10 @@ def fire_opponent_event(
     _card_played) for the card owner side. The ops path's _handle_card_played
     call will be a no-op because of the idempotency guard added there.
 
+    Passing `opp_side` through the EVENT path preserves owner-side checks in
+    step._apply_event. That matters for intercepts keyed to who is playing the
+    event, such as Flower Power's "US plays a war card as an event" trigger.
+
     Cat C cards (hand/deck manipulation) go through apply_hand_event.
     All others go through apply_action with mode=EVENT.
     """

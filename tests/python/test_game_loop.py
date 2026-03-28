@@ -710,7 +710,7 @@ def test_final_scoring_fires_at_turn_10():
     assert gs.pub.vp != vp_before, (
         "Final scoring at Turn 10 must change pub.vp; "
         f"vp was {vp_before} before and {gs.pub.vp} after — no change detected. "
-        "Final scoring is not implemented in _end_of_turn."
+        "_end_of_turn should apply final regional scoring here."
     )
     assert gs.pub.vp > vp_before, (
         f"USSR controls Venezuela (SA BG); vp should increase; got {gs.pub.vp}"

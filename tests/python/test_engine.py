@@ -722,17 +722,16 @@ def test_space_race_no_more_than_two_even_with_ability():
 
 
 # ---------------------------------------------------------------------------
-# §5.2: Opponent event fires when playing their card for ops (known limitation)
+# PublicState-only apply_action boundary vs live §5.2 game-loop routing
 # ---------------------------------------------------------------------------
 
-def test_playing_opponent_card_for_ops_does_not_trigger_event():
-    """§5.2: 'If a player plays a card as an Operation, and the card's Event is
-    associated only with his opponent, the Event still occurs.'
+def test_public_state_apply_action_does_not_route_opponent_event_side_effects():
+    """apply_action operates on PublicState only.
 
-    Currently the engine does NOT implement this — playing an opponent's card
-    for OPS suppresses their event. This test documents the known behavior gap.
-    Korean War (id=11) is a USSR-only war card (2 ops). When US plays it for
-    COUP, the USSR free coup in South Korea should also fire, but does not.
+    The live §5.2 rule is implemented in game_loop._apply_action_with_hands,
+    which can route the event through GameState-aware helpers before resolving
+    the ops action. This direct helper test keeps documenting the narrower
+    PublicState-only behavior.
     """
     # South Korea id=25, stability=3 (USSR needs roll+2 > 6 → net > 0 rarely).
     _SOUTH_KOREA = 25
@@ -745,9 +744,6 @@ def test_playing_opponent_card_for_ops_does_not_trigger_event():
     rng = _seeded_rng(99)
     new_pub, _, _ = apply_action(pub, action, Side.US, rng=rng)
 
-    # The engine should eventually fire the Korean War event (USSR coup in South Korea).
-    # Currently it does NOT — this is the known limitation.
-    # This test verifies current (incorrect) behavior so we notice when it's fixed.
     # Korean War card should be discarded.
     assert 11 in new_pub.discard or 11 in new_pub.removed, (
         "Korean War card should be discarded/removed after being played for ops."

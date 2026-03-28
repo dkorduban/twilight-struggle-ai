@@ -1211,8 +1211,7 @@ def test_brush_war_defcon_drops_if_battleground():
     countries = load_countries()
     # Find a battleground stab<=2 country and force it as target
     bg_low = [cid for cid, c in countries.items() if c.is_battleground and c.stability <= 2 and cid not in {64, 81, 82}]
-    if not bg_low:
-        pytest.skip("No battleground stab<=2 countries")
+    assert bg_low, "Current country spec should include a battleground with stability <= 2."
     pub = _pub()
     pub.defcon = 5
     # Try a few seeds to get one that targets a battleground
