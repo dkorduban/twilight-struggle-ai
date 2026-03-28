@@ -34,7 +34,7 @@ import glob
 import os
 from typing import Any
 
-import pyarrow.parquet as pq
+import polars as pl
 import torch
 from torch.utils.data import Dataset
 
@@ -56,15 +56,10 @@ class TS_SelfPlayDataset(Dataset):
                 f"No *.parquet files found in {data_dir!r}"
             )
 
-        tables = [pq.read_table(p) for p in paths]
-
-        # Concatenate all tables into column-oriented Python lists for fast
-        # indexed access.  Parquet files are small (month-1 corpus), so
-        # materialising everything in RAM is fine.
-        import pyarrow as pa
-
-        combined = pa.concat_tables(tables)
-        d = combined.to_pydict()
+        # Read and concatenate all Parquet files with polars (no pyarrow).
+        frames = [pl.read_parquet(p) for p in paths]
+        combined = pl.concat(frames, how="diagonal_relaxed")
+        d = combined.to_dict(as_series=False)
 
         self._length = len(d["turn"])
 
