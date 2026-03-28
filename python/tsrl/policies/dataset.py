@@ -3,15 +3,19 @@
 Each row in the Parquet files is one decision step. The dataset returns a
 dict of tensors ready for the TSBaselineModel.
 
-Returned dict keys and shapes (all float32 except the *_target keys)
+Returned dict keys and shapes (all float32 except the int64 *_target keys)
 ---------------------------------------------------------------------
-  influence    : (168,)  — concat [ussr_influence, us_influence]
-  cards        : (448,)  — concat [actor_known_in, actor_possible,
-                                    discard_mask, removed_mask]
-  scalars      : (11,)   — normalised game scalars
-  card_target  : ()      — int64, 0-indexed card (action_card_id - 1)
-  mode_target  : ()      — int64, action mode 0..4
-  value_target : (1,)    — float32, winner_side in {-1, 0, +1}
+  influence       : (168,)  — concat [ussr_influence, us_influence]
+  cards           : (448,)  — concat [actor_known_in, actor_possible,
+                                       discard_mask, removed_mask]
+  scalars         : (11,)   — normalised game scalars
+  card_target     : ()      — int64, 0-indexed card (action_card_id - 1)
+  mode_target     : ()      — int64, action mode 0..4
+  country_ops_target : (84,) — float32, per-country ops counts for country ids 1..84
+                              COUP/REALIGN rows contain a single 1.0 in the target country.
+                              INFLUENCE rows contain repeated counts for each allocated op.
+                              SPACE/EVENT rows are all-zero and masked out in country loss.
+  value_target    : (1,)    — float32, winner_side in {-1, 0, +1}
 
 Scalar normalisation
 --------------------
@@ -87,6 +91,7 @@ class TS_SelfPlayDataset(Dataset):
         # ---- label columns ----
         self._action_card_id: list[int] = d["action_card_id"]
         self._action_mode: list[int] = d["action_mode"]
+        self._action_targets: list[str] = d["action_targets"]
         self._winner_side: list[int] = d["winner_side"]
 
     def __len__(self) -> int:
@@ -129,6 +134,16 @@ class TS_SelfPlayDataset(Dataset):
             self._action_card_id[idx] - 1, dtype=torch.long
         )
         mode_target = torch.tensor(self._action_mode[idx], dtype=torch.long)
+
+        # country_ops_target: per-country ops counts for country ids 1..84.
+        raw_targets = self._action_targets[idx]
+        country_ops_target = torch.zeros(84, dtype=torch.float32)
+        if raw_targets:
+            ids = [int(x) for x in raw_targets.split(",") if x.strip()]
+            valid_ids = [i for i in ids if 1 <= i <= 84]
+            for country_id in valid_ids:
+                country_ops_target[country_id - 1] += 1.0
+
         value_target = torch.tensor(
             [float(self._winner_side[idx])], dtype=torch.float32
         )  # (1,)
@@ -139,5 +154,6 @@ class TS_SelfPlayDataset(Dataset):
             "scalars": scalars,
             "card_target": card_target,
             "mode_target": mode_target,
+            "country_ops_target": country_ops_target,
             "value_target": value_target,
         }

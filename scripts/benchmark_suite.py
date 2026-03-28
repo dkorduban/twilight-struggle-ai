@@ -53,6 +53,7 @@ def play_game_with_mcts(
     us_rollout: Policy,
     *,
     seed: int,
+    candidate_fn=None,
 ) -> GameResult:
     """Play one game where each side may use flat MCTS over the live GameState."""
     from tsrl.engine.game_loop import (
@@ -90,7 +91,13 @@ def play_game_with_mcts(
 
         gs_snap = clone_game_state(gs)
         gs_snap.hands[side] = hand
-        action = flat_mcts(gs_snap, n_sim, rollout_policy=rollout, rng=rng)
+        action = flat_mcts(
+            gs_snap,
+            n_sim,
+            rollout_policy=rollout,
+            rng=rng,
+            candidate_fn=candidate_fn,
+        )
         if action is None:
             action = sample_action(hand, pub, side, holds_china=holds_china, rng=rng)
         return action
@@ -190,6 +197,7 @@ def play_match(
     base_seed: int = 42,
     ussr_n_sim: int = 0,
     us_n_sim: int = 0,
+    candidate_fn=None,
 ) -> MatchResult:
     """Play a match between two policies, alternating sides.
 
@@ -223,6 +231,7 @@ def play_match(
                     policy0,
                     policy1,
                     seed=game_seed,
+                    candidate_fn=candidate_fn,
                 )
             else:
                 result = play_game(policy0, policy1, seed=game_seed)
@@ -240,6 +249,7 @@ def play_match(
                     policy1,
                     policy0,
                     seed=game_seed,
+                    candidate_fn=candidate_fn,
                 )
             else:
                 result = play_game(policy1, policy0, seed=game_seed)
@@ -295,7 +305,9 @@ def run_benchmark_suite(n_games: int = 100, base_seed: int = 42) -> list[tuple[s
     learned_policy_us: Optional[Policy] = None
     learned_available = False
 
-    checkpoint_path = "/home/dkord/code/twilight-struggle-ai/checkpoints/baseline_epoch3.pt"
+    checkpoint_path = os.path.join(
+        os.path.dirname(__file__), "..", "data", "checkpoints", "baseline_epoch20.pt"
+    )
     if os.path.exists(checkpoint_path):
         try:
             torch_probe = subprocess.run(
@@ -376,6 +388,23 @@ def run_benchmark_suite(n_games: int = 100, base_seed: int = 42) -> list[tuple[s
     )
     result.name = "heuristic+mcts20 vs heuristic"
     results.append(("heuristic+mcts20 vs heuristic", result))
+
+    # 8b. heuristic+mcts5_heur_cands vs heuristic (heuristic candidates)
+    from tsrl.engine.mcts import _top_heuristic_candidates
+
+    heur_cand_fn = lambda gs, side, hc, n, rng: _top_heuristic_candidates(gs, side, hc, n)
+
+    print(f"[8b] heuristic+mcts5_heur_cands vs heuristic ({n_games} games)...", flush=True)
+    result = play_match(
+        heuristic_policy,
+        heuristic_policy,
+        n_games=n_games,
+        base_seed=base_seed + 5500,
+        ussr_n_sim=5,
+        candidate_fn=heur_cand_fn,
+    )
+    result.name = "heuristic+mcts5_heur vs heuristic"
+    results.append(("heuristic+mcts5_heur vs heuristic", result))
 
     # 8. learned vs random (if available)
     if learned_available:

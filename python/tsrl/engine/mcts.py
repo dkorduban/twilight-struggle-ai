@@ -63,6 +63,7 @@ def flat_mcts(
     n_sim: int,
     *,
     rollout_policy: Optional[Policy] = None,
+    candidate_fn=None,
     rng: Optional[random.Random] = None,
 ) -> Optional[ActionEncoding]:
     """Run flat Monte Carlo and return the action with the highest mean value.
@@ -85,7 +86,10 @@ def flat_mcts(
     _rollout = rollout_policy or make_random_policy(_rng)
 
     # Sample a set of distinct legal actions to evaluate.
-    candidates = _sample_candidates(gs, side, holds_china, n_sim, _rng)
+    if candidate_fn is not None:
+        candidates = candidate_fn(gs, side, holds_china, n_sim, rng=_rng)
+    else:
+        candidates = _sample_candidates(gs, side, holds_china, n_sim, _rng)
     if not candidates:
         return None
 
@@ -393,6 +397,65 @@ def _sample_candidates(
             seen.add(a)
             actions.append(a)
     return actions
+
+
+def _top_heuristic_candidates(
+    gs: GameState,
+    side: Side,
+    holds_china: bool,
+    n: int,
+    *,
+    temperature: float = 0.0,
+    rng: Optional[random.Random] = None,
+) -> list[ActionEncoding]:
+    """Return the top-n actions ranked by the MinimalHybrid heuristic.
+
+    Uses _scored_candidate_actions from minimal_hybrid to score all plausible
+    candidates. With temperature=0, returns the n best actions
+    deterministically; with temperature>0, samples up to n actions without
+    replacement from a softmax over heuristic scores.
+    """
+    from tsrl.policies.minimal_hybrid import (
+        _make_decision_context,
+        _scored_candidate_actions,
+        _action_sort_key,
+        DEFAULT_MINIMAL_HYBRID_PARAMS,
+    )
+
+    hand = gs.hands[side]
+    context = _make_decision_context(gs.pub, side, DEFAULT_MINIMAL_HYBRID_PARAMS)
+    scored = _scored_candidate_actions(hand, holds_china, context)
+
+    def _key(item: tuple[ActionEncoding, float | None]) -> tuple[float, int, int, int, tuple[int, ...]]:
+        action, score = item
+        return _action_sort_key(action, score if score is not None else 0.0)
+
+    scored.sort(key=_key)
+    if len(scored) <= n or temperature <= 0.0:
+        return [action for action, _ in scored[:n]]
+
+    _rng = rng or random.Random()
+    remaining: list[tuple[ActionEncoding, float]] = [
+        (action, -_key((action, score))[0]) for action, score in scored
+    ]
+    sampled: list[ActionEncoding] = []
+
+    for _ in range(min(n, len(remaining))):
+        max_logit = max(logit for _, logit in remaining)
+        weights = [
+            math.exp((logit - max_logit) / temperature)
+            for _, logit in remaining
+        ]
+        target = _rng.random() * sum(weights)
+        cumulative = 0.0
+        for idx, ((action, _), weight) in enumerate(zip(remaining, weights)):
+            cumulative += weight
+            if target <= cumulative or idx == len(remaining) - 1:
+                sampled.append(action)
+                remaining.pop(idx)
+                break
+
+    return sampled
 
 
 def _apply_action_to_gs(

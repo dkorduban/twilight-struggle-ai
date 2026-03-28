@@ -109,9 +109,15 @@ def test_model_gradient_flows() -> None:
     mode_target = torch.zeros(BATCH_SIZE, dtype=torch.long)
     value_target = torch.zeros(BATCH_SIZE, 1)
 
+    country_ops_target = torch.zeros(BATCH_SIZE, 84, dtype=torch.float32)
+    country_ops_target[:, 0] = 1.0
+    ops_prob = country_ops_target / country_ops_target.sum(dim=1, keepdim=True)
+    log_probs = torch.log_softmax(out["country_logits"], dim=1)
+    country_loss_test = -(ops_prob * log_probs).sum(dim=1).mean()
     loss = (
         torch.nn.functional.cross_entropy(out["card_logits"], card_target)
         + torch.nn.functional.cross_entropy(out["mode_logits"], mode_target)
+        + country_loss_test
         + torch.nn.functional.mse_loss(out["value"], value_target)
     )
     loss.backward()
@@ -159,7 +165,7 @@ def test_dataset_loads() -> None:
     assert len(ds) > 0, "Dataset should have at least one step"
 
     sample = ds[0]
-    required_keys = {"influence", "cards", "scalars", "card_target", "mode_target", "value_target"}
+    required_keys = {"influence", "cards", "scalars", "card_target", "mode_target", "country_ops_target", "value_target"}
     assert required_keys == set(sample.keys()), (
         f"Missing or extra keys: got {set(sample.keys())}"
     )
@@ -169,6 +175,8 @@ def test_dataset_loads() -> None:
     assert sample["scalars"].shape == (11,), sample["scalars"].shape
     assert sample["card_target"].dtype == torch.long
     assert sample["mode_target"].dtype == torch.long
+    assert sample["country_ops_target"].shape == (84,)
+    assert sample["country_ops_target"].dtype == torch.float32
     assert sample["value_target"].shape == (1,)
     assert sample["value_target"].dtype == torch.float32
 

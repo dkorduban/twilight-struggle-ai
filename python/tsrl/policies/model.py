@@ -11,14 +11,17 @@ All inputs are batched tensors with shape (B, *).
 
 Output contract
 ---------------
-Returns a dict with three keys:
+Returns a dict with four keys:
 
-  card_logits : (B, 111)  — unnormalised logits for card choice (0-indexed)
-  mode_logits : (B, 5)    — unnormalised logits for action mode
-  value       : (B, 1)    — game value from USSR perspective, in [-1, 1]
+  card_logits    : (B, 111)  — unnormalised logits for card choice (0-indexed)
+  mode_logits    : (B, 5)    — unnormalised logits for action mode
+  country_logits : (B, 84)   — unnormalised logits for primary country target
+                               (used for COUP/REALIGN target and INFLUENCE
+                               per-op country scoring; ignored for SPACE/EVENT)
+  value          : (B, 1)    — game value from USSR perspective, in [-1, 1]
 
 Card index 0 corresponds to card_id 1 in the raw data (subtract 1 at
-call-site before indexing).
+call-site before indexing).  Country index 0 corresponds to country_id 1.
 """
 
 import torch
@@ -62,6 +65,7 @@ class TSBaselineModel(nn.Module):
 
         self.card_head = nn.Linear(TRUNK_HIDDEN, NUM_PLAYABLE_CARDS)
         self.mode_head = nn.Linear(TRUNK_HIDDEN, NUM_MODES)
+        self.country_head = nn.Linear(TRUNK_HIDDEN, NUM_COUNTRIES)
         self.value_head = nn.Linear(TRUNK_HIDDEN, 1)
 
     def forward(
@@ -83,7 +87,7 @@ class TSBaselineModel(nn.Module):
 
         Returns
         -------
-        dict with keys ``card_logits``, ``mode_logits``, ``value``.
+        dict with keys ``card_logits``, ``mode_logits``, ``country_logits``, ``value``.
         """
         h_inf = torch.relu(self.influence_encoder(influence))
         h_card = torch.relu(self.card_encoder(cards))
@@ -94,10 +98,12 @@ class TSBaselineModel(nn.Module):
 
         card_logits = self.card_head(hidden)
         mode_logits = self.mode_head(hidden)
+        country_logits = self.country_head(hidden)
         value = torch.tanh(self.value_head(hidden))
 
         return {
             "card_logits": card_logits,
             "mode_logits": mode_logits,
+            "country_logits": country_logits,
             "value": value,
         }
