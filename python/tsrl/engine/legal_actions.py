@@ -18,11 +18,12 @@ Implemented:
   - CMC coup-lock (blocks all BG coups while active)
   - Effective ops modifiers (Containment, Brezhnev, Red Scare, Iran-Contra, Vietnam Revolts)
   - Chernobyl regional influence block
+  - China Card +1 Asia ops (in enumerate_actions / sample_action)
+  - NATO prerequisite enforcement (Warsaw Pact or Marshall Plan required)
+  - UN Intervention (32): EVENT blocked when player holds no eligible opponent cards
 
 Remaining stubs (not yet enforced in legality):
-  - China Card full-ops requirement and +1 in Asia
-  - UN Intervention override
-  - Formosan Resolution Taiwan-as-battleground legality
+  - (none of note for Month 1)
 """
 from __future__ import annotations
 
@@ -78,7 +79,9 @@ _SPACE_ADVANCE_THRESHOLD = [3, 4, 3, 4, 3, 4, 3, 2]  # ≤ this to advance
 # Space Race: each side may attempt once per turn; a second attempt requires
 # the opponent to have already attempted (simplified: tracked via pub.space).
 # For Month 1 we just check the ops requirement.
-_SPACE_OPS_MINIMUM = [2, 2, 3, 3, 3, 4, 4, 4]  # min ops needed per level attempt
+_SPACE_OPS_MINIMUM = [2, 2, 2, 2, 3, 3, 3, 4]  # min ops needed per level attempt
+# Empirically verified from 50+ TSEspionage replay logs:
+# levels 0-3 accept 2-ops cards; levels 4-6 require 3+; level 7 requires 4+.
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +162,15 @@ def effective_ops(card_id: int, pub: PublicState, side: Side) -> int:
     base = spec.ops
     mod = pub.ops_modifier[int(side)]
     return max(1, base + mod)
+
+
+def _nato_prerequisite_met(pub: PublicState) -> bool:
+    """Return True once any card that enables NATO has resolved."""
+    return (
+        pub.warsaw_pact_played
+        or pub.marshall_plan_played
+        or pub.truman_doctrine_played
+    )
 
 
 def _nato_protected(cid: int, pub: PublicState) -> bool:
@@ -282,11 +294,7 @@ def legal_modes(
       - REALIGN: legal if card has ops ≥ 1 and accessible countries exist.
       - SPACE: legal if current space level < 8 and card meets ops minimum,
         and this side has not already space-raced this turn.
-      - EVENT: legal if card's event belongs to this side or is Neutral;
-        if event belongs to opponent, only ops play is legal (player may still
-        choose ops, but event fires — here we return EVENT as legal only for
-        own/neutral cards; playing opponent's card for ops is covered by the
-        other modes).
+      - EVENT: legal if card-specific prerequisites are satisfied.
 
     Not yet checked (stubs):
       - Bear Trap / Quagmire forced ops restriction.
@@ -317,19 +325,22 @@ def legal_modes(
         if accessible_realign:
             modes.add(ActionMode.REALIGN)
 
-        # SPACE: check ops requirement, space level, and per-turn attempt limit.
-        # §6.4.2: a player may only play 1 card per turn for Space Race.
+        # SPACE: any card with ops >= 1 may be played for Space Race (to discard it),
+        # as long as space level < 8 and the per-turn attempt limit hasn't been reached.
+        # §6.4.2 ops minimum (_SPACE_OPS_MINIMUM) gates whether an *advance* roll is
+        # possible — not whether the play itself is legal.  The digital game (TSEspionage)
+        # allows discarding any low-ops card via space (opponent cards with 1 op are
+        # commonly discarded this way), confirmed by observed replay logs.
         # Exception: reaching space 2 (Animal in Space) grants the ability to
         # play 2 Space Race cards per turn; this ability is cancelled when the
         # opponent also reaches space 2 (§6.4.4).
         level = pub.space[int(side)]
         if level < 8:
-            min_ops = _SPACE_OPS_MINIMUM[level]
             opp = Side.US if side == Side.USSR else Side.USSR
             opp_level = pub.space[int(opp)]
             max_space = 2 if (level >= 2 and opp_level < 2) else 1
             attempts = pub.space_attempts[int(side)]
-            if spec.ops >= min_ops and attempts < max_space:
+            if attempts < max_space:
                 modes.add(ActionMode.SPACE)
 
     # EVENT: legal for any card, regardless of which side it belongs to.
@@ -339,6 +350,8 @@ def legal_modes(
     #   a scoring card you can't hold across a turn boundary).
     # Trap restrictions below will remove EVENT if Bear Trap / Quagmire is active.
     modes.add(ActionMode.EVENT)
+    if card_id == 21 and not _nato_prerequisite_met(pub):
+        modes.discard(ActionMode.EVENT)
 
     # Trap enforcement: Bear Trap (USSR) and Quagmire (US).
     # While trapped, the player may only use cards for ops (INFLUENCE/COUP/REALIGN).
@@ -409,11 +422,16 @@ def enumerate_actions(
     playable = legal_cards(hand, pub, side, holds_china=holds_china)
     actions: list[ActionEncoding] = []
 
+    _UN_INTERVENTION_ID = 32
     for card_id in sorted(playable):
         if card_id not in cards_spec:
             continue
         spec = cards_spec[card_id]
         modes = legal_modes(card_id, pub, side, adj=g)
+        # UN Intervention (32): EVENT is a wasted no-op if player holds no eligible
+        # opponent cards to discard.  Remove EVENT mode in that case.
+        if card_id == _UN_INTERVENTION_ID and not _has_eligible_opponent_card(hand, side):
+            modes = modes - {ActionMode.EVENT}
 
         for mode in modes:
             if mode == ActionMode.SPACE:
@@ -443,6 +461,16 @@ def enumerate_actions(
                     actions.append(ActionEncoding(
                         card_id=card_id, mode=mode, targets=combo,
                     ))
+                # China Card: also enumerate 5-op (ops+1) combos if all targets are in Asia.
+                if card_id == _CHINA_CARD_ID:
+                    _ctry = load_countries()
+                    asia_pool = [c for c in accessible if _ctry.get(c) and _ctry[c].region == Region.ASIA]
+                    asia_pool = asia_pool[:max_influence_targets]
+                    if asia_pool:
+                        for combo in _multisets(asia_pool, ops + 1):
+                            actions.append(ActionEncoding(
+                                card_id=card_id, mode=mode, targets=combo,
+                            ))
 
             elif mode == ActionMode.INFLUENCE:
                 # Each op places 1 influence in a country.
@@ -452,6 +480,16 @@ def enumerate_actions(
                     actions.append(ActionEncoding(
                         card_id=card_id, mode=mode, targets=combo,
                     ))
+                # China Card: also enumerate 5-op (ops+1) combos if all targets are in Asia.
+                if card_id == _CHINA_CARD_ID:
+                    _ctry = load_countries()
+                    asia_pool = [c for c in accessible if _ctry.get(c) and _ctry[c].region == Region.ASIA]
+                    asia_pool = asia_pool[:max_influence_targets]
+                    if asia_pool:
+                        for combo in _multisets(asia_pool, ops + 1):
+                            actions.append(ActionEncoding(
+                                card_id=card_id, mode=mode, targets=combo,
+                            ))
 
     return actions
 
@@ -478,11 +516,15 @@ def sample_action(
     playable = sorted(legal_cards(hand, pub, side, holds_china=holds_china))
     r.shuffle(playable)
 
+    _UN_INTERVENTION_ID = 32
     for card_id in playable:
         if card_id not in cards_spec:
             continue
         spec = cards_spec[card_id]
-        modes = sorted(legal_modes(card_id, pub, side, adj=g))
+        modes = legal_modes(card_id, pub, side, adj=g)
+        if card_id == _UN_INTERVENTION_ID and not _has_eligible_opponent_card(hand, side):
+            modes = modes - {ActionMode.EVENT}
+        modes = sorted(modes)
         if not modes:
             continue
         mode = r.choice(modes)
@@ -500,6 +542,13 @@ def sample_action(
 
         # INFLUENCE or REALIGN: sample ops countries with replacement.
         ops = effective_ops(card_id, pub, side)
+        # China Card: with 50% probability, sample 5 ops from Asia-only pool.
+        if card_id == _CHINA_CARD_ID:
+            _ctry = load_countries()
+            asia_accessible = [c for c in accessible if _ctry.get(c) and _ctry[c].region == Region.ASIA]
+            if asia_accessible and r.random() < 0.5:
+                targets = tuple(r.choice(asia_accessible) for _ in range(ops + 1))
+                return ActionEncoding(card_id=card_id, mode=mode, targets=targets)
         targets = tuple(r.choice(accessible) for _ in range(ops))
         return ActionEncoding(card_id=card_id, mode=mode, targets=targets)
 
@@ -530,6 +579,23 @@ def has_legal_action(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _has_eligible_opponent_card(hand: frozenset[int], side: Side) -> bool:
+    """Return True if hand contains at least one non-scoring opponent-side card.
+
+    Used for UN Intervention (32) legality: the card is a no-op if the player
+    holds no opponent cards to discard.
+    """
+    cards_spec = _cards()
+    opp = Side.US if side == Side.USSR else Side.USSR
+    return any(
+        cid != _CHINA_CARD_ID
+        and cid in cards_spec
+        and cards_spec[cid].side == opp
+        and not cards_spec[cid].is_scoring
+        for cid in hand
+    )
 
 
 def _multisets(pool: list[int], size: int) -> list[tuple[int, ...]]:

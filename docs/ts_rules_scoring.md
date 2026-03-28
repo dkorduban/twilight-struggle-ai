@@ -89,12 +89,15 @@ Once all regions have been scored, victory goes to the player who has accrued mo
 
 ## ADJACENCY BONUS DETAILS
 
-The adjacency bonus applies to **Battleground countries only** — not non-BG countries:
-- +1 VP per **Battleground** country the scoring player controls that is adjacent to the enemy superpower
-- Empirically validated against 51 TSEspionage/ITS competitive logs (0 violations)
-- Non-BG countries adjacent to a superpower do NOT earn this bonus
+The adjacency bonus applies to **all controlled countries** (BG and non-BG) adjacent to the enemy superpower:
+- +1 VP per country (BG **or** non-BG) the scoring player controls that is adjacent to the enemy superpower
+- This is the literal reading of §10.1.2: "+ VP per country they Control in the scoring region that is adjacent to the enemy superpower"
+- The rulebook makes no BG-only restriction for the adjacency bonus; the BG-only restriction is only for the separate BG bonus
 
-This matches the ITS competitive rules and is implemented in scoring.py _side_score().
+**NOTE:** A previous version of this doc erroneously stated adjacency bonus was BG-only.
+That claim was wrong — see §10.1.2 text above which says "country", not "Battleground country".
+The rule says: "+VP per **Battleground country** they Control" (BG bonus) AND
+"+VP per **country** they Control adjacent to enemy superpower" (adjacency bonus — any country).
 
 ## CHINA CARD BONUS IN ASIA SCORING
 

@@ -40,7 +40,7 @@ from tsrl.engine.game_state import (
     reset,
 )
 from tsrl.engine.legal_actions import enumerate_actions, legal_cards, sample_action
-from tsrl.engine.step import apply_action, _check_vp_win
+from tsrl.engine.step import _check_vp_win, _copy_pub, apply_action
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side
 
 # ---------------------------------------------------------------------------
@@ -72,9 +72,71 @@ def _apply_action_with_hands(
     GameState.deck, so they cannot go through the PublicState-only apply_action.
     All other cards and modes go through the standard apply_action path.
     """
+    # §5.2: firing opponent's event when playing their card for ops.
+    if action.mode != ActionMode.EVENT:
+        from tsrl.etl.game_data import load_cards as _lc
+
+        _cards = _lc()
+        opp = Side.US if side == Side.USSR else Side.USSR
+        card_spec = _cards.get(action.card_id)
+        if card_spec is not None and card_spec.side == opp:
+            new_pub, over, winner = fire_opponent_event(gs, action.card_id, opp, rng)
+            gs.pub = new_pub
+            if over:
+                return new_pub, True, winner
+
     if action.mode == ActionMode.EVENT and action.card_id in _CAT_C_CARD_IDS:
-        return apply_hand_event(gs, action, side, rng)
-    new_pub, over, winner = apply_action(gs.pub, action, side, rng=rng)
+        new_pub, over, winner = apply_hand_event(gs, action, side, rng)
+    else:
+        new_pub, over, winner = apply_action(gs.pub, action, side, rng=rng)
+        gs.pub = new_pub
+
+    if over:
+        return new_pub, True, winner
+
+    # §6.4.4 level 6: if opponent has the first-to-reach-6 advantage, they discard a card.
+    if action.mode == ActionMode.SPACE:
+        opp = Side.US if side == Side.USSR else Side.USSR
+        l6_holder = gs.pub.space_level6_first
+        # Advantage is cancelled if both sides have reached level 6.
+        if (
+            l6_holder == opp
+            and gs.pub.space[int(opp)] >= 6
+            and gs.pub.space[int(side)] < 6
+        ):
+            opp_hand = gs.hands[opp]
+            if opp_hand:
+                discard_card = min(opp_hand)
+                gs.hands[opp] = opp_hand - {discard_card}
+                new_pub_copy = _copy_pub(gs.pub)
+                new_pub_copy.discard = new_pub_copy.discard | {discard_card}
+                gs.pub = new_pub_copy
+                new_pub = gs.pub
+
+    return new_pub, over, winner
+
+
+def fire_opponent_event(
+    gs: GameState,
+    card_id: int,
+    opp_side: Side,
+    rng: random.Random,
+) -> tuple[PublicState, bool, Optional[Side]]:
+    """Fire the event on an opponent's card as a side effect of ops play (§5.2).
+
+    This fires the full event effect AND card lifecycle (_handle_card_played /
+    _card_played) for the card owner side. The ops path's _handle_card_played
+    call will be a no-op because of the idempotency guard added there.
+
+    Cat C cards (hand/deck manipulation) go through apply_hand_event.
+    All others go through apply_action with mode=EVENT.
+    """
+    from tsrl.schemas import ActionEncoding, ActionMode
+
+    event_action = ActionEncoding(card_id=card_id, mode=ActionMode.EVENT, targets=())
+    if card_id in _CAT_C_CARD_IDS:
+        return apply_hand_event(gs, event_action, opp_side, rng)
+    new_pub, over, winner = apply_action(gs.pub, event_action, opp_side, rng=rng)
     gs.pub = new_pub
     return new_pub, over, winner
 
@@ -118,6 +180,18 @@ class GameResult:
 _MID_WAR_TURN: int = 4
 _LATE_WAR_TURN: int = 8
 _MAX_TURNS: int = 10
+_SPACE_SHUTTLE_ARS: int = 8
+
+
+def _ars_for_side(pub: PublicState, side: Side, normal_ars: int) -> int:
+    """Return this side's AR allotment for the current turn.
+
+    Reaching space race level 8 ("Space Shuttle") grants 8 action rounds for
+    the rest of the game.
+    """
+    if pub.space[int(side)] >= _SPACE_SHUTTLE_ARS:
+        return _SPACE_SHUTTLE_ARS
+    return normal_ars
 
 
 def play_game(
@@ -219,7 +293,22 @@ def _run_headline_phase(
     policies = {Side.USSR: ussr_policy, Side.US: us_policy}
     chosen: dict[Side, ActionEncoding] = {}
 
-    for side in (Side.USSR, Side.US):
+    # §6.4.4 level 4: if one side has the peek advantage, opponent picks first (blind).
+    peek_side = gs.pub.space_level4_first
+    if (
+        peek_side is not None
+        and gs.pub.space[int(peek_side)] >= 4
+        and gs.pub.space[int(Side.US if peek_side == Side.USSR else Side.USSR)] >= 4
+    ):
+        peek_side = None
+
+    if peek_side is not None:
+        blind_side = Side.US if peek_side == Side.USSR else Side.USSR
+        pick_order = [blind_side, peek_side]
+    else:
+        pick_order = [Side.USSR, Side.US]
+
+    for side in pick_order:
         hand = gs.hands[side]
         holds_china = (side == Side.USSR and gs.ussr_holds_china) or \
                       (side == Side.US and gs.us_holds_china)
@@ -364,15 +453,20 @@ def _run_action_rounds(
     start_ar: int = 1,
     start_side_idx: int = 0,   # 0=USSR first, 1=US first within first AR
 ) -> Optional[GameResult]:
-    """Run action rounds from start_ar/start_side_idx to total_ars, alternating USSR/US."""
+    """Run action rounds, honoring per-side space level 8 extra ARs."""
     gs.phase = GamePhase.ACTION_ROUND
     policies = {Side.USSR: ussr_policy, Side.US: us_policy}
     sides = (Side.USSR, Side.US)
 
-    for ar in range(start_ar, total_ars + 1):
-        gs.pub.ar = ar
+    for ar in range(start_ar, _SPACE_SHUTTLE_ARS + 1):
         _first_side = start_side_idx if ar == start_ar else 0
+        ar_started = False
         for side in sides[_first_side:]:
+            if ar > _ars_for_side(gs.pub, side, total_ars):
+                continue
+            if not ar_started:
+                gs.pub.ar = ar
+                ar_started = True
             gs.pub.phasing = side
             hand = gs.hands[side]
             holds_china = (side == Side.USSR and gs.ussr_holds_china) or \
@@ -676,7 +770,6 @@ def play_from_state(
     if gs.phase == GamePhase.ACTION_ROUND:
         # Continue from the NEXT side in the current AR.
         # pub.phasing is the side that just acted; next = the other side.
-        sides = (Side.USSR, Side.US)
         if gs.pub.phasing == Side.USSR:
             # USSR just went; US still needs to act this AR.
             start_side = 1
@@ -685,13 +778,12 @@ def play_from_state(
             start_side = 0
             gs.pub.ar += 1  # advance AR counter before resuming
 
-        if gs.pub.ar <= total_ars:
-            result = _run_action_rounds(
-                gs, ussr_policy, us_policy, _rng, total_ars,
-                start_ar=gs.pub.ar, start_side_idx=start_side,
-            )
-            if result:
-                return result
+        result = _run_action_rounds(
+            gs, ussr_policy, us_policy, _rng, total_ars,
+            start_ar=gs.pub.ar, start_side_idx=start_side,
+        )
+        if result:
+            return result
 
     elif gs.phase == GamePhase.HEADLINE:
         result = _run_headline_phase(gs, ussr_policy, us_policy, _rng)

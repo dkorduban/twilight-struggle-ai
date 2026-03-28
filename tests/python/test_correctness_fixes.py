@@ -10,6 +10,7 @@ Covers:
   Fix 6: Olympic Games boycott / compete mechanics
   Fix 7: Five Year Plan scoring card causes immediate scoring
   Fix 8: Bear Trap / Quagmire forfeit AR when no eligible escape card
+  Fix 9: UN Intervention EVENT blocked when player has no eligible opponent cards
 """
 from __future__ import annotations
 
@@ -418,13 +419,8 @@ def test_wargames_draw_on_zero():
 
 
 def test_olympic_games_boycott_defcon_drops():
-    """Boycott path: DEFCON decreases by 1, opponent gains 2 VP."""
+    """Boycott path: DEFCON decreases by 1; phasing player gets 4 free influence ops (not 2 VP)."""
     from tsrl.engine.events import apply_event_card
-
-    # Force boycott (50% chance): use a seeded rng that picks < 0.5 on first call.
-    # We monkey-patch to ensure the boycott branch.
-    import tsrl.engine.events as ev_mod
-    orig_random_method = None
 
     class _FixedRng:
         def random(self):
@@ -433,13 +429,16 @@ def test_olympic_games_boycott_defcon_drops():
         def randint(self, a, b):
             return a
 
+        def choice(self, seq):
+            return seq[0]
+
     rng = _FixedRng()
     pub = _make_pub(defcon=4, vp=0)
     # USSR plays Olympic Games (card 20).
     new_pub, over, winner = apply_event_card(pub, 20, Side.USSR, rng)  # type: ignore[arg-type]
     assert new_pub.defcon == 3, f"DEFCON should drop from 4 to 3, got {new_pub.defcon}"
-    # Opponent (US) gains 2 VP → vp decreases.
-    assert new_pub.vp == -2, f"US gains 2 VP → vp should be -2, got {new_pub.vp}"
+    # Boycott no longer gives VP — phasing player (USSR) gets 4 free ops instead.
+    assert new_pub.vp == 0, f"Boycott should not change VP directly, got {new_pub.vp}"
 
 
 def test_olympic_games_compete_2vp():
@@ -777,54 +776,55 @@ def test_flower_power_no_vp_when_ussr_plays_war_card():
 # ---------------------------------------------------------------------------
 # Scoring VP correctness — adjacency bonus must only apply to BG countries
 # ---------------------------------------------------------------------------
-# Regression for bug found in tsreplayer_14 T5 AR3 CA scoring:
-# USSR controlled Mexico (42, non-BG, adj to USA) and Panama (44, BG).
-# Old code awarded adj_bonus for Mexico (non-BG) → engine=+5, log=+4.
-# Fix: adj bonus restricted to BG countries only.
+# Regression for tsreplayer_14 T5 AR3 CA scoring.
+# USSR controlled Mexico (42, BG, adj to USA) and Panama (44, BG, not adj to USA).
+# Log: USSR gains 4 VP.
 #
-# CA BGs: Cuba(36), Panama(44).
-# Countries adjacent to USA (81) in CA: Cuba(36), Mexico(42).
-# Setup: USSR controls Mexico(42) + Panama(44), US controls nothing.
-# Expected: USSR=Domination(3) + BG_bonus(1 for Panama) + adj_bonus(0, Mexico is non-BG) = 4
-#           US=NONE=0  →  vp_delta = +4
+# Mexico IS a battleground (stability 2, not stab 3 like Cuba).
+# CA BGs: Cuba(36), Mexico(42), Panama(44).
+# Adjacent to USA in CA: Cuba(36), Mexico(42).
+#
+# The key insight: USSR controlled ONLY BGs (non_bgs=0), so the domination
+# threshold (requires ≥1 non-BG country) is NOT met.  USSR is at PRESENCE tier.
+# Scoring: Presence(1) + BG_bonus(2 for Mexico+Panama) + adj_bonus(1 for Mexico adj USA) = 4.
 # ---------------------------------------------------------------------------
 
-_CA_MEXICO = 42   # Central America, non-BG, stability 2, adj to USA
+_CA_MEXICO = 42   # Central America, BG, stability 2, adj to USA
 _CA_PANAMA = 44   # Central America, BG, stability 2
 _CA_CUBA   = 36   # Central America, BG, stability 3, adj to USA
 
 
-def test_ca_scoring_adj_bonus_only_for_bg_countries():
-    """adj-to-enemy-superpower bonus applies only to BG countries, not all countries.
+def test_ca_scoring_presence_tier_when_only_bgs_controlled():
+    """USSR at Presence (not Domination) when controlling only BG countries.
 
-    Regression: tsreplayer_14 T5 AR3 — USSR Domination in CA.
-    Mexico (non-BG, adj USA) must NOT contribute to adj_bonus for USSR.
-    Expected vp_delta = +4 (Domination base=3 + Panama BG bonus=1).
+    Regression: tsreplayer_14 T5 AR3 — USSR controls Mexico(BG,adj USA) + Panama(BG).
+    Domination requires ≥1 non-BG country; without that, tier = Presence.
+    Expected: Presence(1) + BG_bonus(2) + adj_bonus(1 for Mexico adj USA) = 4.
     """
     from tsrl.engine.scoring import score_region
     from tsrl.schemas import PublicState, Region, Side
 
     pub = PublicState()
-    # USSR controls Mexico (non-BG, stability 2): needs 2 inf, no US inf there
+    # USSR controls Mexico (BG, stability 2): needs 2 inf, no US inf there
     pub.influence[(Side.USSR, _CA_MEXICO)] = 2
     # USSR controls Panama (BG, stability 2): needs 2 inf
     pub.influence[(Side.USSR, _CA_PANAMA)] = 2
-    # US controls nothing in CA
+    # US controls nothing in CA — USSR has only BGs (non_bgs=0) → Presence tier
 
     result = score_region(Region.CENTRAL_AMERICA, pub)
     assert result.vp_delta == 4, (
-        f"Expected vp_delta=+4 (USSR Domination base=3 + Panama BG=1, no adj bonus for "
-        f"non-BG Mexico), got vp_delta={result.vp_delta}. "
-        f"Bug: adj bonus must be restricted to BG countries only."
+        f"Expected vp_delta=+4 (Presence=1 + BG_bonus=2 + adj_bonus=1 for Mexico adj USA), "
+        f"got vp_delta={result.vp_delta}."
     )
 
 
-def test_ca_scoring_adj_bonus_does_apply_for_bg_adj_to_superpower():
-    """USSR adj bonus DOES apply when the controlled BG country is adjacent to USA.
+def test_ca_scoring_adj_bonus_applies_to_all_controlled_countries_adj_superpower():
+    """adj bonus applies to any controlled country adjacent to enemy superpower (BG or not).
 
-    Cuba (36) is BG AND adjacent to USA. USSR controlling Cuba earns +1 adj bonus.
-    Setup: USSR controls Cuba(BG, adj USA) + Honduras(non-BG), US controls nothing.
-    Expected: USSR=Domination(3) + Cuba_BG_bonus(1) + Cuba_adj_bonus(1) = 5.
+    Cuba (BG, adj USA) + Honduras (non-BG) → USSR reaches Domination tier and
+    Cuba earns both BG_bonus and adj_bonus.  Honduras (non-BG, not adj USA) earns
+    neither bonus but satisfies the non_bgs≥1 domination requirement.
+    Expected: Domination(3) + BG_bonus(1 for Cuba) + adj_bonus(1 for Cuba adj USA) = 5.
     """
     from tsrl.engine.scoring import score_region
     from tsrl.schemas import PublicState, Region, Side
@@ -834,7 +834,7 @@ def test_ca_scoring_adj_bonus_does_apply_for_bg_adj_to_superpower():
     pub = PublicState()
     # USSR controls Cuba (BG, stab=3, adj USA): needs 3 inf
     pub.influence[(Side.USSR, _CA_CUBA)] = 3
-    # USSR controls Honduras (non-BG, stab=2): needs 2 inf
+    # USSR controls Honduras (non-BG, stab=2): needs 2 inf — provides non_bgs=1 → Domination
     pub.influence[(Side.USSR, _CA_HONDURAS)] = 2
     # US controls nothing
 
@@ -843,6 +843,134 @@ def test_ca_scoring_adj_bonus_does_apply_for_bg_adj_to_superpower():
     assert result.vp_delta == 5, (
         f"Expected vp_delta=+5 (USSR Domination=3, Cuba BG=1, Cuba adj USA=1), "
         f"got {result.vp_delta}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fix: adj bonus applies to ALL controlled countries adj to enemy superpower,
+#      not only battleground countries.
+#
+# Affected non-BG countries adjacent to a superpower:
+#   Canada (2, non-BG, adj USA)  — Europe
+#   Finland (6, non-BG, adj USSR) — Europe
+#   Romania (13, non-BG, adj USSR) — Europe
+#   Afghanistan (20, non-BG, adj USSR) — Asia
+#
+# With BG-only logic these would earn 0 adj bonus; correct rule gives +1 each.
+#
+# These tests are written in TDD style: they assert the CORRECT (all-country)
+# behavior and would have FAILED under the old BG-only scoring code.
+# ---------------------------------------------------------------------------
+
+_EU_CANADA      = 2   # Europe, non-BG, stab 4, adj USA
+_EU_FINLAND     = 6   # Europe, non-BG, stab 4, adj USSR
+_EU_ROMANIA     = 13  # Europe, non-BG, stab 3, adj USSR
+_EU_FRANCE      = 7   # Europe, BG, stab 3
+_EU_ITALY       = 10  # Europe, BG, stab 2
+_EU_W_GERMANY   = 18  # Europe, BG, stab 4, adj USSR
+_AS_AFGHANISTAN = 20  # Asia, non-BG, stab 2, adj USSR
+_AS_S_KOREA     = 25  # Asia, BG, stab 3
+
+
+def test_adj_bonus_for_non_bg_canada_adj_usa():
+    """US-controlled Canada (non-BG, adj USA) earns +1 adj bonus for USSR scoring.
+
+    With BG-only logic Canada would give 0 adj bonus (non-BG).
+    With all-country logic Canada gives +1 adj bonus to USSR if USSR controls it.
+    """
+    from tsrl.engine.scoring import score_region
+    from tsrl.schemas import PublicState, Region, Side
+
+    pub = PublicState()
+    # USSR controls Canada (non-BG, stab=4): needs 4 inf
+    pub.influence[(Side.USSR, _EU_CANADA)] = 4
+    # USSR also controls France (BG, stab=3) to reach Domination
+    pub.influence[(Side.USSR, _EU_FRANCE)] = 3
+    # US controls nothing
+
+    result = score_region(Region.EUROPE, pub)
+    # USSR: Domination(3) + BG_bonus(1 for France) + adj_bonus(1 for Canada adj USA) = 5
+    # With BG-only: Domination(3) + BG_bonus(1) + adj_bonus(0) = 4
+    assert result.vp_delta == 5, (
+        f"Expected vp_delta=+5 (Domination=3 + France BG=1 + Canada adj USA=1), "
+        f"got {result.vp_delta}. "
+        f"Canada is non-BG but adj to USA — must contribute adj_bonus."
+    )
+
+
+def test_adj_bonus_for_non_bg_finland_adj_ussr():
+    """US-controlled Finland (non-BG, adj USSR) earns +1 adj bonus for US scoring.
+
+    With BG-only logic Finland would give 0 adj bonus (non-BG).
+    With all-country logic Finland gives +1 adj bonus to US if US controls it.
+    """
+    from tsrl.engine.scoring import score_region
+    from tsrl.schemas import PublicState, Region, Side
+
+    pub = PublicState()
+    # US controls Finland (non-BG, stab=4): needs 4 inf
+    pub.influence[(Side.US, _EU_FINLAND)] = 4
+    # US also controls Italy (BG, stab=2) to reach Domination
+    pub.influence[(Side.US, _EU_ITALY)] = 2
+    # USSR controls nothing
+
+    result = score_region(Region.EUROPE, pub)
+    # US: Domination(3) + BG_bonus(1 for Italy) + adj_bonus(1 for Finland adj USSR) = 5 → -5
+    # With BG-only: -(Domination(3) + BG_bonus(1) + adj_bonus(0)) = -4
+    assert result.vp_delta == -5, (
+        f"Expected vp_delta=-5 (US Domination=3 + Italy BG=1 + Finland adj USSR=1), "
+        f"got {result.vp_delta}. "
+        f"Finland is non-BG but adj to USSR — must contribute adj_bonus."
+    )
+
+
+def test_adj_bonus_for_non_bg_romania_adj_ussr():
+    """US-controlled Romania (non-BG, adj USSR) earns +1 adj bonus for US scoring.
+
+    Romania (stab=3, non-BG, adj USSR) — if US controls it, +1 US adj bonus.
+    """
+    from tsrl.engine.scoring import score_region
+    from tsrl.schemas import PublicState, Region, Side
+
+    pub = PublicState()
+    # US controls Romania (non-BG, stab=3): needs 3 inf
+    pub.influence[(Side.US, _EU_ROMANIA)] = 3
+    # US also controls Italy (BG, stab=2) to reach Domination
+    pub.influence[(Side.US, _EU_ITALY)] = 2
+    # USSR controls nothing
+
+    result = score_region(Region.EUROPE, pub)
+    # US: Domination(3) + BG_bonus(1 for Italy) + adj_bonus(1 for Romania adj USSR) = 5 → -5
+    # With BG-only: -(Domination(3) + BG_bonus(1) + adj_bonus(0)) = -4
+    assert result.vp_delta == -5, (
+        f"Expected vp_delta=-5 (US Domination=3 + Italy BG=1 + Romania adj USSR=1), "
+        f"got {result.vp_delta}. "
+        f"Romania is non-BG but adj to USSR — must contribute adj_bonus."
+    )
+
+
+def test_adj_bonus_for_non_bg_afghanistan_adj_ussr():
+    """US-controlled Afghanistan (non-BG, adj USSR) earns +1 adj bonus for US Asia scoring.
+
+    Afghanistan (stab=2, non-BG, adj USSR) — if US controls it, +1 US adj bonus.
+    """
+    from tsrl.engine.scoring import score_region
+    from tsrl.schemas import PublicState, Region, Side
+
+    pub = PublicState()
+    # US controls Afghanistan (non-BG, stab=2): needs 2 inf
+    pub.influence[(Side.US, _AS_AFGHANISTAN)] = 2
+    # US also controls South Korea (BG, stab=3) to reach Domination
+    pub.influence[(Side.US, _AS_S_KOREA)] = 3
+    # USSR controls nothing
+
+    result = score_region(Region.ASIA, pub)
+    # US: Domination(7) + BG_bonus(1 for S.Korea) + adj_bonus(1 for Afghanistan adj USSR) = 9
+    # With BG-only: -(Domination(7) + BG_bonus(1) + adj_bonus(0)) = -8
+    assert result.vp_delta == -9, (
+        f"Expected vp_delta=-9 (US Domination=7 + S.Korea BG=1 + Afghanistan adj USSR=1), "
+        f"got {result.vp_delta}. "
+        f"Afghanistan is non-BG but adj to USSR — must contribute adj_bonus."
     )
 
 
@@ -905,4 +1033,55 @@ def test_bear_trap_still_blocks_event_for_non_scoring():
     modes = legal_modes(_CARD_NUCLEAR_TEST_BAN, pub, Side.USSR, adj=adj)
     assert ActionMode.EVENT not in modes, (
         f"Non-scoring card should NOT have EVENT during Bear Trap; got modes={modes}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fix 9: UN Intervention (32) legality — hand check
+# ---------------------------------------------------------------------------
+
+_UN_INTERVENTION = 32
+# Card 5 = Truman Doctrine (US side, non-scoring) — an opponent card for USSR
+_CARD_TRUMAN_DOCTRINE = 5
+# Card 7 = Socialist Governments (USSR side, non-scoring)
+_CARD_SOCIALIST_GOV_ID = 7
+
+
+def test_un_intervention_event_blocked_when_no_opponent_cards():
+    """UN Intervention EVENT is not enumerated if hand has no eligible opponent cards."""
+    from tsrl.engine.legal_actions import enumerate_actions
+    pub = PublicState()
+    # Hand holds only same-side cards (no US cards for USSR player).
+    hand = frozenset({_UN_INTERVENTION, _CARD_SOCIALIST_GOV_ID})
+    actions = enumerate_actions(hand, pub, Side.USSR)
+    event_actions = [a for a in actions if a.card_id == _UN_INTERVENTION and a.mode == ActionMode.EVENT]
+    assert not event_actions, (
+        "UN Intervention EVENT should be blocked when USSR holds no US-side cards; "
+        f"got {event_actions}"
+    )
+
+
+def test_un_intervention_event_legal_when_opponent_card_in_hand():
+    """UN Intervention EVENT is legal when hand contains at least one opponent card."""
+    from tsrl.engine.legal_actions import enumerate_actions
+    pub = PublicState()
+    # Hand holds UN Intervention + one US-side card (Truman Doctrine id=5).
+    hand = frozenset({_UN_INTERVENTION, _CARD_TRUMAN_DOCTRINE})
+    actions = enumerate_actions(hand, pub, Side.USSR)
+    event_actions = [a for a in actions if a.card_id == _UN_INTERVENTION and a.mode == ActionMode.EVENT]
+    assert event_actions, (
+        "UN Intervention EVENT should be legal when USSR holds a US-side card"
+    )
+
+
+def test_un_intervention_ops_still_legal_when_no_opponent_cards():
+    """Ops modes (INFLUENCE/COUP/REALIGN) for UN Intervention remain legal regardless."""
+    from tsrl.engine.legal_actions import legal_modes
+    from tsrl.engine.adjacency import load_adjacency
+    pub = PublicState()
+    adj = load_adjacency()
+    # Even without the hand check in legal_modes, ops modes should be present.
+    modes = legal_modes(_UN_INTERVENTION, pub, Side.USSR, adj=adj)
+    assert ActionMode.INFLUENCE in modes or ActionMode.COUP in modes or ActionMode.REALIGN in modes, (
+        f"UN Intervention should still have ops modes; got {modes}"
     )

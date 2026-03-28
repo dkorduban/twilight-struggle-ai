@@ -73,15 +73,21 @@ def reduce_public(state: PublicState, event: ReplayEvent) -> PublicState:
     elif kind == EventKind.TURN_START:
         s.turn = event.turn
         s.ar = 0
-        # Mil ops reset at the start of each turn
+        # Reset per-turn counters at the start of each turn.
         s.milops = [0, 0]
+        s.space_attempts = [0, 0]
+        # ops_modifier is NOT reset here; it persists until CARD_EXPIRED events fire.
 
     elif kind == EventKind.HEADLINE_PHASE_START:
         s.turn = event.turn
         s.ar = 0
         # Real TSEspionage logs use HEADLINE_PHASE_START as the turn boundary.
-        # TURN_START is never emitted by the game server; reset milops here.
+        # TURN_START is never emitted by the game server; reset per-turn counters here.
+        # NOTE: milops penalty is applied in reduce_game (not here) because it depends
+        # on whether the log already emitted Cleanup VP_CHANGE events via TURN_END.
         s.milops = [0, 0]
+        s.space_attempts = [0, 0]
+        # ops_modifier is NOT reset here; it persists until CARD_EXPIRED events fire.
 
     elif kind == EventKind.ACTION_ROUND_START:
         s.ar = event.ar
@@ -197,10 +203,50 @@ def reduce_public(state: PublicState, event: ReplayEvent) -> PublicState:
         if event.card_id is not None:
             s.discard = s.discard | {event.card_id}
 
+    elif kind == EventKind.SPACE_RACE:
+        # SPACE_RACE events carry the absolute new space level in event.amount.
+        # "USSR/US advances to N in the Space Race." → update pub.space[side].
+        if event.amount is not None and event.phasing in (Side.USSR, Side.US):
+            s.space[int(event.phasing)] = event.amount
+
+    elif kind == EventKind.CARD_IN_PLAY:
+        # Track ops-modifier effects from persistent-effect cards.
+        # These effects last until end-of-turn (ops_modifier is reset at HEADLINE_PHASE_START).
+        _apply_ops_modifier_effect(s, event.card_id, event.phasing, delta=+1)
+        # Track one-time prerequisite flags and ongoing effects.
+        cid = event.card_id
+        if cid == 16:   # Warsaw Pact Formed: enables NATO
+            s.warsaw_pact_played = True
+        elif cid == 23: # Marshall Plan: enables NATO
+            s.marshall_plan_played = True
+        elif cid == 19: # Truman Doctrine: enables NATO (also removes USSR inf from neutral EU)
+            s.truman_doctrine_played = True
+        elif cid == 21: # NATO: active protection for US-controlled WE countries
+            s.nato_active = True
+        elif cid == 74: # Shuttle Diplomacy: next Asia/ME scoring ignores highest-stability BG
+            s.shuttle_diplomacy_active = True
+        elif cid == 35: # Formosan Resolution: Taiwan counts as BG for US in Asia scoring (permanent)
+            s.formosan_active = True
+        elif cid == 17: # De Gaulle Leads France: France excluded from NATO protection
+            s.de_gaulle_active = True
+        elif cid == 58: # Willy Brandt: West Germany excluded from NATO protection
+            s.willy_brandt_active = True
+
+    elif kind == EventKind.CARD_EXPIRED:
+        # Reverse the ops-modifier applied when the card came into play.
+        _apply_ops_modifier_effect(s, event.card_id, event.phasing, delta=-1)
+        # Clear ongoing-effect flags for cards that can expire.
+        cid = event.card_id
+        if cid == 74:   # Shuttle Diplomacy consumed by Asia/ME scoring
+            s.shuttle_diplomacy_active = False
+        elif cid == 17: # De Gaulle expires
+            s.de_gaulle_active = False
+        elif cid == 58: # Willy Brandt expires
+            s.willy_brandt_active = False
+
     elif kind in (
         EventKind.COUP,
         EventKind.REALIGN,
-        EventKind.SPACE_RACE,
         EventKind.SCORING,
         EventKind.HEADLINE,
         EventKind.REVEAL_HAND,
@@ -208,8 +254,6 @@ def reduce_public(state: PublicState, event: ReplayEvent) -> PublicState:
         EventKind.DRAW,
         EventKind.END_TURN_HELD,
         EventKind.ACTION_ROUND_START,
-        EventKind.CARD_IN_PLAY,
-        EventKind.CARD_EXPIRED,
         EventKind.TURN_END,
     ):
         # These events may affect HandKnowledge but not PublicState directly
@@ -397,9 +441,35 @@ def reduce_game(
 
     results: list[tuple[PublicState, HandKnowledge, HandKnowledge]] = []
 
+    # Track whether the current turn had an explicit Cleanup (TURN_END) event.
+    # Some log formats include "Turn N, Cleanup: VP" lines (emitted as TURN_END +
+    # VP_CHANGE), which already apply the milops penalty.  When such events exist,
+    # we must NOT double-apply the penalty at HEADLINE_PHASE_START.
+    cleanup_seen_this_turn: bool = False
+
     for event in events:
         prev_pub = pub
+
+        if event.kind == EventKind.TURN_END:
+            cleanup_seen_this_turn = True
+
         pub = reduce_public(pub, event)
+
+        # Apply end-of-turn milops VP penalty only if the log did NOT emit it as a
+        # Cleanup VP_CHANGE event.  The penalty = max(0, DEFCON - milops) per side,
+        # using the DEFCON and milops from BEFORE the headline reset.
+        if event.kind == EventKind.HEADLINE_PHASE_START and event.turn > 1 and not cleanup_seen_this_turn:
+            defcon = prev_pub.defcon
+            ussr_shortfall = max(0, defcon - prev_pub.milops[int(Side.USSR)])
+            us_shortfall = max(0, defcon - prev_pub.milops[int(Side.US)])
+            penalty = us_shortfall - ussr_shortfall
+            if penalty != 0:
+                pub = _copy_public(pub)
+                pub.vp += penalty
+
+        if event.kind == EventKind.HEADLINE_PHASE_START:
+            cleanup_seen_this_turn = False
+
         ussr_hand = reduce_hand(ussr_hand, event, all_card_ids, prev_pub)
         us_hand = reduce_hand(us_hand, event, all_card_ids, prev_pub)
         results.append((pub, ussr_hand, us_hand))
@@ -412,11 +482,56 @@ def reduce_game(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Ops-modifier card table
+# ---------------------------------------------------------------------------
+# Cards that set a persistent ops_modifier effect for the remainder of the turn.
+# Key: card_id → (side_affected, delta_per_play)
+# For Red Scare/Purge: side_affected is the OPPONENT of the player who plays it.
+_USSR_SIDE: int = int(Side.USSR)
+_US_SIDE: int = int(Side.US)
+
+# Cards with persistent ops-modifier effects.
+# Format: card_id → (side_idx_or_None, magnitude)
+# - side_idx is None for Red Scare/Purge (affects opponent of phasing side).
+# - For all other cards the affected side is fixed, regardless of who played it.
+_OPS_MODIFIER_CARDS: dict[int, tuple[int | None, int]] = {
+    9:  (int(Side.USSR), +1),   # Vietnam Revolts → USSR +1 (tracked globally)
+    25: (int(Side.US),  +1),    # Containment* → US +1
+    31: (None,          -1),    # Red Scare/Purge → opponent of phasing side, -1
+    54: (int(Side.USSR), +1),   # Brezhnev Doctrine → USSR +1
+    96: (int(Side.US),  -1),    # Iran-Contra Scandal → US -1
+}
+
+
+def _apply_ops_modifier_effect(
+    s: "PublicState",
+    card_id: int | None,
+    phasing: "Side",
+    delta: int,
+) -> None:
+    """Apply (or reverse) the ops-modifier effect of a card coming into play.
+
+    delta=+1 when card comes into play; delta=-1 when it expires.
+    """
+    if card_id is None or card_id not in _OPS_MODIFIER_CARDS:
+        return
+    side_idx, magnitude = _OPS_MODIFIER_CARDS[card_id]
+    if side_idx is None:
+        # Red Scare/Purge: affects the opponent of whoever played the card.
+        if phasing not in (Side.USSR, Side.US):
+            return
+        side_idx = 1 - int(phasing)
+    s.ops_modifier[side_idx] += delta * magnitude
+
+
 def _copy_public(s: PublicState) -> PublicState:
     """Shallow copy of PublicState with mutable fields copied."""
     c = copy.copy(s)
     c.milops = list(s.milops)
     c.space = list(s.space)
+    c.space_attempts = list(s.space_attempts)
+    c.ops_modifier = list(s.ops_modifier)
     c.influence = dict(s.influence)
     # frozensets are immutable — safe to share
     return c

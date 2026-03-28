@@ -11,10 +11,6 @@ Category C cards (hand/deck manipulation) are handled in cat_c_events.py
 because they need access to GameState.hands and GameState.deck.
 
 Remaining stubs (noted in individual docstrings):
-  - NATO prerequisite enforcement (Warsaw Pact, Marshall Plan, Truman Doctrine)
-  - Solidarity prerequisite (John Paul II must precede)
-  - Formosan Resolution Taiwan scoring
-  - CMC cancellation conditions (remove inf from Cuba/Turkey/WG)
   - UN Intervention hand-check
 """
 from __future__ import annotations
@@ -22,7 +18,7 @@ from __future__ import annotations
 import random
 from typing import Callable, Collection, Optional
 
-from tsrl.schemas import PublicState, Region, Side
+from tsrl.schemas import ActionMode, PublicState, Region, Side
 
 # ---------------------------------------------------------------------------
 # Region / country sets
@@ -288,7 +284,7 @@ def _event_warsaw_pact(
     Branch A: remove all US inf from up to 4 Eastern Bloc countries.
     Branch B: place 5 USSR inf (1 each) in up to 5 Eastern Bloc countries.
     Branch chosen randomly.
-    Per rules, playing Warsaw Pact enables NATO (prerequisite tracking not yet enforced).
+    Sets the NATO prerequisite flag for future plays.
     """
     branch = rng.choice(['A', 'B'])
     if branch == 'A':
@@ -301,6 +297,7 @@ def _event_warsaw_pact(
         chosen = _sample_up_to(pool, 5, rng)
         for cid in chosen:
             _add_influence(pub, Side.USSR, cid, 1)
+    pub.warsaw_pact_played = True
     return pub, False, None
 
 
@@ -317,12 +314,13 @@ def _event_marshall_plan(
     pub: PublicState, side: Side, rng: random.Random
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 23: Marshall Plan*. Place 1 US inf in up to 7 WE countries not USSR-controlled.
-    Per rules, playing Marshall Plan enables NATO (prerequisite tracking not yet enforced).
+    Sets the NATO prerequisite flag for future plays.
     """
     pool = [cid for cid in _WESTERN_EUROPE if not _controls(Side.USSR, cid, pub)]
     chosen = _sample_up_to(pool, 7, rng)
     for cid in chosen:
         _add_influence(pub, Side.US, cid, 1)
+    pub.marshall_plan_played = True
     return pub, False, None
 
 
@@ -424,6 +422,7 @@ def _event_john_paul_ii(
     """Card 69: John Paul II Elected Pope*. -2 USSR inf, +1 US inf in Poland."""
     _add_influence(pub, Side.USSR, _POLAND, -2)
     _add_influence(pub, Side.US, _POLAND, 1)
+    pub.john_paul_ii_played = True
     return pub, False, None
 
 
@@ -548,8 +547,10 @@ def _event_solidarity(
     pub: PublicState, side: Side, rng: random.Random
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 104: Solidarity*. Add 3 US inf in Poland.
-    Prerequisite: John Paul II (103) must have been played first. Not yet enforced.
+    Fires only if john_paul_ii_played=True.
     """
+    if not pub.john_paul_ii_played:
+        return pub, False, None  # prerequisite not met - no effect
     cur = pub.influence.get((Side.US, _POLAND), 0)
     pub.influence[(Side.US, _POLAND)] = cur + 3
     return pub, False, None
@@ -932,8 +933,7 @@ def _event_nato(
     """Card 21: NATO*. US-controlled WE countries blocked from USSR coups/realigns.
 
     Prerequisite: Marshall Plan (23), Truman Doctrine (19), or Warsaw Pact (16) must
-    have been played first. Not yet enforced — NATO fires unconditionally in self-play.
-    Enforcement in legal_actions when prerequisite tracking is added.
+    have been played first. Enforcement lives in legal_actions.py.
     """
     pub.nato_active = True
     return pub, False, None
@@ -962,8 +962,8 @@ def _event_formosan_resolution(
     """Card 35: Formosan Resolution*. Taiwan treated as battleground for Asia scoring
     while US controls it. Cancelled if USSR plays China Card for its event.
 
-    Taiwan is not in countries.csv (not yet added as a board country), so the
-    formosan_active flag is set but scoring.py does not yet use it.
+    Taiwan (id=85) is in countries.csv; scoring.py counts Taiwan as a
+    battleground when formosan_active=True.
     """
     pub.formosan_active = True
     return pub, False, None
@@ -988,8 +988,8 @@ def _event_cuban_missile_crisis(
 
     DEFCON lock (cuban_missile_crisis_active) and BG-coup-game-over are
     enforced in legal_actions.py and step.py.
-    Cancellation (removing USSR inf from Cuba / US inf from Turkey or WG)
-    is not yet implemented — the flag persists for the rest of the game.
+    Cancellation: USSR removes all inf from Cuba, or US removes all inf from
+    Turkey or West Germany → clears the flag. Implemented in step.py _apply_influence.
     """
     pub.defcon = 2
     pub.cuban_missile_crisis_active = True
@@ -1126,7 +1126,7 @@ def _event_truman_doctrine(
 
     'Uncontrolled' = USSR does not control (USSR inf < opp inf + stability).
     For random self-play: sample one eligible country.
-    Per rules, playing Truman Doctrine enables NATO (prerequisite tracking not yet enforced).
+    Sets the NATO prerequisite flag for future plays.
     """
     pool = [
         cid for cid in _ALL_EUROPE
@@ -1136,6 +1136,7 @@ def _event_truman_doctrine(
     if pool:
         target = rng.choice(sorted(pool))
         _remove_all(pub, Side.USSR, target)
+    pub.truman_doctrine_played = True
     return pub, False, None
 
 
@@ -1330,14 +1331,26 @@ def _event_olympic_games(
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 20: Olympic Games. Non-phasing player (opponent) decides compete or boycott.
     Compete: both roll d6; higher roll wins 2 VP (reroll ties).
-    Boycott: DEFCON -1; boycotting player (opponent) gains 2 VP (simplified from free 4 ops).
+    Boycott: DEFCON -1; phasing player gains 4 free influence ops.
     Self-play: opponent boycotts with 50% probability.
     """
     opp = Side.US if side == Side.USSR else Side.USSR
     if rng.random() < 0.5:
-        # Boycott: DEFCON drops, opponent gains 2 VP (simplified from free 4-ops action).
+        # Boycott: DEFCON drops; phasing player receives 4 free influence ops.
         pub.defcon = max(1, pub.defcon - 1)
-        _vp_delta(pub, opp, 2)
+        from tsrl.engine.adjacency import load_adjacency as _la
+        from tsrl.engine.legal_actions import accessible_countries as _ac
+
+        _adj = _la()
+        _accessible = sorted(_ac(side, pub, _adj, mode=ActionMode.INFLUENCE))
+        if _accessible:
+            _choice = getattr(rng, "choice", None)
+            for _ in range(4):
+                if _choice is not None:
+                    country = _choice(_accessible)
+                else:
+                    country = _accessible[rng.randint(0, len(_accessible) - 1)]
+                pub.influence[(side, country)] = pub.influence.get((side, country), 0) + 1
     else:
         # Compete: both roll d6, reroll ties.
         my_roll = rng.randint(1, 6)

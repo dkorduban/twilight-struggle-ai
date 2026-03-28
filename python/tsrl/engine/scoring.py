@@ -31,6 +31,10 @@ VP base amounts:
 
 Asia scoring also awards +1 VP to whoever holds the China Card.
 
+SE Asia countries do NOT count for mid-game Asia Scoring (card #1).
+They are scored by Southeast Asia Scoring (card #41, special per-country rules)
+or included in Turn-10 final scoring via score_asia_final() — see §10.3.2.
+
 Southeast Asia scoring (card #41 text):
   Each controlled country: 1 VP; Thailand: 2 VP.  No §10.1.2 BG/adj bonuses.
 
@@ -62,6 +66,7 @@ _EXCLUDED_IDS: frozenset[int] = frozenset({
 # Superpower IDs for adjacency bonus (§10.1.2 "adjacent to enemy superpower").
 _USA_ID: int = 81
 _USSR_ID: int = 82
+_TAIWAN_ID: int = 85
 
 # Special VP value meaning "Europe Control → immediate game win".
 GAME_WIN_EUROPE: int = 9999
@@ -133,6 +138,17 @@ def _adj_map() -> dict[int, frozenset[int]]:
     return _ADJ_CACHE
 
 
+def _is_scoring_battleground(
+    country_id: int,
+    pub: PublicState,
+    countries: dict[int, CountrySpec],
+) -> bool:
+    """Return whether a country counts as a battleground for scoring."""
+    return countries[country_id].is_battleground or (
+        country_id == _TAIWAN_ID and pub.formosan_active
+    )
+
+
 def _controls(side: Side, country_id: int, pub: PublicState) -> bool:
     """True iff side controls the country.
 
@@ -180,11 +196,19 @@ def score_region(region: Region, pub: PublicState) -> ScoringResult:
     presence_vp, domination_vp, control_vp = vp_table
 
     # Gather countries in this region (superpowers excluded from country lists).
+    # Mid-game Asia Scoring (card #1) covers only the ASIA region countries.
+    # SE Asia countries (Burma, Indonesia/Malaysia, Laos/Cambodia, Philippines,
+    # Thailand, Vietnam) do NOT count for mid-game Asia Scoring — they are scored
+    # separately via the Southeast Asia Scoring card (#41) or included in
+    # Turn-10 final scoring via score_asia_final().
     region_ids = [
         cid for cid, spec in countries.items()
         if spec.region == region and cid not in _EXCLUDED_IDS
     ]
-    battleground_ids = [cid for cid in region_ids if countries[cid].is_battleground]
+    battleground_ids = [
+        cid for cid in region_ids
+        if _is_scoring_battleground(cid, pub, countries)
+    ]
     total_bgs = len(battleground_ids)
 
     # Shuttle Diplomacy (74): when active, exclude the highest-stability BG from
@@ -246,13 +270,17 @@ def score_region(region: Region, pub: PublicState) -> ScoringResult:
         # +1 per BG country controlled in this region.
         bg_bonus = bgs_ctrl
 
-        # +1 per BG country controlled that is adjacent to the ENEMY superpower.
-        # Only battleground countries contribute to the adjacency bonus (§10.1.2);
-        # non-BG countries adjacent to a superpower do NOT earn this bonus.
+        # +1 per country (BG or non-BG) controlled that is adjacent to the ENEMY
+        # superpower (§10.1.2).
+        # Note: the log tsreplayer_14 T5 AR3 was previously thought to show BG-only
+        # behavior (Mexico adj USA, no adj bonus), but the actual reason the engine
+        # computed Presence(1)+BG(2)+adj(1)=4 (not Domination+BG+adj) was that
+        # USSR controlled only BG countries (non_bgs=0), failing the domination
+        # threshold.  The adj bonus for Mexico (BG, adj USA) was correctly applied.
         enemy_sp = _USSR_ID if side == Side.US else _USA_ID
         enemy_neighbors = adj.get(enemy_sp, frozenset())
         adj_bonus = sum(
-            1 for cid in battleground_ids
+            1 for cid in region_ids
             if cid in enemy_neighbors and _controls(side, cid, pub)
         )
 
@@ -307,7 +335,10 @@ def score_asia_final(pub: PublicState) -> ScoringResult:
         if spec.region in (Region.ASIA, Region.SOUTHEAST_ASIA)
         and cid not in _EXCLUDED_IDS
     ]
-    battleground_ids = [cid for cid in region_ids if countries[cid].is_battleground]
+    battleground_ids = [
+        cid for cid in region_ids
+        if _is_scoring_battleground(cid, pub, countries)
+    ]
     total_bgs = len(battleground_ids)
 
     # Shuttle Diplomacy (74): exclude highest-stability Asia BG if still active.
@@ -352,7 +383,7 @@ def score_asia_final(pub: PublicState) -> ScoringResult:
         enemy_sp = _USSR_ID if side == Side.US else _USA_ID
         enemy_neighbors = adj.get(enemy_sp, frozenset())
         adj_bonus = sum(
-            1 for cid in battleground_ids
+            1 for cid in region_ids
             if cid in enemy_neighbors and _controls(side, cid, pub)
         )
         return base + bg_bonus + adj_bonus

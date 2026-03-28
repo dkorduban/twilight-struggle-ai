@@ -185,6 +185,46 @@ def test_apply_scoring_card_asia():
     assert result.vp_delta == 1
 
 
+def test_midgame_asia_scoring_excludes_se_asia():
+    """Mid-game Asia Scoring card (id=1) must NOT count SE Asia countries.
+
+    SE Asia countries (Thailand=79, Vietnam=80, etc.) count only for SE Asia
+    Scoring (card #41) and Turn-10 final scoring, per §10.3.2 and countries.csv.
+
+    Board: USSR controls only Vietnam (id=80, SE Asia, stab=1, BG) — not in
+    standard Asia. Mid-game Asia Scoring must return 0 regional VP (only China
+    card bonus applies if USSR holds it).
+    """
+    pub = PublicState()
+    pub.china_held_by = Side.US   # neutral — no China bonus from either side
+    # USSR controls Vietnam (SE Asia BG, stab=1): influence=1
+    pub.influence[(Side.USSR, 80)] = 1
+    result = score_region(Region.ASIA, pub)
+    # Vietnam is in SE Asia; mid-game Asia Scoring must NOT count it.
+    assert result.vp_delta == 0, (
+        f"Mid-game Asia Scoring must exclude SE Asia countries (Vietnam id=80); "
+        f"expected vp_delta=0, got {result.vp_delta}"
+    )
+
+
+def test_midgame_asia_scoring_counts_standard_asia():
+    """Mid-game Asia Scoring (id=1) does count standard Asia countries.
+
+    North Korea (id=23, Asia, stab=3, BG): USSR controls it → PRESENCE.
+    USSR: Presence(3) + 1 BG + adj_bonus(NK adj USA=0) = 4 VP.
+    """
+    pub = PublicState()
+    pub.china_held_by = Side.US   # neutral — no China bonus
+    # North Korea (id=23, Asia, stab=3, BG): USSR needs 3 to control
+    pub.influence[(Side.USSR, 23)] = 3
+    result = score_region(Region.ASIA, pub)
+    # USSR Presence: base(3) + 1 BG(NK). US has nothing → 0. Net = +4 USSR.
+    assert result.vp_delta > 0, (
+        f"Mid-game Asia Scoring must count standard Asia countries (North Korea id=23); "
+        f"expected vp_delta>0, got {result.vp_delta}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # GameState / reset
 # ---------------------------------------------------------------------------
@@ -833,3 +873,325 @@ def test_north_sea_oil_extra_ar_fires():
     gs.pub.north_sea_oil_extra_ar = False  # caller clears flag before _run_extra_ar
     _run_extra_ar(gs, Side.US, _space_policy, random.Random(0))
     assert len(gs.hands[Side.US]) == 0, "US should have used both cards after extra AR"
+
+
+def test_formosan_resolution_adds_taiwan_as_battleground():
+    """Formosan Resolution promotes Taiwan into the Asia battleground pool."""
+    from tsrl.engine.events import apply_event_card
+
+    _AFGHANISTAN = 20
+    _TAIWAN = 85
+
+    pub = PublicState()
+    pub.influence[(Side.US, _AFGHANISTAN)] = 2
+    pub.influence[(Side.US, _TAIWAN)] = 3
+
+    pub, _, _ = apply_event_card(pub, 35, Side.US, random.Random(0))
+    result = score_region(Region.ASIA, pub)
+
+    # US: Domination(7) + BG_bonus(1 for Taiwan) + adj_bonus(1 for Afghanistan adj USSR) = 9
+    assert result.vp_delta == -9, (
+        "With Formosan active, Taiwan counts as Asia BG; Afghanistan(non-BG) adj USSR adds +1."
+    )
+
+
+def test_formosan_inactive_taiwan_not_counted_as_battleground():
+    """Without Formosan, Taiwan counts only as a normal Asia country."""
+    _AFGHANISTAN = 20
+    _TAIWAN = 85
+
+    pub = PublicState()
+    pub.influence[(Side.US, _AFGHANISTAN)] = 2
+    pub.influence[(Side.US, _TAIWAN)] = 3
+
+    result = score_region(Region.ASIA, pub)
+
+    # US: Presence(3) + BG_bonus(0) + adj_bonus(1 for Afghanistan adj USSR) = 4
+    assert result.vp_delta == -4, (
+        "Without Formosan, Taiwan is not a BG; Afghanistan(non-BG) adj USSR adds +1 adj bonus."
+    )
+
+
+def _count_action_round_opportunities(*, ussr_space: int, us_space: int = 0, turn: int = 1):
+    import random
+    from tsrl.engine.game_loop import _run_action_rounds
+
+    gs = reset(seed=0)
+    gs.pub.turn = turn
+    gs.pub.space[int(Side.USSR)] = ussr_space
+    gs.pub.space[int(Side.US)] = us_space
+
+    counts = {Side.USSR: 0, Side.US: 0}
+
+    def _counting_policy(pub, hand, holds_china):
+        counts[pub.phasing] += 1
+        return None
+
+    _run_action_rounds(
+        gs,
+        _counting_policy,
+        _counting_policy,
+        random.Random(0),
+        total_ars=_ars_for_turn(turn),
+    )
+    return counts
+
+
+def test_space_level_8_gives_8_ars_per_turn():
+    counts = _count_action_round_opportunities(ussr_space=8)
+
+    assert counts[Side.USSR] == 8
+    assert counts[Side.US] == 6
+
+
+def test_space_level_below_8_gives_normal_ars():
+    counts = _count_action_round_opportunities(ussr_space=7)
+
+    assert counts[Side.USSR] == 6
+    assert counts[Side.US] == 6
+
+
+# ---------------------------------------------------------------------------
+# §5.2 opponent event firing on ops play
+# ---------------------------------------------------------------------------
+
+
+def test_ussr_event_fires_when_us_plays_ussr_card_for_ops():
+    import random
+    from tsrl.engine.game_loop import _apply_action_with_hands
+
+    _ROMANIA = 13
+    _FRANCE = 7
+    _ROMANIAN_ABDICATION = 12
+
+    gs = reset(seed=0)
+    gs.pub = PublicState()
+    gs.pub.phasing = Side.US
+    gs.pub.influence[(Side.US, _ROMANIA)] = 2
+
+    action = ActionEncoding(
+        card_id=_ROMANIAN_ABDICATION,
+        mode=ActionMode.INFLUENCE,
+        targets=(_FRANCE,),
+    )
+
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, random.Random(0))
+
+    assert not over
+    assert winner is None
+    assert new_pub.influence.get((Side.US, _ROMANIA), 0) == 0
+    assert new_pub.influence.get((Side.USSR, _ROMANIA), 0) > 0
+    assert new_pub.influence.get((Side.US, _FRANCE), 0) == 1
+
+
+def test_us_event_fires_when_ussr_plays_us_card_for_ops():
+    import random
+    from tsrl.engine.game_loop import _apply_action_with_hands
+
+    _FRANCE = 7
+    _DUCK_AND_COVER = 4
+
+    gs = reset(seed=0)
+    gs.pub = PublicState()
+    gs.pub.phasing = Side.USSR
+    gs.pub.defcon = 5
+
+    action = ActionEncoding(
+        card_id=_DUCK_AND_COVER,
+        mode=ActionMode.INFLUENCE,
+        targets=(_FRANCE,),
+    )
+
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.USSR, random.Random(0))
+
+    assert not over
+    assert winner is None
+    assert new_pub.defcon == 4
+    assert new_pub.influence.get((Side.USSR, _FRANCE), 0) == 1
+
+
+def test_game_over_propagates_if_opponent_event_ends_game():
+    import random
+    from tsrl.engine.game_loop import _apply_action_with_hands
+
+    _FRANCE = 7
+    _DUCK_AND_COVER = 4
+
+    gs = reset(seed=0)
+    gs.pub = PublicState()
+    gs.pub.phasing = Side.USSR
+    gs.pub.defcon = 2
+
+    action = ActionEncoding(
+        card_id=_DUCK_AND_COVER,
+        mode=ActionMode.INFLUENCE,
+        targets=(_FRANCE,),
+    )
+
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.USSR, random.Random(0))
+
+    assert over
+    assert winner == Side.US
+    assert new_pub.defcon == 1
+    assert new_pub.influence.get((Side.USSR, _FRANCE), 0) == 0
+
+
+def test_neutral_card_ops_does_not_fire_event():
+    import random
+    from tsrl.engine.game_loop import _apply_action_with_hands
+
+    _FRANCE = 7
+    _NUCLEAR_TEST_BAN = 34
+
+    base_pub = PublicState()
+    base_pub.phasing = Side.USSR
+    base_pub.defcon = 3
+    base_pub.vp = 4
+
+    action = ActionEncoding(
+        card_id=_NUCLEAR_TEST_BAN,
+        mode=ActionMode.INFLUENCE,
+        targets=(_FRANCE,),
+    )
+
+    expected_pub, expected_over, expected_winner = apply_action(
+        base_pub,
+        action,
+        Side.USSR,
+        rng=random.Random(0),
+    )
+
+    gs = reset(seed=0)
+    gs.pub = base_pub
+    actual_pub, actual_over, actual_winner = _apply_action_with_hands(
+        gs,
+        action,
+        Side.USSR,
+        random.Random(0),
+    )
+
+    assert actual_pub == expected_pub
+    assert actual_over == expected_over
+    assert actual_winner == expected_winner
+
+
+def test_starred_card_in_removed_not_discard_after_ops_play():
+    import random
+    from tsrl.engine.game_loop import _apply_action_with_hands
+
+    _ROMANIA = 13
+    _FRANCE = 7
+    _ROMANIAN_ABDICATION = 12
+
+    gs = reset(seed=0)
+    gs.pub = PublicState()
+    gs.pub.phasing = Side.US
+    gs.pub.influence[(Side.US, _ROMANIA)] = 2
+
+    action = ActionEncoding(
+        card_id=_ROMANIAN_ABDICATION,
+        mode=ActionMode.INFLUENCE,
+        targets=(_FRANCE,),
+    )
+
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, random.Random(0))
+
+    assert not over
+    assert winner is None
+    assert _ROMANIAN_ABDICATION in new_pub.removed
+    assert _ROMANIAN_ABDICATION not in new_pub.discard
+
+
+def test_space_level4_first_tracks_first_side():
+    class FixedRNG:
+        def randint(self, a, b):
+            return 1
+
+    action = ActionEncoding(card_id=22, mode=ActionMode.SPACE, targets=())
+
+    pub = PublicState()
+    pub.space[int(Side.USSR)] = 3
+    new_pub, over, winner = apply_action(pub, action, Side.USSR, rng=FixedRNG())
+
+    assert not over
+    assert winner is None
+    assert new_pub.space[int(Side.USSR)] == 4
+    assert new_pub.space_level4_first == Side.USSR
+
+    new_pub.space[int(Side.US)] = 3
+    newer_pub, over, winner = apply_action(new_pub, action, Side.US, rng=FixedRNG())
+
+    assert not over
+    assert winner is None
+    assert newer_pub.space[int(Side.US)] == 4
+    assert newer_pub.space_level4_first == Side.USSR
+
+
+def test_space_level6_discard_when_opponent_spaces():
+    from tsrl.engine.game_loop import _apply_action_with_hands
+
+    gs = reset(seed=0)
+    gs.pub = PublicState()
+    gs.pub.space[int(Side.USSR)] = 6
+    gs.pub.space_level6_first = Side.USSR
+    gs.hands[Side.USSR] = frozenset({5, 10})
+    gs.hands[Side.US] = frozenset()
+
+    action = ActionEncoding(card_id=22, mode=ActionMode.SPACE, targets=())
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, random.Random(0))
+
+    assert not over
+    assert winner is None
+    assert gs.hands[Side.USSR] == frozenset({10})
+    assert 5 in new_pub.discard
+
+
+def test_space_level6_cancelled_when_both_reach_6():
+    from tsrl.engine.game_loop import _apply_action_with_hands
+
+    gs = reset(seed=0)
+    gs.pub = PublicState()
+    gs.pub.space[int(Side.USSR)] = 6
+    gs.pub.space[int(Side.US)] = 6
+    gs.pub.space_level6_first = Side.USSR
+    gs.hands[Side.USSR] = frozenset({5, 10})
+    gs.hands[Side.US] = frozenset()
+
+    action = ActionEncoding(card_id=22, mode=ActionMode.SPACE, targets=())
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, random.Random(0))
+
+    assert not over
+    assert winner is None
+    assert gs.hands[Side.USSR] == frozenset({5, 10})
+    assert 5 not in new_pub.discard
+
+
+def test_space_level4_peek_order():
+    from tsrl.engine.game_loop import _run_headline_phase
+
+    _USSR_CARD = 12
+    _US_CARD = 21
+
+    gs = reset(seed=0)
+    gs.pub.turn = 1
+    gs.pub.defcon = 5
+    gs.pub.space[int(Side.USSR)] = 4
+    gs.pub.space_level4_first = Side.USSR
+    gs.hands[Side.USSR] = frozenset({_USSR_CARD})
+    gs.hands[Side.US] = frozenset({_US_CARD})
+    gs.ussr_holds_china = False
+    gs.us_holds_china = False
+
+    pick_order = []
+
+    def _ussr_policy(pub, hand, holds_china):
+        pick_order.append(Side.USSR)
+        return ActionEncoding(card_id=_USSR_CARD, mode=ActionMode.EVENT, targets=())
+
+    def _us_policy(pub, hand, holds_china):
+        pick_order.append(Side.US)
+        return ActionEncoding(card_id=_US_CARD, mode=ActionMode.EVENT, targets=())
+
+    _run_headline_phase(gs, _ussr_policy, _us_policy, random.Random(0))
+
+    assert pick_order == [Side.US, Side.USSR]

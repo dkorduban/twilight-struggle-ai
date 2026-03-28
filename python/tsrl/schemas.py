@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import FrozenSet
+from typing import FrozenSet, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -197,8 +197,14 @@ class PublicState:
     # Per-turn space action counter; used by Yuri and Samantha (card 106).
     # Resets to [0, 0] at end of each turn.
     space_attempts: list[int] = field(default_factory=lambda: [0, 0])  # [USSR, US]
+    space_level4_first: Optional[Side] = None  # first side to reach space level 4
+    space_level6_first: Optional[Side] = None  # first side to reach space level 6
 
     # --- Persistent effect flags (game-scoped unless noted) ---
+    warsaw_pact_played: bool = False
+    marshall_plan_played: bool = False
+    truman_doctrine_played: bool = False
+    john_paul_ii_played: bool = False
     nato_active: bool = False          # NATO (21): blocks USSR coups/realigns in US-controlled WE
     de_gaulle_active: bool = False     # De Gaulle (17): France excluded from NATO protection
     willy_brandt_active: bool = False  # Willy Brandt (58): W.Germany excluded from NATO

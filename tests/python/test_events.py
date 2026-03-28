@@ -905,12 +905,14 @@ def test_tear_down_wall_no_mutation():
 
 def test_solidarity_adds_3_us_to_poland():
     pub = _pub()
+    pub.john_paul_ii_played = True  # prerequisite: card 69 must have been played
     new_pub, _, _ = _apply_event(pub, 104, Side.US, _rng0())
     assert new_pub.influence.get((Side.US, _POLAND), 0) == 3
 
 
 def test_solidarity_adds_to_existing():
     pub = _pub()
+    pub.john_paul_ii_played = True  # prerequisite: card 69 must have been played
     pub.influence[(Side.US, _POLAND)] = 2
     new_pub, _, _ = _apply_event(pub, 104, Side.US, _rng0())
     assert new_pub.influence.get((Side.US, _POLAND), 0) == 5

@@ -69,31 +69,44 @@ def accessible_countries(
 ) -> frozenset[int]:
     """Return the set of countries a side can reach for ops (influence/coup/realign).
 
-    A country is accessible if:
-      - The side already has ≥ 1 influence there, OR
-      - It is adjacent to a country where the side has ≥ 1 influence, OR
-      - It is adjacent to EITHER superpower anchor (USA id=81 or USSR id=82).
+    Reachability rules (matching the TSEspionage digital game):
+      1. Superpower anchor adjacency (1-hop only): any country adjacent to EITHER
+         superpower (USA id=81 or USSR id=82) is always accessible for both sides.
+         This lets USSR place in Cuba (adj USA) and US place in Finland (adj USSR)
+         from game start, without requiring existing influence.
+      2. Own-influence BFS (full depth): any country reachable via a connected path
+         through the adjacency graph starting from countries where the side has ≥ 1
+         influence is accessible — regardless of whether intermediate countries have
+         influence.  This matches the digital game's chaining model: the path to a
+         country via existing influence is sufficient; you do NOT need to spend ops
+         on intermediate countries first.
 
-    Both superpowers serve as open adjacency anchors for both players —
-    this is what allows USSR to contest Cuba (adjacent to USA) and US to
-    contest North Korea (adjacent to USSR) from game start.
-
-    Superpower anchors themselves are excluded from the result.
+    Superpower anchors themselves (id=81, id=82) are excluded from the result.
     """
+    from collections import deque
     g = adj if adj is not None else _default_adjacency()
 
-    # Both superpower nodes are seeds for BOTH players.
-    seed_countries: set[int] = set(_SUPERPOWER_IDS)
-    own_influence: set[int] = set()
-    for (s, cid), inf in pub.influence.items():
-        if s == side and inf > 0:
-            seed_countries.add(cid)
-            own_influence.add(cid)
+    own_influence: set[int] = {
+        cid for (s, cid), inf in pub.influence.items()
+        if s == side and inf > 0
+    }
 
-    reachable: set[int] = set(own_influence)  # countries with own influence are always accessible
-    for seed in seed_countries:
-        for nbr in g.get(seed, frozenset()):
-            if nbr not in _SUPERPOWER_IDS:
-                reachable.add(nbr)
+    # Rule 1: 1-hop from superpower anchors (both anchors for both players).
+    superpower_nbrs: set[int] = {
+        nbr
+        for sp in _SUPERPOWER_IDS
+        for nbr in g.get(sp, frozenset())
+        if nbr not in _SUPERPOWER_IDS
+    }
 
-    return frozenset(reachable)
+    # Rule 2: full BFS from own-influence network.
+    visited: set[int] = set(own_influence)
+    q: deque[int] = deque(own_influence)
+    while q:
+        node = q.popleft()
+        for nbr in g.get(node, frozenset()):
+            if nbr not in _SUPERPOWER_IDS and nbr not in visited:
+                visited.add(nbr)
+                q.append(nbr)
+
+    return frozenset(visited | superpower_nbrs)

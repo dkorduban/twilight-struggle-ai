@@ -351,18 +351,24 @@ class TestOlympicGames:
         # VP should have changed by exactly 0 (DEFCON drop) or ±2 (win) or 0 (tie+DEFCON).
         assert pub_after.vp in {-2, 0, 2}
 
-    def test_boycott_gives_opponent_2_vp_and_defcon_drop(self):
-        # Force boycott by using a seed where rng.random() < 0.2.
-        # We need a seed where the first random() call returns < 0.2.
-        # Search for such a seed.
+    def test_boycott_defcon_drop_and_phasing_player_gets_influence(self):
+        # Boycott: opponent boycotts (rng.random() < 0.5), DEFCON drops by 1,
+        # phasing player (USSR) gains 4 free influence ops.
         for seed in range(1000):
             rng = random.Random(seed)
-            if rng.random() < 0.2:
+            if rng.random() < 0.5:
                 pub = _pub(defcon=4)
+                ussr_inf_before = sum(v for (s, c), v in pub.influence.items() if s == Side.USSR)
                 pub_after, _, _ = _fire(pub, self.CARD, Side.USSR, seed=seed)
-                # USSR boycotted: US (opponent) gains 2 VP → vp -= 2; DEFCON drops by 1.
-                assert pub_after.vp == -2  # US gained 2 VP
-                assert pub_after.defcon == 3  # Was 4, drops to 3
+                # DEFCON drops by 1.
+                assert pub_after.defcon == 3, f"seed={seed}: DEFCON should drop to 3"
+                # VP should not change directly (no 2-VP award).
+                assert pub_after.vp == 0, f"seed={seed}: VP should be 0, got {pub_after.vp}"
+                # USSR (phasing player) gains exactly 4 influence ops.
+                ussr_inf_after = sum(v for (s, c), v in pub_after.influence.items() if s == Side.USSR)
+                assert ussr_inf_after - ussr_inf_before == 4, (
+                    f"seed={seed}: USSR should gain 4 influence, gained {ussr_inf_after - ussr_inf_before}"
+                )
                 break
         else:
             pytest.skip("No boycott seed found in first 1000 — adjust range")

@@ -2,6 +2,7 @@
 import pytest
 from tsrl.engine.adjacency import accessible_countries, load_adjacency, neighbors
 from tsrl.engine.legal_actions import (
+    _CHINA_CARD_ID,
     enumerate_actions,
     has_legal_action,
     legal_cards,
@@ -783,3 +784,264 @@ def test_arab_israeli_war_milops_credited_to_ussr_when_us_plays_for_ops():
         "Known limitation (§8.2.4): USSR should receive 2 MilOps when US plays "
         "Arab-Israeli War for ops, but opponent event + MilOps credit is not yet implemented."
     )
+
+
+def test_formosan_resolution_adds_taiwan_as_battleground():
+    """Formosan Resolution makes Taiwan a battleground for Asia scoring."""
+    from tsrl.engine.scoring import score_region
+    from tsrl.schemas import Region
+
+    taiwan = 85
+    afghanistan = 20
+
+    pub = PublicState()
+    pub.formosan_active = True
+    pub.influence[(Side.US, taiwan)] = 3
+    pub.influence[(Side.US, afghanistan)] = 2
+
+    result = score_region(Region.ASIA, pub)
+    # US: Domination(7) + BG_bonus(1 for Taiwan) + adj_bonus(1 for Afghanistan adj USSR) = 9
+    assert result.vp_delta == -9, (
+        f"Expected vp_delta=-9 when Taiwan counts as a battleground, got {result.vp_delta}. "
+        "US reaches Domination: Taiwan(BG via Formosan) + Afghanistan(non-BG, adj USSR +1)."
+    )
+
+
+def test_formosan_inactive_taiwan_not_counted_as_battleground():
+    """Without Formosan Resolution, Taiwan remains a non-battleground in Asia scoring."""
+    from tsrl.engine.scoring import score_region
+    from tsrl.schemas import Region
+
+    taiwan = 85
+    afghanistan = 20
+
+    pub = PublicState()
+    pub.influence[(Side.US, taiwan)] = 3
+    pub.influence[(Side.US, afghanistan)] = 2
+
+    result = score_region(Region.ASIA, pub)
+    # US: Presence(3) + BG_bonus(0) + adj_bonus(1 for Afghanistan adj USSR) = 4
+    assert result.vp_delta == -4, (
+        f"Expected vp_delta=-4 without Formosan Resolution, got {result.vp_delta}. "
+        "Taiwan not a BG; US at Presence + Afghanistan adj USSR adj_bonus=1."
+    )
+
+
+def test_nato_requires_prerequisite_illegal_as_event_without_prereq():
+    modes = legal_modes(21, PublicState(), Side.US, adj=ADJ)
+    assert ActionMode.EVENT not in modes
+
+
+def test_nato_legal_as_event_after_warsaw_pact():
+    import random
+
+    pub = PublicState()
+    pub, _, _ = apply_action(
+        pub,
+        ActionEncoding(card_id=16, mode=ActionMode.EVENT, targets=()),
+        Side.USSR,
+        rng=random.Random(0),
+    )
+
+    modes = legal_modes(21, pub, Side.US, adj=ADJ)
+    assert ActionMode.EVENT in modes
+
+
+def test_nato_can_always_be_played_for_ops():
+    modes = legal_modes(21, PublicState(), Side.US, adj=ADJ)
+    assert ActionMode.INFLUENCE in modes
+
+
+def test_solidarity_no_effect_without_john_paul_ii():
+    import random
+
+    poland = 12
+    pub = PublicState()
+    pub.influence[(Side.US, poland)] = 1
+
+    new_pub, _, _ = apply_action(
+        pub,
+        ActionEncoding(card_id=104, mode=ActionMode.EVENT, targets=()),
+        Side.US,
+        rng=random.Random(0),
+    )
+
+    assert new_pub.influence.get((Side.US, poland), 0) == 1
+
+
+def test_solidarity_fires_after_john_paul_ii_played():
+    import random
+
+    poland = 12
+    pub = PublicState()
+
+    pub, _, _ = apply_action(
+        pub,
+        ActionEncoding(card_id=69, mode=ActionMode.EVENT, targets=()),
+        Side.US,
+        rng=random.Random(0),
+    )
+    before = pub.influence.get((Side.US, poland), 0)
+
+    pub, _, _ = apply_action(
+        pub,
+        ActionEncoding(card_id=104, mode=ActionMode.EVENT, targets=()),
+        Side.US,
+        rng=random.Random(0),
+    )
+
+    assert pub.influence.get((Side.US, poland), 0) == before + 3
+
+
+def test_cmc_cancelled_when_ussr_removes_cuba_influence():
+    cuba = 36
+    poland = 12
+
+    pub = PublicState(cuban_missile_crisis_active=True)
+    # The engine does not model CMC cancellation as a standalone removal action,
+    # so prepare the post-removal state and hit the auto-detect check in
+    # _apply_influence with a normal influence placement.
+    pub.influence[(Side.USSR, cuba)] = 2
+    pub.influence.pop((Side.USSR, cuba), None)
+    action = ActionEncoding(card_id=7, mode=ActionMode.INFLUENCE, targets=(poland,))
+
+    new_pub, _, _ = apply_action(pub, action, Side.USSR)
+
+    assert new_pub.cuban_missile_crisis_active is False
+
+
+def test_cmc_cancelled_when_us_removes_turkey_influence():
+    turkey = 16
+    mexico = 42
+
+    pub = PublicState(cuban_missile_crisis_active=True)
+    pub.influence[(Side.US, turkey)] = 1
+    pub.influence.pop((Side.US, turkey), None)
+    action = ActionEncoding(card_id=4, mode=ActionMode.INFLUENCE, targets=(mexico,))
+
+    new_pub, _, _ = apply_action(pub, action, Side.US)
+
+    assert new_pub.cuban_missile_crisis_active is False
+
+
+def test_cmc_cancelled_when_us_removes_west_germany_influence():
+    west_germany = 18
+    mexico = 42
+
+    pub = PublicState(cuban_missile_crisis_active=True)
+    pub.influence[(Side.US, west_germany)] = 1
+    pub.influence.pop((Side.US, west_germany), None)
+    action = ActionEncoding(card_id=4, mode=ActionMode.INFLUENCE, targets=(mexico,))
+
+    new_pub, _, _ = apply_action(pub, action, Side.US)
+
+    assert new_pub.cuban_missile_crisis_active is False
+
+
+def test_cmc_not_cancelled_by_partial_removal():
+    cuba = 36
+    poland = 12
+
+    pub = PublicState(cuban_missile_crisis_active=True)
+    pub.influence[(Side.USSR, cuba)] = 2
+    pub.influence[(Side.USSR, cuba)] = 1
+    action = ActionEncoding(card_id=7, mode=ActionMode.INFLUENCE, targets=(poland,))
+
+    new_pub, _, _ = apply_action(pub, action, Side.USSR)
+
+    assert new_pub.cuban_missile_crisis_active is True
+
+
+def test_china_card_coup_in_asia_gets_plus1_ops():
+    pub = PublicState(defcon=5)
+    pub.influence[(Side.US, _NORTH_KOREA)] = 1
+    action = ActionEncoding(
+        card_id=_CHINA_CARD_ID,
+        mode=ActionMode.COUP,
+        targets=(_NORTH_KOREA,),
+    )
+
+    new_pub, _, _ = apply_action(pub, action, Side.USSR, rng=_seeded_rng(1))
+
+    assert new_pub.influence.get((Side.US, _NORTH_KOREA), 0) == 0
+
+
+def test_china_card_coup_outside_asia_uses_4_ops():
+    poland = 12
+    pub = PublicState(defcon=5)
+    pub.influence[(Side.US, poland)] = 1
+    action = ActionEncoding(
+        card_id=_CHINA_CARD_ID,
+        mode=ActionMode.COUP,
+        targets=(poland,),
+    )
+
+    new_pub, _, _ = apply_action(pub, action, Side.USSR, rng=_seeded_rng(1))
+
+    assert new_pub.influence.get((Side.US, poland), 0) == 1
+
+
+def test_china_card_influence_asia_bonus_in_enumerate():
+    actions = enumerate_actions(
+        frozenset({_CHINA_CARD_ID}),
+        PublicState(),
+        Side.USSR,
+        holds_china=True,
+        adj=ADJ,
+    )
+    influence_targets = {
+        action.targets
+        for action in actions
+        if action.card_id == _CHINA_CARD_ID and action.mode == ActionMode.INFLUENCE
+    }
+
+    assert (20, 20, 20, 20, 20) in influence_targets
+    assert (6, 20, 20, 20) in influence_targets
+
+
+def test_olympic_games_compete_gives_2vp_to_winner():
+    pub = PublicState()
+
+    new_pub, _, _ = apply_action(
+        pub,
+        ActionEncoding(card_id=20, mode=ActionMode.EVENT, targets=()),
+        Side.USSR,
+        rng=_seeded_rng(0),
+    )
+
+    assert new_pub.vp == 2
+
+
+def test_olympic_games_boycott_reduces_defcon():
+    pub = PublicState(defcon=5)
+
+    new_pub, _, _ = apply_action(
+        pub,
+        ActionEncoding(card_id=20, mode=ActionMode.EVENT, targets=()),
+        Side.USSR,
+        rng=_seeded_rng(1),
+    )
+
+    assert new_pub.defcon == 4
+
+
+def test_olympic_games_boycott_gives_4_ops_not_vp():
+    pub = PublicState()
+    before_vp = pub.vp
+    before_influence = sum(
+        inf for (owner, _), inf in pub.influence.items() if owner == Side.USSR
+    )
+
+    new_pub, _, _ = apply_action(
+        pub,
+        ActionEncoding(card_id=20, mode=ActionMode.EVENT, targets=()),
+        Side.USSR,
+        rng=_seeded_rng(1),
+    )
+
+    after_influence = sum(
+        inf for (owner, _), inf in new_pub.influence.items() if owner == Side.USSR
+    )
+
+    assert new_pub.vp == before_vp
+    assert after_influence == before_influence + 4

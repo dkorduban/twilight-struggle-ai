@@ -579,3 +579,109 @@ def test_milops_penalty_no_mismatch_on_corpus():
             for gid, v in milops_violations[:10]
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# New win-condition / reshuffle violation kinds
+# ---------------------------------------------------------------------------
+
+
+def test_new_win_condition_kinds_exist():
+    """ViolationKind entries for win-condition and reshuffle checks must exist."""
+    for name in ("RESHUFFLE_EMPTY_DISCARD", "DEFCON_GAME_NOT_ENDED", "VP_WIN_NOT_TRIGGERED"):
+        assert hasattr(ViolationKind, name), (
+            f"ViolationKind.{name} not defined in validator.py"
+        )
+
+
+def test_new_win_condition_kinds_are_soft():
+    """RESHUFFLE_EMPTY_DISCARD, DEFCON_GAME_NOT_ENDED, VP_WIN_NOT_TRIGGERED are soft.
+
+    These fire when the log is missing an explicit GAME_END or when pub.discard
+    tracking is incomplete.  They should not appear in hard_violations.
+    """
+    from tsrl.etl.validator import Violation
+
+    soft_kinds = [
+        ViolationKind.RESHUFFLE_EMPTY_DISCARD,
+        ViolationKind.DEFCON_GAME_NOT_ENDED,
+        ViolationKind.VP_WIN_NOT_TRIGGERED,
+    ]
+    for kind in soft_kinds:
+        r = ValidationResult(
+            game_id="g", total_decisions=5,
+            violations=[Violation(
+                kind=kind, turn=1, ar=1, phasing=Side.USSR,
+                card_id=None, message="soft win check",
+            )],
+        )
+        assert r.hard_violations == [], (
+            f"{kind.value} should be in the soft set (not appear in hard_violations)"
+        )
+
+
+def test_defcon_game_not_ended_fires_when_play_continues():
+    """DEFCON_GAME_NOT_ENDED fires when a PLAY follows DEFCON=1."""
+    from tsrl.schemas import PublicState
+    from tsrl.etl.validator import _check_reducer_vs_log
+    from tsrl.etl.game_data import load_countries
+
+    countries = load_countries()
+    cards = load_cards()
+
+    # Synthesise a minimal event list and state list:
+    # DEFCON_CHANGE → defcon=1, then a PLAY event (illegal continuation).
+    pub0 = PublicState()
+    pub0.defcon = 2  # before change
+
+    pub1 = PublicState()
+    pub1.defcon = 1  # after change
+
+    pub2 = PublicState()  # after play (shouldn't happen)
+    pub2.defcon = 1
+
+    hk = object()  # HandKnowledge placeholder — not used by _check_reducer_vs_log
+
+    resolved = [
+        _ev(EventKind.DEFCON_CHANGE, "DEFCON degrades to 1", amount=1, turn=5, ar=2),
+        _ev(EventKind.PLAY, "Turn 5, USSR AR3: SomeCard: Event:", turn=5, ar=3),
+    ]
+    states = [
+        (pub1, hk, hk),
+        (pub2, hk, hk),
+    ]
+
+    violations = _check_reducer_vs_log(resolved, states, cards)
+    defcon_v = [v for v in violations if v.kind == ViolationKind.DEFCON_GAME_NOT_ENDED]
+    assert defcon_v, (
+        "Expected DEFCON_GAME_NOT_ENDED when PLAY follows DEFCON=1"
+    )
+
+
+def test_defcon_game_not_ended_no_fire_when_game_ends():
+    """DEFCON_GAME_NOT_ENDED does NOT fire when GAME_END immediately follows DEFCON=1."""
+    from tsrl.schemas import PublicState
+    from tsrl.etl.validator import _check_reducer_vs_log
+
+    cards = load_cards()
+
+    pub1 = PublicState()
+    pub1.defcon = 1
+
+    pub2 = PublicState()
+    pub2.defcon = 1
+
+    hk = object()
+
+    resolved = [
+        _ev(EventKind.DEFCON_CHANGE, "DEFCON degrades to 1", amount=1, turn=5, ar=2),
+        _ev(EventKind.GAME_END, "Game over: USSR wins by DEFCON", turn=5, ar=2),
+    ]
+    states = [
+        (pub1, hk, hk),
+        (pub2, hk, hk),
+    ]
+
+    violations = _check_reducer_vs_log(resolved, states, cards)
+    defcon_v = [v for v in violations if v.kind == ViolationKind.DEFCON_GAME_NOT_ENDED]
+    assert not defcon_v, "DEFCON_GAME_NOT_ENDED should NOT fire when GAME_END follows"

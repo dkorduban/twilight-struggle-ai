@@ -31,11 +31,10 @@ from typing import Optional
 
 from tsrl.engine.adjacency import neighbors, load_adjacency
 from tsrl.engine.dice import coup_result, realign_result, space_result
+from tsrl.engine.legal_actions import _CHINA_CARD_ID, effective_ops
 from tsrl.engine.scoring import apply_scoring_card, ScoringResult
 from tsrl.etl.game_data import load_cards
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Region, Side
-
-_CHINA_CARD_ID = 6
 
 # War cards that trigger Flower Power when US plays them for their event.
 # Korean War(11), Arab-Israeli War(13), Indo-Pakistani War(24), Brush War(39), Iran-Iraq War(105).
@@ -111,6 +110,18 @@ def _apply_influence(
         own = new_pub.influence.get((side, country_id), 0)
         new_pub.influence[(side, country_id)] = own + 1
     _handle_card_played(new_pub, action.card_id, side, mode=ActionMode.INFLUENCE)
+    # §6.3.1 CMC cancellation: auto-detect if player removed required influence.
+    if new_pub.cuban_missile_crisis_active:
+        _CUBA = 36
+        _TURKEY = 16
+        _WEST_GERMANY = 18
+        ussr_cuba = new_pub.influence.get((Side.USSR, _CUBA), 0)
+        us_turkey = new_pub.influence.get((Side.US, _TURKEY), 0)
+        us_wg = new_pub.influence.get((Side.US, _WEST_GERMANY), 0)
+        if side == Side.USSR and ussr_cuba == 0:
+            new_pub.cuban_missile_crisis_active = False
+        elif side == Side.US and (us_turkey == 0 or us_wg == 0):
+            new_pub.cuban_missile_crisis_active = False
     return new_pub
 
 
@@ -140,11 +151,16 @@ def _apply_coup(
     new_pub = _copy_pub(pub)
     opp = Side.US if side == Side.USSR else Side.USSR
 
-    cards = load_cards()
-    spec = cards.get(action.card_id)
-    ops = spec.ops if spec else 1
-
     countries = _countries()
+    ops = effective_ops(action.card_id, pub, side)
+    # China Card: +1 ops if target country is in Asia (§6.x China Card bonus).
+    if (
+        action.card_id == _CHINA_CARD_ID
+        and country_id in countries
+        and countries[country_id].region == Region.ASIA
+    ):
+        ops += 1
+
     stability = countries[country_id].stability if country_id in countries else 1
     is_bg = countries[country_id].is_battleground if country_id in countries else False
 
@@ -298,6 +314,11 @@ def _apply_space(
     if success:
         new_level = current_level + 1
         new_pub.space[int(side)] = new_level
+        # Track first-to-reach for level 4 and level 6 special abilities.
+        if new_level == 4 and new_pub.space_level4_first is None:
+            new_pub.space_level4_first = side
+        if new_level == 6 and new_pub.space_level6_first is None:
+            new_pub.space_level6_first = side
 
         # VP award: +vp to USSR if USSR side, else +vp to US.
         first_vp, second_vp = _SPACE_VP.get(new_level, (0, 0))
@@ -413,6 +434,10 @@ def _handle_card_played(
     - Starred card played for EVENT: removed from game.
     - All others: go to discard.
     """
+    # Idempotency guard: card lifecycle runs once even if called from both event and ops paths.
+    if card_id in pub.removed or card_id in pub.discard:
+        return
+
     if card_id == _CHINA_CARD_ID:
         opp = Side.US if side == Side.USSR else Side.USSR
         pub.china_held_by = opp

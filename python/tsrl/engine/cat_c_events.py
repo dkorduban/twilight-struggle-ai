@@ -709,19 +709,19 @@ def _h_defectors(
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 108: Defectors.
     - If played by USSR (as an ops play where US event fires): US gains 2 VP.
-    - If played by US during action rounds: cancels USSR Headline card (complex; stub).
-    - For self-play the Headline interaction is not yet implemented.
+    - If played by US as Headline: USSR's Headline card is cancelled (implemented in
+      _run_headline_phase in game_loop.py — card is discarded without effect there).
+    - If played by US during action rounds: no board effect (Headline cancel only applies
+      to Headline phase; AR play just discards the card).
 
     In practice this handler is called only when played as an EVENT.
-    US plays it as their own event: no VP change (Headline interaction is Phase 3).
-    USSR plays it (opponent card triggers event): US gains 2 VP.
+    US plays it as their own event: no VP change (Headline cancellation handled upstream).
+    USSR plays it (§5.2 opponent card triggers event): US gains 2 VP.
     """
     pub = _copy_pub(gs.pub)
     if side == Side.USSR:
         # USSR played opponent's card triggering the Defectors event → US gains 2 VP.
         pub.vp -= 2
-    # TODO Phase 3: Headline phase interaction — if US plays Defectors as Headline,
-    # USSR's Headline card is cancelled (discarded without effect).
     _card_played(pub, 108, side)
     gs.pub = pub
     return pub, *_check_win(pub)

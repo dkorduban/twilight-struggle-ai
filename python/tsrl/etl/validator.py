@@ -21,6 +21,7 @@ import re
 import warnings
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache as _lru_cache
 from pathlib import Path
 
 from tsrl.engine.legal_actions import legal_countries, legal_modes
@@ -131,6 +132,56 @@ class ViolationKind(Enum):
     # VP penalty applied; any mismatch means the engine formula or ordering is wrong.
     MILOPS_PENALTY_MISMATCH = "MILOPS_PENALTY_MISMATCH"
 
+    # Reducer-computed DEFCON after a DEFCON_CHANGE event doesn't match the absolute
+    # value logged ("DEFCON degrades/improves to N").  Hard violation — the game
+    # server writes the exact new DEFCON; any mismatch means the reducer missed a
+    # DEFCON-modifying event or applied it incorrectly.
+    DEFCON_STATE_MISMATCH = "DEFCON_STATE_MISMATCH"
+
+    # Reducer-computed milops for a side after a MILOPS_CHANGE event doesn't match the
+    # absolute value logged ("USSR/US Military Ops to N").  Hard violation.
+    MILOPS_STATE_MISMATCH = "MILOPS_STATE_MISMATCH"
+
+    # Reducer-computed space level for a side after a SPACE_RACE advance event doesn't
+    # match the absolute level logged ("USSR/US advances to N in the Space Race").
+    # Hard violation.
+    SPACE_LEVEL_MISMATCH = "SPACE_LEVEL_MISMATCH"
+
+    # Reducer-computed pub.vp after a VP_CHANGE event doesn't match the absolute score
+    # snapshot embedded in the VP line ("Score is USSR N" / "Score is US N" / "Score
+    # is even").  Hard violation — the game server writes the authoritative running
+    # score; drift here catches any missed or mis-applied VP-changing event.
+    VP_ABSOLUTE_MISMATCH = "VP_ABSOLUTE_MISMATCH"
+
+    # Full coup arithmetic check: the die_roll + ops_modifier - 2×stability must equal
+    # the stated result in "SUCCESS/FAILURE: D [ + O - 2xS = R ]".
+    # Hard violation — the formula is deterministic; any mismatch means our regex or
+    # arithmetic interpretation of the log is wrong.
+    COUP_FORMULA_MISMATCH = "COUP_FORMULA_MISMATCH"
+
+    # The lower-ops headline card fired before the higher-ops card (or, on a tie,
+    # the US headline fired before the USSR headline).
+    # Soft violation — the headline firing order rule can be overridden by special
+    # events (e.g. Defectors cancels a headline), so treat as informational.
+    HEADLINE_ORDER_MISMATCH = "HEADLINE_ORDER_MISMATCH"
+
+    # RESHUFFLE event fired when pub.discard was empty — nothing to reshuffle.
+    # Hard violation — the game server only triggers a reshuffle when the draw
+    # pile is exhausted; if the discard is also empty that means all known
+    # cards are still in hands, which should never trigger a reshuffle.
+    RESHUFFLE_EMPTY_DISCARD = "RESHUFFLE_EMPTY_DISCARD"
+
+    # DEFCON dropped to 1 but no GAME_END event followed before the next
+    # PLAY or HEADLINE.  Hard violation — DEFCON 1 ends the game immediately
+    # with the non-phasing player winning; any subsequent action is impossible.
+    DEFCON_GAME_NOT_ENDED = "DEFCON_GAME_NOT_ENDED"
+
+    # VP crossed the ±20 threshold (absolute win) but no GAME_END followed
+    # before the next PLAY or HEADLINE.  Hard violation — ±20 VP ends the
+    # game immediately.  Uses the absolute score snapshot in the VP_CHANGE
+    # log line, so this check is independent of scoring-formula accuracy.
+    VP_WIN_NOT_TRIGGERED = "VP_WIN_NOT_TRIGGERED"
+
 
 @dataclass
 class Violation:
@@ -171,6 +222,23 @@ class ValidationResult:
             # tracking, possible mod-version differences).  306 violations across 51 logs.
             # See project memory: project_scoring_vp_regressions.md
             ViolationKind.SCORING_VP_MISMATCH,
+            # VP absolute check: the reducer does not apply scoring-card VP changes,
+            # so VP_ABSOLUTE_MISMATCH fires on every VP event that follows a scoring
+            # play.  This is informational until SCORING_VP_MISMATCH is made hard.
+            ViolationKind.VP_ABSOLUTE_MISMATCH,
+            # Headline order can be legitimately overridden by Defectors (card 108)
+            # and other special cases.  Treat as informational.
+            ViolationKind.HEADLINE_ORDER_MISMATCH,
+            # pub.discard only captures explicit DISCARD events (forced discards,
+            # specific card effects) — regular card plays go to discard without an
+            # explicit DISCARD event, so pub.discard is always an undercount of the
+            # real discard pile.  This makes empty-discard checks unreliable.
+            ViolationKind.RESHUFFLE_EMPTY_DISCARD,
+            # Game-end via DEFCON=1 or VP±20 may not have an explicit GAME_END event
+            # in the log (many logs end abruptly after the last win-condition event).
+            # The check is informational: flags if game continued after win condition.
+            ViolationKind.DEFCON_GAME_NOT_ENDED,
+            ViolationKind.VP_WIN_NOT_TRIGGERED,
         }
         return [v for v in self.violations if v.kind not in soft]
 
@@ -190,14 +258,24 @@ class ValidationResult:
 # Mode inference from raw_line
 # ---------------------------------------------------------------------------
 
+
+@_lru_cache(maxsize=1)
+def _cached_cards():
+    from tsrl.etl.game_data import load_cards
+
+    return load_cards()
+
+
 # Patterns tried in order; first match wins.
 _MODE_RE: list[tuple[re.Pattern, ActionMode]] = [
     (re.compile(r"Place Influence", re.I), ActionMode.INFLUENCE),
-    (re.compile(r"\bRealign\b", re.I),     ActionMode.REALIGN),
+    (re.compile(r"\bRealign", re.I),       ActionMode.REALIGN),
     (re.compile(r"\bCoup\b", re.I),        ActionMode.COUP),
     (re.compile(r"Space Race", re.I),      ActionMode.SPACE),
+    (re.compile(r"\bdiscards?\b", re.I),   ActionMode.EVENT),
     (re.compile(r"\bEvent\b", re.I),       ActionMode.EVENT),
 ]
+_EVENT_ONLY_CARD_IDS: frozenset[int] = frozenset({103})  # Wargames
 
 
 def _infer_mode(ev: ReplayEvent) -> ActionMode | None:
@@ -211,6 +289,25 @@ def _infer_mode(ev: ReplayEvent) -> ActionMode | None:
     for pat, mode in _MODE_RE:
         if pat.search(ev.raw_line):
             return mode
+
+    # War-card VP result lines are inline event resolution, not the play mode.
+    if re.search(r"\bgains \d+ VP\b", ev.raw_line) or "Score is" in ev.raw_line:
+        return ActionMode.EVENT
+
+    # China Card can carry Formosan Resolution expiry text inline; that side effect
+    # does not change the play mode, which is influence placement in these logs.
+    if ev.card_id == 6 and "no longer in play" in ev.raw_line:
+        return ActionMode.INFLUENCE
+
+    # Cards with no alternate play mode can still appear with empty action text.
+    if ev.card_id in _EVENT_ONLY_CARD_IDS:
+        return ActionMode.EVENT
+
+    if ev.card_id is not None:
+        spec = _cached_cards().get(ev.card_id)
+        if spec is not None and spec.is_scoring:
+            return ActionMode.EVENT
+
     return None
 
 
@@ -309,9 +406,38 @@ _CROSS_RE_REALIGN_ROLL = re.compile(
     r"^(USSR|US) rolls (\d+)(?: \(([+-]?\d+)\))?(?: = (\d+))?$"
 )
 
+# Full coup formula: "SUCCESS: D [ + O [modifier]  - 2xS = R ]"
+# Groups: (1)=die, (2)=ops_base, (3)=opt_modifier (may be None), (4)=stability, (5)=result
+_CROSS_RE_COUP_FULL = re.compile(
+    r"^(?:SUCCESS|FAILURE): (\d+) "
+    r"\[ \+ (\d+)(?:\s+\(([+-]?\d+)\))?\s* - 2x(\d+) = ([+-]?\d+) \]$"
+)
+
+# "Turn N, Headline Phase: CARD_A & CARD_B: ..."
+# Groups: (1)=turn, (2)=card_a_name, (3)=card_b_name
+_CROSS_RE_HEADLINE_PHASE = re.compile(
+    r"^Turn (\d+), Headline Phase: (.+?) & (.+?):"
+)
+
+# "USSR Headlines CARD_NAME"  or  "US Headlines CARD_NAME"
+_CROSS_RE_HEADLINE_SELECT = re.compile(r"^(USSR|US) Headlines (.+)$")
+
+# "Event: CARD_NAME"
+_CROSS_RE_EVENT_LINE = re.compile(r"^Event: (.+)$")
+
+# "CARD_NAME is now in play." / "CARD_NAME is no longer in play."
+_CROSS_RE_CARD_IN_PLAY = re.compile(r"^(.+?) is (now in|no longer in) play\.$")
+
+# "Score is USSR N."  /  "Score is US N."  /  "Score is even."
+# Groups: (1)=side_str (may be None for "even"), (2)=score_str (may be None)
+_CROSS_RE_SCORE_SNAPSHOT = re.compile(
+    r"Score is (?:(USSR|US) (\d+)|even)\.$"
+)
+
 def _cross_check_raw(
     raw_text: str,
     countries: dict,
+    card_name_to_ops: dict[str, int] | None = None,
 ) -> list[Violation]:
     """Scan raw log text for hard ground-truth inconsistencies.
 
@@ -322,6 +448,8 @@ def _cross_check_raw(
     3. SPACE_THRESHOLD_MISMATCH — "Needed X or less" in space roll vs our table.
     4. REALIGN_OUTCOME_MISMATCH — influence change after realignment must equal
        min(|ussr_total - us_total|, loser_inf_before).
+    5. COUP_FORMULA_MISMATCH — full arithmetic: die + ops [+ mod] - 2×S == result.
+    6. HEADLINE_ORDER_MISMATCH (soft) — higher-ops card fires first; USSR wins ties.
 
     All checks are self-consistent within the log (do not require external state
     reconstruction beyond what the log itself provides).
@@ -332,10 +460,23 @@ def _cross_check_raw(
         name_to_cid[spec.name.lower()] = cid
         cid_to_stability[cid] = spec.stability
 
+    # Normalised card name → ops for headline order check.  Strip trailing * and lower.
+    _cname_to_ops: dict[str, int] = {}
+    if card_name_to_ops:
+        for raw_name, ops_val in card_name_to_ops.items():
+            _cname_to_ops[raw_name.lower().rstrip("* ").strip()] = ops_val
+
     violations: list[Violation] = []
     # country_name → (us_total, ussr_total) after last seen influence line
     running_brackets: dict[str, tuple[int, int]] = {}
     space_level: dict[int, int] = {int(Side.USSR): 0, int(Side.US): 0}
+
+    # Headline-phase tracking for order check.
+    in_headline = False
+    hl_turn = 0
+    hl_ussr_card: str | None = None   # card name selected by USSR
+    hl_us_card: str | None = None     # card name selected by US
+    hl_events_fired: list[str] = []   # event names fired in this headline phase
 
     cur_turn = 0
     cur_ar = 0
@@ -349,14 +490,50 @@ def _cross_check_raw(
     realign_target: str | None = None
     realign_ussr_total: int | None = None
     realign_us_total: int | None = None
+    iran_contra_active: bool = False
 
     for line in raw_text.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
 
-        # --- Action round header — update context ---
+        # --- Headline Phase header — start headline tracking ---
+        if m := _CROSS_RE_HEADLINE_PHASE.match(stripped):
+            # Before updating, flush any pending headline check from previous turn.
+            if in_headline:
+                violations.extend(_check_headline_order(
+                    hl_turn, hl_ussr_card, hl_us_card, hl_events_fired, _cname_to_ops,
+                ))
+            in_headline = True
+            hl_turn = int(m.group(1))
+            hl_ussr_card = None
+            hl_us_card = None
+            hl_events_fired = []
+            iran_contra_active = False
+            continue
+
+        # --- Headline card selection ---
+        if in_headline and (m := _CROSS_RE_HEADLINE_SELECT.match(stripped)):
+            sel_side, sel_card = m.group(1), m.group(2).strip()
+            if sel_side == "USSR":
+                hl_ussr_card = sel_card
+            else:
+                hl_us_card = sel_card
+            continue
+
+        # --- Event line — record fires during headline phase ---
+        if in_headline and (m := _CROSS_RE_EVENT_LINE.match(stripped)):
+            hl_events_fired.append(m.group(1).strip())
+            # Don't 'continue' — fall through to AR header check below.
+
+        # --- Action round header — update context (also ends headline phase) ---
         if m := _CROSS_RE_AR.match(stripped):
+            # An AR header means the headline phase is over; flush order check.
+            if in_headline:
+                violations.extend(_check_headline_order(
+                    hl_turn, hl_ussr_card, hl_us_card, hl_events_fired, _cname_to_ops,
+                ))
+                in_headline = False
             cur_turn = int(m.group(1))
             cur_side = Side.USSR if m.group(2) == "USSR" else Side.US
             cur_ar = int(m.group(3))
@@ -406,9 +583,16 @@ def _cross_check_raw(
                     ))
             continue
 
-        # --- Coup result — check stability ---
-        if in_coup and (m := _CROSS_RE_COUP_RESULT.match(stripped)):
-            s_from_log = int(m.group(1))
+        # --- Coup result — check stability (via old regex for fallback) AND full formula ---
+        if in_coup and (m := _CROSS_RE_COUP_FULL.match(stripped)):
+            die = int(m.group(1))
+            ops_base = int(m.group(2))
+            mod = int(m.group(3)) if m.group(3) is not None else 0
+            s_from_log = int(m.group(4))
+            stated_result = int(m.group(5))
+            computed_result = die + ops_base + mod - 2 * s_from_log
+
+            # 1. Stability check (hard) — 2xS must match countries.csv
             if coup_target_name is not None:
                 cid = name_to_cid.get(coup_target_name.lower())
                 if cid is not None:
@@ -425,6 +609,21 @@ def _cross_check_raw(
                             ),
                             raw_line=stripped,
                         ))
+
+            # 2. Full formula check (hard) — die + ops + mod - 2*S == stated result
+            if computed_result != stated_result:
+                cid = name_to_cid.get(coup_target_name.lower()) if coup_target_name else None
+                violations.append(Violation(
+                    kind=ViolationKind.COUP_FORMULA_MISMATCH,
+                    turn=cur_turn, ar=cur_ar, phasing=cur_side,
+                    card_id=None, country_id=cid,
+                    message=(
+                        f"coup formula mismatch: die={die} + ops={ops_base} + mod={mod:+d}"
+                        f" - 2×{s_from_log} = {computed_result}, "
+                        f"but log states result={stated_result}"
+                    ),
+                    raw_line=stripped,
+                ))
             continue
 
         # --- Realignment dice rolls ---
@@ -440,6 +639,13 @@ def _cross_check_raw(
                 realign_ussr_total = total
             else:
                 realign_us_total = total
+            continue
+
+        # Track Iran-Contra Scandal active state (reduces US realign rolls by -1).
+        if m := _CROSS_RE_CARD_IN_PLAY.match(stripped):
+            card_name_normalized = m.group(1).lower().rstrip("* ").strip()
+            if "iran" in card_name_normalized and "contra" in card_name_normalized:
+                iran_contra_active = (m.group(2) == "now in")
             continue
 
         # --- Influence line — bracket delta check + realignment outcome check ---
@@ -498,10 +704,14 @@ def _cross_check_raw(
                 us_before = us_after - (delta if side_str == "US" else 0)
                 ussr_before = ussr_after - (delta if side_str == "USSR" else 0)
 
-                if realign_ussr_total > realign_us_total:
+                # Adjust US total for Iran-Contra Scandal effect (-1 to US rolls).
+                eff_us_total = max(0, realign_us_total - 1) if iran_contra_active else realign_us_total
+                eff_ussr_total = realign_ussr_total
+
+                if eff_ussr_total > eff_us_total:
                     # USSR won — US lost influence.
                     if side_str == "US":
-                        diff = realign_ussr_total - realign_us_total
+                        diff = eff_ussr_total - eff_us_total
                         expected_loss = min(diff, us_before)
                         actual_loss = abs(delta)
                         if actual_loss != expected_loss:
@@ -518,10 +728,10 @@ def _cross_check_raw(
                                 ),
                                 raw_line=stripped,
                             ))
-                elif realign_us_total > realign_ussr_total:
+                elif eff_us_total > eff_ussr_total:
                     # US won — USSR lost influence.
                     if side_str == "USSR":
-                        diff = realign_us_total - realign_ussr_total
+                        diff = eff_us_total - eff_ussr_total
                         expected_loss = min(diff, ussr_before)
                         actual_loss = abs(delta)
                         if actual_loss != expected_loss:
@@ -542,7 +752,103 @@ def _cross_check_raw(
             running_brackets[cname] = (us_after, ussr_after)
             continue
 
+    # Flush any pending headline check at end of log.
+    if in_headline:
+        violations.extend(_check_headline_order(
+            hl_turn, hl_ussr_card, hl_us_card, hl_events_fired, _cname_to_ops,
+        ))
+
     return violations
+
+
+def _check_headline_order(
+    turn: int,
+    ussr_card: str | None,
+    us_card: str | None,
+    events_fired: list[str],
+    cname_to_ops: dict[str, int],
+) -> list[Violation]:
+    """Check that headline events fired in the correct ops-descending order.
+
+    Rule: higher-ops card fires first; US wins ties (TSEspionage implementation).
+    Soft violation — Defectors and other special cases can legitimately alter order.
+
+    Defectors exception: when the US headlines Defectors, Defectors fires first
+    regardless of ops — it cancels the USSR headline entirely. Skip the check.
+
+    Strategy: scan events_fired for the first occurrence of EITHER headlined card
+    (not just events_fired[0], which may be a sub-event from the first card's effect).
+    """
+    if not ussr_card or not us_card:
+        return []  # Incomplete headline data (Defectors cancellation, etc.)
+
+    def _norm(s: str) -> str:
+        return s.lower().rstrip("* ").strip()
+
+    def _ops(name: str) -> int | None:
+        key = _norm(name)
+        return cname_to_ops.get(key)
+
+    # Defectors exception: US headlines Defectors → it fires first and cancels USSR
+    # headline regardless of ops. No order violation to report.
+    if _norm(us_card) == "defectors":
+        return []
+
+    ussr_ops = _ops(ussr_card)
+    us_ops = _ops(us_card)
+    if ussr_ops is None or us_ops is None:
+        return []  # Can't look up ops — skip.
+
+    # Determine expected first firer.
+    # TSEspionage fires the higher-ops card first; US wins ties (empirically
+    # confirmed from 88 log observations: all 71 tied-ops headline events in
+    # competitive logs fire US first).
+    if ussr_ops > us_ops:
+        expected_first_side = "USSR"
+        expected_first_card = ussr_card
+    elif us_ops > ussr_ops:
+        expected_first_side = "US"
+        expected_first_card = us_card
+    else:
+        # Tied ops — US fires first (TSEspionage implementation).
+        expected_first_side = "US"
+        expected_first_card = us_card
+
+    # Find the first occurrence of either headlined card in the events stream.
+    # This is robust against sub-events generated by the first card's effects.
+    ussr_norm = _norm(ussr_card)
+    us_norm = _norm(us_card)
+    first_match_side: str | None = None
+    first_match_name: str | None = None
+    for evt in events_fired:
+        evt_norm = _norm(evt)
+        if evt_norm == ussr_norm:
+            first_match_side = "USSR"
+            first_match_name = evt
+            break
+        elif evt_norm == us_norm:
+            first_match_side = "US"
+            first_match_name = evt
+            break
+
+    if first_match_side is None:
+        return []  # Neither headline card found in fired events — skip.
+
+    if first_match_side != expected_first_side:
+        return [Violation(
+            kind=ViolationKind.HEADLINE_ORDER_MISMATCH,
+            turn=turn, ar=0, phasing=Side.USSR,
+            card_id=None, country_id=None,
+            message=(
+                f"headline order mismatch at turn {turn}: "
+                f"USSR played {ussr_card!r} ({ussr_ops} ops), "
+                f"US played {us_card!r} ({us_ops} ops); "
+                f"expected {expected_first_side} to fire first "
+                f"but {first_match_side} ({first_match_name!r}) fired first"
+            ),
+            raw_line="",
+        )]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -704,13 +1010,18 @@ def _check_reducer_vs_log(
     states: list,
     cards: dict,
 ) -> list[Violation]:
-    """Compare reducer-computed state to absolute bracket values logged by the server.
+    """Compare reducer-computed state to absolute values logged by the server.
 
-    Two checks:
-    1. INFLUENCE_STATE_MISMATCH — after each PLACE/REMOVE_INFLUENCE event, the
-       reducer's influence for that country must match the logged [US][USSR] bracket.
-    2. SCORING_VP_MISMATCH — for each scoring card play, the scoring engine's
-       computed VP delta must match the sum of VP_CHANGE events that immediately follow.
+    Checks:
+    1. INFLUENCE_STATE_MISMATCH — after PLACE/REMOVE_INFLUENCE, reducer influence
+       must match logged [US][USSR] bracket.
+    2. SCORING_VP_MISMATCH — scoring engine VP delta vs. logged VP_CHANGE sum.
+    3. MILOPS_PENALTY_MISMATCH — end-of-turn VP penalty formula.
+    4. DEFCON_STATE_MISMATCH — after DEFCON_CHANGE, pub.defcon must match ev.amount.
+    5. MILOPS_STATE_MISMATCH — after MILOPS_CHANGE, pub.milops[side] must match ev.amount.
+    6. SPACE_LEVEL_MISMATCH — after SPACE_RACE advance, pub.space[side] must match ev.amount.
+    7. VP_ABSOLUTE_MISMATCH — after VP_CHANGE, reducer pub.vp must match absolute score
+       in "Score is X" suffix of the log line.
     """
     from tsrl.engine.scoring import apply_scoring_card
 
@@ -823,6 +1134,170 @@ def _check_reducer_vs_log(
                     raw_line=ev.raw_line,
                 ))
 
+        # ── DEFCON state check ───────────────────────────────────────────────
+        if ev.kind == EventKind.DEFCON_CHANGE and ev.amount is not None:
+            actual_defcon = pub_after.defcon
+            if actual_defcon != ev.amount:
+                violations.append(Violation(
+                    kind=ViolationKind.DEFCON_STATE_MISMATCH,
+                    turn=ev.turn, ar=ev.ar, phasing=ev.phasing,
+                    card_id=None, country_id=None,
+                    message=(
+                        f"DEFCON state mismatch: reducer={actual_defcon}, "
+                        f"log says DEFCON changed to {ev.amount}"
+                    ),
+                    raw_line=ev.raw_line,
+                ))
+
+        # ── MilOps state check ───────────────────────────────────────────────
+        if ev.kind == EventKind.MILOPS_CHANGE and ev.amount is not None:
+            side_idx = int(ev.phasing) if ev.phasing in (Side.USSR, Side.US) else None
+            if side_idx is not None:
+                actual_milops = pub_after.milops[side_idx]
+                if actual_milops != ev.amount:
+                    violations.append(Violation(
+                        kind=ViolationKind.MILOPS_STATE_MISMATCH,
+                        turn=ev.turn, ar=ev.ar, phasing=ev.phasing,
+                        card_id=None, country_id=None,
+                        message=(
+                            f"milops state mismatch for {ev.phasing.name}: "
+                            f"reducer={actual_milops}, log says milops changed to {ev.amount}"
+                        ),
+                        raw_line=ev.raw_line,
+                    ))
+
+        # ── Space level check ────────────────────────────────────────────────
+        if ev.kind == EventKind.SPACE_RACE and ev.amount is not None:
+            side_idx = int(ev.phasing) if ev.phasing in (Side.USSR, Side.US) else None
+            if side_idx is not None:
+                actual_space = pub_after.space[side_idx]
+                if actual_space != ev.amount:
+                    violations.append(Violation(
+                        kind=ViolationKind.SPACE_LEVEL_MISMATCH,
+                        turn=ev.turn, ar=ev.ar, phasing=ev.phasing,
+                        card_id=None, country_id=None,
+                        message=(
+                            f"space level mismatch for {ev.phasing.name}: "
+                            f"reducer={actual_space}, log says space advanced to {ev.amount}"
+                        ),
+                        raw_line=ev.raw_line,
+                    ))
+
+        # ── VP absolute score check ──────────────────────────────────────────
+        if ev.kind == EventKind.VP_CHANGE:
+            m = _CROSS_RE_SCORE_SNAPSHOT.search(ev.raw_line)
+            if m:
+                side_str = m.group(1)    # "USSR", "US", or None (even)
+                score_str = m.group(2)   # digit string or None
+                if side_str is None:
+                    expected_vp = 0
+                elif side_str == "USSR":
+                    expected_vp = int(score_str)   # type: ignore[arg-type]
+                else:
+                    expected_vp = -int(score_str)  # type: ignore[arg-type]
+                actual_vp = pub_after.vp
+                if actual_vp != expected_vp:
+                    violations.append(Violation(
+                        kind=ViolationKind.VP_ABSOLUTE_MISMATCH,
+                        turn=ev.turn, ar=ev.ar, phasing=ev.phasing,
+                        card_id=None, country_id=None,
+                        message=(
+                            f"VP absolute mismatch: reducer={actual_vp}, "
+                            f"log says score={side_str or 'even'}"
+                            + (f" {score_str}" if score_str else "")
+                            + f" (expected pub.vp={expected_vp})"
+                        ),
+                        raw_line=ev.raw_line,
+                    ))
+
+                # ── VP win condition check ─────────────────────────────
+                # If absolute score crossed ±20 threshold, GAME_END must follow
+                # before any new PLAY or HEADLINE.  Also scan backward by 2 for
+                # GAME_END since the parser can emit GAME_END+VP_CHANGE from the
+                # same raw line with GAME_END first.
+                if abs(expected_vp) >= 20:
+                    _WIN_STOP = frozenset({
+                        EventKind.PLAY, EventKind.HEADLINE,
+                        EventKind.ACTION_ROUND_START, EventKind.TURN_START,
+                    })
+                    game_ended = any(
+                        resolved[j].kind == EventKind.GAME_END
+                        for j in range(max(0, i - 2), i)
+                    )
+                    game_continued = False
+                    if not game_ended:
+                        for j in range(i + 1, len(resolved)):
+                            nev = resolved[j]
+                            if nev.kind == EventKind.GAME_END:
+                                game_ended = True
+                                break
+                            if nev.kind in _WIN_STOP:
+                                game_continued = True
+                                break
+                    # Only flag if game demonstrably continued; if log ends
+                    # after the VP threshold was crossed, game ended there.
+                    if not game_ended and game_continued:
+                        vp_desc = (
+                            f"score={side_str} {score_str}"
+                            if side_str else "score=even"
+                        )
+                        violations.append(Violation(
+                            kind=ViolationKind.VP_WIN_NOT_TRIGGERED,
+                            turn=ev.turn, ar=ev.ar, phasing=ev.phasing,
+                            card_id=None, country_id=None,
+                            message=(
+                                f"VP absolute win ({vp_desc}) not followed "
+                                f"by GAME_END before next PLAY/HEADLINE"
+                            ),
+                            raw_line=ev.raw_line,
+                        ))
+
+        # ── Reshuffle non-empty discard check ────────────────────────────────
+        if ev.kind == EventKind.RESHUFFLE:
+            pub_before = states[i - 1][0] if i > 0 else PublicState()
+            if not pub_before.discard:
+                violations.append(Violation(
+                    kind=ViolationKind.RESHUFFLE_EMPTY_DISCARD,
+                    turn=ev.turn, ar=ev.ar, phasing=ev.phasing,
+                    card_id=None, country_id=None,
+                    message=(
+                        "RESHUFFLE fired but pub.discard was empty before the event; "
+                        "nothing available to reshuffle into the draw pile"
+                    ),
+                    raw_line=ev.raw_line,
+                ))
+
+        # ── DEFCON-1 game-end check ──────────────────────────────────────────
+        if ev.kind == EventKind.DEFCON_CHANGE and pub_after.defcon == 1:
+            _DEFCON_WIN_STOP = frozenset({
+                EventKind.PLAY, EventKind.HEADLINE,
+                EventKind.ACTION_ROUND_START, EventKind.TURN_START,
+            })
+            game_ended = False
+            game_continued = False  # a stop event was found before GAME_END
+            for j in range(i + 1, len(resolved)):
+                nev = resolved[j]
+                if nev.kind == EventKind.GAME_END:
+                    game_ended = True
+                    break
+                if nev.kind in _DEFCON_WIN_STOP:
+                    game_continued = True
+                    break
+            # Only flag if the game demonstrably continued (a play/headline
+            # was found after DEFCON=1 without GAME_END).  If the log simply
+            # ends after DEFCON=1, the game likely ended there — no violation.
+            if not game_ended and game_continued:
+                violations.append(Violation(
+                    kind=ViolationKind.DEFCON_GAME_NOT_ENDED,
+                    turn=ev.turn, ar=ev.ar, phasing=ev.phasing,
+                    card_id=None, country_id=None,
+                    message=(
+                        "DEFCON dropped to 1 but no GAME_END event followed "
+                        "before the next PLAY/HEADLINE — game should end immediately"
+                    ),
+                    raw_line=ev.raw_line,
+                ))
+
     return violations
 
 
@@ -904,7 +1379,8 @@ def validate_game(
         all_violations.extend(violations)
 
     # Raw-evidence cross-checks (ground truth embedded in log metadata).
-    all_violations.extend(_cross_check_raw(text, countries))
+    card_name_to_ops = {spec.name: spec.ops for spec in cards.values()}
+    all_violations.extend(_cross_check_raw(text, countries, card_name_to_ops))
 
     # Reducer-vs-log cross-checks (compare computed state to logged brackets + VP).
     all_violations.extend(_check_reducer_vs_log(resolved, states, cards))
