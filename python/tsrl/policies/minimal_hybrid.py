@@ -19,8 +19,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 
+from tsrl.engine.adjacency import load_adjacency
 from tsrl.engine.game_state import _ars_for_turn
-from tsrl.engine.legal_actions import enumerate_actions, legal_cards
+from tsrl.engine.legal_actions import (
+    accessible_countries,
+    effective_ops,
+    enumerate_actions,
+    legal_cards,
+    legal_modes,
+)
 from tsrl.etl.game_data import CardSpec, CountrySpec, load_cards, load_countries
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Region, Side
 
@@ -30,20 +37,22 @@ _THAILAND_ID = 79
 _CHINA_CARD_ID = 6
 _EARLY_LAST_TURN = 3
 _MID_LAST_TURN = 7
-_OFFSIDE_OPS_PENALTY_BASE = 8.0
+_OFFSIDE_OPS_PENALTY_BASE = 7.0
 _OFFSIDE_OPS_PENALTY_PER_OP = 4.0
-_NON_COUP_MILOPS_URGENCY_SCALE = 6.0
+_NON_COUP_MILOPS_URGENCY_SCALE = 8.0
 _NON_COUP_MILOPS_LATE_PENALTY = 3.0
-_COUP_EXPECTED_SWING_SCALE = 6.0
-_COUP_ACCESS_OPENING_BONUS = 5.0
-_COUP_MILOPS_URGENCY_SCALE = 2.0
+_COUP_EXPECTED_SWING_SCALE = 5.5
+_COUP_ACCESS_OPENING_BONUS = 7.0
+_COUP_MILOPS_URGENCY_SCALE = 4.0
 _OPENING_IRAN_COUP_BONUS = 35.0
 _EMPTY_COUP_PENALTY = 15.0
 _DEFCON2_BATTLEGROUND_SUICIDE_PENALTY = 1_000_000.0
+_MAX_INFLUENCE_TARGETS = 84
+_DEFCON3_BATTLEGROUND_SUICIDE_PENALTY = 1_000_000.0
 
 _EARLY_REGION_WEIGHT = (0.85, 1.35, 1.10, 0.60, 0.55, 0.65, 1.25)
 _MID_REGION_WEIGHT = (0.95, 1.00, 1.00, 0.95, 1.20, 1.20, 0.90)
-_LATE_REGION_WEIGHT = (1.10, 0.95, 0.95, 1.05, 1.10, 1.00, 0.75)
+_LATE_REGION_WEIGHT = (1.10, 0.95, 0.95, 1.05, 1.10, 1.20, 0.75)
 
 _EUROPE_CORE_BONUS: frozenset[str] = frozenset({
     "France",
@@ -75,16 +84,16 @@ class MinimalHybridParams:
     early_region_weights: tuple[float, ...] = _EARLY_REGION_WEIGHT
     mid_region_weights: tuple[float, ...] = _MID_REGION_WEIGHT
     late_region_weights: tuple[float, ...] = _LATE_REGION_WEIGHT
-    influence_mode_bonus: float = 6.0
+    influence_mode_bonus: float = 5.0
     coup_mode_bonus: float = 4.0
     realign_mode_bonus: float = -1.0
     space_mode_bonus: float = 1.0
     ops_card_penalty: float = 0.15
     control_break_bonus: float = 5.0
-    access_bonus: float = 1.5
+    access_bonus: float = 2.0
     coup_battleground_bonus: float = 2.5
     coup_defcon2_penalty: float = -8.0
-    coup_defcon3_penalty: float = -2.5
+    coup_defcon3_penalty: float = -6.0
     realign_base_penalty: float = -4.0
     realign_country_scale: float = 0.55
     realign_defcon2_bonus: float = 2.0
@@ -131,6 +140,23 @@ class DecisionAnalysis:
     ranked_actions: tuple[ActionScoreBreakdown, ...]
 
 
+@dataclass(frozen=True)
+class DecisionContext:
+    pub: PublicState
+    side: Side
+    params: MinimalHybridParams
+    accessible_influence: frozenset[int]
+    accessible_coup: frozenset[int]
+    accessible_realign: frozenset[int]
+    country_values: dict[int, float]
+    own_influence: dict[int, int]
+    opp_influence: dict[int, int]
+    stabilities: dict[int, int]
+    is_asia: dict[int, bool]
+    card_cache: dict[int, CardSpec]
+    country_cache: dict[int, CountrySpec]
+
+
 DEFAULT_MINIMAL_HYBRID_PARAMS = MinimalHybridParams()
 
 
@@ -142,20 +168,16 @@ def choose_minimal_hybrid(
 ) -> ActionEncoding | None:
     """Return the best legal action according to the minimal hybrid heuristic."""
     side = pub.phasing
-    actions = _headline_actions(hand, pub, side, holds_china) if pub.ar == 0 else enumerate_actions(
-        hand,
-        pub,
-        side,
-        holds_china=holds_china,
-    )
-    if not actions:
+    context = _make_decision_context(pub, side, params)
+    candidates = _scored_candidate_actions(hand, holds_china, context)
+    if not candidates:
         return None
 
     scored: list[tuple[ActionEncoding, float]] = []
-    for action in actions:
-        score = _score_action(pub, side, action, params)
+    for action, cached_score in candidates:
+        score = cached_score if cached_score is not None else _score_action(context, action)
         if pub.ar == 0:
-            score += _headline_adjustment(side, action, params)
+            score += _headline_adjustment(context, action)
         scored.append((action, score))
 
     return min(scored, key=lambda item: _action_sort_key(item[0], item[1]))[0]
@@ -182,12 +204,8 @@ def analyze_minimal_hybrid_decision(
 ) -> DecisionAnalysis:
     """Return ranked action scores and the chosen action for one decision."""
     side = pub.phasing
-    actions = _headline_actions(hand, pub, side, holds_china) if pub.ar == 0 else enumerate_actions(
-        hand,
-        pub,
-        side,
-        holds_china=holds_china,
-    )
+    context = _make_decision_context(pub, side, params)
+    actions = _candidate_actions(hand, holds_china, context)
     if not actions:
         return DecisionAnalysis(
             chosen_action=None,
@@ -198,7 +216,7 @@ def analyze_minimal_hybrid_decision(
     ranked = tuple(
         sorted(
             (
-                _score_action_breakdown(pub, side, action, params)
+                _score_action_breakdown(context, action)
                 for action in actions
             ),
             key=lambda item: _action_sort_key(item.action, item.total_score),
@@ -209,9 +227,232 @@ def analyze_minimal_hybrid_decision(
 
     return DecisionAnalysis(
         chosen_action=ranked[0].action,
-        legal_action_count=len(actions),
+        legal_action_count=_legal_action_count(pub, hand, side, holds_china),
         ranked_actions=ranked,
     )
+
+
+def _make_decision_context(
+    pub: PublicState,
+    side: Side,
+    params: MinimalHybridParams,
+) -> DecisionContext:
+    country_cache = _countries()
+    other_side = _other(side)
+    stage = _stage_for_turn(pub.turn)
+
+    if pub.ar == 0:
+        accessible_influence = frozenset()
+        accessible_coup = frozenset()
+        accessible_realign = frozenset()
+    else:
+        adjacency = _adjacency()
+        accessible_influence = frozenset(
+            accessible_countries(side, pub, adjacency, mode=ActionMode.INFLUENCE)
+        )
+        accessible_coup = frozenset(
+            accessible_countries(side, pub, adjacency, mode=ActionMode.COUP)
+        )
+        accessible_realign = frozenset(
+            accessible_countries(side, pub, adjacency, mode=ActionMode.REALIGN)
+        )
+
+    own_influence: dict[int, int] = {}
+    opp_influence: dict[int, int] = {}
+    stabilities: dict[int, int] = {}
+    is_asia: dict[int, bool] = {}
+    country_values: dict[int, float] = {}
+
+    for country_id, country in country_cache.items():
+        own_influence[country_id] = pub.influence.get((side, country_id), 0)
+        opp_influence[country_id] = pub.influence.get((other_side, country_id), 0)
+        stabilities[country_id] = country.stability
+        is_asia[country_id] = country.region in (Region.ASIA, Region.SOUTHEAST_ASIA)
+        country_values[country_id] = _country_value_from_spec(stage, country_id, country, params)
+
+    return DecisionContext(
+        pub=pub,
+        side=side,
+        params=params,
+        accessible_influence=accessible_influence,
+        accessible_coup=accessible_coup,
+        accessible_realign=accessible_realign,
+        country_values=country_values,
+        own_influence=own_influence,
+        opp_influence=opp_influence,
+        stabilities=stabilities,
+        is_asia=is_asia,
+        card_cache=_cards(),
+        country_cache=country_cache,
+    )
+
+
+def _candidate_actions(
+    hand: frozenset[int],
+    holds_china: bool,
+    context: DecisionContext,
+) -> list[ActionEncoding]:
+    return [action for action, _cached_score in _scored_candidate_actions(hand, holds_china, context)]
+
+
+def _scored_candidate_actions(
+    hand: frozenset[int],
+    holds_china: bool,
+    context: DecisionContext,
+) -> list[tuple[ActionEncoding, float | None]]:
+    pub = context.pub
+    side = context.side
+    if pub.ar == 0:
+        return [
+            (action, None)
+            for action in _headline_actions(hand, pub, side, holds_china)
+        ]
+
+    adjacency = _adjacency()
+    actions: list[tuple[ActionEncoding, float | None]] = []
+    playable = sorted(legal_cards(hand, pub, side, holds_china=holds_china))
+    accessible_coup = tuple(sorted(context.accessible_coup))
+    accessible_realign = _limited_accessible(context.accessible_realign)
+    accessible_influence = _limited_accessible(context.accessible_influence)
+
+    for card_id in playable:
+        if card_id not in context.card_cache:
+            continue
+
+        for mode in legal_modes(card_id, pub, side, adj=adjacency):
+            if mode == ActionMode.SPACE:
+                actions.append((ActionEncoding(card_id=card_id, mode=mode, targets=()), None))
+                continue
+
+            if mode == ActionMode.EVENT:
+                actions.append((ActionEncoding(card_id=card_id, mode=mode, targets=()), None))
+                continue
+
+            if mode == ActionMode.COUP:
+                if not accessible_coup:
+                    continue
+                for country_id in accessible_coup:
+                    actions.append((
+                        ActionEncoding(
+                            card_id=card_id,
+                            mode=mode,
+                            targets=(country_id,),
+                        ),
+                        None,
+                    ))
+                continue
+
+            if mode == ActionMode.REALIGN:
+                if not accessible_realign:
+                    continue
+                action = _best_realign_action(card_id, accessible_realign, context)
+                if action is not None:
+                    actions.append((action, None))
+                continue
+
+            if not accessible_influence:
+                continue
+            action, score = _best_influence_action_dp(card_id, accessible_influence, context)
+            actions.append((action, score))
+
+    return actions
+
+
+def _best_realign_action(
+    card_id: int,
+    accessible: tuple[int, ...],
+    context: DecisionContext,
+) -> ActionEncoding | None:
+    if not accessible:
+        return None
+
+    country_values = {
+        country_id: _country_value(context, country_id)
+        for country_id in accessible
+    }
+    best_value = max(country_values.values())
+    scored: list[tuple[ActionEncoding, float]] = []
+
+    for country_id in accessible:
+        if country_values[country_id] != best_value:
+            continue
+        action = ActionEncoding(
+            card_id=card_id,
+            mode=ActionMode.REALIGN,
+            targets=(country_id,),
+        )
+        scored.append((action, _score_action(context, action)))
+
+    return min(scored, key=lambda item: _action_sort_key(item[0], item[1]))[0]
+
+
+def _best_influence_action_dp(
+    card_id: int,
+    accessible: tuple[int, ...],
+    context: DecisionContext,
+) -> tuple[ActionEncoding, float]:
+    base_action = ActionEncoding(card_id=card_id, mode=ActionMode.INFLUENCE, targets=())
+    if not accessible:
+        return base_action, _score_influence_action(context, base_action)
+
+    ops = effective_ops(card_id, context.pub, context.side)
+    dp: list[list[list[tuple[ActionEncoding, float] | None]]] = [
+        [[None, None] for _ in range(ops + 1)]
+        for _ in range(len(accessible) + 1)
+    ]
+    dp[0][0][0] = (base_action, _score_influence_action(context, base_action))
+
+    for index, country_id in enumerate(accessible, start=1):
+        country_is_asia = _is_asia_or_sea(context, country_id)
+        for used_ops in range(ops + 1):
+            for has_asia in (0, 1):
+                previous = dp[index - 1][used_ops][has_asia]
+                if previous is None:
+                    continue
+
+                previous_action, previous_score = previous
+                max_allocation = ops - used_ops
+                for allocation in range(max_allocation + 1):
+                    next_targets = previous_action.targets + ((country_id,) * allocation)
+                    next_action = ActionEncoding(
+                        card_id=card_id,
+                        mode=ActionMode.INFLUENCE,
+                        targets=next_targets,
+                    )
+                    next_has_asia = has_asia or (country_is_asia and allocation > 0)
+                    next_score = _score_influence_action(context, next_action)
+                    current = dp[index][used_ops + allocation][int(next_has_asia)]
+                    candidate_key = _action_sort_key(next_action, next_score)
+                    current_key = (
+                        None if current is None else _action_sort_key(current[0], current[1])
+                    )
+                    if current is None or candidate_key < current_key:
+                        dp[index][used_ops + allocation][int(next_has_asia)] = (
+                            next_action,
+                            next_score,
+                        )
+
+    best = dp[len(accessible)][ops][0]
+    with_asia = dp[len(accessible)][ops][1]
+    if with_asia is not None and (
+        best is None
+        or _action_sort_key(with_asia[0], with_asia[1]) < _action_sort_key(best[0], best[1])
+    ):
+        best = with_asia
+    if best is None:
+        return base_action, _score_influence_action(context, base_action)
+    return best
+
+
+def _legal_action_count(
+    pub: PublicState,
+    hand: frozenset[int],
+    side: Side,
+    holds_china: bool,
+) -> int:
+    if pub.ar == 0:
+        return len(_headline_actions(hand, pub, side, holds_china))
+    return len(enumerate_actions(hand, pub, side, holds_china=holds_china))
 
 
 def _headline_actions(
@@ -231,66 +472,68 @@ def _headline_actions(
 
 
 def _score_action(
-    pub: PublicState,
-    side: Side,
+    context: DecisionContext,
     action: ActionEncoding,
-    params: MinimalHybridParams,
 ) -> float:
-    card = _cards()[action.card_id]
+    card = context.card_cache[action.card_id]
     mode = action.mode
     score = 0.0
 
     if mode == ActionMode.INFLUENCE:
-        score += params.influence_mode_bonus
-        score += _score_influence(pub, side, action.targets, params)
+        best_action, best_score = _best_influence_action_dp(
+            action.card_id,
+            _limited_accessible(context.accessible_influence),
+            context,
+        )
+        if action.targets == best_action.targets:
+            return best_score
+        return _score_influence_action(context, action)
     elif mode == ActionMode.COUP:
-        score += params.coup_mode_bonus
-        score += _score_coup(pub, side, action.targets[0], card.ops, params)
+        score += context.params.coup_mode_bonus
+        score += _score_coup(context, action.targets[0], card.ops)
     elif mode == ActionMode.REALIGN:
-        score += params.realign_mode_bonus
-        score += _score_realign(pub, side, action.targets, params)
+        score += context.params.realign_mode_bonus
+        score += _score_realign(context, action.targets)
     elif mode == ActionMode.SPACE:
-        score += params.space_mode_bonus
-        score += _score_space(pub, side, card, params)
+        score += context.params.space_mode_bonus
+        score += _score_space(context, card)
     elif mode == ActionMode.EVENT:
-        score += _score_event(side, card)
+        score += _score_event(context.side, card)
 
-    score += _card_bias(pub, side, action, card, params)
-    score -= params.ops_card_penalty * card.ops
+    score += _card_bias(context, action, card)
+    score -= context.params.ops_card_penalty * card.ops
     if action.mode != ActionMode.COUP:
-        score -= _non_coup_milops_penalty(pub, side)
+        score -= _non_coup_milops_penalty(context.pub, context.side)
     return score
 
 
 def _score_action_breakdown(
-    pub: PublicState,
-    side: Side,
+    context: DecisionContext,
     action: ActionEncoding,
-    params: MinimalHybridParams,
 ) -> ActionScoreBreakdown:
-    card = _cards()[action.card_id]
+    card = context.card_cache[action.card_id]
     mode_prior = 0.0
     mode_detail = 0.0
     event_score = 0.0
 
     if action.mode == ActionMode.INFLUENCE:
-        mode_prior = params.influence_mode_bonus
-        mode_detail = _score_influence(pub, side, action.targets, params)
+        mode_prior = context.params.influence_mode_bonus
+        mode_detail = _score_influence(context, action.targets)
     elif action.mode == ActionMode.COUP:
-        mode_prior = params.coup_mode_bonus
-        mode_detail = _score_coup(pub, side, action.targets[0], card.ops, params)
+        mode_prior = context.params.coup_mode_bonus
+        mode_detail = _score_coup(context, action.targets[0], card.ops)
     elif action.mode == ActionMode.REALIGN:
-        mode_prior = params.realign_mode_bonus
-        mode_detail = _score_realign(pub, side, action.targets, params)
+        mode_prior = context.params.realign_mode_bonus
+        mode_detail = _score_realign(context, action.targets)
     elif action.mode == ActionMode.SPACE:
-        mode_prior = params.space_mode_bonus
-        mode_detail = _score_space(pub, side, card, params)
+        mode_prior = context.params.space_mode_bonus
+        mode_detail = _score_space(context, card)
     elif action.mode == ActionMode.EVENT:
-        event_score = _score_event(side, card)
+        event_score = _score_event(context.side, card)
 
-    card_bias = _card_bias(pub, side, action, card, params)
-    ops_penalty = -params.ops_card_penalty * card.ops
-    headline_adjustment = _headline_adjustment(side, action, params) if pub.ar == 0 else 0.0
+    card_bias = _card_bias(context, action, card)
+    ops_penalty = -context.params.ops_card_penalty * card.ops
+    headline_adjustment = _headline_adjustment(context, action) if context.pub.ar == 0 else 0.0
     total_score = (
         mode_prior
         + mode_detail
@@ -308,46 +551,81 @@ def _score_action_breakdown(
         card_bias=card_bias,
         ops_penalty=ops_penalty,
         headline_adjustment=headline_adjustment,
-        notes=_action_notes(pub, side, action, card, params),
+        notes=_action_notes(context, action, card),
     )
 
 
 def _score_influence(
-    pub: PublicState,
-    side: Side,
+    context: DecisionContext,
     targets: tuple[int, ...],
-    params: MinimalHybridParams,
 ) -> float:
     score = 0.0
     seen: dict[int, int] = defaultdict(int)
 
     for cid in targets:
         seen[cid] += 1
-        score += _country_value(pub, side, cid, params) / seen[cid]
+        score += _country_value(context, cid) / seen[cid]
 
-        opp = _influence(pub, _other(side), cid)
-        own = _influence(pub, side, cid)
-        stability = _countries()[cid].stability
+        opp = _influence(context, _other(context.side), cid)
+        own = _influence(context, context.side, cid)
+        stability = context.stabilities[cid]
 
         if own < opp + stability and own + seen[cid] >= opp + stability:
-            score += params.control_break_bonus
+            score += context.params.control_break_bonus
         if own == 0:
-            score += params.access_bonus
+            score += context.params.access_bonus
+
+    return score
+
+
+def _score_influence_action(
+    context: DecisionContext,
+    action: ActionEncoding,
+) -> float:
+    card = context.card_cache[action.card_id]
+    score = context.params.influence_mode_bonus
+    score += _score_influence(context, action.targets)
+    score += _card_bias(context, action, card)
+    score -= context.params.ops_card_penalty * card.ops
+    score -= _non_coup_milops_penalty(context.pub, context.side)
+    return score
+
+
+def _influence_allocation_delta(
+    context: DecisionContext,
+    country_id: int,
+    allocation: int,
+) -> float:
+    if allocation <= 0:
+        return 0.0
+
+    score = 0.0
+    country_value = _country_value(context, country_id)
+    own = _influence(context, context.side, country_id)
+    opp = _influence(context, _other(context.side), country_id)
+    stability = context.stabilities[country_id]
+
+    for seen in range(1, allocation + 1):
+        score += country_value / seen
+        if own < opp + stability and own + seen >= opp + stability:
+            score += context.params.control_break_bonus
+        if own == 0:
+            score += context.params.access_bonus
 
     return score
 
 
 def _score_coup(
-    pub: PublicState,
-    side: Side,
+    context: DecisionContext,
     country_id: int,
     ops: int,
-    params: MinimalHybridParams,
 ) -> float:
-    country = _countries()[country_id]
-    score = _country_value(pub, side, country_id, params)
-    opp_inf = _influence(pub, _other(side), country_id)
-    own_inf = _influence(pub, side, country_id)
+    pub = context.pub
+    side = context.side
+    country = context.country_cache[country_id]
+    score = _country_value(context, country_id)
+    opp_inf = _influence(context, _other(side), country_id)
+    own_inf = _influence(context, side, country_id)
 
     needed_milops = max(0, pub.turn - pub.milops[int(side)])
     score += min(needed_milops, ops)
@@ -359,15 +637,17 @@ def _score_coup(
         score -= _EMPTY_COUP_PENALTY
 
     if country.is_battleground:
-        score += params.coup_battleground_bonus
+        score += context.params.coup_battleground_bonus
         if pub.defcon == 2:
             if _defcon2_battleground_coup_is_free(pub, side, country):
                 pass
             else:
-                score += params.coup_defcon2_penalty
+                score += context.params.coup_defcon2_penalty
                 score -= _DEFCON2_BATTLEGROUND_SUICIDE_PENALTY
         elif pub.defcon == 3:
-            score += params.coup_defcon3_penalty
+            score += context.params.coup_defcon3_penalty
+            if _milops_urgency(pub, side) < 0.5:
+                score -= _DEFCON3_BATTLEGROUND_SUICIDE_PENALTY
 
     if pub.turn == 1 and side == Side.USSR and country.name == "Iran":
         score += _OPENING_IRAN_COUP_BONUS
@@ -376,32 +656,30 @@ def _score_coup(
 
 
 def _score_realign(
-    pub: PublicState,
-    side: Side,
+    context: DecisionContext,
     targets: tuple[int, ...],
-    params: MinimalHybridParams,
 ) -> float:
-    score = params.realign_base_penalty
+    score = context.params.realign_base_penalty
     for cid in targets:
-        score += params.realign_country_scale * _country_value(pub, side, cid, params)
-    if pub.defcon == 2:
-        score += params.realign_defcon2_bonus
+        score += context.params.realign_country_scale * _country_value(context, cid)
+    if context.pub.defcon == 2:
+        score += context.params.realign_defcon2_bonus
     return score
 
 
 def _score_space(
-    pub: PublicState,
-    side: Side,
+    context: DecisionContext,
     card: CardSpec,
-    params: MinimalHybridParams,
 ) -> float:
+    pub = context.pub
+    side = context.side
     score = 0.0
     if pub.space[int(side)] < pub.space[int(_other(side))]:
-        score += params.space_when_behind_bonus
+        score += context.params.space_when_behind_bonus
     if pub.turn <= _EARLY_LAST_TURN:
-        score += params.space_early_bonus
+        score += context.params.space_early_bonus
     if card.side not in (side, Side.NEUTRAL) and not card.is_scoring:
-        score += params.space_offside_bonus
+        score += context.params.space_offside_bonus
     return score
 
 
@@ -416,24 +694,23 @@ def _score_event(side: Side, card: CardSpec) -> float:
 
 
 def _headline_adjustment(
-    side: Side,
+    context: DecisionContext,
     action: ActionEncoding,
-    params: MinimalHybridParams,
 ) -> float:
-    card = _cards()[action.card_id]
-    score = params.headline_ops_scale * card.ops
-    if card.side in (side, Side.NEUTRAL):
-        score += params.headline_friendly_bonus
+    card = context.card_cache[action.card_id]
+    score = context.params.headline_ops_scale * card.ops
+    if card.side in (context.side, Side.NEUTRAL):
+        score += context.params.headline_friendly_bonus
     return score
 
 
 def _card_bias(
-    pub: PublicState,
-    side: Side,
+    context: DecisionContext,
     action: ActionEncoding,
     card: CardSpec,
-    params: MinimalHybridParams,
 ) -> float:
+    pub = context.pub
+    side = context.side
     score = 0.0
 
     if action.mode == ActionMode.EVENT:
@@ -456,9 +733,9 @@ def _card_bias(
 
     if card.card_id == _CHINA_CARD_ID:
         if pub.turn <= _EARLY_LAST_TURN:
-            score += params.china_early_penalty
-        if any(_is_asia_or_sea(cid) for cid in action.targets):
-            score += params.china_asia_target_bonus
+            score += context.params.china_early_penalty
+        if any(_is_asia_or_sea(context, cid) for cid in action.targets):
+            score += context.params.china_asia_target_bonus
         if action.mode == ActionMode.EVENT:
             score -= 10.0
 
@@ -466,30 +743,10 @@ def _card_bias(
 
 
 def _country_value(
-    pub: PublicState,
-    side: Side,
+    context: DecisionContext,
     country_id: int,
-    params: MinimalHybridParams,
 ) -> float:
-    stage = _stage_for_turn(pub.turn)
-    country = _countries()[country_id]
-    score = params.country_region_scale * _region_weight(stage, country.region, params)
-
-    if country.is_battleground:
-        score += params.country_battleground_bonus
-    else:
-        score += params.country_non_battleground_bonus
-
-    score += params.country_stability_scale * min(country.stability, 4)
-
-    if country_id == _THAILAND_ID and stage == "early":
-        score += params.country_thailand_early_bonus
-    if country.name in _EUROPE_CORE_BONUS:
-        score += params.country_europe_core_bonus
-    if country.name in _MID_WAR_ENTRY_BONUS and stage == "mid":
-        score += params.country_mid_war_entry_bonus
-
-    return score
+    return context.country_values[country_id]
 
 
 def _action_sort_key(
@@ -513,8 +770,42 @@ def _region_weight(stage: str, region: Region, params: MinimalHybridParams) -> f
     return params.region_weight(stage, region)
 
 
+def _country_value_from_spec(
+    stage: str,
+    country_id: int,
+    country: CountrySpec,
+    params: MinimalHybridParams,
+) -> float:
+    score = params.country_region_scale * _region_weight(stage, country.region, params)
+
+    if country.is_battleground:
+        score += params.country_battleground_bonus
+    else:
+        score += params.country_non_battleground_bonus
+
+    score += params.country_stability_scale * min(country.stability, 4)
+
+    if country_id == _THAILAND_ID and stage == "early":
+        score += params.country_thailand_early_bonus
+    if country.name in _EUROPE_CORE_BONUS:
+        score += params.country_europe_core_bonus
+    if country.name in _MID_WAR_ENTRY_BONUS and stage == "mid":
+        score += params.country_mid_war_entry_bonus
+
+    return score
+
+
+def _limited_accessible(accessible: frozenset[int]) -> tuple[int, ...]:
+    return tuple(sorted(accessible))[:_MAX_INFLUENCE_TARGETS]
+
+
 def _other(side: Side) -> Side:
     return Side.US if side == Side.USSR else Side.USSR
+
+
+@lru_cache(maxsize=1)
+def _adjacency():
+    return load_adjacency()
 
 
 def _remaining_ars(pub: PublicState) -> int:
@@ -559,41 +850,42 @@ def _defcon2_battleground_coup_is_free(
     return side == Side.US and pub.nuclear_subs_active
 
 
-def _influence(pub: PublicState, side: Side, country_id: int) -> int:
-    return pub.influence.get((side, country_id), 0)
+def _influence(context: DecisionContext, side: Side, country_id: int) -> int:
+    if side == context.side:
+        return context.own_influence[country_id]
+    return context.opp_influence[country_id]
 
 
-def _is_asia_or_sea(country_id: int) -> bool:
-    region = _countries()[country_id].region
-    return region in (Region.ASIA, Region.SOUTHEAST_ASIA)
+def _is_asia_or_sea(context: DecisionContext, country_id: int) -> bool:
+    return context.is_asia[country_id]
 
 
 def _action_notes(
-    pub: PublicState,
-    side: Side,
+    context: DecisionContext,
     action: ActionEncoding,
     card: CardSpec,
-    params: MinimalHybridParams,
 ) -> tuple[str, ...]:
+    pub = context.pub
+    side = context.side
     notes: list[str] = []
 
     if action.mode == ActionMode.INFLUENCE:
         seen: dict[int, int] = defaultdict(int)
         for cid in action.targets:
             seen[cid] += 1
-            country = _countries()[cid]
+            country = context.country_cache[cid]
             notes.append(
-                f"influence:{country.name}:{_country_value(pub, side, cid, params) / seen[cid]:.2f}"
+                f"influence:{country.name}:{_country_value(context, cid) / seen[cid]:.2f}"
             )
-            opp = _influence(pub, _other(side), cid)
-            own = _influence(pub, side, cid)
-            stability = country.stability
+            opp = _influence(context, _other(side), cid)
+            own = _influence(context, side, cid)
+            stability = context.stabilities[cid]
             if own < opp + stability and own + seen[cid] >= opp + stability:
                 notes.append(f"control_break:{country.name}")
             if own == 0:
                 notes.append(f"access_touch:{country.name}")
     elif action.mode == ActionMode.COUP:
-        country = _countries()[action.targets[0]]
+        country = context.country_cache[action.targets[0]]
         notes.append(f"coup_target:{country.name}")
         if country.is_battleground:
             notes.append("battleground_coup")
@@ -609,11 +901,11 @@ def _action_notes(
             else:
                 notes.append("defcon2_suicide_veto")
         if (
-            _influence(pub, side, action.targets[0]) == 0
-            and _influence(pub, _other(side), action.targets[0]) > 0
+            _influence(context, side, action.targets[0]) == 0
+            and _influence(context, _other(side), action.targets[0]) > 0
         ):
             notes.append("coup_access_open")
-        if _influence(pub, _other(side), action.targets[0]) == 0:
+        if _influence(context, _other(side), action.targets[0]) == 0:
             notes.append("empty_coup_penalty")
         if _coup_expected_swing(country, card.ops) > 0:
             notes.append(f"expected_swing:{_coup_expected_swing(country, card.ops):.1f}")
@@ -636,7 +928,7 @@ def _action_notes(
     if card.card_id == _CHINA_CARD_ID:
         if pub.turn <= _EARLY_LAST_TURN:
             notes.append("china_early_penalty")
-        if any(_is_asia_or_sea(cid) for cid in action.targets):
+        if any(_is_asia_or_sea(context, cid) for cid in action.targets):
             notes.append("china_asia_bonus")
     if (
         action.mode != ActionMode.EVENT

@@ -8,7 +8,8 @@ import os
 import random
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, replace
+from enum import StrEnum
 from pathlib import Path
 
 from tsrl.engine.game_loop import (
@@ -29,15 +30,37 @@ from tsrl.engine.game_state import (
 from tsrl.etl.game_data import load_cards, load_countries
 from tsrl.policies.minimal_hybrid import (
     DEFAULT_MINIMAL_HYBRID_PARAMS,
-    DecisionAnalysis,
+    ActionScoreBreakdown,
     MinimalHybridParams,
-    analyze_minimal_hybrid_decision,
+    _action_sort_key,
+    _candidate_actions,
+    _legal_action_count,
+    _make_decision_context,
+    _score_action,
+    _score_action_breakdown,
     make_minimal_hybrid_policy,
 )
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side
 
 _CARDS = load_cards()
 _COUNTRIES = load_countries()
+
+
+class LogMode(StrEnum):
+    FAST = "fast"
+    TRACE_TOPN = "trace_topn"
+    TRACE_FULL = "trace_full"
+
+    def analysis_top_n(self, requested_top_n: int) -> int | None:
+        if self == LogMode.FAST:
+            return None
+        if self == LogMode.TRACE_TOPN:
+            return 5
+        return requested_top_n
+
+    @property
+    def writes_markdown(self) -> bool:
+        return self == LogMode.TRACE_FULL
 
 
 @dataclass
@@ -52,7 +75,7 @@ class TraceStep:
     public_state: dict[str, object]
     legal_action_count: int
     chosen_action: dict[str, object] | None
-    top_actions: list[dict[str, object]]
+    top_actions: list[dict[str, object]] | None = None
     post_public_state: dict[str, object] | None = None
     action_effects: dict[str, object] | None = None
 
@@ -95,9 +118,11 @@ def _action_summary(action: ActionEncoding | None) -> dict[str, object] | None:
     }
 
 
-def _breakdown_summary(analysis: DecisionAnalysis) -> list[dict[str, object]]:
+def _full_breakdown_summary(
+    ranked_actions: tuple[ActionScoreBreakdown, ...],
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    for item in analysis.ranked_actions:
+    for item in ranked_actions:
         rows.append(
             {
                 "action": _action_summary(item.action),
@@ -109,6 +134,31 @@ def _breakdown_summary(analysis: DecisionAnalysis) -> list[dict[str, object]]:
                 "ops_penalty": round(item.ops_penalty, 4),
                 "headline_adjustment": round(item.headline_adjustment, 4),
                 "notes": list(item.notes),
+            }
+        )
+    return rows
+
+
+def _note_tags(notes: tuple[str, ...]) -> list[str]:
+    tags: list[str] = []
+    seen: set[str] = set()
+    for note in notes:
+        tag = note.split(":", 1)[0]
+        if tag in seen:
+            continue
+        seen.add(tag)
+        tags.append(tag)
+    return tags
+
+
+def _topn_summary(ranked_actions: tuple[ActionScoreBreakdown, ...]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for item in ranked_actions:
+        rows.append(
+            {
+                "action": _action_summary(item.action),
+                "total_score": round(item.total_score, 4),
+                "tags": _note_tags(item.notes),
             }
         )
     return rows
@@ -298,11 +348,100 @@ def _render_markdown(
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _step_payload(step: TraceStep) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "step_idx": step.step_idx,
+        "turn": step.turn,
+        "ar": step.ar,
+        "side": step.side,
+        "holds_china": step.holds_china,
+        "hand": step.hand,
+        "flags": step.flags,
+        "public_state": step.public_state,
+        "legal_action_count": step.legal_action_count,
+        "chosen_action": step.chosen_action,
+    }
+    if step.top_actions is not None:
+        payload["top_actions"] = step.top_actions
+    if step.post_public_state is not None:
+        payload["post_public_state"] = step.post_public_state
+    if step.action_effects is not None:
+        payload["action_effects"] = step.action_effects
+    return payload
+
+
+def _analysis_for_logging(
+    pub: PublicState,
+    hand: frozenset[int],
+    holds_china: bool,
+    *,
+    params: MinimalHybridParams,
+    log_mode: LogMode,
+    top_n: int,
+    chosen_action: ActionEncoding,
+) -> tuple[int, list[dict[str, object]] | None]:
+    analysis_top_n = log_mode.analysis_top_n(top_n)
+    if analysis_top_n is None:
+        return _legal_action_count(pub, hand, pub.phasing, holds_china), None
+
+    legal_action_count, ranked_actions = _ranked_action_breakdowns(
+        pub,
+        hand,
+        holds_china,
+        params=params,
+        top_n=analysis_top_n,
+    )
+    if not ranked_actions or ranked_actions[0].action != chosen_action:
+        raise RuntimeError("logging analysis diverged from minimal_hybrid policy choice")
+
+    if log_mode == LogMode.TRACE_TOPN:
+        return legal_action_count, _topn_summary(ranked_actions)
+    return legal_action_count, _full_breakdown_summary(ranked_actions)
+
+
+def _ranked_action_breakdowns(
+    pub: PublicState,
+    hand: frozenset[int],
+    holds_china: bool,
+    *,
+    params: MinimalHybridParams,
+    top_n: int,
+) -> tuple[int, tuple[ActionScoreBreakdown, ...]]:
+    side = pub.phasing
+    context = _make_decision_context(pub, side, params)
+    actions = _candidate_actions(hand, holds_china, context)
+    if not actions:
+        return 0, ()
+
+    ranked = tuple(
+        sorted(
+            (
+                _exact_action_breakdown(context, action)
+                for action in actions
+            ),
+            key=lambda item: _action_sort_key(item.action, item.total_score),
+        )
+    )
+    return _legal_action_count(pub, hand, side, holds_china), ranked[:top_n]
+
+
+def _exact_action_breakdown(
+    context,
+    action: ActionEncoding,
+) -> ActionScoreBreakdown:
+    breakdown = _score_action_breakdown(context, action)
+    total_score = _score_action(context, action)
+    if context.pub.ar == 0:
+        total_score += breakdown.headline_adjustment
+    return replace(breakdown, total_score=total_score)
+
+
 def _generate_one_game(
     *,
     seed: int,
     params: MinimalHybridParams,
     top_n: int,
+    log_mode: LogMode,
 ) -> tuple[list[TraceStep], GameResult]:
     rng = random.Random(seed)
     gs = reset(seed=rng.randint(0, 2**32))
@@ -321,16 +460,19 @@ def _generate_one_game(
             )
             pending[0] = None
 
-        analysis = analyze_minimal_hybrid_decision(
+        action = traced_policy(pub, hand, holds_china)
+        if action is None:
+            return None
+
+        legal_action_count, top_actions = _analysis_for_logging(
             pub,
             hand,
             holds_china,
             params=params,
+            log_mode=log_mode,
             top_n=top_n,
+            chosen_action=action,
         )
-        action = analysis.chosen_action
-        if action is None:
-            return traced_policy(pub, hand, holds_china)
 
         step_idx += 1
         step = TraceStep(
@@ -342,9 +484,9 @@ def _generate_one_game(
             hand=_hand_summary(hand),
             flags=_decision_flags(pub, hand, holds_china, action),
             public_state=_public_state_summary(_snapshot_pub(pub)),
-            legal_action_count=analysis.legal_action_count,
+            legal_action_count=legal_action_count,
             chosen_action=_action_summary(action),
-            top_actions=_breakdown_summary(analysis),
+            top_actions=top_actions,
         )
         steps.append(step)
         pending[0] = step
@@ -409,34 +551,39 @@ def _generate_one_game(
 
 
 def _generate_game_artifacts(
-    task: tuple[int, int, int, MinimalHybridParams],
-) -> tuple[int, dict[str, object], str, dict[str, object]]:
-    game_idx, seed, top_n, params = task
+    task: tuple[int, int, int, LogMode, MinimalHybridParams],
+) -> tuple[int, dict[str, object], str | None, dict[str, object]]:
+    game_idx, seed, top_n, log_mode, params = task
     steps, result = _generate_one_game(
         seed=seed,
         params=params,
         top_n=top_n,
+        log_mode=log_mode,
     )
     payload = {
         "seed": seed,
+        "log_mode": log_mode.value,
         "result": {
             "winner": result.winner.name if result.winner is not None else None,
             "final_vp": result.final_vp,
             "end_turn": result.end_turn,
             "end_reason": result.end_reason,
         },
-        "steps": [asdict(step) for step in steps],
+        "steps": [_step_payload(step) for step in steps],
     }
     summary_row = {
         "game": game_idx + 1,
         "seed": seed,
+        "log_mode": log_mode.value,
         "winner": payload["result"]["winner"],
         "final_vp": result.final_vp,
         "end_turn": result.end_turn,
         "end_reason": result.end_reason,
         "steps": len(steps),
     }
-    markdown = _render_markdown(seed=seed, result=result, steps=steps)
+    markdown = None
+    if log_mode.writes_markdown:
+        markdown = _render_markdown(seed=seed, result=result, steps=steps)
     return game_idx, payload, markdown, summary_row
 
 
@@ -463,6 +610,11 @@ def main() -> None:
     parser.add_argument("--seed-start", type=int, default=20260401)
     parser.add_argument("--top-n", type=int, default=5)
     parser.add_argument(
+        "--log-mode",
+        choices=[mode.value for mode in LogMode],
+        default=LogMode.TRACE_FULL.value,
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=max(1, (os.cpu_count() or 1) // 2),
@@ -475,16 +627,23 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+    log_mode = LogMode(args.log_mode)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_rows: list[dict[str, object]] = []
     tasks = [
-        (game_idx, args.seed_start + game_idx, args.top_n, DEFAULT_MINIMAL_HYBRID_PARAMS)
+        (
+            game_idx,
+            args.seed_start + game_idx,
+            args.top_n,
+            log_mode,
+            DEFAULT_MINIMAL_HYBRID_PARAMS,
+        )
         for game_idx in range(args.games)
     ]
 
-    results: list[tuple[int, dict[str, object], str, dict[str, object]]] = []
+    results: list[tuple[int, dict[str, object], str | None, dict[str, object]]] = []
     if args.workers <= 1:
         results = [_generate_game_artifacts(task) for task in tasks]
     else:
@@ -500,19 +659,28 @@ def main() -> None:
 
     for game_idx, payload, markdown, summary_row in sorted(results, key=lambda item: item[0]):
         json_path = out_dir / f"game_{game_idx + 1:02d}.json"
-        md_path = out_dir / f"game_{game_idx + 1:02d}.md"
         json_path.write_text(
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        md_path.write_text(
-            markdown,
-            encoding="utf-8",
-        )
+        if markdown is not None:
+            md_path = out_dir / f"game_{game_idx + 1:02d}.md"
+            md_path.write_text(
+                markdown,
+                encoding="utf-8",
+            )
         summary_rows.append(summary_row)
 
     (out_dir / "summary.json").write_text(
-        json.dumps({"games": summary_rows}, indent=2, sort_keys=True) + "\n",
+        json.dumps(
+            {
+                "games": summary_rows,
+                "log_mode": log_mode.value,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
     print(out_dir)
