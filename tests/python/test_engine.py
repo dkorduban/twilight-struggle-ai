@@ -1,6 +1,8 @@
 """Tests for the engine layer: adjacency, legal actions, and step."""
 import pytest
 from tsrl.engine.adjacency import accessible_countries, load_adjacency, neighbors
+from tsrl.engine.game_loop import _apply_action_with_hands
+from tsrl.engine.game_state import GameState
 from tsrl.engine.legal_actions import (
     _CHINA_CARD_ID,
     enumerate_actions,
@@ -753,7 +755,7 @@ def test_playing_opponent_card_for_ops_does_not_trigger_event():
 
 
 # ---------------------------------------------------------------------------
-# §8.2.4: War events give MilOps to the event owner (known limitation)
+# §8.2.4: War events give MilOps to the event owner
 # ---------------------------------------------------------------------------
 
 def test_arab_israeli_war_milops_credited_to_ussr_when_us_plays_for_ops():
@@ -762,27 +764,22 @@ def test_arab_israeli_war_milops_credited_to_ussr_when_us_plays_for_ops():
     on the Military Operations track as directed by the Event text.'
 
     Arab-Israeli War (card 13) is a 2-ops USSR-only war card.
-    When US plays it for ops (e.g. INFLUENCE), the USSR war event fires AND
+    When US plays it for ops (e.g. INFLUENCE) through the live game-loop path,
+    the USSR war event fires AND
     USSR gets 2 MilOps credit.
-
-    Currently the engine does NOT fire the opponent event at all, so USSR gets 0 MilOps.
-    This test documents the known behavior gap.
     """
-    pub = PublicState()
-    pub.influence[(Side.US, _MEXICO)] = 1  # give US somewhere to place influence
+    gs = GameState()
+    gs.pub = PublicState()
+    gs.pub.phasing = Side.US
+    gs.pub.influence[(Side.US, _MEXICO)] = 1  # give US somewhere to place influence
 
     action = ActionEncoding(card_id=13, mode=ActionMode.INFLUENCE, targets=(_MEXICO,))
     rng = _seeded_rng(0)
-    new_pub, _, _ = apply_action(pub, action, Side.US, rng=rng)
+    new_pub, _, _ = _apply_action_with_hands(gs, action, Side.US, rng)
 
-    # Per §8.2.4, USSR should receive 2 MilOps because Arab-Israeli War fired.
-    # Currently this is NOT implemented: USSR milops stay at 0.
-    # When properly implemented, this assertion should be:
-    #   assert new_pub.milops[int(Side.USSR)] == 2
-    # For now, document the current (incorrect) value:
-    assert new_pub.milops[int(Side.USSR)] == 0, (
-        "Known limitation (§8.2.4): USSR should receive 2 MilOps when US plays "
-        "Arab-Israeli War for ops, but opponent event + MilOps credit is not yet implemented."
+    assert new_pub.milops[int(Side.USSR)] == 2, (
+        "USSR should receive 2 MilOps when US plays Arab-Israeli War for ops "
+        "and the event-triggered war coup resolves for the USSR."
     )
 
 

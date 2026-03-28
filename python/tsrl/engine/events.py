@@ -156,7 +156,7 @@ def _free_coup(
 
     Returns net (positive = success).
     defcon_immune=True: battleground coup does NOT reduce DEFCON (war card rule per ITS rules).
-    Does NOT update MilOps (free event coups don't count for MilOps requirement).
+    Updates MilOps for `side` to max(current, ops).
     """
     from tsrl.engine.dice import coup_result
     opp = Side.US if side == Side.USSR else Side.USSR
@@ -178,6 +178,7 @@ def _free_coup(
             pub.influence[(side, cid)] = own + excess
     if is_bg and not defcon_immune:
         pub.defcon = max(1, pub.defcon - 1)
+    pub.milops[int(side)] = max(pub.milops[int(side)], ops)
     return net
 
 
