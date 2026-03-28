@@ -42,7 +42,9 @@ Europe Control is the only region where Control = instant game win (not just VP)
 
 China Card bonus: +1 VP to the side holding the China Card when Asia Scoring resolves. Unconditional (does not depend on who won the scoring). Stacks on top of main scoring.
 
-SE Asia countries (Burma, Indonesia/Malaysia, Laos/Cambodia, Philippines, Thailand, Vietnam) do NOT count for Asia Scoring.
+SE Asia countries (Burma, Indonesia/Malaysia, Laos/Cambodia, Philippines, Thailand, Vietnam):
+- Do NOT count for mid-game Asia Scoring (card #1). Scored separately by SE Asia Scoring card (#41).
+- DO count for Turn-10 final scoring via score_asia_final() per §10.3.2: "Southeast Asia is not scored separately: it is included in the Asia scoring calculations."
 
 ### Middle East (6 BGs: Egypt, Iran, Iraq, Israel, Libya, Saudi Arabia)
 | Tier       | US VP | USSR VP |
@@ -90,3 +92,7 @@ There is no additional bonus VP for controlling more battlegrounds than opponent
 1. Domination non-BG condition: "controls" vs "has any influence in" a non-BG country. ITS standard: must CONTROL (own >= opp + stab) at least 1 non-BG. Verify.
 2. Africa Congo/Zaire battleground status: marked non-BG in countries.csv; confirm with physical board.
 3. SE Asia Philippines: 1 VP despite being a battleground. Thailand-only double-VP. Confirm Thailand exception is not extended to other BGs.
+
+## Resolved (previously ambiguous)
+- Adjacency bonus: applies to ALL controlled countries (BG and non-BG) per §10.1.2 literal text "per country... adjacent to enemy superpower". NOT BG-only. Verified against PDF.
+- SE Asia / Asia mid-game vs final scoring distinction: mid-game card excludes SE Asia; final scoring includes SE Asia (§10.3.2 explicit text).

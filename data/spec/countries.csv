@@ -35,28 +35,31 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 0,Austria,Europe,4,false,0,0
 1,Benelux,Europe,3,false,0,0
 2,Canada,Europe,4,false,2,0
-3,Czechoslovakia,Europe,3,false,0,3
+3,Czechoslovakia,Europe,3,false,0,0
 4,Denmark,Europe,3,false,0,0
 5,East Germany,Europe,3,true,0,3
 6,Finland,Europe,4,false,0,1
-7,France,Europe,3,true,0,1
+7,France,Europe,3,true,0,0
 8,Greece,Europe,2,false,0,0
-9,Hungary,Europe,3,false,0,1
+9,Hungary,Europe,3,false,0,0
 10,Italy,Europe,2,true,0,0
 11,Norway,Europe,4,false,0,0
-12,Poland,Europe,3,true,0,4
-13,Romania,Europe,3,false,0,3
+12,Poland,Europe,3,true,0,0
+13,Romania,Europe,3,false,0,0
 14,Spain/Portugal,Europe,2,false,0,0
 15,Sweden,Europe,4,false,0,0
-16,Turkey,Europe,2,true,1,0
+16,Turkey,Europe,2,true,0,0
 17,UK,Europe,5,true,5,0
-18,West Germany,Europe,4,true,4,0
-19,Yugoslavia,Europe,3,false,0,1
-# Europe setup notes:
-#   US: Canada=2, Turkey=1, UK=5, West Germany=4; all others 0
-#   USSR: Czechoslovakia=3, East Germany=3, Finland=1, France=1,
-#         Hungary=1, Poland=4, Romania=3; all others 0
-#   UNCERTAIN: Italy US start influence. Most sources say 0. Verify.
+18,West Germany,Europe,4,true,0,0
+19,Yugoslavia,Europe,3,false,0,0
+# Europe setup notes (corrected 2026-03-28, verified against TSEspionage log brackets):
+#   US fixed: Canada=2, UK=5; all others 0
+#   USSR fixed: East Germany=3, Finland=1; all others 0
+#   Free placements (6 USSR Eastern Europe, 7 US Western Europe) are recorded
+#   in each game's SETUP block and applied via bracket-set — NOT pre-encoded here.
+#   Previous values (Czechoslovakia=3, France=1, Hungary=1, Poland=4, Romania=3,
+#   Turkey US=1, West Germany US=4, Yugoslavia=1) were wrong — they baked in
+#   one possible free-placement choice rather than the true zero starting state.
 #   UNCERTAIN: UK = 5 (Deluxe Ed) vs 4 (original). Using 5.
 # ---- Asia (ids 20-34, excluding Southeast Asia countries) ----
 # Asia scoring region includes: Afghanistan, China (not on board), India, Japan,
@@ -79,7 +82,7 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 26,Egypt,MiddleEast,2,true,0,0
 27,Gulf States,MiddleEast,3,false,0,0
 28,Iran,MiddleEast,2,true,1,0
-29,Iraq,MiddleEast,3,true,0,3
+29,Iraq,MiddleEast,3,true,0,1
 30,Israel,MiddleEast,4,true,1,0
 31,Jordan,MiddleEast,2,false,0,0
 32,Lebanon,MiddleEast,1,false,0,0
@@ -157,10 +160,10 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 77,Laos/Cambodia,SoutheastAsia,1,false,0,0
 78,Philippines,SoutheastAsia,2,true,1,0
 79,Thailand,SoutheastAsia,2,true,0,0
-80,Vietnam,SoutheastAsia,1,true,0,1
+80,Vietnam,SoutheastAsia,1,true,0,0
 # Southeast Asia setup notes:
 #   US: Philippines=1; all others 0
-#   USSR: Vietnam=1; all others 0
+#   USSR: all 0 (Vietnam=0 confirmed from log brackets — no fixed setup placement)
 #   NOTE: Indonesia and Malaysia are SEPARATE countries in the TSEspionage mod.
 #         Stability confirmed from coup logs:
 #           Indonesia: 5 + 1 - 2x1 = 4  → stab=1 (battleground)
@@ -179,7 +182,7 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 # ---- Additional European country missing from id 0-19 range ----
 # Bulgaria is on the standard TS board but was omitted from the Europe id block.
 # Assigned id=83 (after superpowers). Adjacent to Romania, Yugoslavia, Turkey, Greece.
-83,Bulgaria,Europe,3,false,0,3
+83,Bulgaria,Europe,3,false,0,0
 # Malaysia is id=84 (separate from Indonesia, as seen in TSEspionage mod logs).
 # Adjacent to Indonesia (76) and Thailand (79). Non-battleground, stability=2.
 84,Malaysia,SoutheastAsia,2,false,0,0

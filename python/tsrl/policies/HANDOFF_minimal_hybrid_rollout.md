@@ -205,6 +205,45 @@ Interpretation:
 - the DEFCON-2 suicide mode is fixed for the tested seeds,
 - but the policy is now back to long, mostly passive games.
 
+### DEFCON-3 safety batch
+
+After strengthening the DEFCON-3 battleground coup penalty from `-2.5` to `-6.0` and adding a suicide veto for low-MilOps cases:
+
+- directory:
+  - `python/tsrl/policies/rollout_logs/20260327_162106_defcon3_fix`
+- seeds:
+  - `20260410` to `20260414` (same seeds as baseline for direct comparison)
+
+Summary from `summary.json`:
+
+- end reasons: `{'turn_limit': 4, 'europe_control': 1}`
+- steps: `[154, 60, 154, 154, 154]`
+- average: `145.6` (down from `153.6`)
+- final VP: `[+4, +1, +5, +10, +1]` (USSR favored, as in baseline)
+- all 5 seeds completed successfully
+
+Before/after comparison vs baseline DEFCON-2 safety batch:
+
+- DEFCON-3 battleground coups:
+  - before: `137` total (13, 33, 40, 21, 30 per game)
+  - after: `57` total (12, 7, 4, 13, 21 per game)
+  - **reduction: 58%** ✓
+- game length: `153.6` avg → `145.6` avg
+- games reaching turn 10: `5/5` → `4/5` (one europe_control win)
+
+Validation:
+
+- all 11 unit tests pass (including new `test_policy_avoids_defcon3_battleground_coup_without_milops_urgency`)
+- remaining DEFCON-3 battleground coups have milops_urgency `0.75–7.00` (strategically justified)
+- no illegal actions or safety violations
+
+Interpretation:
+
+- the suicide penalty successfully vetos risky DEFCON-3 BG coups when MilOps pressure is low (<0.5 urgency)
+- remaining coups are strategically sound, driven by genuine MilOps catch-up needs
+- the early europe_control win (game 2) suggests the policy can now pursue more aggressive endgame tactics
+- DEFCON-3 safety is now sufficient; next focus should be midgame / endgame pressure
+
 ## Current assessment
 
 The highest-ROI issues appear to be:
@@ -266,6 +305,7 @@ It is not a playing-strength benchmark.
 - urgent MilOps can trigger coup preference
 - DEFCON-2 battleground coup avoidance
 - Nuclear Subs DEFCON-2 battleground coup allowance
+- DEFCON-3 battleground coup avoidance (unless MilOps urgent)
 - tracing helper consistency with actual policy choice
 
 ## Recommended next step

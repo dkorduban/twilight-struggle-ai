@@ -245,8 +245,8 @@ def test_reset_no_hand_overlap():
 
 def test_reset_starting_influence():
     gs = reset(seed=0)
-    # USSR should start with influence in e.g. Poland (id=12, ussr_start=4)
-    assert gs.pub.influence.get((Side.USSR, 12), 0) == 4
+    # USSR should start with influence in East Germany (id=5, ussr_start=3 fixed)
+    assert gs.pub.influence.get((Side.USSR, 5), 0) == 3
 
 
 def test_reset_china_card_with_ussr():

@@ -67,21 +67,21 @@ def test_stability_range():
 
 
 def test_initial_influence_us_west_germany():
-    """West Germany starts with 4 US influence."""
+    """West Germany starts with 0 US influence (free WE placements go in SETUP block)."""
     countries = load_countries()
     inf = initial_influence()
     wg = next((c for c in countries.values() if "west germany" in c.name.lower()), None)
     if wg:
-        assert inf.get((Side.US, wg.country_id), 0) == 4, "West Germany should start with 4 US influence"
+        assert inf.get((Side.US, wg.country_id), 0) == 0, "West Germany has no fixed US starting influence (free WE placed in SETUP)"
 
 
 def test_initial_influence_ussr_poland():
-    """Poland starts with 4 USSR influence."""
+    """Poland starts with 0 USSR influence (free EE placements go in SETUP block)."""
     countries = load_countries()
     inf = initial_influence()
     poland = next((c for c in countries.values() if "poland" in c.name.lower()), None)
     if poland:
-        assert inf.get((Side.USSR, poland.country_id), 0) == 4, "Poland should start with 4 USSR influence"
+        assert inf.get((Side.USSR, poland.country_id), 0) == 0, "Poland has no fixed USSR starting influence (free EE placed in SETUP)"
 
 
 def test_card_name_index_is_lowercase():

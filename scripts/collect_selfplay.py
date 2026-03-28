@@ -82,22 +82,15 @@ def _worker(args: tuple[int, int, int, bool]) -> list[dict]:
 
 
 def _write_parquet(rows: list[dict], out_path: Path) -> None:
-    """Write row dicts to Parquet via pyarrow."""
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+    """Write row dicts to Parquet via polars (avoids pyarrow Python-3.14 issue)."""
+    import polars as pl
 
     if not rows:
         log.warning("No rows to write; skipping %s", out_path)
         return
 
-    # Build column-oriented dict.
-    columns: dict[str, list] = {k: [] for k in rows[0]}
-    for row in rows:
-        for k, v in row.items():
-            columns[k].append(v)
-
-    table = pa.table(columns)
-    pq.write_table(table, str(out_path))
+    df = pl.DataFrame(rows)
+    df.write_parquet(str(out_path))
     log.info("Wrote %d rows to %s", len(rows), out_path)
 
 
