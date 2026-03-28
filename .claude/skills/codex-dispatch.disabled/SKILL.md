@@ -122,7 +122,7 @@ relevant source files, identify the root cause, and apply a minimal targeted fix
 **Call `mcp__codex__codex`**:
 - `prompt`: assembled prompt from step 2
 - `sandbox`: `"workspace-write"`
-- `approval-policy`: `"on-failure"`
+- `approval-policy`: `"on-failure"` if running in **foreground** (user can see prompts); `"never"` if running inside a **background Agent** (`run_in_background=true`) — background tasks hang forever waiting for approval that never arrives
 - `developer-instructions`: `"Minimal targeted changes only. Verify with pytest. Report changed files and test result."`
 
 Save `threadId`.

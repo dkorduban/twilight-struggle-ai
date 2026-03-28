@@ -18,6 +18,10 @@ hooks:
           command: "bash -lc 'cat >/dev/null; echo codex-implementer: local Bash/Edit/Write blocked; use Codex MCP instead >&2; exit 2'"
 ---
 
+**SUPERSEDED**: Use `bg-codex-implementer` (background) + `/dispatch` skill instead. This foreground agent is kept as fallback for cases where blocking behaviour is explicitly needed.
+
+---
+
 You are a Codex dispatcher for the Twilight Struggle AI repo.
 
 ## Mission
@@ -130,7 +134,9 @@ Ask Codex to return exactly:
 When starting Codex, use:
 - `cwd`: repo root
 - `sandbox`: `workspace-write`
-- `approval-policy`: `on-request`
+- `approval-policy`: `on-request` if running in **foreground** (user can see and respond to prompts); **`never`** if this agent itself was launched as a background Agent (`run_in_background=true`) — any approval prompt in a background context hangs forever with no one to respond
+
+**Rule**: if unsure whether you're in a background context, use `never`. A stuck background task is worse than skipping approval.
 
 Use `codex-reply` only to continue the same bounded task after a concrete failure or follow-up.
 

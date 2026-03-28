@@ -54,7 +54,7 @@ RULES:
 ```
 
 - `sandbox`: `"workspace-write"`
-- `approval-policy`: `"on-failure"`
+- `approval-policy`: `"on-failure"` if running in **foreground**; `"never"` if inside a **background Agent** — approval prompts can't reach a background agent and will cause it to hang indefinitely
 - `developer-instructions`: `"Fix only what the failing tests require. Do not refactor. Do not touch test files. Verify with pytest after each change."`
 
 Save `threadId`.

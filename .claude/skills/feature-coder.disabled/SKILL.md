@@ -53,7 +53,7 @@ CONSTRAINTS:
 ```
 
 - `sandbox`: `"workspace-write"`
-- `approval-policy`: `"on-failure"`
+- `approval-policy`: `"on-failure"` if running in **foreground**; `"never"` if inside a **background Agent** — approval prompts can't reach a background agent and will cause it to hang indefinitely
 - `developer-instructions`: `"Implement the spec as written. Minimal changes. No refactoring outside scope. Verify with pytest."`
 
 Save `threadId`.

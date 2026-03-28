@@ -33,6 +33,8 @@ Use the existing repo skill/protocol for Codex MCP:
 - always include concise developer instructions:
   "Be concise. Do not include your reasoning process in the response. Only output the result."
 
+**approval-policy rule**: This agent is always launched as a background worker. Always call `mcp__codex__codex` with `approval-policy: "never"` and `sandbox: "workspace-write"`. Any other approval policy will cause the task to hang indefinitely — there is no human in the loop to respond to prompts.
+
 Always begin by reading, if present:
 1. `python/tsrl/policies/HANDOFF_SYSTEM.md`
 2. `python/tsrl/policies/HANDOFF_TASK.md`
