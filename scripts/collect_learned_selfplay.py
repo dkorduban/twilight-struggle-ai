@@ -314,10 +314,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     _concat_part_parquets(part_paths, out_path)
-    for part_path in part_paths:
-        part_path.unlink()
 
-    log.info("Done. %d rows total from %d games.", total_rows, args.n_games)
+    # Verify merged output exists and is non-empty before deleting parts.
+    if out_path.exists() and out_path.stat().st_size > 0:
+        for part_path in part_paths:
+            part_path.unlink()
+        log.info("Done. %d rows total from %d games.", total_rows, args.n_games)
+    else:
+        log.error(
+            "Merge output missing or empty; part files kept for recovery: %s",
+            [str(p) for p in part_paths],
+        )
+        return 1
     return 0
 
 

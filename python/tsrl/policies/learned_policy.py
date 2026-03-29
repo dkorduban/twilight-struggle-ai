@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import os
 import random
+from typing import Callable
 
 import torch
 
 from tsrl.engine.game_loop import Policy
+from tsrl.engine.game_state import GameState
 from tsrl.engine.legal_actions import (
     accessible_countries,
     effective_ops,
@@ -197,3 +199,46 @@ def _build_random_targets(
     ops = effective_ops(card_id, pub, side)
     targets = tuple(rng.choice(accessible) for _ in range(ops))
     return ActionEncoding(card_id=card_id, mode=mode, targets=targets)
+
+
+def make_value_function(checkpoint_path: str) -> Callable[[GameState], float]:
+    """Return a value function backed by a trained TSBaselineModel checkpoint.
+
+    The returned function takes a GameState and returns a float in [-1, +1]
+    representing the game value from USSR's perspective (+1 = USSR wins, -1 = US wins).
+
+    This is suitable for use as the value_fn parameter in uct_mcts() for
+    value-function-based tree search (replacing random rollouts).
+
+    Parameters
+    ----------
+    checkpoint_path:
+        Path to a .pt checkpoint file produced by train_baseline.py.
+    """
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(checkpoint_path)
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    state_dict = checkpoint.get("model_state_dict", checkpoint)
+    model = TSBaselineModel()
+    model.load_state_dict(state_dict, strict=False)
+    model.eval()
+
+    def _value_fn(gs: GameState) -> float:
+        """Evaluate the value of a GameState using the learned model.
+
+        Returns value from USSR's perspective: +1 = USSR wins, -1 = US wins.
+        """
+        pub = gs.pub
+        side = pub.phasing
+        holds_china = (side == Side.USSR and gs.ussr_holds_china) or \
+                      (side == Side.US and gs.us_holds_china)
+        hand = gs.hands[side]
+
+        influence, cards, scalars = _extract_features(pub, hand, holds_china, side)
+        with torch.no_grad():
+            outputs = model(influence, cards, scalars)
+            value = outputs["value"][0, 0].item()  # scalar from [-1, +1]
+        return value
+
+    return _value_fn

@@ -109,6 +109,64 @@ class TestUCTMCTS:
         # If sample_action handles empty hands gracefully, None is expected
         assert action is None or isinstance(action, ActionEncoding)
 
+    def test_uct_mcts_with_constant_value_fn(self):
+        """value_fn replaces rollout; constant fn should still produce a valid action."""
+        from tsrl.engine.game_state import reset, deal_cards
+
+        rng = random.Random(42)
+        gs = reset(seed=42)
+        deal_cards(gs, Side.USSR, rng=rng)
+        deal_cards(gs, Side.US, rng=rng)
+
+        def _always_zero(gs) -> float:
+            return 0.0
+
+        action = uct_mcts(gs, n_sim=10, value_fn=_always_zero, rng=rng)
+        assert action is not None
+
+    def test_uct_mcts_value_fn_not_rollout(self):
+        """With value_fn, play_from_state should NOT be called (faster path)."""
+        from tsrl.engine.game_state import reset, deal_cards
+        from unittest.mock import patch
+
+        rng = random.Random(42)
+        gs = reset(seed=42)
+        deal_cards(gs, Side.USSR, rng=rng)
+        deal_cards(gs, Side.US, rng=rng)
+
+        call_count = [0]
+
+        def _counting_value_fn(gs) -> float:
+            call_count[0] += 1
+            return 0.0
+
+        with patch("tsrl.engine.mcts.play_from_state", side_effect=AssertionError("should not call rollout")):
+            action = uct_mcts(gs, n_sim=5, value_fn=_counting_value_fn, rng=rng)
+        assert action is not None
+        assert call_count[0] > 0
+
+    def test_make_value_function_returns_float_in_range(self):
+        """make_value_function loads checkpoint and returns value in [-1, +1]."""
+        import os
+        from tsrl.engine.game_state import reset, deal_cards
+
+        ckpt = "data/checkpoints/baseline_epoch20.pt"
+        if not os.path.exists(ckpt):
+            pytest.skip("checkpoint not found")
+
+        from tsrl.policies.learned_policy import make_value_function
+
+        value_fn = make_value_function(ckpt)
+
+        rng = random.Random(42)
+        gs = reset(seed=42)
+        deal_cards(gs, Side.USSR, rng=rng)
+        deal_cards(gs, Side.US, rng=rng)
+
+        v = value_fn(gs)
+        assert isinstance(v, float)
+        assert -1.0 <= v <= 1.0
+
 
 class TestSelfPlayCollection:
     """Tests for collect_self_play_game."""

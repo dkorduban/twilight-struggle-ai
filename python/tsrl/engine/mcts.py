@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from tsrl.engine.game_loop import GameResult, Policy, make_random_policy, play_from_state
 from tsrl.engine.game_state import GameState, clone_game_state
@@ -146,6 +146,7 @@ def uct_mcts(
     *,
     c: float = 1.41,
     rollout_policy: Optional[Policy] = None,
+    value_fn: Optional[Callable[[GameState], float]] = None,
     rng: Optional[random.Random] = None,
 ) -> Optional[ActionEncoding]:
     """Run UCT (Upper Confidence Trees) and return the most-visited root action.
@@ -155,6 +156,9 @@ def uct_mcts(
         n_sim:          Number of UCT simulations to run.
         c:              UCB1 exploration constant (sqrt(2) ≈ 1.41).
         rollout_policy: Policy for rollouts from leaf nodes (default: random).
+        value_fn:       Optional value function for leaf evaluation. If provided,
+                        replaces rollout. Takes GameState, returns value in [-1, +1]
+                        from USSR perspective.
         rng:            RNG for sampling.
 
     Returns the action with the highest visit count at the root.
@@ -201,10 +205,14 @@ def uct_mcts(
             sim_side = _next_side(sim_side)
             path.append((node, action, sim_side))
 
-        # --- Simulation (rollout) ---
+        # --- Simulation (rollout or value function) ---
         if node.is_terminal:
             value = node.terminal_value
+        elif value_fn is not None:
+            # Use value function (trained model) instead of rollout.
+            value = value_fn(sim)
         else:
+            # Fall back to rollout simulation with rollout_policy.
             result = play_from_state(sim, _rollout, _rollout, rng=_rng)
             value = _result_value(result)
 
