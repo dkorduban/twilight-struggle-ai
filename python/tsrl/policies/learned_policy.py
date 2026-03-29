@@ -1,6 +1,7 @@
 """Learned policy wrapper for TSBaselineModel checkpoints."""
 from __future__ import annotations
 
+import math
 import os
 import random
 from typing import Callable
@@ -180,6 +181,110 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
         return action
 
     return _policy
+
+
+def make_model_candidate_fn(
+    checkpoint_path: str,
+    n_candidates: int = 10,
+    *,
+    temperature: float = 0.0,
+    use_country_head: bool = True,
+) -> Callable[[GameState, Side, bool, int], list[ActionEncoding]]:
+    """Return an MCTS candidate function backed by a trained checkpoint."""
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(checkpoint_path)
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    state_dict = checkpoint.get("model_state_dict", checkpoint)
+    model = TSBaselineModel()
+    model.load_state_dict(state_dict, strict=False)
+    has_country_head = "country_head.weight" in state_dict
+    model.eval()
+
+    adj = load_adjacency()
+
+    def _candidate_fn(
+        gs: GameState,
+        side: Side,
+        holds_china: bool,
+        n: int,
+        *,
+        rng: random.Random | None = None,
+    ) -> list[ActionEncoding]:
+        hand = gs.hands[side]
+        pub = gs.pub
+        playable = sorted(legal_cards(hand, pub, side, holds_china=holds_china))
+        if not playable:
+            return []
+
+        influence, cards, scalars = _extract_features(pub, hand, holds_china, side)
+        with torch.no_grad():
+            outputs = model(influence, cards, scalars)
+            card_logits = outputs["card_logits"][0]
+            mode_logits = outputs["mode_logits"][0]
+            country_logits = outputs.get("country_logits")
+            if country_logits is not None:
+                country_logits = country_logits[0]
+
+        card_probs = torch.softmax(card_logits, dim=0)
+        mode_probs = torch.softmax(mode_logits, dim=0)
+
+        scored_pairs: list[tuple[int, ActionMode, float]] = []
+        for card_id in playable:
+            card_score = float(card_probs[card_id - 1].item())
+            modes = sorted(legal_modes(card_id, pub, side, adj=adj), key=int)
+            for mode in modes:
+                scored_pairs.append((card_id, mode, card_score * float(mode_probs[int(mode)].item())))
+
+        if not scored_pairs:
+            return []
+
+        limit = min(n, n_candidates, len(scored_pairs))
+        if limit <= 0:
+            return []
+
+        selected_pairs: list[tuple[int, ActionMode]]
+        if temperature <= 0.0:
+            scored_pairs.sort(key=lambda item: (-item[2], item[0], int(item[1])))
+            selected_pairs = [(card_id, mode) for card_id, mode, _ in scored_pairs[:limit]]
+        else:
+            _rng = rng or random.Random()
+            remaining = list(scored_pairs)
+            selected_pairs = []
+            for _ in range(limit):
+                max_score = max(score for _, _, score in remaining)
+                weights = [
+                    math.exp((score - max_score) / temperature)
+                    for _, _, score in remaining
+                ]
+                target = _rng.random() * sum(weights)
+                cumulative = 0.0
+                for idx, ((card_id, mode, _), weight) in enumerate(zip(remaining, weights)):
+                    cumulative += weight
+                    if target <= cumulative or idx == len(remaining) - 1:
+                        selected_pairs.append((card_id, mode))
+                        remaining.pop(idx)
+                        break
+
+        _rng = rng or random.Random()
+        actions: list[ActionEncoding] = []
+        for card_id, mode in selected_pairs:
+            if mode in (ActionMode.SPACE, ActionMode.EVENT):
+                actions.append(ActionEncoding(card_id=card_id, mode=mode, targets=()))
+                continue
+
+            action = None
+            if use_country_head and has_country_head and country_logits is not None:
+                action = _build_action_from_country_logits(
+                    card_id, mode, country_logits, pub, side, adj, _rng
+                )
+            if action is None:
+                action = _build_random_targets(card_id, mode, pub, side, adj, _rng)
+            if action is not None:
+                actions.append(action)
+        return actions
+
+    return _candidate_fn
 
 
 def _build_random_targets(

@@ -146,6 +146,7 @@ def uct_mcts(
     *,
     c: float = 1.41,
     rollout_policy: Optional[Policy] = None,
+    candidate_fn=None,
     value_fn: Optional[Callable[[GameState], float]] = None,
     rng: Optional[random.Random] = None,
 ) -> Optional[ActionEncoding]:
@@ -173,7 +174,10 @@ def uct_mcts(
 
     # Build root node with initial legal action list.
     root = _Node()
-    root.untried = _sample_candidates(gs, side, holds_china, max(n_sim, 50), _rng)
+    if candidate_fn is not None:
+        root.untried = candidate_fn(gs, side, holds_china, max(n_sim, 50), rng=_rng)
+    else:
+        root.untried = _sample_candidates(gs, side, holds_china, max(n_sim, 50), _rng)
     if not root.untried:
         return None
 
@@ -196,13 +200,19 @@ def uct_mcts(
             node.untried = [a for a in node.untried if a != action]
             _apply_action_to_gs(sim, action, sim_side, _rng)
             child = _Node()
-            child.untried = _sample_candidates(
-                sim, _next_side(sim_side), _holds_china(sim, _next_side(sim_side)),
-                max(n_sim // 4, 20), _rng,
-            )
+            next_side = _next_side(sim_side)
+            next_holds_china = _holds_china(sim, next_side)
+            if candidate_fn is not None:
+                child.untried = candidate_fn(
+                    sim, next_side, next_holds_china, max(n_sim // 4, 20), rng=_rng
+                )
+            else:
+                child.untried = _sample_candidates(
+                    sim, next_side, next_holds_china, max(n_sim // 4, 20), _rng
+                )
             node.children[action] = child
             node = child
-            sim_side = _next_side(sim_side)
+            sim_side = next_side
             path.append((node, action, sim_side))
 
         # --- Simulation (rollout or value function) ---
