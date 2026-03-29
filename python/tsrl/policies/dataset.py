@@ -39,17 +39,19 @@ Scalar normalisation
 
 from __future__ import annotations
 
+import bisect
 import glob
 import os
 from typing import Any
 
+import numpy as np
 import polars as pl
 import torch
 from torch.utils.data import Dataset
 
 
 class TS_SelfPlayDataset(Dataset):
-    """Load all Parquet files from a directory into a flat list of steps.
+    """Load Parquet files from a directory via per-file lazy caching.
 
     Parameters
     ----------
@@ -81,93 +83,70 @@ class TS_SelfPlayDataset(Dataset):
                 f"No *.parquet files found in {data_dir!r}"
             )
 
-        # Read and concatenate all Parquet files with polars (no pyarrow).
-        frames = [pl.read_parquet(p) for p in paths]
-        combined = pl.concat(frames, how="diagonal_relaxed")
-        d = combined.to_dict(as_series=False)
-
-        self._length = len(d["turn"])
-
-        # ---- list-type columns: store as nested Python lists ----
-        self._ussr_influence: list[list[int]] = d["ussr_influence"]
-        self._us_influence: list[list[int]] = d["us_influence"]
-        self._actor_known_in: list[list[int]] = d["actor_known_in"]
-        self._actor_possible: list[list[int]] = d["actor_possible"]
-        self._discard_mask: list[list[int]] = d["discard_mask"]
-        self._removed_mask: list[list[int]] = d["removed_mask"]
-
-        # ---- scalar columns ----
-        self._vp: list[int] = d["vp"]
-        self._defcon: list[int] = d["defcon"]
-        self._milops_ussr: list[int] = d["milops_ussr"]
-        self._milops_us: list[int] = d["milops_us"]
-        self._space_ussr: list[int] = d["space_ussr"]
-        self._space_us: list[int] = d["space_us"]
-        self._china_held_by: list[int] = d["china_held_by"]
-        self._actor_holds_china: list[bool] = d["actor_holds_china"]
-        self._turn: list[int] = d["turn"]
-        self._ar: list[int] = d["ar"]
-        self._phasing: list[int] = d["phasing"]
-
-        # ---- label columns ----
-        self._action_card_id: list[int] = d["action_card_id"]
-        self._action_mode: list[int] = d["action_mode"]
-        self._action_targets: list[str] = d["action_targets"]
-        self._winner_side: list[int] = d["winner_side"]
-        # final_vp: the terminal VP margin (positive = USSR win).
-        # Loaded only when value_target_mode='final_vp'.
-        # Human-log rows may have final_vp=null (train.parquet); fall back to winner_side for those.
-        if value_target_mode == "final_vp":
-            # diagonal_relaxed concat fills missing final_vp with null.
-            raw_final_vp = d.get("final_vp", [None] * self._length)
-            # Convert None (null from polars) to None; keep integers as-is.
-            self._final_vp: list[int | None] = [
-                (int(v) if v is not None else None) for v in raw_final_vp
-            ]
+        self._paths = paths
+        self._file_lengths = [
+            int(pl.scan_parquet(path).select(pl.len()).collect().item()) for path in paths
+        ]
+        self._cumulative = np.cumsum([0] + self._file_lengths)
+        self._cache: dict[int, pl.DataFrame] = {}
+        self._length = int(self._cumulative[-1])
 
     def __len__(self) -> int:
         return self._length
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
+        if idx < 0:
+            idx += self._length
+        if idx < 0 or idx >= self._length:
+            raise IndexError(idx)
+
+        file_idx = bisect.bisect_right(self._cumulative, idx) - 1
+        local_idx = idx - int(self._cumulative[file_idx])
+
+        frame = self._cache.get(file_idx)
+        if frame is None:
+            frame = pl.read_parquet(self._paths[file_idx])
+            self._cache[file_idx] = frame
+
+        row = frame.row(local_idx, named=True)
+
         # --- influence features (168,) ---
-        ussr = torch.tensor(self._ussr_influence[idx], dtype=torch.float32)
-        us = torch.tensor(self._us_influence[idx], dtype=torch.float32)
+        ussr = torch.tensor(row["ussr_influence"], dtype=torch.float32)
+        us = torch.tensor(row["us_influence"], dtype=torch.float32)
         influence = torch.cat([ussr, us])  # (168,)
 
         # --- card features (448,) ---
-        known_in = torch.tensor(self._actor_known_in[idx], dtype=torch.float32)
-        possible = torch.tensor(self._actor_possible[idx], dtype=torch.float32)
-        discard = torch.tensor(self._discard_mask[idx], dtype=torch.float32)
-        removed = torch.tensor(self._removed_mask[idx], dtype=torch.float32)
+        known_in = torch.tensor(row["actor_known_in"], dtype=torch.float32)
+        possible = torch.tensor(row["actor_possible"], dtype=torch.float32)
+        discard = torch.tensor(row["discard_mask"], dtype=torch.float32)
+        removed = torch.tensor(row["removed_mask"], dtype=torch.float32)
         cards = torch.cat([known_in, possible, discard, removed])  # (448,)
 
         # --- scalar features (11,), normalised ---
         scalars = torch.tensor(
             [
-                self._vp[idx] / 20.0,
-                (self._defcon[idx] - 1) / 4.0,
-                self._milops_ussr[idx] / 6.0,
-                self._milops_us[idx] / 6.0,
-                self._space_ussr[idx] / 9.0,
-                self._space_us[idx] / 9.0,
-                float(self._china_held_by[idx]),
-                float(self._actor_holds_china[idx]),
-                self._turn[idx] / 10.0,
-                self._ar[idx] / 8.0,
-                float(self._phasing[idx]),
+                row["vp"] / 20.0,
+                (row["defcon"] - 1) / 4.0,
+                row["milops_ussr"] / 6.0,
+                row["milops_us"] / 6.0,
+                row["space_ussr"] / 9.0,
+                row["space_us"] / 9.0,
+                float(row["china_held_by"]),
+                float(row["actor_holds_china"]),
+                row["turn"] / 10.0,
+                row["ar"] / 8.0,
+                float(row["phasing"]),
             ],
             dtype=torch.float32,
         )  # (11,)
 
         # --- labels ---
         # card_id in data is 1..111; subtract 1 for 0-indexed CE loss
-        card_target = torch.tensor(
-            self._action_card_id[idx] - 1, dtype=torch.long
-        )
-        mode_target = torch.tensor(self._action_mode[idx], dtype=torch.long)
+        card_target = torch.tensor(row["action_card_id"] - 1, dtype=torch.long)
+        mode_target = torch.tensor(row["action_mode"], dtype=torch.long)
 
         # country_ops_target: per-country ops counts for country ids 1..84.
-        raw_targets = self._action_targets[idx]
+        raw_targets = row["action_targets"]
         country_ops_target = torch.zeros(84, dtype=torch.float32)
         if raw_targets:
             ids = [int(x) for x in raw_targets.split(",") if x.strip()]
@@ -176,21 +155,19 @@ class TS_SelfPlayDataset(Dataset):
                 country_ops_target[country_id - 1] += 1.0
 
         if self._value_target_mode == "final_vp":
-            # Normalize final VP to [-1, 1]: divide by 20 and clamp.
-            # VP range is roughly [-20, +20] in typical games; clamping handles outliers.
-            # Fall back to winner_side for rows where final_vp is null (e.g. human-log rows).
-            raw_vp = self._final_vp[idx]
+            # Fall back to winner_side when a file omits final_vp or a row has null.
+            raw_vp = row.get("final_vp")
             if raw_vp is not None:
                 value_target = torch.tensor(
                     [max(-1.0, min(1.0, float(raw_vp) / 20.0))], dtype=torch.float32
                 )
             else:
                 value_target = torch.tensor(
-                    [float(self._winner_side[idx])], dtype=torch.float32
+                    [float(row["winner_side"])], dtype=torch.float32
                 )
         else:
             value_target = torch.tensor(
-                [float(self._winner_side[idx])], dtype=torch.float32
+                [float(row["winner_side"])], dtype=torch.float32
             )  # (1,)
 
         return {
