@@ -122,8 +122,12 @@ def _card_mask(card_ids: frozenset[int]) -> list[int]:
 
 
 def _influence_array(pub: PublicState, side: Side) -> list[int]:
-    """Influence values for one side, indexed by country_id (len=_COUNTRY_MASK_LEN)."""
-    base = int(side) * 84
+    """Influence values for one side for countries 1..84, shape (84,).
+
+    Country 85 (Taiwan) is stored in InfluenceArray but excluded from model
+    features since the model vocabulary covers only countries 1..84.
+    """
+    base = int(side) * pub.influence._STRIDE
     return list(pub.influence._data[base : base + 84])
 
 

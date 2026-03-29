@@ -163,34 +163,45 @@ class ReplayEvent:
 
 
 class InfluenceArray:
-    """Flat-array influence store with dict-compatible tuple-key API."""
+    """Flat-array influence store with dict-compatible tuple-key API.
+
+    Supports country IDs 1..85 per side (85 = Taiwan).  The per-side stride is
+    85 so that country_id maps to index (cid - 1) within each side block.
+    Total array length = 170 (= 85 * 2 sides).
+
+    Model features use only the first 84 countries per side (168 total) since
+    the model vocabulary excludes Taiwan; _influence_array() slices [base:base+84].
+    """
+
+    _STRIDE = 85
+    _TOTAL = 170  # _STRIDE * 2
 
     __slots__ = ("_data",)
 
     def __init__(self, source=None):
         if source is None:
-            self._data = [0] * 168
+            self._data = [0] * self._TOTAL
         elif isinstance(source, InfluenceArray):
             self._data = list(source._data)
         elif hasattr(source, "items"):
-            self._data = [0] * 168
+            self._data = [0] * self._TOTAL
             for (side, cid), val in source.items():
-                self._data[int(side) * 84 + (cid - 1)] = val
+                self._data[int(side) * self._STRIDE + (cid - 1)] = val
         else:
             self._data = list(source)
 
     def __getitem__(self, key):
         side, cid = key
-        return self._data[int(side) * 84 + (cid - 1)]
+        return self._data[int(side) * self._STRIDE + (cid - 1)]
 
     def __setitem__(self, key, value):
         side, cid = key
-        self._data[int(side) * 84 + (cid - 1)] = value
+        self._data[int(side) * self._STRIDE + (cid - 1)] = value
 
     def get(self, key, default=0):
         side, cid = key
-        idx = int(side) * 84 + (cid - 1)
-        if idx < 0 or idx >= 168:
+        idx = int(side) * self._STRIDE + (cid - 1)
+        if idx < 0 or idx >= self._TOTAL:
             return default
         return self._data[idx]
 
@@ -198,8 +209,8 @@ class InfluenceArray:
 
     def pop(self, key, default=_MISSING):
         side, cid = key
-        idx = int(side) * 84 + (cid - 1)
-        if idx < 0 or idx >= 168:
+        idx = int(side) * self._STRIDE + (cid - 1)
+        if idx < 0 or idx >= self._TOTAL:
             if default is InfluenceArray._MISSING:
                 raise KeyError(key)
             return default
@@ -214,8 +225,8 @@ class InfluenceArray:
     def items(self):
         for side_idx in range(2):
             side = Side(side_idx)
-            base = side_idx * 84
-            for cid in range(1, 85):
+            base = side_idx * self._STRIDE
+            for cid in range(1, self._STRIDE + 1):
                 val = self._data[base + cid - 1]
                 if val != 0:
                     yield (side, cid), val
