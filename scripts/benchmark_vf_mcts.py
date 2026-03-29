@@ -24,9 +24,6 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-sys.path.insert(0, os.path.dirname(__file__))
-from collect_learned_vs_heuristic import BarrierBatcher
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
 import torch
@@ -42,6 +39,114 @@ from tsrl.policies.learned_policy import (
 from tsrl.policies.model import TSBaselineModel
 from tsrl.policies.minimal_hybrid import make_minimal_hybrid_policy
 from tsrl.schemas import ActionEncoding, ActionMode, Side
+
+
+class TimeoutBatcher:
+    """Runs model inference when batch_size requests arrive OR flush_timeout seconds elapse.
+
+    The thread that triggers the flush (either by filling the batch or detecting timeout)
+    performs the forward pass for all waiting threads.
+    """
+
+    def __init__(
+        self,
+        model,
+        batch_size: int,
+        flush_timeout: float = 0.010,
+        device=None,
+    ):
+        self.model = model
+        self.batch_size = batch_size
+        self.flush_timeout = flush_timeout
+        self.device = device or next(model.parameters()).device
+
+        self._lock = threading.Lock()
+        self._pending_slots: list[int] = []
+        self._slot_events: dict[int, threading.Event] = {}
+        self._influence_buf: dict[int, torch.Tensor] = {}
+        self._cards_buf: dict[int, torch.Tensor] = {}
+        self._scalars_buf: dict[int, torch.Tensor] = {}
+        self._result_bufs: dict[str, dict[int, torch.Tensor]] = {}
+        self._first_arrival_time: float | None = None
+
+    def request(self, slot_id: int, influence, cards, scalars) -> dict[str, torch.Tensor]:
+        """Submit a request and return inference results.
+
+        If this is the slot that triggers the flush, it performs the forward pass.
+        Otherwise, it waits on a condition variable.
+        """
+        with self._lock:
+            # Initialize event for this slot if needed
+            if slot_id not in self._slot_events:
+                self._slot_events[slot_id] = threading.Event()
+            event = self._slot_events[slot_id]
+            event.clear()
+
+            # Store features
+            self._influence_buf[slot_id] = influence.to(device=self.device, non_blocking=False)
+            self._cards_buf[slot_id] = cards.to(device=self.device, non_blocking=False)
+            self._scalars_buf[slot_id] = scalars.to(device=self.device, non_blocking=False)
+            self._pending_slots.append(slot_id)
+
+            # Record first arrival time
+            if self._first_arrival_time is None:
+                self._first_arrival_time = time.monotonic()
+
+            # Check if we should flush
+            should_flush = False
+            elapsed = time.monotonic() - self._first_arrival_time
+
+            if len(self._pending_slots) >= self.batch_size:
+                should_flush = True
+            elif elapsed >= self.flush_timeout:
+                should_flush = True
+
+            if should_flush:
+                pending_ids = sorted(set(self._pending_slots))
+                self._pending_slots.clear()
+                self._first_arrival_time = None
+                self._run_batch_locked(pending_ids)
+
+        # Wait for result to be ready
+        event.wait()
+
+        # Return the result for this slot
+        with self._lock:
+            return {
+                key: value[slot_id].clone()
+                for key, value in self._result_bufs.items()
+            }
+
+    def _run_batch_locked(self, slot_ids: list[int]) -> None:
+        """Run the forward pass for the given slots. Must be called with lock held."""
+        # Build batch tensors in slot order
+        influence_list = [self._influence_buf[sid] for sid in slot_ids]
+        cards_list = [self._cards_buf[sid] for sid in slot_ids]
+        scalars_list = [self._scalars_buf[sid] for sid in slot_ids]
+
+        influence_batch = torch.cat(influence_list, dim=0)
+        cards_batch = torch.cat(cards_list, dim=0)
+        scalars_batch = torch.cat(scalars_list, dim=0)
+
+        # Run forward pass (release lock during inference)
+        self._lock.release()
+        try:
+            with torch.no_grad():
+                outputs = self.model(influence_batch, cards_batch, scalars_batch)
+        finally:
+            self._lock.acquire()
+
+        # Store results indexed by slot_id
+        for key, value in outputs.items():
+            if key not in self._result_bufs:
+                self._result_bufs[key] = {}
+            for batch_idx, slot_id in enumerate(slot_ids):
+                self._result_bufs[key][slot_id] = value[batch_idx : batch_idx + 1]
+
+        # Signal all waiting slots
+        for slot_id in slot_ids:
+            if slot_id in self._slot_events:
+                self._slot_events[slot_id].set()
 
 
 @dataclass
@@ -144,7 +249,7 @@ def _get_thread_slot_id() -> int:
 
 
 def _make_batched_value_fn(
-    batcher: BarrierBatcher,
+    batcher: TimeoutBatcher,
     expected_influence_dim: int,
 ):
     def _value_fn(gs) -> float:
@@ -163,7 +268,7 @@ def _make_batched_value_fn(
 
 
 def _make_batched_candidate_fn(
-    batcher: BarrierBatcher,
+    batcher: TimeoutBatcher,
     expected_influence_dim: int,
     *,
     n_candidates: int,
@@ -403,8 +508,12 @@ def run_matchup(
         model, has_strategy_heads, expected_influence_dim = vf_value_fn
         active_slots = min(pool_size, n_games)
         device = next(model.parameters()).device
-        batcher = BarrierBatcher(model, n_slots=active_slots, device=device)
-        batcher.set_active_slots(active_slots)
+        batcher = TimeoutBatcher(
+            model,
+            batch_size=active_slots,
+            flush_timeout=0.010,
+            device=device,
+        )
         batched_value_fn = _make_batched_value_fn(batcher, expected_influence_dim)
         batched_candidate_fn = None
         if vf_candidate_fn is not None:
@@ -421,36 +530,33 @@ def run_matchup(
 
         def _worker(slot_id: int) -> None:
             _THREAD_LOCAL.slot_id = slot_id
-            try:
-                while True:
-                    with counter_lock:
-                        if next_game_idx[0] >= n_games:
-                            return
-                        game_idx = next_game_idx[0]
-                        next_game_idx[0] += 1
+            while True:
+                with counter_lock:
+                    if next_game_idx[0] >= n_games:
+                        return
+                    game_idx = next_game_idx[0]
+                    next_game_idx[0] += 1
 
-                    a_is_ussr = (game_idx % 2 == 0)
-                    if a_is_ussr:
-                        ussr_pol, us_pol = policy_a, policy_b
-                    else:
-                        ussr_pol, us_pol = policy_b, policy_a
+                a_is_ussr = (game_idx % 2 == 0)
+                if a_is_ussr:
+                    ussr_pol, us_pol = policy_a, policy_b
+                else:
+                    ussr_pol, us_pol = policy_b, policy_a
 
-                    global _VF_SIDE, _VF_OPPONENT_POLICY
-                    _VF_SIDE = Side.USSR if a_is_ussr else Side.US
-                    _VF_OPPONENT_POLICY = us_pol if _VF_SIDE == Side.USSR else ussr_pol
-                    _THREAD_LOCAL.vf_side = _VF_SIDE
-                    _THREAD_LOCAL.opponent_policy = _VF_OPPONENT_POLICY
+                global _VF_SIDE, _VF_OPPONENT_POLICY
+                _VF_SIDE = Side.USSR if a_is_ussr else Side.US
+                _VF_OPPONENT_POLICY = us_pol if _VF_SIDE == Side.USSR else ussr_pol
+                _THREAD_LOCAL.vf_side = _VF_SIDE
+                _THREAD_LOCAL.opponent_policy = _VF_OPPONENT_POLICY
 
-                    t0 = time.time()
-                    result = play_game_with_vf_uct(
-                        batched_value_fn,
-                        vf_n_sim,
-                        seed + game_idx,
-                        candidate_fn=batched_candidate_fn,
-                    )
-                    results_q.put((game_idx, result, time.time() - t0))
-            finally:
-                batcher.deactivate_slot(slot_id)
+                t0 = time.time()
+                result = play_game_with_vf_uct(
+                    batched_value_fn,
+                    vf_n_sim,
+                    seed + game_idx,
+                    candidate_fn=batched_candidate_fn,
+                )
+                results_q.put((game_idx, result, time.time() - t0))
 
         threads = [
             threading.Thread(target=_worker, args=(slot_id,), daemon=True)
