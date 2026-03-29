@@ -82,11 +82,15 @@ log = logging.getLogger(__name__)
 
 # Cards are IDs 1..MAX_CARD_ID.  Index 0 is unused (sentinel).
 MAX_CARD_ID: int = 111
-# Countries are IDs 0..MAX_COUNTRY_ID.
-MAX_COUNTRY_ID: int = 83
+# Countries are IDs 0..85 (Austria=0..Taiwan=85, 86 total).
+# Model features currently use only IDs 1..84 (84 countries, 168-dim influence vector).
+# Austria (ID 0) and Taiwan (ID 85) are excluded from model features.
+# TODO: expand to all 86 countries (170-dim) in a future training round;
+#       requires rebuilding dataset + retraining from scratch. See model.py NUM_COUNTRIES.
+MAX_COUNTRY_ID: int = 83  # highest country ID included in model features (exclusive of Austria/Taiwan)
 
 _CARD_MASK_LEN: int = MAX_CARD_ID + 1        # length 112; index 0 unused
-_COUNTRY_MASK_LEN: int = MAX_COUNTRY_ID + 1  # length 84
+_COUNTRY_MASK_LEN: int = MAX_COUNTRY_ID + 1  # length 84 (countries 1..84 only)
 
 # Decision point EventKinds that produce training rows.
 # SPACE_RACE is a result event (card advancement), not a decision —

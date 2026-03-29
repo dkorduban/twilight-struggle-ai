@@ -30,7 +30,7 @@ import torch
 import torch.nn as nn
 
 
-NUM_COUNTRIES = 84
+NUM_COUNTRIES = 84  # TODO: expand to 86 (add Austria=0 and Taiwan=85); requires dataset rebuild + retrain
 NUM_STRATEGIES = 4
 NUM_CARDS = 112  # card IDs 0..111, but index 0 unused; masks are len 112
 NUM_PLAYABLE_CARDS = 111  # card IDs 1..111
