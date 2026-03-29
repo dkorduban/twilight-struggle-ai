@@ -170,7 +170,7 @@ def clone_game_state(gs: GameState) -> GameState:
     new_gs.pub.space = list(gs.pub.space)
     new_gs.pub.space_attempts = list(gs.pub.space_attempts)
     new_gs.pub.ops_modifier = list(gs.pub.ops_modifier)
-    new_gs.pub.influence = dict(gs.pub.influence)
+    new_gs.pub.influence = gs.pub.influence.copy()
     # frozensets are immutable — safe to share.
     new_gs.hands = {s: h for s, h in gs.hands.items()}
     new_gs.deck = list(gs.deck)

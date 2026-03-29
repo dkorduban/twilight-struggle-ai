@@ -67,6 +67,8 @@ def parse_args() -> argparse.Namespace:
                    help="Use OneCycleLR schedule (linear warmup + cosine decay)")
     p.add_argument("--compile", action="store_true",
                    help="torch.compile the model for faster training (PyTorch 2+)")
+    p.add_argument("--resume", action="store_true",
+                   help="Resume from latest checkpoint in --out-dir")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
         "--val-fraction",
@@ -329,11 +331,33 @@ def main() -> None:
     # ---- checkpoint directory ----
     os.makedirs(args.out_dir, exist_ok=True)
 
-    # ---- training loop ----
+    # ---- resume from latest checkpoint if requested ----
     best_val_loss = float("inf")
+    start_epoch = 1
     best_ckpt_path = os.path.join(args.out_dir, "baseline_best.pt")
 
-    for epoch in range(1, args.epochs + 1):
+    if args.resume:
+        import glob as _glob
+        epoch_ckpts = sorted(
+            _glob.glob(os.path.join(args.out_dir, "baseline_epoch*.pt")),
+            key=lambda p: int(os.path.basename(p).replace("baseline_epoch", "").replace(".pt", "")),
+        )
+        if epoch_ckpts:
+            latest = epoch_ckpts[-1]
+            print(f"Resuming from {latest}")
+            ckpt = torch.load(latest, map_location=device, weights_only=False)
+            model.load_state_dict(ckpt["model_state_dict"])
+            optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+            if scheduler is not None and "scheduler_state_dict" in ckpt:
+                scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+            start_epoch = ckpt["epoch"] + 1
+            best_val_loss = ckpt.get("val_metrics", {}).get("loss", float("inf"))
+            print(f"Resumed at epoch {start_epoch}, best_val_loss={best_val_loss:.4f}")
+        else:
+            print("--resume specified but no checkpoints found; starting fresh")
+
+    # ---- training loop ----
+    for epoch in range(start_epoch, args.epochs + 1):
         t_epoch = time.time()
         print(f"\n=== Epoch {epoch}/{args.epochs} ===")
 
@@ -373,6 +397,7 @@ def main() -> None:
             "epoch": epoch,
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict() if scheduler is not None else None,
             "train_metrics": train_metrics,
             "val_metrics": val_metrics,
             "args": vars(args),

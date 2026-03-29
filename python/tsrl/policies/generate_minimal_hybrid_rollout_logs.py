@@ -86,7 +86,7 @@ def _snapshot_pub(pub: PublicState) -> PublicState:
     cloned.space = list(pub.space)
     cloned.space_attempts = list(pub.space_attempts)
     cloned.ops_modifier = list(pub.ops_modifier)
-    cloned.influence = dict(pub.influence)
+    cloned.influence = pub.influence.copy()
     return cloned
 
 

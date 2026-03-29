@@ -162,6 +162,85 @@ class ReplayEvent:
 # ---------------------------------------------------------------------------
 
 
+class InfluenceArray:
+    """Flat-array influence store with dict-compatible tuple-key API."""
+
+    __slots__ = ("_data",)
+
+    def __init__(self, source=None):
+        if source is None:
+            self._data = [0] * 168
+        elif isinstance(source, InfluenceArray):
+            self._data = list(source._data)
+        elif hasattr(source, "items"):
+            self._data = [0] * 168
+            for (side, cid), val in source.items():
+                self._data[int(side) * 84 + (cid - 1)] = val
+        else:
+            self._data = list(source)
+
+    def __getitem__(self, key):
+        side, cid = key
+        return self._data[int(side) * 84 + (cid - 1)]
+
+    def __setitem__(self, key, value):
+        side, cid = key
+        self._data[int(side) * 84 + (cid - 1)] = value
+
+    def get(self, key, default=0):
+        side, cid = key
+        idx = int(side) * 84 + (cid - 1)
+        if idx < 0 or idx >= 168:
+            return default
+        return self._data[idx]
+
+    def pop(self, key, default=None):
+        side, cid = key
+        idx = int(side) * 84 + (cid - 1)
+        if idx < 0 or idx >= 168:
+            if default is None:
+                raise KeyError(key)
+            return default
+        old = self._data[idx]
+        if old == 0:
+            if default is None:
+                raise KeyError(key)
+            return default
+        self._data[idx] = 0
+        return old
+
+    def items(self):
+        for side_idx in range(2):
+            side = Side(side_idx)
+            base = side_idx * 84
+            for cid in range(1, 85):
+                val = self._data[base + cid - 1]
+                if val != 0:
+                    yield (side, cid), val
+
+    def keys(self):
+        return dict(self.items()).keys()
+
+    def copy(self):
+        new = InfluenceArray.__new__(InfluenceArray)
+        new._data = list(self._data)
+        return new
+
+    def __iter__(self):
+        return (k for k, _ in self.items())
+
+    def __contains__(self, key):
+        return self.get(key, 0) != 0
+
+    def __repr__(self):
+        return f"InfluenceArray({dict(self.items())})"
+
+    def __eq__(self, other):
+        if isinstance(other, InfluenceArray):
+            return self._data == other._data
+        return NotImplemented
+
+
 @dataclass
 class PublicState:
     """Complete public board state at a point in the game.
@@ -186,8 +265,7 @@ class PublicState:
     china_playable: bool = True  # face-up (playable) or face-down
 
     # Influence: indexed [Side][country_id]
-    # Populated lazily; use defaultdict semantics in practice.
-    influence: dict[tuple[Side, int], int] = field(default_factory=dict)
+    influence: "InfluenceArray" = field(default_factory=InfluenceArray)
 
     # Card location knowledge (public)
     discard: frozenset[int] = field(default_factory=frozenset)   # card ids in discard

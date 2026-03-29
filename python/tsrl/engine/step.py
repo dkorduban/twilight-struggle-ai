@@ -462,5 +462,5 @@ def _copy_pub(pub: PublicState) -> PublicState:
     c.space = list(pub.space)
     c.space_attempts = list(pub.space_attempts)
     c.ops_modifier = list(pub.ops_modifier)
-    c.influence = dict(pub.influence)
+    c.influence = pub.influence.copy()
     return c

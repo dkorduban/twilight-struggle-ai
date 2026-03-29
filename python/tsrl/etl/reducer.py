@@ -25,6 +25,7 @@ from typing import Final
 from tsrl.schemas import (
     EventKind,
     HandKnowledge,
+    InfluenceArray,
     LabelQuality,
     PublicState,
     ReplayEvent,
@@ -68,7 +69,7 @@ def reduce_public(state: PublicState, event: ReplayEvent) -> PublicState:
 
     if kind == EventKind.GAME_START:
         from tsrl.etl.game_data import initial_influence
-        s.influence = initial_influence()
+        s.influence = InfluenceArray(initial_influence())
 
     elif kind == EventKind.TURN_START:
         s.turn = event.turn
@@ -532,7 +533,7 @@ def _copy_public(s: PublicState) -> PublicState:
     c.space = list(s.space)
     c.space_attempts = list(s.space_attempts)
     c.ops_modifier = list(s.ops_modifier)
-    c.influence = dict(s.influence)
+    c.influence = s.influence.copy()
     # frozensets are immutable — safe to share
     return c
 

@@ -123,11 +123,8 @@ def _card_mask(card_ids: frozenset[int]) -> list[int]:
 
 def _influence_array(pub: PublicState, side: Side) -> list[int]:
     """Influence values for one side, indexed by country_id (len=_COUNTRY_MASK_LEN)."""
-    arr = [0] * _COUNTRY_MASK_LEN
-    for (s, cid), val in pub.influence.items():
-        if s == side and 0 <= cid < _COUNTRY_MASK_LEN:
-            arr[cid] = val
-    return arr
+    base = int(side) * 84
+    return [0] + list(pub.influence._data[base : base + 84])
 
 
 def _game_id(path: Path) -> str:

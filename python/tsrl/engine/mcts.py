@@ -306,7 +306,7 @@ def collect_self_play_game(
         c2.space = list(p.space)
         c2.space_attempts = list(p.space_attempts)
         c2.ops_modifier = list(p.ops_modifier)
-        c2.influence = dict(p.influence)
+        c2.influence = p.influence.copy()
         return c2
 
     # Build MCTS policy that records decisions.
