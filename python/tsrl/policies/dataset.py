@@ -15,7 +15,12 @@ Returned dict keys and shapes (all float32 except the int64 *_target keys)
                               COUP/REALIGN rows contain a single 1.0 in the target country.
                               INFLUENCE rows contain repeated counts for each allocated op.
                               SPACE/EVENT rows are all-zero and masked out in country loss.
-  value_target    : (1,)    — float32, winner_side in {-1, 0, +1}
+  value_target    : (1,)    — float32, default=winner_side in {-1, 0, +1}
+                              When value_target_mode='final_vp': uses final_vp/20 (clamped
+                              to [-1,1]) as a denser value target. This provides more signal
+                              than the sparse terminal ±1 and should improve value function
+                              convergence. See TS_SelfPlayDataset(value_target_mode=...).
+                              NOTE: final_vp column must exist in all Parquet files.
 
 Scalar normalisation
 --------------------
@@ -53,7 +58,23 @@ class TS_SelfPlayDataset(Dataset):
         self-play collector.
     """
 
-    def __init__(self, data_dir: str) -> None:
+    def __init__(self, data_dir: str, value_target_mode: str = "winner_side") -> None:
+        """
+        Parameters
+        ----------
+        data_dir:
+            Directory containing *.parquet files.
+        value_target_mode:
+            'winner_side' (default) — use {-1, 0, +1} terminal outcome.
+            'final_vp' — use final_vp/20 clamped to [-1, 1] as a denser
+                         value target. Requires final_vp column in all files.
+        """
+        if value_target_mode not in ("winner_side", "final_vp"):
+            raise ValueError(
+                f"value_target_mode must be 'winner_side' or 'final_vp', got {value_target_mode!r}"
+            )
+        self._value_target_mode = value_target_mode
+
         paths = sorted(glob.glob(os.path.join(data_dir, "*.parquet")))
         if not paths:
             raise FileNotFoundError(
@@ -93,6 +114,16 @@ class TS_SelfPlayDataset(Dataset):
         self._action_mode: list[int] = d["action_mode"]
         self._action_targets: list[str] = d["action_targets"]
         self._winner_side: list[int] = d["winner_side"]
+        # final_vp: the terminal VP margin (positive = USSR win).
+        # Loaded only when value_target_mode='final_vp'.
+        # Human-log rows may have final_vp=null (train.parquet); fall back to winner_side for those.
+        if value_target_mode == "final_vp":
+            # diagonal_relaxed concat fills missing final_vp with null.
+            raw_final_vp = d.get("final_vp", [None] * self._length)
+            # Convert None (null from polars) to None; keep integers as-is.
+            self._final_vp: list[int | None] = [
+                (int(v) if v is not None else None) for v in raw_final_vp
+            ]
 
     def __len__(self) -> int:
         return self._length
@@ -144,9 +175,23 @@ class TS_SelfPlayDataset(Dataset):
             for country_id in valid_ids:
                 country_ops_target[country_id - 1] += 1.0
 
-        value_target = torch.tensor(
-            [float(self._winner_side[idx])], dtype=torch.float32
-        )  # (1,)
+        if self._value_target_mode == "final_vp":
+            # Normalize final VP to [-1, 1]: divide by 20 and clamp.
+            # VP range is roughly [-20, +20] in typical games; clamping handles outliers.
+            # Fall back to winner_side for rows where final_vp is null (e.g. human-log rows).
+            raw_vp = self._final_vp[idx]
+            if raw_vp is not None:
+                value_target = torch.tensor(
+                    [max(-1.0, min(1.0, float(raw_vp) / 20.0))], dtype=torch.float32
+                )
+            else:
+                value_target = torch.tensor(
+                    [float(self._winner_side[idx])], dtype=torch.float32
+                )
+        else:
+            value_target = torch.tensor(
+                [float(self._winner_side[idx])], dtype=torch.float32
+            )  # (1,)
 
         return {
             "influence": influence,

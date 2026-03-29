@@ -17,7 +17,7 @@ Losses
     country_loss = Ops-weighted log-mixture CE(country_strategy_logits,
                                                strategy_logits,
                                                country_ops_target)
-    value_loss   = MSELoss(value_pred, value_target)
+    value_loss   = MSELoss(value_pred, value_target)  # target = winner_side or final_vp/20
     total        = card_loss + mode_loss + country_loss + value_weight * value_loss
 
 Checkpoints are saved to <out-dir>/baseline_epoch{N}.pt after each epoch.
@@ -93,7 +93,15 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Multiplier on value MSE loss relative to card/mode/country losses (default 1.0)."
-             " Increase (e.g. 5.0) if value_mse is not converging due to country_loss dominating.",
+             " NOTE: increasing this alone does not help if the value floor is caused by sparse"
+             " terminal rewards. Use --value-target final_vp instead.",
+    )
+    p.add_argument(
+        "--value-target",
+        default="winner_side",
+        choices=["winner_side", "final_vp"],
+        help="Value training target: 'winner_side' (default, {-1,0,+1} terminal outcome) or"
+             " 'final_vp' (final_vp/20 clamped to [-1,1], denser reward signal).",
     )
     return p.parse_args()
 
@@ -291,7 +299,7 @@ def main() -> None:
     print(f"Output dir: {args.out_dir}")
 
     # ---- dataset ----
-    full_dataset = TS_SelfPlayDataset(args.data_dir)
+    full_dataset = TS_SelfPlayDataset(args.data_dir, value_target_mode=args.value_target)
     n_total = len(full_dataset)
     n_val = max(1, int(n_total * args.val_fraction))
     n_train = n_total - n_val

@@ -199,6 +199,24 @@ def test_dataset_loads() -> None:
     or not any(f.endswith(".parquet") for f in os.listdir(_SELFPLAY_DIR)),
     reason="No *.parquet files found in data/selfplay/",
 )
+def test_dataset_final_vp_mode() -> None:
+    """Dataset with value_target_mode='final_vp' returns values in [-1, 1]."""
+    from tsrl.policies.dataset import TS_SelfPlayDataset
+
+    ds = TS_SelfPlayDataset(_SELFPLAY_DIR, value_target_mode="final_vp")
+    assert len(ds) > 0
+
+    for idx in range(min(100, len(ds))):
+        sample = ds[idx]
+        v = sample["value_target"].item()
+        assert -1.0 <= v <= 1.0, f"value_target out of range: {v}"
+
+
+@pytest.mark.skipif(
+    not os.path.isdir(_SELFPLAY_DIR)
+    or not any(f.endswith(".parquet") for f in os.listdir(_SELFPLAY_DIR)),
+    reason="No *.parquet files found in data/selfplay/",
+)
 def test_dataset_all_card_targets_in_range() -> None:
     """All card_target values in the full dataset must be 0..110."""
     from tsrl.policies.dataset import TS_SelfPlayDataset
