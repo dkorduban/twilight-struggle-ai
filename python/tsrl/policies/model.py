@@ -60,8 +60,10 @@ class TSBaselineModel(nn.Module):
 
         self.trunk = nn.Sequential(
             nn.Linear(TRUNK_IN, TRUNK_HIDDEN),
+            nn.LayerNorm(TRUNK_HIDDEN),
             nn.ReLU(),
             nn.Linear(TRUNK_HIDDEN, TRUNK_HIDDEN),
+            nn.LayerNorm(TRUNK_HIDDEN),
             nn.ReLU(),
             nn.Dropout(p=dropout),
         )

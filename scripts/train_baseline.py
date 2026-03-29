@@ -57,6 +57,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--epochs", type=int, default=20)
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--lr", type=float, default=3e-4)
+    p.add_argument("--weight-decay", type=float, default=0.0,
+                   help="L2 weight decay for AdamW (default 0 = plain Adam)")
+    p.add_argument("--label-smoothing", type=float, default=0.0,
+                   help="Label smoothing epsilon for card/mode CE losses (default 0)")
+    p.add_argument("--dropout", type=float, default=0.1,
+                   help="Dropout probability in trunk (default 0.1)")
+    p.add_argument("--one-cycle", action="store_true",
+                   help="Use OneCycleLR schedule (linear warmup + cosine decay)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
         "--val-fraction",
@@ -122,6 +130,8 @@ def run_epoch(
     device: torch.device,
     log_interval: int,
     epoch_label: str,
+    label_smoothing: float = 0.0,
+    scheduler=None,
 ) -> dict[str, float]:
     """Run one full pass over ``loader``.
 
@@ -131,10 +141,10 @@ def run_epoch(
     is_train = optimizer is not None
     model.train(is_train)
 
-    ce_loss_fn = nn.CrossEntropyLoss()
+    ce_loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
     # ignore_index=-1 skips rows where action_mode is unknown (human-log rows
     # where the play mode cannot be inferred from the PLAY event alone).
-    mode_ce_loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
+    mode_ce_loss_fn = nn.CrossEntropyLoss(ignore_index=-1, label_smoothing=label_smoothing)
     mse_loss_fn = nn.MSELoss()
 
     total_loss = 0.0
@@ -201,6 +211,8 @@ def run_epoch(
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                if scheduler is not None:
+                    scheduler.step()
 
             # --- accumulate metrics ---
             total_loss += loss.item()
@@ -295,11 +307,19 @@ def main() -> None:
     )
 
     # ---- model ----
-    model = TSBaselineModel().to(device)
+    model = TSBaselineModel(dropout=args.dropout).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model parameters: {n_params:,}")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    scheduler = None
+    if args.one_cycle:
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=args.lr,
+            epochs=args.epochs,
+            steps_per_epoch=len(train_loader),
+        )
 
     # ---- checkpoint directory ----
     os.makedirs(args.out_dir, exist_ok=True)
@@ -313,10 +333,13 @@ def main() -> None:
         print(f"\n=== Epoch {epoch}/{args.epochs} ===")
 
         train_metrics = run_epoch(
-            model, train_loader, optimizer, device, args.log_interval, f"train e{epoch}"
+            model, train_loader, optimizer, device, args.log_interval, f"train e{epoch}",
+            label_smoothing=args.label_smoothing,
+            scheduler=scheduler,
         )
         val_metrics = run_epoch(
-            model, val_loader, None, device, args.log_interval, f"val   e{epoch}"
+            model, val_loader, None, device, args.log_interval, f"val   e{epoch}",
+            label_smoothing=args.label_smoothing,
         )
 
         elapsed = time.time() - t_epoch
