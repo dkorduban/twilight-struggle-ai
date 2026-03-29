@@ -14,7 +14,9 @@ Losses
 ------
     card_loss    = CrossEntropyLoss(card_logits, card_target)
     mode_loss    = CrossEntropyLoss(mode_logits, mode_target)
-    country_loss = Ops-weighted softmax CE(country_logits, country_ops_target)
+    country_loss = Ops-weighted log-mixture CE(country_strategy_logits,
+                                               strategy_logits,
+                                               country_ops_target)
     value_loss   = MSELoss(value_pred, value_target)
     total        = card_loss + mode_loss + country_loss + value_loss
 
@@ -164,6 +166,8 @@ def run_epoch(
             card_logits = outputs["card_logits"]
             mode_logits = outputs["mode_logits"]
             country_logits = outputs["country_logits"]
+            country_strategy_logits = outputs["country_strategy_logits"]
+            strategy_logits = outputs["strategy_logits"]
             value_pred = outputs["value"]
 
             card_loss = ce_loss_fn(card_logits, card_target)
@@ -176,8 +180,14 @@ def run_epoch(
             if country_ops_mask.any():
                 ops_t = country_ops_target[country_ops_mask]
                 ops_prob = ops_t / ops_t.sum(dim=1, keepdim=True)
-                log_probs = torch.log_softmax(country_logits[country_ops_mask], dim=1)
-                country_loss = -(ops_prob * log_probs).sum(dim=1).mean()
+                mixing = torch.softmax(strategy_logits[country_ops_mask], dim=1)
+                strategy_probs = torch.softmax(
+                    country_strategy_logits[country_ops_mask], dim=2
+                )
+                mixture_probs = (mixing.unsqueeze(2) * strategy_probs).sum(dim=1)
+                country_loss = -(
+                    ops_prob * torch.log(mixture_probs + 1e-8)
+                ).sum(dim=1).mean()
                 country_top1 = (
                     country_logits[country_ops_mask].argmax(dim=1)
                     == country_ops_target[country_ops_mask].argmax(dim=1)

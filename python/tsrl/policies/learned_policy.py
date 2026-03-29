@@ -66,12 +66,14 @@ def _build_action_from_country_logits(
     side: Side,
     adj: dict,
     rng: random.Random,
+    strategy_logits: torch.Tensor | None = None,  # (4,)
+    country_strategy_logits: torch.Tensor | None = None,  # (4, 84)
 ) -> ActionEncoding | None:
     """Build an action using country_logits to score targets.
 
     COUP/REALIGN: sample one accessible country from the masked softmax.
-    INFLUENCE: sample one accessible country per op from the same masked
-               softmax, independently and with replacement.
+    INFLUENCE: allocate ops with largest-remainder proportional assignment
+               from the chosen strategy distribution.
     """
     accessible = sorted(accessible_countries(side, pub, adj, mode=mode))
     if not accessible:
@@ -84,8 +86,13 @@ def _build_action_from_country_logits(
     if not valid_accessible:
         return None
     indices = torch.tensor([c - 1 for c in valid_accessible], dtype=torch.long)
-    masked = torch.full((84,), float("-inf"))
-    masked[indices] = country_logits[indices]
+    source_logits = country_logits
+    if strategy_logits is not None and country_strategy_logits is not None:
+        strategy_idx = int(strategy_logits.argmax().item())
+        source_logits = country_strategy_logits[strategy_idx]
+
+    masked = torch.full_like(source_logits, float("-inf"))
+    masked[indices] = source_logits[indices]
     probs = torch.softmax(masked, dim=0)
 
     # Multinomial samples an index into the 84-dim vector; add 1 for country_id.
@@ -97,12 +104,28 @@ def _build_action_from_country_logits(
         target = int(torch.multinomial(probs, 1).item()) + 1
         return ActionEncoding(card_id=card_id, mode=mode, targets=(target,))
 
-    # INFLUENCE: allocate ops one at a time via independent draws.
+    # INFLUENCE: allocate integer ops by largest remainder after proportional split.
     ops = effective_ops(card_id, pub, side)
+    accessible_probs = probs[indices]
+    alloc = accessible_probs * ops
+    floor_alloc = torch.floor(alloc).to(dtype=torch.long)
+    remainder = ops - int(floor_alloc.sum().item())
+
+    if remainder > 0:
+        fractional = alloc - floor_alloc.to(dtype=alloc.dtype)
+        order = sorted(
+            range(len(valid_accessible)),
+            key=lambda idx: (
+                -float(fractional[idx].item()),
+                valid_accessible[idx],
+            ),
+        )
+        for idx in order[:remainder]:
+            floor_alloc[idx] += 1
+
     targets_list: list[int] = []
-    for _ in range(ops):
-        target = int(torch.multinomial(probs, 1).item()) + 1
-        targets_list.append(target)
+    for country_id, count in zip(valid_accessible, floor_alloc.tolist()):
+        targets_list.extend([country_id] * count)
     return ActionEncoding(card_id=card_id, mode=mode, targets=tuple(targets_list))
 
 
@@ -116,9 +139,9 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
     side:
         The side this policy plays (USSR or US).
     use_country_head:
-        If True (default) and the checkpoint has a country_head, use
-        country_logits to direct COUP/REALIGN/INFLUENCE target selection.
-        Falls back to random sampling if the head is absent (old checkpoints).
+        If True (default) and the checkpoint has strategy heads, use them to
+        direct COUP/REALIGN/INFLUENCE target selection. Falls back to random
+        target sampling when those heads are absent (old checkpoints).
     """
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(checkpoint_path)
@@ -127,7 +150,15 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     model = TSBaselineModel()
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    has_country_head = "country_head.weight" in state_dict
+    has_strategy_heads = all(
+        key in state_dict
+        for key in (
+            "strategy_heads.weight",
+            "strategy_heads.bias",
+            "strategy_mixer.weight",
+            "strategy_mixer.bias",
+        )
+    )
     model.eval()
 
     adj = load_adjacency()
@@ -150,6 +181,12 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
             country_logits = outputs.get("country_logits")
             if country_logits is not None:
                 country_logits = country_logits[0]
+            strategy_logits = outputs.get("strategy_logits")
+            if strategy_logits is not None:
+                strategy_logits = strategy_logits[0]
+            country_strategy_logits = outputs.get("country_strategy_logits")
+            if country_strategy_logits is not None:
+                country_strategy_logits = country_strategy_logits[0]
 
         # --- pick card ---
         legal_card_ids = sorted(playable)
@@ -169,9 +206,17 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
             return ActionEncoding(card_id=sampled_card_id, mode=mode, targets=())
 
         # --- pick targets using country head if available ---
-        if use_country_head and has_country_head and country_logits is not None:
+        if use_country_head and has_strategy_heads and country_logits is not None:
             action = _build_action_from_country_logits(
-                sampled_card_id, mode, country_logits, pub, side, adj, rng
+                sampled_card_id,
+                mode,
+                country_logits,
+                pub,
+                side,
+                adj,
+                rng,
+                strategy_logits=strategy_logits,
+                country_strategy_logits=country_strategy_logits,
             )
             if action is not None:
                 return action
@@ -198,7 +243,15 @@ def make_model_candidate_fn(
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     model = TSBaselineModel()
     model.load_state_dict(state_dict, strict=False)
-    has_country_head = "country_head.weight" in state_dict
+    has_strategy_heads = all(
+        key in state_dict
+        for key in (
+            "strategy_heads.weight",
+            "strategy_heads.bias",
+            "strategy_mixer.weight",
+            "strategy_mixer.bias",
+        )
+    )
     model.eval()
 
     adj = load_adjacency()
@@ -225,6 +278,12 @@ def make_model_candidate_fn(
             country_logits = outputs.get("country_logits")
             if country_logits is not None:
                 country_logits = country_logits[0]
+            strategy_logits = outputs.get("strategy_logits")
+            if strategy_logits is not None:
+                strategy_logits = strategy_logits[0]
+            country_strategy_logits = outputs.get("country_strategy_logits")
+            if country_strategy_logits is not None:
+                country_strategy_logits = country_strategy_logits[0]
 
         card_probs = torch.softmax(card_logits, dim=0)
         mode_probs = torch.softmax(mode_logits, dim=0)
@@ -274,9 +333,17 @@ def make_model_candidate_fn(
                 continue
 
             action = None
-            if use_country_head and has_country_head and country_logits is not None:
+            if use_country_head and has_strategy_heads and country_logits is not None:
                 action = _build_action_from_country_logits(
-                    card_id, mode, country_logits, pub, side, adj, _rng
+                    card_id,
+                    mode,
+                    country_logits,
+                    pub,
+                    side,
+                    adj,
+                    _rng,
+                    strategy_logits=strategy_logits,
+                    country_strategy_logits=country_strategy_logits,
                 )
             if action is None:
                 action = _build_random_targets(card_id, mode, pub, side, adj, _rng)

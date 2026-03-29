@@ -11,13 +11,15 @@ All inputs are batched tensors with shape (B, *).
 
 Output contract
 ---------------
-Returns a dict with four keys:
+Returns a dict with six keys:
 
   card_logits    : (B, 111)  — unnormalised logits for card choice (0-indexed)
   mode_logits    : (B, 5)    — unnormalised logits for action mode
-  country_logits : (B, 84)   — unnormalised logits for primary country target
-                               (used for COUP/REALIGN target and INFLUENCE
-                               per-op country scoring; ignored for SPACE/EVENT)
+  country_logits : (B, 84)   — mixed country distribution from the strategy
+                               mixture, kept for backward compatibility with
+                               code that expects a single country output
+  country_strategy_logits : (B, 4, 84) — per-strategy unnormalised country logits
+  strategy_logits : (B, 4)   — unnormalised logits over strategy mixture weights
   value          : (B, 1)    — game value from USSR perspective, in [-1, 1]
 
 Card index 0 corresponds to card_id 1 in the raw data (subtract 1 at
@@ -29,6 +31,7 @@ import torch.nn as nn
 
 
 NUM_COUNTRIES = 84
+NUM_STRATEGIES = 4
 NUM_CARDS = 112  # card IDs 0..111, but index 0 unused; masks are len 112
 NUM_PLAYABLE_CARDS = 111  # card IDs 1..111
 NUM_MODES = 5
@@ -65,7 +68,8 @@ class TSBaselineModel(nn.Module):
 
         self.card_head = nn.Linear(TRUNK_HIDDEN, NUM_PLAYABLE_CARDS)
         self.mode_head = nn.Linear(TRUNK_HIDDEN, NUM_MODES)
-        self.country_head = nn.Linear(TRUNK_HIDDEN, NUM_COUNTRIES)
+        self.strategy_heads = nn.Linear(TRUNK_HIDDEN, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(TRUNK_HIDDEN, NUM_STRATEGIES)
         self.value_head = nn.Linear(TRUNK_HIDDEN, 1)
 
     def forward(
@@ -87,7 +91,8 @@ class TSBaselineModel(nn.Module):
 
         Returns
         -------
-        dict with keys ``card_logits``, ``mode_logits``, ``country_logits``, ``value``.
+        dict with keys ``card_logits``, ``mode_logits``, ``country_logits``,
+        ``country_strategy_logits``, ``strategy_logits``, and ``value``.
         """
         h_inf = torch.relu(self.influence_encoder(influence))
         h_card = torch.relu(self.card_encoder(cards))
@@ -98,12 +103,20 @@ class TSBaselineModel(nn.Module):
 
         card_logits = self.card_head(hidden)
         mode_logits = self.mode_head(hidden)
-        country_logits = self.country_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(
+            hidden.shape[0], NUM_STRATEGIES, NUM_COUNTRIES
+        )
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
         value = torch.tanh(self.value_head(hidden))
 
         return {
             "card_logits": card_logits,
             "mode_logits": mode_logits,
             "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
             "value": value,
         }
