@@ -51,7 +51,7 @@ class TSBaselineModel(nn.Module):
     See module docstring for input/output contract.
     """
 
-    def __init__(self, dropout: float = 0.1) -> None:
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
         super().__init__()
 
         self.influence_encoder = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
@@ -59,20 +59,20 @@ class TSBaselineModel(nn.Module):
         self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk = nn.Sequential(
-            nn.Linear(TRUNK_IN, TRUNK_HIDDEN),
-            nn.LayerNorm(TRUNK_HIDDEN),
+            nn.Linear(TRUNK_IN, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
-            nn.Linear(TRUNK_HIDDEN, TRUNK_HIDDEN),
-            nn.LayerNorm(TRUNK_HIDDEN),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Dropout(p=dropout),
         )
 
-        self.card_head = nn.Linear(TRUNK_HIDDEN, NUM_PLAYABLE_CARDS)
-        self.mode_head = nn.Linear(TRUNK_HIDDEN, NUM_MODES)
-        self.strategy_heads = nn.Linear(TRUNK_HIDDEN, NUM_STRATEGIES * NUM_COUNTRIES)
-        self.strategy_mixer = nn.Linear(TRUNK_HIDDEN, NUM_STRATEGIES)
-        self.value_head = nn.Linear(TRUNK_HIDDEN, 1)
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+        self.value_head = nn.Linear(hidden_dim, 1)
 
     def forward(
         self,

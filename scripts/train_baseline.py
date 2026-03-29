@@ -63,6 +63,12 @@ def parse_args() -> argparse.Namespace:
                    help="Label smoothing epsilon for card/mode CE losses (default 0)")
     p.add_argument("--dropout", type=float, default=0.1,
                    help="Dropout probability in trunk (default 0.1)")
+    p.add_argument(
+        "--hidden-dim",
+        type=int,
+        default=256,
+        help="Trunk hidden dimension (default 256)",
+    )
     p.add_argument("--one-cycle", action="store_true",
                    help="Use OneCycleLR schedule (linear warmup + cosine decay)")
     p.add_argument("--compile", action="store_true",
@@ -87,6 +93,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="DataLoader worker processes (default 0 = main process)",
+    )
+    p.add_argument(
+        "--pin-memory",
+        action="store_true",
+        help="Enable pin_memory in DataLoader for faster CPU->GPU transfers (default off)",
     )
     p.add_argument(
         "--value-weight",
@@ -316,6 +327,7 @@ def main() -> None:
         generator=generator,
         drop_last=False,
         persistent_workers=(args.num_workers > 0),  # avoids per-epoch worker restart
+        pin_memory=args.pin_memory,
     )
     val_loader = DataLoader(
         val_ds,
@@ -324,10 +336,11 @@ def main() -> None:
         num_workers=args.num_workers,
         drop_last=False,
         persistent_workers=(args.num_workers > 0),
+        pin_memory=args.pin_memory,
     )
 
     # ---- model ----
-    model = TSBaselineModel(dropout=args.dropout).to(device)
+    model = TSBaselineModel(dropout=args.dropout, hidden_dim=args.hidden_dim).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model parameters: {n_params:,}")
     if args.compile:

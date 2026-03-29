@@ -148,7 +148,9 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
-    model = TSBaselineModel()
+    ckpt_args = checkpoint.get("args", {})
+    hidden_dim = ckpt_args.get("hidden_dim", 256)
+    model = TSBaselineModel(hidden_dim=hidden_dim)
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
     has_strategy_heads = all(
         key in state_dict
@@ -245,7 +247,9 @@ def make_model_candidate_fn(
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
-    model = TSBaselineModel()
+    ckpt_args = checkpoint.get("args", {})
+    hidden_dim = ckpt_args.get("hidden_dim", 256)
+    model = TSBaselineModel(hidden_dim=hidden_dim)
     model.load_state_dict(state_dict, strict=False)
     has_strategy_heads = all(
         key in state_dict
@@ -400,7 +404,9 @@ def make_value_function(checkpoint_path: str) -> Callable[[GameState], float]:
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
-    model = TSBaselineModel()
+    ckpt_args = checkpoint.get("args", {})
+    hidden_dim = ckpt_args.get("hidden_dim", 256)
+    model = TSBaselineModel(hidden_dim=hidden_dim)
     model.load_state_dict(state_dict, strict=False)
     model.eval()
     try:

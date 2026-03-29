@@ -1,4 +1,4 @@
-"""Collect learned-vs-heuristic games using batched threaded inference.
+"""Collect learned-vs-heuristic games using barrier-synchronized batched inference.
 
 The learned model (from checkpoint) plays one side, and the MinimalHybrid heuristic
 plays the other. Games are split 50-50:
@@ -12,8 +12,7 @@ Usage::
     uv run python scripts/collect_learned_vs_heuristic.py \\
         --checkpoint data/checkpoints/retrain_v10/baseline_best.pt \\
         --n-games 2000 \\
-        --workers 14 \\
-        --batch-size 8 \\
+        --pool-size 256 \\
         --seed 15000 \\
         --out data/selfplay/learned_v10_vs_heuristic_2k_seed15000.parquet
 """
@@ -44,59 +43,140 @@ _LATE_WAR_TURN = 8
 _MAX_TURNS = 10
 
 
-class BatchInferenceServer:
-    """Batches model inference across concurrent game threads."""
+class BarrierBatcher:
+    """Runs model inference when every active slot has submitted one request."""
 
-    def __init__(self, model, batch_size: int, flush_timeout: float = 0.005):
+    def __init__(self, model, n_slots: int, device: torch.device):
         self.model = model
-        self.batch_size = batch_size
-        self.flush_timeout = flush_timeout
-        self._queue: queue.Queue[tuple[torch.Tensor, torch.Tensor, torch.Tensor, queue.Queue]] = (
-            queue.Queue()
-        )
-        self._stop = threading.Event()
-        self._batcher_thread = threading.Thread(target=self._batcher, daemon=True)
-        self._batcher_thread.start()
+        self.n_slots = n_slots
+        self.device = device
+        self._lock = threading.Lock()
+        self._active_slots: set[int] = set()
+        self._ready_slots: set[int] = set()
+        self._slot_events = [threading.Event() for _ in range(n_slots)]
+        self._influence_buf: torch.Tensor | None = None
+        self._cards_buf: torch.Tensor | None = None
+        self._scalars_buf: torch.Tensor | None = None
+        self._result_bufs: dict[str, torch.Tensor] = {}
 
-    def request(self, influence, cards, scalars):
-        """Submit one inference request and block until its result is ready."""
-        result_q: queue.Queue[dict[str, torch.Tensor]] = queue.Queue(maxsize=1)
-        self._queue.put((influence, cards, scalars, result_q))
-        return result_q.get()
+    def set_active_slots(self, n: int):
+        if not 0 <= n <= self.n_slots:
+            raise ValueError(f"active slot count must be in [0, {self.n_slots}]")
+        with self._lock:
+            self._active_slots = set(range(n))
+            self._ready_slots.clear()
+            for slot_event in self._slot_events:
+                slot_event.clear()
 
-    def stop(self):
-        self._stop.set()
-        self._batcher_thread.join(timeout=2.0)
+    def deactivate_slot(self, slot_id: int) -> None:
+        pending = self._mark_slot_inactive(slot_id)
+        if pending is not None:
+            self._run_batch(*pending)
 
-    def _batcher(self):
-        pending = []
-        while not self._stop.is_set():
-            try:
-                item = self._queue.get(timeout=self.flush_timeout)
-                pending.append(item)
-                while len(pending) < self.batch_size:
-                    try:
-                        pending.append(self._queue.get_nowait())
-                    except queue.Empty:
-                        break
-                if len(pending) >= self.batch_size:
-                    self._flush(pending)
-                    pending = []
-            except queue.Empty:
-                if pending:
-                    self._flush(pending)
-                    pending = []
-        if pending:
-            self._flush(pending)
+    def request(self, slot_id: int, influence, cards, scalars) -> dict[str, torch.Tensor]:
+        pending = self._store_request(slot_id, influence, cards, scalars)
+        if pending is not None:
+            self._run_batch(*pending)
+        self._slot_events[slot_id].wait()
+        with self._lock:
+            return {
+                key: value[slot_id : slot_id + 1].clone()
+                for key, value in self._result_bufs.items()
+            }
 
-    def _flush(self, items):
-        influence = torch.cat([x[0] for x in items], dim=0)
-        cards_t = torch.cat([x[1] for x in items], dim=0)
-        scalars = torch.cat([x[2] for x in items], dim=0)
+    def _ensure_feature_buffers(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> None:
+        if self._influence_buf is None:
+            self._influence_buf = torch.empty(
+                (self.n_slots, *influence.shape[1:]),
+                dtype=influence.dtype,
+                device=self.device,
+            )
+        if self._cards_buf is None:
+            self._cards_buf = torch.empty(
+                (self.n_slots, *cards.shape[1:]),
+                dtype=cards.dtype,
+                device=self.device,
+            )
+        if self._scalars_buf is None:
+            self._scalars_buf = torch.empty(
+                (self.n_slots, *scalars.shape[1:]),
+                dtype=scalars.dtype,
+                device=self.device,
+            )
+
+    def _store_request(
+        self,
+        slot_id: int,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> tuple[list[int], torch.Tensor, torch.Tensor, torch.Tensor] | None:
+        with self._lock:
+            if slot_id not in self._active_slots:
+                raise RuntimeError(f"slot {slot_id} is not active")
+            self._ensure_feature_buffers(influence, cards, scalars)
+            self._slot_events[slot_id].clear()
+            self._influence_buf[slot_id : slot_id + 1].copy_(
+                influence.to(device=self.device, non_blocking=False)
+            )
+            self._cards_buf[slot_id : slot_id + 1].copy_(
+                cards.to(device=self.device, non_blocking=False)
+            )
+            self._scalars_buf[slot_id : slot_id + 1].copy_(
+                scalars.to(device=self.device, non_blocking=False)
+            )
+            self._ready_slots.add(slot_id)
+            return self._take_pending_batch_locked()
+
+    def _mark_slot_inactive(
+        self, slot_id: int
+    ) -> tuple[list[int], torch.Tensor, torch.Tensor, torch.Tensor] | None:
+        with self._lock:
+            self._active_slots.discard(slot_id)
+            self._ready_slots.discard(slot_id)
+            return self._take_pending_batch_locked()
+
+    def _take_pending_batch_locked(
+        self,
+    ) -> tuple[list[int], torch.Tensor, torch.Tensor, torch.Tensor] | None:
+        if not self._active_slots or self._ready_slots != self._active_slots:
+            return None
+        active_slot_ids = sorted(self._active_slots)
+        slot_tensor = torch.tensor(active_slot_ids, dtype=torch.long, device=self.device)
+        influence = self._influence_buf.index_select(0, slot_tensor)
+        cards = self._cards_buf.index_select(0, slot_tensor)
+        scalars = self._scalars_buf.index_select(0, slot_tensor)
+        self._ready_slots.clear()
+        return active_slot_ids, influence, cards, scalars
+
+    def _run_batch(
+        self,
+        active_slot_ids: list[int],
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> None:
         with torch.no_grad():
-            outputs = self.model(influence, cards_t, scalars)
-        for i, (*_, result_q) in enumerate(items):
-            result_q.put({k: v[i : i + 1] for k, v in outputs.items()})
+            outputs = self.model(influence, cards, scalars)
+        with self._lock:
+            for key, value in outputs.items():
+                if key not in self._result_bufs:
+                    self._result_bufs[key] = torch.empty(
+                        (self.n_slots, *value.shape[1:]),
+                        dtype=value.dtype,
+                        device=value.device,
+                    )
+                for output_idx, slot_id in enumerate(active_slot_ids):
+                    self._result_bufs[key][slot_id : slot_id + 1].copy_(
+                        value[output_idx : output_idx + 1]
+                    )
+            for slot_id in active_slot_ids:
+                self._slot_events[slot_id].set()
 
 
 def _sample_index_from_probs(probs: torch.Tensor, rng: random.Random) -> int:
@@ -217,7 +297,9 @@ def _load_model(checkpoint_path: str):
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
-    model = TSBaselineModel()
+    ckpt_args = checkpoint.get("args", {})
+    hidden_dim = ckpt_args.get("hidden_dim", 256)
+    model = TSBaselineModel(hidden_dim=hidden_dim)
     model.load_state_dict(state_dict, strict=False)
     has_strategy_heads = all(
         key in state_dict
@@ -233,7 +315,8 @@ def _load_model(checkpoint_path: str):
 
 
 def _make_thread_policy(
-    server: BatchInferenceServer,
+    server: BarrierBatcher,
+    slot_id: int,
     side,
     has_strategy_heads: bool,
     expected_influence_dim: int,
@@ -252,7 +335,7 @@ def _make_thread_policy(
 
         influence, cards, scalars = _extract_features(pub, hand_set, holds_china, side)
         influence = _normalize_influence_features(influence, expected_influence_dim)
-        outputs = server.request(influence, cards, scalars)
+        outputs = server.request(slot_id, influence, cards, scalars)
         card_logits = outputs["card_logits"][0]
         country_logits = outputs.get("country_logits")
         if country_logits is not None:
@@ -463,8 +546,8 @@ def _worker_loop(
     counter_lock: threading.Lock,
     next_game_idx: list[int],
     completed_games: list[int],
-    results_q: queue.Queue,
-    server: BatchInferenceServer,
+    results_q,
+    server: BarrierBatcher,
     has_strategy_heads: bool,
     expected_influence_dim: int,
 ):
@@ -475,47 +558,52 @@ def _worker_loop(
     except OSError:
         pass
 
-    while True:
-        with counter_lock:
-            if next_game_idx[0] >= n_games:
-                return
-            game_idx = next_game_idx[0]
-            next_game_idx[0] += 1
-        seed = seed_base + game_idx
-        rng = random.Random(seed ^ ((worker_id + 1) * 1_000_003))
+    try:
+        while True:
+            with counter_lock:
+                if next_game_idx[0] >= n_games:
+                    return
+                game_idx = next_game_idx[0]
+                next_game_idx[0] += 1
+            seed = seed_base + game_idx
+            rng = random.Random(seed ^ ((worker_id + 1) * 1_000_003))
 
-        # Determine which side the learned model plays
-        # game_idx % 2 == 0: learned plays USSR
-        # game_idx % 2 == 1: learned plays US
-        learned_side = Side.USSR if game_idx % 2 == 0 else Side.US
-        heuristic_side = Side.US if learned_side == Side.USSR else Side.USSR
+            # Determine which side the learned model plays
+            # game_idx % 2 == 0: learned plays USSR
+            # game_idx % 2 == 1: learned plays US
+            learned_side = Side.USSR if game_idx % 2 == 0 else Side.US
+            heuristic_side = Side.US if learned_side == Side.USSR else Side.USSR
 
-        learned_policy = _make_thread_policy(
-            server, learned_side, has_strategy_heads, expected_influence_dim, rng
-        )
-        heuristic_policy = _make_heuristic_policy(heuristic_side, rng)
-
-        try:
-            rows, summary = _collect_learned_game(seed, learned_policy, heuristic_policy, learned_side)
-            log.info(
-                "game %-35s  steps=%d  result=%-10s  vp=%+d  end_turn=%d",
-                summary["game_id"],
-                summary["steps"],
-                summary["result"],
-                summary["vp"],
-                summary["end_turn"],
+            learned_policy = _make_thread_policy(
+                server, worker_id, learned_side, has_strategy_heads, expected_influence_dim, rng
             )
-        except Exception as exc:
-            log.warning("game seed=%d idx=%d failed: %s", seed, game_idx, exc)
-            rows, summary = [], {}
-        with counter_lock:
-            completed_games[0] += 1
-        results_q.put((game_idx, rows, summary))
+            heuristic_policy = _make_heuristic_policy(heuristic_side, rng)
+
+            try:
+                rows, summary = _collect_learned_game(
+                    seed, learned_policy, heuristic_policy, learned_side
+                )
+                log.info(
+                    "game %-35s  steps=%d  result=%-10s  vp=%+d  end_turn=%d",
+                    summary["game_id"],
+                    summary["steps"],
+                    summary["result"],
+                    summary["vp"],
+                    summary["end_turn"],
+                )
+            except Exception as exc:
+                log.warning("game seed=%d idx=%d failed: %s", seed, game_idx, exc)
+                rows, summary = [], {}
+            with counter_lock:
+                completed_games[0] += 1
+            results_q.put((game_idx, rows, summary))
+    finally:
+        server.deactivate_slot(worker_id)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Collect learned-vs-heuristic games with batched inference.",
+        description="Collect learned-vs-heuristic games with barrier-batched inference.",
     )
     parser.add_argument("--checkpoint", required=True, help="Path to model checkpoint.")
     parser.add_argument(
@@ -527,25 +615,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=None, help="Output Parquet file path.")
     parser.add_argument("--seed", type=int, default=42, help="Base RNG seed (default: 42)")
     parser.add_argument(
-        "--workers",
+        "--pool-size",
         type=int,
-        default=16,
-        help="Parallel game threads (default: 16)",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=8,
-        help="Inference batch size (default: 8)",
+        default=256,
+        help="Concurrent game threads / inference slots (default: 256)",
     )
     args = parser.parse_args(argv)
 
     if args.n_games <= 0:
         raise ValueError("--n-games must be > 0")
-    if args.workers <= 0:
-        raise ValueError("--workers must be > 0")
-    if args.batch_size <= 0:
-        raise ValueError("--batch-size must be > 0")
+    if args.pool_size <= 0:
+        raise ValueError("--pool-size must be > 0")
 
     try:
         os.nice(10)
@@ -562,18 +642,20 @@ def main(argv: list[str] | None = None) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     log.info(
-        "Collecting %d learned-vs-heuristic games  |  workers=%d  |  batch_size=%d  |  checkpoint=%s"
+        "Collecting %d learned-vs-heuristic games  |  pool_size=%d  |  checkpoint=%s"
         "  |  seed=%d  ->  %s",
         args.n_games,
-        args.workers,
-        args.batch_size,
+        args.pool_size,
         args.checkpoint,
         args.seed,
         out_path,
     )
 
     model, has_strategy_heads, expected_influence_dim = _load_model(args.checkpoint)
-    server = BatchInferenceServer(model, batch_size=args.batch_size)
+    device = next(model.parameters()).device
+    active_slots = min(args.pool_size, args.n_games)
+    server = BarrierBatcher(model, n_slots=active_slots, device=device)
+    server.set_active_slots(active_slots)
     counter_lock = threading.Lock()
     next_game_idx = [0]
     completed_games = [0]
@@ -614,7 +696,7 @@ def main(argv: list[str] | None = None) -> int:
             },
             daemon=True,
         )
-        for worker_id in range(args.workers)
+        for worker_id in range(active_slots)
     ]
 
     for thread in threads:
@@ -632,8 +714,6 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         for thread in threads:
             thread.join()
-        server.stop()
-
     _flush_batch()
 
     if not part_paths:

@@ -16,19 +16,32 @@ from __future__ import annotations
 
 import argparse
 import os
+import queue
 import random
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
 
+sys.path.insert(0, os.path.dirname(__file__))
+from collect_learned_vs_heuristic import BarrierBatcher
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
+
+import torch
 
 from tsrl.engine.game_loop import GameResult, Policy, make_random_policy, play_game
 from tsrl.engine.mcts import uct_mcts
-from tsrl.policies.learned_policy import make_model_candidate_fn, make_value_function
+from tsrl.policies.learned_policy import (
+    _build_action_from_country_logits,
+    _build_random_targets,
+    _extract_features,
+    make_learned_policy,
+)
+from tsrl.policies.model import TSBaselineModel
 from tsrl.policies.minimal_hybrid import make_minimal_hybrid_policy
-from tsrl.schemas import Side
+from tsrl.schemas import ActionEncoding, ActionMode, Side
 
 
 @dataclass
@@ -72,6 +85,170 @@ class BenchmarkResult:
 
 _VF_SIDE: Side = Side.USSR
 _VF_OPPONENT_POLICY: Optional[Policy] = None
+_THREAD_LOCAL = threading.local()
+
+
+def _load_model(checkpoint_path: str):
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(checkpoint_path)
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    state_dict = checkpoint.get("model_state_dict", checkpoint)
+    ckpt_args = checkpoint.get("args", {})
+    hidden_dim = ckpt_args.get("hidden_dim", 256)
+    model = TSBaselineModel(hidden_dim=hidden_dim)
+    model.load_state_dict(state_dict, strict=False)
+    expected_influence_dim = model.influence_encoder.in_features
+    has_strategy_heads = all(
+        key in state_dict
+        for key in (
+            "strategy_heads.weight",
+            "strategy_heads.bias",
+            "strategy_mixer.weight",
+            "strategy_mixer.bias",
+        )
+    )
+    model.eval()
+    try:
+        model = torch.compile(model, dynamic=True)
+    except Exception:
+        pass
+    return model, has_strategy_heads, expected_influence_dim
+
+
+def _normalize_influence_features(
+    influence: torch.Tensor,
+    expected_dim: int,
+) -> torch.Tensor:
+    actual_dim = int(influence.shape[1])
+    if actual_dim == expected_dim:
+        return influence
+    if actual_dim == expected_dim + 2 and expected_dim % 2 == 0:
+        half = actual_dim // 2
+        return torch.cat([influence[:, 1:half], influence[:, half + 1 :]], dim=1)
+    if actual_dim > expected_dim:
+        return influence[:, :expected_dim]
+    pad = torch.zeros(
+        (influence.shape[0], expected_dim - actual_dim),
+        dtype=influence.dtype,
+        device=influence.device,
+    )
+    return torch.cat([influence, pad], dim=1)
+
+
+def _get_thread_slot_id() -> int:
+    slot_id = getattr(_THREAD_LOCAL, "slot_id", None)
+    if slot_id is None:
+        raise RuntimeError("thread slot_id not configured")
+    return slot_id
+
+
+def _make_batched_value_fn(
+    batcher: BarrierBatcher,
+    expected_influence_dim: int,
+):
+    def _value_fn(gs) -> float:
+        pub = gs.pub
+        side = pub.phasing
+        holds_china = (side == Side.USSR and gs.ussr_holds_china) or (
+            side == Side.US and gs.us_holds_china
+        )
+        hand = gs.hands[side]
+        influence, cards, scalars = _extract_features(pub, hand, holds_china, side)
+        influence = _normalize_influence_features(influence, expected_influence_dim)
+        outputs = batcher.request(_get_thread_slot_id(), influence, cards, scalars)
+        return outputs["value"][0, 0].item()
+
+    return _value_fn
+
+
+def _make_batched_candidate_fn(
+    batcher: BarrierBatcher,
+    expected_influence_dim: int,
+    *,
+    n_candidates: int,
+    has_strategy_heads: bool,
+):
+    from tsrl.engine.legal_actions import legal_cards, legal_modes, load_adjacency
+
+    adj = load_adjacency()
+
+    def _candidate_fn(
+        gs,
+        side: Side,
+        holds_china: bool,
+        n: int,
+        *,
+        rng: random.Random | None = None,
+    ) -> list[ActionEncoding]:
+        hand = gs.hands[side]
+        pub = gs.pub
+        playable = sorted(legal_cards(hand, pub, side, holds_china=holds_china))
+        if not playable:
+            return []
+
+        influence, cards, scalars = _extract_features(pub, hand, holds_china, side)
+        influence = _normalize_influence_features(influence, expected_influence_dim)
+        outputs = batcher.request(_get_thread_slot_id(), influence, cards, scalars)
+        card_logits = outputs["card_logits"][0]
+        mode_logits = outputs["mode_logits"][0]
+        country_logits = outputs.get("country_logits")
+        if country_logits is not None:
+            country_logits = country_logits[0]
+        strategy_logits = outputs.get("strategy_logits")
+        if strategy_logits is not None:
+            strategy_logits = strategy_logits[0]
+        country_strategy_logits = outputs.get("country_strategy_logits")
+        if country_strategy_logits is not None:
+            country_strategy_logits = country_strategy_logits[0]
+
+        card_probs = torch.softmax(card_logits, dim=0)
+        mode_probs = torch.softmax(mode_logits, dim=0)
+
+        scored_pairs: list[tuple[int, ActionMode, float]] = []
+        for card_id in playable:
+            card_score = float(card_probs[card_id - 1].item())
+            modes = sorted(legal_modes(card_id, pub, side, adj=adj), key=int)
+            for mode in modes:
+                scored_pairs.append((card_id, mode, card_score * float(mode_probs[int(mode)].item())))
+
+        if not scored_pairs:
+            return []
+
+        limit = min(n, n_candidates, len(scored_pairs))
+        if limit <= 0:
+            return []
+
+        scored_pairs.sort(key=lambda item: (-item[2], item[0], int(item[1])))
+        selected_pairs = [(card_id, mode) for card_id, mode, _ in scored_pairs[:limit]]
+
+        _rng = rng or random.Random()
+        actions: list[ActionEncoding] = []
+        for card_id, mode in selected_pairs:
+            if mode in (ActionMode.SPACE, ActionMode.EVENT):
+                actions.append(ActionEncoding(card_id=card_id, mode=mode, targets=()))
+                continue
+
+            action = None
+            if has_strategy_heads and country_logits is not None:
+                action = _build_action_from_country_logits(
+                    card_id,
+                    mode,
+                    country_logits,
+                    pub,
+                    side,
+                    adj,
+                    _rng,
+                    strategy_logits=strategy_logits,
+                    country_strategy_logits=country_strategy_logits,
+                )
+            if action is None:
+                action = _build_random_targets(card_id, mode, pub, side, adj, _rng)
+            if action is not None:
+                actions.append(action)
+        return actions
+
+    return _candidate_fn
 
 
 def play_game_with_vf_uct(
@@ -100,7 +277,9 @@ def play_game_with_vf_uct(
     )
     from tsrl.engine.legal_actions import sample_action
 
-    if _VF_OPPONENT_POLICY is None:
+    thread_vf_side = getattr(_THREAD_LOCAL, "vf_side", _VF_SIDE)
+    thread_opp_policy = getattr(_THREAD_LOCAL, "opponent_policy", _VF_OPPONENT_POLICY)
+    if thread_opp_policy is None:
         raise RuntimeError("opponent policy not configured")
 
     rng = random.Random(seed)
@@ -108,8 +287,8 @@ def play_game_with_vf_uct(
 
     def _vf_policy(pub, hand, holds_china):
         side = pub.phasing
-        if side != _VF_SIDE:
-            return _VF_OPPONENT_POLICY(pub, hand, holds_china)
+        if side != thread_vf_side:
+            return thread_opp_policy(pub, hand, holds_china)
 
         gs_snap = clone_game_state(gs)
         gs_snap.hands[side] = hand
@@ -179,6 +358,7 @@ def run_matchup(
     vf_value_fn=None,
     vf_n_sim: int = 0,
     vf_candidate_fn=None,
+    pool_size: int = 32,
 ) -> BenchmarkResult:
     """Play n_games between policy_a and policy_b, alternating sides.
 
@@ -189,46 +369,122 @@ def run_matchup(
     total_time = 0.0
     move_count = 0
 
-    for game_idx in range(n_games):
-        # Alternate sides: policy_a plays USSR on even, US on odd.
-        a_is_ussr = (game_idx % 2 == 0)
-        if a_is_ussr:
-            ussr_pol, us_pol = policy_a, policy_b
-        else:
-            ussr_pol, us_pol = policy_b, policy_a
+    if vf_value_fn is None:
+        for game_idx in range(n_games):
+            a_is_ussr = (game_idx % 2 == 0)
+            if a_is_ussr:
+                ussr_pol, us_pol = policy_a, policy_b
+            else:
+                ussr_pol, us_pol = policy_b, policy_a
 
-        t0 = time.time()
-        if vf_value_fn is None:
+            t0 = time.time()
             result = play_game(ussr_pol, us_pol, seed=seed + game_idx)
-        else:
-            global _VF_SIDE, _VF_OPPONENT_POLICY
-            _VF_SIDE = Side.USSR if a_is_ussr else Side.US
-            _VF_OPPONENT_POLICY = us_pol if _VF_SIDE == Side.USSR else ussr_pol
-            result = play_game_with_vf_uct(
-                vf_value_fn, vf_n_sim, seed + game_idx,
-                candidate_fn=vf_candidate_fn,
+            t1 = time.time()
+            total_time += t1 - t0
+
+            a_side = Side.USSR if a_is_ussr else Side.US
+            if result.winner is None:
+                draws += 1
+            elif result.winner == a_side:
+                a_wins += 1
+            else:
+                b_wins += 1
+
+            move_count += 100  # rough estimate
+
+            if (game_idx + 1) % 5 == 0 or game_idx == 0:
+                elapsed = t1 - t0
+                print(
+                    f"  [{name}] game {game_idx+1}/{n_games}"
+                    f"  a_wins={a_wins} b_wins={b_wins} draws={draws}"
+                    f"  game_time={elapsed:.1f}s"
+                )
+    else:
+        model, has_strategy_heads, expected_influence_dim = vf_value_fn
+        active_slots = min(pool_size, n_games)
+        device = next(model.parameters()).device
+        batcher = BarrierBatcher(model, n_slots=active_slots, device=device)
+        batcher.set_active_slots(active_slots)
+        batched_value_fn = _make_batched_value_fn(batcher, expected_influence_dim)
+        batched_candidate_fn = None
+        if vf_candidate_fn is not None:
+            batched_candidate_fn = _make_batched_candidate_fn(
+                batcher,
+                expected_influence_dim,
+                n_candidates=vf_candidate_fn,
+                has_strategy_heads=has_strategy_heads,
             )
-        t1 = time.time()
-        total_time += t1 - t0
 
-        # Count win for the policy that won (not the side).
-        a_side = Side.USSR if a_is_ussr else Side.US
-        if result.winner is None:
-            draws += 1
-        elif result.winner == a_side:
-            a_wins += 1
-        else:
-            b_wins += 1
+        results_q: queue.Queue[tuple[int, GameResult, float]] = queue.Queue()
+        counter_lock = threading.Lock()
+        next_game_idx = [0]
 
-        move_count += 100  # rough estimate
+        def _worker(slot_id: int) -> None:
+            _THREAD_LOCAL.slot_id = slot_id
+            try:
+                while True:
+                    with counter_lock:
+                        if next_game_idx[0] >= n_games:
+                            return
+                        game_idx = next_game_idx[0]
+                        next_game_idx[0] += 1
 
-        if (game_idx + 1) % 5 == 0 or game_idx == 0:
-            elapsed = t1 - t0
-            print(
-                f"  [{name}] game {game_idx+1}/{n_games}"
-                f"  a_wins={a_wins} b_wins={b_wins} draws={draws}"
-                f"  game_time={elapsed:.1f}s"
-            )
+                    a_is_ussr = (game_idx % 2 == 0)
+                    if a_is_ussr:
+                        ussr_pol, us_pol = policy_a, policy_b
+                    else:
+                        ussr_pol, us_pol = policy_b, policy_a
+
+                    global _VF_SIDE, _VF_OPPONENT_POLICY
+                    _VF_SIDE = Side.USSR if a_is_ussr else Side.US
+                    _VF_OPPONENT_POLICY = us_pol if _VF_SIDE == Side.USSR else ussr_pol
+                    _THREAD_LOCAL.vf_side = _VF_SIDE
+                    _THREAD_LOCAL.opponent_policy = _VF_OPPONENT_POLICY
+
+                    t0 = time.time()
+                    result = play_game_with_vf_uct(
+                        batched_value_fn,
+                        vf_n_sim,
+                        seed + game_idx,
+                        candidate_fn=batched_candidate_fn,
+                    )
+                    results_q.put((game_idx, result, time.time() - t0))
+            finally:
+                batcher.deactivate_slot(slot_id)
+
+        threads = [
+            threading.Thread(target=_worker, args=(slot_id,), daemon=True)
+            for slot_id in range(active_slots)
+        ]
+        for thread in threads:
+            thread.start()
+        try:
+            completed = 0
+            while completed < n_games:
+                game_idx, result, elapsed = results_q.get()
+                completed += 1
+                total_time += elapsed
+
+                a_is_ussr = (game_idx % 2 == 0)
+                a_side = Side.USSR if a_is_ussr else Side.US
+                if result.winner is None:
+                    draws += 1
+                elif result.winner == a_side:
+                    a_wins += 1
+                else:
+                    b_wins += 1
+
+                move_count += 100  # rough estimate
+
+                if (completed % 5 == 0) or game_idx == 0:
+                    print(
+                        f"  [{name}] game {completed}/{n_games}"
+                        f"  a_wins={a_wins} b_wins={b_wins} draws={draws}"
+                        f"  game_time={elapsed:.1f}s"
+                    )
+        finally:
+            for thread in threads:
+                thread.join()
 
     avg_time = total_time / max(1, move_count)
     return BenchmarkResult(
@@ -257,6 +513,10 @@ def main():
     p.add_argument("--n-sim", type=int, default=5, help="MCTS simulations per move")
     p.add_argument("--seed", type=int, default=42, help="RNG seed")
     p.add_argument(
+        "--pool-size", type=int, default=32,
+        help="Concurrent game threads / inference slots (default: 32)"
+    )
+    p.add_argument(
         "--n-candidates", type=int, default=0,
         help="If >0, use model candidate fn with this many candidates (model-guided MCTS)"
     )
@@ -275,7 +535,7 @@ def main():
     heuristic_pol = make_minimal_hybrid_policy()
 
     try:
-        value_fn = make_value_function(args.checkpoint)
+        value_fn = _load_model(args.checkpoint)
         print(f"✓ Value function loaded")
     except Exception as e:
         print(f"ERROR loading value function: {e}")
@@ -284,9 +544,7 @@ def main():
     candidate_fn = None
     if args.n_candidates > 0:
         try:
-            candidate_fn = make_model_candidate_fn(
-                args.checkpoint, n_candidates=args.n_candidates
-            )
+            candidate_fn = args.n_candidates
             print(f"✓ Model candidate fn loaded (n_candidates={args.n_candidates})")
         except Exception as e:
             print(f"ERROR loading candidate fn: {e}")
@@ -327,6 +585,7 @@ def main():
         vf_value_fn=value_fn,
         vf_n_sim=n_sim,
         vf_candidate_fn=candidate_fn,
+        pool_size=args.pool_size,
     )
     results.append(r)
     print(f"   {r}")
@@ -342,17 +601,16 @@ def main():
         vf_value_fn=value_fn,
         vf_n_sim=n_sim,
         vf_candidate_fn=candidate_fn,
+        pool_size=args.pool_size,
     )
     results.append(r)
     print(f"   {r}")
 
     # 5. learned policy (no MCTS) vs heuristic — direct policy comparison
     if candidate_fn is not None:
-        from tsrl.policies.learned_policy import make_learned_policy
-        from tsrl.schemas import Side as _Side
         print(f"\n5. learned_policy(USSR) vs heuristic")
-        learned_ussr = make_learned_policy(args.checkpoint, _Side.USSR)
-        learned_us = make_learned_policy(args.checkpoint, _Side.US)
+        learned_ussr = make_learned_policy(args.checkpoint, Side.USSR)
+        learned_us = make_learned_policy(args.checkpoint, Side.US)
         r = run_matchup(
             "learned vs heuristic",
             learned_ussr,

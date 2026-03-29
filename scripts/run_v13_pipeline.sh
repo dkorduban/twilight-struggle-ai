@@ -33,8 +33,8 @@ V13_VS_HEU_OUT=data/selfplay/learned_v13_vs_heuristic_2k_seed17000.parquet
 if [ -f "$VS_HEURISTIC_SCRIPT" ] && [ ! -f "$V13_VS_HEU_OUT" ]; then
     echo "[$(date)] Collecting v13-vs-heuristic..."
     nice -n 10 uv run python "$VS_HEURISTIC_SCRIPT" \
-        --checkpoint "$V13_CKPT" --n-games 2000 --workers 14 \
-        --batch-size 8 --seed 17000 --out "$V13_VS_HEU_OUT" \
+        --checkpoint "$V13_CKPT" --n-games 2000 --pool-size 256 \
+        --seed 17000 --out "$V13_VS_HEU_OUT" \
         2>&1 | tee /tmp/collect_v13_vs_heuristic.log
     echo "[$(date)] v13-vs-heuristic collection done."
 fi
@@ -68,7 +68,7 @@ if [ -f "$V14_CKPT" ]; then
     echo "[$(date)] Running v14 benchmark..."
     nice -n 10 uv run python scripts/benchmark_vf_mcts.py \
         --checkpoint "$V14_CKPT" \
-        --n-games 30 --n-sim 50 --n-candidates 8 --seed 9999 \
+        --n-games 30 --n-sim 50 --n-candidates 8 --seed 9999 --pool-size 30 \
         2>&1 | tee /tmp/benchmark_v14.log
     echo "[$(date)] v14 benchmark done."
 fi
