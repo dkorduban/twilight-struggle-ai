@@ -309,7 +309,7 @@ def _make_heuristic_policy(side, rng):
     return _policy
 
 
-def _collect_learned_game(seed: int, learned_policy, heuristic_policy):
+def _collect_learned_game(seed: int, learned_policy, heuristic_policy, learned_side):
     from tsrl.engine.game_loop import (
         GameResult,
         _end_of_turn,
@@ -378,6 +378,12 @@ def _collect_learned_game(seed: int, learned_policy, heuristic_policy):
     learned_wrapped = _wrap(learned_policy)
     heuristic_wrapped = _wrap(heuristic_policy)
 
+    # Assign USSR/US args in the order the game loop expects
+    if learned_side == Side.USSR:
+        ussr_arg, us_arg = learned_wrapped, heuristic_wrapped
+    else:
+        ussr_arg, us_arg = heuristic_wrapped, learned_wrapped
+
     result = None
     for turn in range(1, _MAX_TURNS + 1):
         gs.pub.turn = turn
@@ -387,10 +393,10 @@ def _collect_learned_game(seed: int, learned_policy, heuristic_policy):
             advance_to_late_war(gs, rng)
         deal_cards(gs, Side.USSR, rng)
         deal_cards(gs, Side.US, rng)
-        result = _run_headline_phase(gs, learned_wrapped, heuristic_wrapped, rng)
+        result = _run_headline_phase(gs, ussr_arg, us_arg, rng)
         if result is not None:
             break
-        result = _run_action_rounds(gs, learned_wrapped, heuristic_wrapped, rng, _ars_for_turn(turn))
+        result = _run_action_rounds(gs, ussr_arg, us_arg, rng, _ars_for_turn(turn))
         if result is not None:
             break
         result = _end_of_turn(gs, rng, turn)
@@ -490,7 +496,7 @@ def _worker_loop(
         heuristic_policy = _make_heuristic_policy(heuristic_side, rng)
 
         try:
-            rows, summary = _collect_learned_game(seed, learned_policy, heuristic_policy)
+            rows, summary = _collect_learned_game(seed, learned_policy, heuristic_policy, learned_side)
             log.info(
                 "game %-35s  steps=%d  result=%-10s  vp=%+d  end_turn=%d",
                 summary["game_id"],
