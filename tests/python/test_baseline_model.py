@@ -6,9 +6,6 @@ a GPU or a trained checkpoint.
 
 from __future__ import annotations
 
-import os
-
-import pytest
 import torch
 
 from tsrl.policies.model import (
@@ -142,26 +139,12 @@ def test_model_output_dtype_float32() -> None:
 # Dataset test
 # ---------------------------------------------------------------------------
 
-_SELFPLAY_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "selfplay"
-)
 
-
-@pytest.mark.skipif(
-    not any(
-        f.endswith(".parquet")
-        for f in os.listdir(_SELFPLAY_DIR)
-        if os.path.isdir(_SELFPLAY_DIR) or True
-    )
-    if not os.path.isdir(_SELFPLAY_DIR)
-    else not any(f.endswith(".parquet") for f in os.listdir(_SELFPLAY_DIR)),
-    reason="No *.parquet files found in data/selfplay/",
-)
-def test_dataset_loads() -> None:
+def test_dataset_loads(tiny_selfplay_dir) -> None:
     """Dataset loads parquet files and returns correctly-shaped samples."""
     from tsrl.policies.dataset import TS_SelfPlayDataset
 
-    ds = TS_SelfPlayDataset(_SELFPLAY_DIR)
+    ds = TS_SelfPlayDataset(str(tiny_selfplay_dir))
     assert len(ds) > 0, "Dataset should have at least one step"
 
     sample = ds[0]
@@ -194,16 +177,11 @@ def test_dataset_loads() -> None:
     )
 
 
-@pytest.mark.skipif(
-    not os.path.isdir(_SELFPLAY_DIR)
-    or not any(f.endswith(".parquet") for f in os.listdir(_SELFPLAY_DIR)),
-    reason="No *.parquet files found in data/selfplay/",
-)
-def test_dataset_final_vp_mode() -> None:
+def test_dataset_final_vp_mode(tiny_selfplay_dir) -> None:
     """Dataset with value_target_mode='final_vp' returns values in [-1, 1]."""
     from tsrl.policies.dataset import TS_SelfPlayDataset
 
-    ds = TS_SelfPlayDataset(_SELFPLAY_DIR, value_target_mode="final_vp")
+    ds = TS_SelfPlayDataset(str(tiny_selfplay_dir), value_target_mode="final_vp")
     assert len(ds) > 0
 
     for idx in range(min(100, len(ds))):
@@ -212,17 +190,12 @@ def test_dataset_final_vp_mode() -> None:
         assert -1.0 <= v <= 1.0, f"value_target out of range: {v}"
 
 
-@pytest.mark.skipif(
-    not os.path.isdir(_SELFPLAY_DIR)
-    or not any(f.endswith(".parquet") for f in os.listdir(_SELFPLAY_DIR)),
-    reason="No *.parquet files found in data/selfplay/",
-)
-def test_dataset_all_card_targets_in_range() -> None:
+def test_dataset_all_card_targets_in_range(tiny_selfplay_dir) -> None:
     """All card_target values in the full dataset must be 0..110."""
     from tsrl.policies.dataset import TS_SelfPlayDataset
     from torch.utils.data import DataLoader
 
-    ds = TS_SelfPlayDataset(_SELFPLAY_DIR)
+    ds = TS_SelfPlayDataset(str(tiny_selfplay_dir))
     loader = DataLoader(ds, batch_size=256, shuffle=False)
 
     for batch in loader:
