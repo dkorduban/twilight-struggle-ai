@@ -160,6 +160,10 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
         )
     )
     model.eval()
+    try:
+        model = torch.compile(model, dynamic=True)
+    except Exception:
+        pass  # torch.compile not available in this build
 
     adj = load_adjacency()
 
@@ -253,6 +257,10 @@ def make_model_candidate_fn(
         )
     )
     model.eval()
+    try:
+        model = torch.compile(model, dynamic=True)
+    except Exception:
+        pass
 
     adj = load_adjacency()
 
@@ -395,6 +403,10 @@ def make_value_function(checkpoint_path: str) -> Callable[[GameState], float]:
     model = TSBaselineModel()
     model.load_state_dict(state_dict, strict=False)
     model.eval()
+    try:
+        model = torch.compile(model, dynamic=True)
+    except Exception:
+        pass
 
     def _value_fn(gs: GameState) -> float:
         """Evaluate the value of a GameState using the learned model.

@@ -65,6 +65,8 @@ def parse_args() -> argparse.Namespace:
                    help="Dropout probability in trunk (default 0.1)")
     p.add_argument("--one-cycle", action="store_true",
                    help="Use OneCycleLR schedule (linear warmup + cosine decay)")
+    p.add_argument("--compile", action="store_true",
+                   help="torch.compile the model for faster training (PyTorch 2+)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
         "--val-fraction",
@@ -310,6 +312,9 @@ def main() -> None:
     model = TSBaselineModel(dropout=args.dropout).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model parameters: {n_params:,}")
+    if args.compile:
+        model = torch.compile(model)
+        print("Model compiled with torch.compile")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = None
