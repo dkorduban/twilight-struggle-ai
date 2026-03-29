@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Generator, Optional
 
 from tsrl.engine.cat_c_events import _CAT_C_CARD_IDS, apply_hand_event
 from tsrl.engine.game_state import (
@@ -177,6 +177,14 @@ class GameResult:
     end_reason: str           # 'vp_threshold' | 'defcon1' | 'turn_limit' | 'europe_control'
 
 
+@dataclass
+class DecisionRequest:
+    side: Side
+    pub: PublicState
+    hand: frozenset[int]
+    holds_china: bool
+
+
 # ---------------------------------------------------------------------------
 # Game loop
 # ---------------------------------------------------------------------------
@@ -198,20 +206,12 @@ def _ars_for_side(pub: PublicState, side: Side, normal_ars: int) -> int:
     return normal_ars
 
 
-def play_game(
-    ussr_policy: Policy,
-    us_policy: Policy,
-    *,
-    seed: Optional[int] = None,
-) -> GameResult:
-    """Run one complete game using the given policies.
-
-    Returns a GameResult describing how the game ended.
-    """
-    rng = random.Random(seed)
-    gs = reset(seed=rng.randint(0, 2**32))
-
-    for turn in range(1, _MAX_TURNS + 1):
+def _run_game_gen(
+    gs: GameState,
+    rng: random.Random,
+    max_turns: int,
+) -> Generator[DecisionRequest, Optional[ActionEncoding], GameResult]:
+    for turn in range(1, max_turns + 1):
         gs.pub.turn = turn
 
         # --- Era deck injection ---
@@ -225,27 +225,27 @@ def play_game(
         deal_cards(gs, Side.US, rng)
 
         # --- Headline Phase ---
-        result = _run_headline_phase(gs, ussr_policy, us_policy, rng)
+        result = yield from _run_headline_phase_gen(gs, rng)
         if result is not None:
             return result
 
         # --- Action Rounds ---
         total_ars = _ars_for_turn(turn)
-        result = _run_action_rounds(gs, ussr_policy, us_policy, rng, total_ars)
+        result = yield from _run_action_rounds_gen(gs, rng, total_ars)
         if result is not None:
             return result
 
         # --- North Sea Oil extra US AR (card 89) ---
         if gs.pub.north_sea_oil_extra_ar:
             gs.pub.north_sea_oil_extra_ar = False
-            result = _run_extra_ar(gs, Side.US, us_policy, rng)
+            result = yield from _run_extra_ar_gen(gs, Side.US, rng)
             if result is not None:
                 return result
 
         # --- Glasnost extra USSR AR (card 93, when SALT active) ---
         if gs.pub.glasnost_extra_ar:
             gs.pub.glasnost_extra_ar = False
-            result = _run_extra_ar(gs, Side.USSR, ussr_policy, rng)
+            result = yield from _run_extra_ar_gen(gs, Side.USSR, rng)
             if result is not None:
                 return result
 
@@ -265,9 +265,32 @@ def play_game(
     return GameResult(
         winner=winner,
         final_vp=gs.pub.vp,
-        end_turn=_MAX_TURNS,
+        end_turn=max_turns,
         end_reason="turn_limit",
     )
+
+
+def run_game_cb(
+    ussr_policy: Policy,
+    us_policy: Policy,
+    *,
+    seed: Optional[int] = None,
+) -> GameResult:
+    """Drives the generator with callback policies."""
+    rng = random.Random(seed)
+    gs = reset(seed=rng.randint(0, 2**32))
+    gen = _run_game_gen(gs, rng, _MAX_TURNS)
+    return _drive_policy_gen(gen, ussr_policy, us_policy)
+
+
+def play_game(
+    ussr_policy: Policy,
+    us_policy: Policy,
+    *,
+    seed: Optional[int] = None,
+) -> GameResult:
+    """Backward-compatible interface."""
+    return run_game_cb(ussr_policy, us_policy, seed=seed)
 
 
 # ---------------------------------------------------------------------------
@@ -275,12 +298,10 @@ def play_game(
 # ---------------------------------------------------------------------------
 
 
-def _run_headline_phase(
+def _run_headline_phase_gen(
     gs: GameState,
-    ussr_policy: Policy,
-    us_policy: Policy,
     rng: random.Random,
-) -> Optional[GameResult]:
+) -> Generator[DecisionRequest, Optional[ActionEncoding], Optional[GameResult]]:
     """Both players choose headline cards simultaneously; resolve in ops order.
 
     Resolution order (confirmed by replay log evidence):
@@ -294,7 +315,6 @@ def _run_headline_phase(
     gs.phase = GamePhase.HEADLINE
     gs.pub.ar = 0
 
-    policies = {Side.USSR: ussr_policy, Side.US: us_policy}
     chosen: dict[Side, ActionEncoding] = {}
 
     # §6.4.4 level 4: if one side has the peek advantage, opponent picks first (blind).
@@ -319,7 +339,18 @@ def _run_headline_phase(
         if not hand:
             continue
         gs.pub.phasing = side
-        action = _headline_pick(policies[side], hand, gs.pub, side, holds_china)
+        from tsrl.engine.legal_actions import _cards
+        playable = legal_cards(hand, gs.pub, side, holds_china=holds_china) - {6}
+        headline_hand = frozenset(cid for cid in playable if cid in _cards())
+        if not headline_hand:
+            continue
+        action = yield DecisionRequest(
+            side=side,
+            pub=gs.pub,
+            hand=headline_hand,
+            holds_china=holds_china,
+        )
+        action = _headline_pick(headline_hand, action)
         if action is None:
             continue
         chosen[side] = action
@@ -362,6 +393,16 @@ def _run_headline_phase(
             )
 
     return None
+
+
+def _run_headline_phase(
+    gs: GameState,
+    ussr_policy: Policy,
+    us_policy: Policy,
+    rng: random.Random,
+) -> Optional[GameResult]:
+    gen = _run_headline_phase_gen(gs, rng)
+    return _drive_policy_gen(gen, ussr_policy, us_policy)
 
 
 def _resolve_trap_ar(
@@ -447,19 +488,16 @@ def _resolve_trap_ar(
     return new_pub, over, winner
 
 
-def _run_action_rounds(
+def _run_action_rounds_gen(
     gs: GameState,
-    ussr_policy: Policy,
-    us_policy: Policy,
     rng: random.Random,
     total_ars: int,
     *,
     start_ar: int = 1,
     start_side_idx: int = 0,   # 0=USSR first, 1=US first within first AR
-) -> Optional[GameResult]:
+) -> Generator[DecisionRequest, Optional[ActionEncoding], Optional[GameResult]]:
     """Run action rounds, honoring per-side space level 8 extra ARs."""
     gs.phase = GamePhase.ACTION_ROUND
-    policies = {Side.USSR: ussr_policy, Side.US: us_policy}
     sides = (Side.USSR, Side.US)
 
     for ar in range(start_ar, _SPACE_SHUTTLE_ARS + 1):
@@ -490,7 +528,12 @@ def _run_action_rounds(
                 # AR consumed by trap attempt; skip policy call.
                 continue
 
-            action = policies[side](gs.pub, hand, holds_china)
+            action = yield DecisionRequest(
+                side=side,
+                pub=gs.pub,
+                hand=hand,
+                holds_china=holds_china,
+            )
             if action is None:
                 # No legal actions: pass (shouldn't normally happen with cards in hand).
                 continue
@@ -515,7 +558,7 @@ def _run_action_rounds(
             # (GMT Deluxe rulebook: "place one Influence marker in any country that
             # already contains US Influence".)
             if side == Side.USSR and gs.pub.norad_active and gs.pub.defcon == 2:
-                norad_result = _resolve_norad(gs, us_policy, rng)
+                norad_result = _resolve_norad(gs, None, rng)
                 if norad_result is not None:
                     norad_pub, norad_over, norad_winner = norad_result
                     if norad_over:
@@ -529,12 +572,31 @@ def _run_action_rounds(
     return None
 
 
-def _run_extra_ar(
+def _run_action_rounds(
+    gs: GameState,
+    ussr_policy: Policy,
+    us_policy: Policy,
+    rng: random.Random,
+    total_ars: int,
+    *,
+    start_ar: int = 1,
+    start_side_idx: int = 0,
+) -> Optional[GameResult]:
+    gen = _run_action_rounds_gen(
+        gs,
+        rng,
+        total_ars,
+        start_ar=start_ar,
+        start_side_idx=start_side_idx,
+    )
+    return _drive_policy_gen(gen, ussr_policy, us_policy)
+
+
+def _run_extra_ar_gen(
     gs: GameState,
     side: Side,
-    policy: Policy,
     rng: random.Random,
-) -> Optional[GameResult]:
+) -> Generator[DecisionRequest, Optional[ActionEncoding], Optional[GameResult]]:
     """Run one extra AR for the given side (North Sea Oil, Glasnost, etc.).
 
     Handles Bear Trap / Quagmire; returns GameResult if game ends, else None.
@@ -560,7 +622,12 @@ def _run_extra_ar(
             )
         return None
 
-    action = policy(gs.pub, hand, holds_china)
+    action = yield DecisionRequest(
+        side=side,
+        pub=gs.pub,
+        hand=hand,
+        holds_china=holds_china,
+    )
     if action is None:
         return None
 
@@ -578,6 +645,16 @@ def _run_extra_ar(
             end_reason=_end_reason(gs.pub, winner),
         )
     return None
+
+
+def _run_extra_ar(
+    gs: GameState,
+    side: Side,
+    policy: Policy,
+    rng: random.Random,
+) -> Optional[GameResult]:
+    gen = _run_extra_ar_gen(gs, side, rng)
+    return _drive_policy_gen(gen, policy, policy)
 
 
 def _end_of_turn(
@@ -681,7 +758,7 @@ def _end_of_turn(
 
 def _resolve_norad(
     gs: GameState,
-    us_policy: Policy,
+    us_policy: Optional[Policy],
     rng: random.Random,
 ) -> Optional[tuple]:
     """NORAD trigger: US places 1 free influence in a country already containing US influence.
@@ -707,22 +784,13 @@ def _resolve_norad(
 
 
 def _headline_pick(
-    policy: Policy,
-    hand: frozenset[int],
-    pub: PublicState,
-    side: Side,
-    holds_china: bool,
+    headline_hand: frozenset[int],
+    action: Optional[ActionEncoding],
 ) -> Optional[ActionEncoding]:
-    """Ask policy for a headline card (EVENT mode, no China Card)."""
-    from tsrl.engine.legal_actions import _cards
-    playable = legal_cards(hand, pub, side, holds_china=holds_china) - {6}
-    headline_hand = frozenset(cid for cid in playable if cid in _cards())
-    if not headline_hand:
+    """Validate a headline pick and force EVENT mode."""
+    if not headline_hand or action is None:
         return None
-    # Policy receives a restricted hand (EVENT-only context).
-    # We temporarily override phasing so sample_action uses correct side.
-    action = policy(pub, headline_hand, holds_china)
-    if action is None:
+    if action.card_id not in headline_hand:
         return None
     # Force mode to EVENT (headlines are always event plays).
     return ActionEncoding(card_id=action.card_id, mode=ActionMode.EVENT, targets=())
@@ -742,18 +810,33 @@ def _end_reason(pub: PublicState, winner: Optional[Side]) -> str:
     return "vp_threshold"
 
 
+def _drive_policy_gen(
+    gen: Generator[DecisionRequest, Optional[ActionEncoding], GameResult | Optional[GameResult]],
+    ussr_policy: Policy,
+    us_policy: Policy,
+) -> GameResult | Optional[GameResult]:
+    try:
+        req = next(gen)
+    except StopIteration as e:
+        return e.value
+    while True:
+        policy = ussr_policy if req.side == Side.USSR else us_policy
+        action = policy(req.pub, req.hand, req.holds_china)
+        try:
+            req = gen.send(action)
+        except StopIteration as e:
+            return e.value
+
+
 # ---------------------------------------------------------------------------
 # Convenience wrappers
 # ---------------------------------------------------------------------------
 
 
-def play_from_state(
+def _play_from_state_gen(
     gs: GameState,
-    ussr_policy: Policy,
-    us_policy: Policy,
-    *,
-    rng: Optional[random.Random] = None,
-) -> GameResult:
+    rng: random.Random,
+) -> Generator[DecisionRequest, Optional[ActionEncoding], GameResult]:
     """Continue a game from an existing GameState to completion.
 
     Clones gs first so the original is not mutated.
@@ -764,7 +847,6 @@ def play_from_state(
         then continue turns.
       - Other phases: start from current turn's headline.
     """
-    _rng = rng or random.Random()
     gs = clone_game_state(gs)
 
     current_turn = gs.pub.turn
@@ -782,22 +864,22 @@ def play_from_state(
             start_side = 0
             gs.pub.ar += 1  # advance AR counter before resuming
 
-        result = _run_action_rounds(
-            gs, ussr_policy, us_policy, _rng, total_ars,
+        result = yield from _run_action_rounds_gen(
+            gs, rng, total_ars,
             start_ar=gs.pub.ar, start_side_idx=start_side,
         )
         if result:
             return result
 
     elif gs.phase == GamePhase.HEADLINE:
-        result = _run_headline_phase(gs, ussr_policy, us_policy, _rng)
+        result = yield from _run_headline_phase_gen(gs, rng)
         if result:
             return result
-        result = _run_action_rounds(gs, ussr_policy, us_policy, _rng, total_ars)
+        result = yield from _run_action_rounds_gen(gs, rng, total_ars)
         if result:
             return result
 
-    result = _end_of_turn(gs, _rng, current_turn)
+    result = _end_of_turn(gs, rng, current_turn)
     if result:
         return result
 
@@ -805,19 +887,19 @@ def play_from_state(
     for turn in range(current_turn + 1, _MAX_TURNS + 1):
         gs.pub.turn = turn
         if turn == _MID_WAR_TURN:
-            advance_to_mid_war(gs, _rng)
+            advance_to_mid_war(gs, rng)
         elif turn == _LATE_WAR_TURN:
-            advance_to_late_war(gs, _rng)
-        deal_cards(gs, Side.USSR, _rng)
-        deal_cards(gs, Side.US, _rng)
-        result = _run_headline_phase(gs, ussr_policy, us_policy, _rng)
+            advance_to_late_war(gs, rng)
+        deal_cards(gs, Side.USSR, rng)
+        deal_cards(gs, Side.US, rng)
+        result = yield from _run_headline_phase_gen(gs, rng)
         if result:
             return result
-        result = _run_action_rounds(gs, ussr_policy, us_policy, _rng,
+        result = yield from _run_action_rounds_gen(gs, rng,
                                     _ars_for_turn(turn))
         if result:
             return result
-        result = _end_of_turn(gs, _rng, turn)
+        result = _end_of_turn(gs, rng, turn)
         if result:
             return result
 
@@ -826,6 +908,28 @@ def play_from_state(
     if gs.pub.vp < 0:
         return GameResult(Side.US, gs.pub.vp, _MAX_TURNS, "turn_limit")
     return GameResult(None, gs.pub.vp, _MAX_TURNS, "turn_limit")
+
+
+def play_from_state_cb(
+    gs: GameState,
+    ussr_policy: Policy,
+    us_policy: Policy,
+    *,
+    rng: Optional[random.Random] = None,
+) -> GameResult:
+    _rng = rng or random.Random()
+    gen = _play_from_state_gen(gs, _rng)
+    return _drive_policy_gen(gen, ussr_policy, us_policy)
+
+
+def play_from_state(
+    gs: GameState,
+    ussr_policy: Policy,
+    us_policy: Policy,
+    *,
+    rng: Optional[random.Random] = None,
+) -> GameResult:
+    return play_from_state_cb(gs, ussr_policy, us_policy, rng=rng)
 
 
 def play_random_game(seed: Optional[int] = None) -> GameResult:
