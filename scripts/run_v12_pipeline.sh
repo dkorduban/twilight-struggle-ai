@@ -71,4 +71,54 @@ if [ -f "$V12_CKPT" ] && [ -f "$VS_HEURISTIC_SCRIPT" ] && [ ! -f "$V12_VS_HEURIS
     echo "[$(date)] v12-vs-heuristic collection done."
 fi
 
+# ── Step 4: build combined_v13 and train v13 ────────────────────────────────
+COMBINED_V13=data/combined_v13
+mkdir -p "$COMBINED_V13"
+
+# Symlink all of combined_v12
+for f in data/combined_v12/*.parquet; do
+    fname=$(basename "$f")
+    target=$(readlink -f "$f")
+    ln -sf "$target" "$COMBINED_V13/$fname"
+done
+
+# Add vs-heuristic data if collected
+for vs_file in "$VS_HEURISTIC_OUT" "$V12_VS_HEURISTIC_OUT"; do
+    if [ -f "$vs_file" ]; then
+        fname=$(basename "$vs_file")
+        ln -sf "$(readlink -f "$vs_file")" "$COMBINED_V13/$fname"
+        echo "[$(date)] Added to combined_v13: $fname"
+    fi
+done
+
+FILE_COUNT=$(ls "$COMBINED_V13"/*.parquet 2>/dev/null | wc -l)
+echo "[$(date)] combined_v13 assembled: $FILE_COUNT parquet files"
+
+if [ "$FILE_COUNT" -gt 0 ]; then
+    echo "[$(date)] Starting v13 training on combined_v13..."
+    nice -n 10 uv run python scripts/train_baseline.py \
+        --data-dir "$COMBINED_V13" \
+        --out-dir data/checkpoints/retrain_v13 \
+        --epochs 60 \
+        --batch-size 256 \
+        --lr 3e-4 \
+        --weight-decay 1e-4 \
+        --dropout 0.1 \
+        --label-smoothing 0.05 \
+        --value-target final_vp \
+        --num-workers 2 \
+        2>&1 | tee /tmp/train_v13.log
+    echo "[$(date)] v13 training done."
+
+    # Benchmark v13
+    echo "[$(date)] Running v13 benchmark..."
+    nice -n 10 uv run python scripts/benchmark_vf_mcts.py \
+        --checkpoint data/checkpoints/retrain_v13/baseline_best.pt \
+        --n-games 30 \
+        --n-sim 50 \
+        --seed 9999 \
+        2>&1 | tee /tmp/benchmark_v13.log
+    echo "[$(date)] v13 benchmark done."
+fi
+
 echo "=== v12 pipeline finished at $(date) ==="
