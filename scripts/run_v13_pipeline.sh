@@ -56,9 +56,9 @@ echo "[$(date)] Starting v14 training on combined_v14..."
 nice -n 10 uv run python scripts/train_baseline.py \
     --data-dir "$COMBINED_V14" \
     --out-dir data/checkpoints/retrain_v14 \
-    --epochs 60 --batch-size 256 --lr 3e-4 \
+    --epochs 60 --batch-size 1024 --lr 1.2e-3 \
     --weight-decay 1e-4 --dropout 0.1 --label-smoothing 0.05 \
-    --value-target final_vp --num-workers 0 \
+    --value-target final_vp --num-workers 4 --one-cycle --pin-memory \
     2>&1 | tee /tmp/train_v14.log
 echo "[$(date)] v14 training done."
 
