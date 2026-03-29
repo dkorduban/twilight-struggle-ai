@@ -78,11 +78,11 @@ def test_influence_array_length():
 
 def test_influence_array_reflects_state():
     pub = PublicState()
-    pub.influence[(Side.USSR, 18)] = 3  # West Germany
+    pub.influence[(Side.USSR, 18)] = 3  # West Germany (country_id=18 → 0-indexed index 17)
     arr = _influence_array(pub, Side.USSR)
-    assert arr[18] == 3
+    assert arr[17] == 3  # 0-indexed: country_id N is at index N-1
     arr_us = _influence_array(pub, Side.US)
-    assert arr_us[18] == 0
+    assert arr_us[17] == 0
 
 
 # ---------------------------------------------------------------------------

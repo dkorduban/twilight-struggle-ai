@@ -124,11 +124,14 @@ def _card_mask(card_ids: frozenset[int]) -> list[int]:
 def _influence_array(pub: PublicState, side: Side) -> list[int]:
     """Influence values for one side for countries 1..84, shape (84,).
 
-    Country 85 (Taiwan) is stored in InfluenceArray but excluded from model
-    features since the model vocabulary covers only countries 1..84.
+    Country IDs are 0-indexed in the game (0=Austria..85=Taiwan).  The model
+    was trained on a 84-element vector corresponding to country_ids 1..84.
+    Country 0 (Austria) and 85 (Taiwan) are excluded from model features.
+    This matches the behaviour of the pre-InfluenceArray code which iterated
+    `(side, i+1)` for i in range(84).
     """
     base = int(side) * pub.influence._STRIDE
-    return list(pub.influence._data[base : base + 84])
+    return list(pub.influence._data[base + 1 : base + 85])
 
 
 def _game_id(path: Path) -> str:

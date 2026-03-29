@@ -173,8 +173,13 @@ class InfluenceArray:
     the model vocabulary excludes Taiwan; _influence_array() slices [base:base+84].
     """
 
-    _STRIDE = 85
-    _TOTAL = 170  # _STRIDE * 2
+    # Country IDs are 0-indexed in the game engine: 0..85 (86 values).
+    # We store each side in a 86-element block: _data[side*86 + cid].
+    # This naturally handles all valid country_ids (0=Austria, 85=Taiwan).
+    # Model features use countries 1..84 (84 values, 168 total) matching
+    # the trained model's influence input dimension.
+    _STRIDE = 86
+    _TOTAL = 172  # _STRIDE * 2
 
     __slots__ = ("_data",)
 
@@ -186,21 +191,21 @@ class InfluenceArray:
         elif hasattr(source, "items"):
             self._data = [0] * self._TOTAL
             for (side, cid), val in source.items():
-                self._data[int(side) * self._STRIDE + (cid - 1)] = val
+                self._data[int(side) * self._STRIDE + cid] = val
         else:
             self._data = list(source)
 
     def __getitem__(self, key):
         side, cid = key
-        return self._data[int(side) * self._STRIDE + (cid - 1)]
+        return self._data[int(side) * self._STRIDE + cid]
 
     def __setitem__(self, key, value):
         side, cid = key
-        self._data[int(side) * self._STRIDE + (cid - 1)] = value
+        self._data[int(side) * self._STRIDE + cid] = value
 
     def get(self, key, default=0):
         side, cid = key
-        idx = int(side) * self._STRIDE + (cid - 1)
+        idx = int(side) * self._STRIDE + cid
         if idx < 0 or idx >= self._TOTAL:
             return default
         return self._data[idx]
@@ -209,7 +214,7 @@ class InfluenceArray:
 
     def pop(self, key, default=_MISSING):
         side, cid = key
-        idx = int(side) * self._STRIDE + (cid - 1)
+        idx = int(side) * self._STRIDE + cid
         if idx < 0 or idx >= self._TOTAL:
             if default is InfluenceArray._MISSING:
                 raise KeyError(key)
@@ -226,13 +231,23 @@ class InfluenceArray:
         for side_idx in range(2):
             side = Side(side_idx)
             base = side_idx * self._STRIDE
-            for cid in range(1, self._STRIDE + 1):
-                val = self._data[base + cid - 1]
+            for cid in range(self._STRIDE):
+                val = self._data[base + cid]
                 if val != 0:
                     yield (side, cid), val
 
     def keys(self):
         return dict(self.items()).keys()
+
+    def clear(self):
+        self._data = [0] * self._TOTAL
+
+    def __eq__(self, other):
+        if isinstance(other, InfluenceArray):
+            return self._data == other._data
+        if isinstance(other, dict):
+            return dict(self.items()) == other
+        return NotImplemented
 
     def copy(self):
         new = InfluenceArray.__new__(InfluenceArray)
@@ -247,11 +262,6 @@ class InfluenceArray:
 
     def __repr__(self):
         return f"InfluenceArray({dict(self.items())})"
-
-    def __eq__(self, other):
-        if isinstance(other, InfluenceArray):
-            return self._data == other._data
-        return NotImplemented
 
 
 @dataclass
