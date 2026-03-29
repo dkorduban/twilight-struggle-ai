@@ -33,22 +33,26 @@ from tsrl.schemas import Side
 
 @dataclass
 class BenchmarkResult:
-    """Result of a matchup: policy_a vs policy_b."""
+    """Result of a matchup: policy_a vs policy_b.
+
+    policy_a_wins / policy_b_wins track wins by the policy (not by side).
+    Games alternate: even games policy_a plays USSR, odd games policy_a plays US.
+    """
 
     name: str  # "vf_mcts5 vs random", etc.
     games: int
-    ussr_wins: int
-    us_wins: int
+    policy_a_wins: int
+    policy_b_wins: int
     draws: int
     avg_wall_time_per_move: float  # seconds
 
     @property
-    def ussr_winrate(self) -> float:
-        return self.ussr_wins / max(1, self.games - self.draws)
+    def a_winrate(self) -> float:
+        return self.policy_a_wins / max(1, self.games - self.draws)
 
     @property
-    def us_winrate(self) -> float:
-        return self.us_wins / max(1, self.games - self.draws)
+    def b_winrate(self) -> float:
+        return self.policy_b_wins / max(1, self.games - self.draws)
 
     @property
     def draw_rate(self) -> float:
@@ -56,11 +60,12 @@ class BenchmarkResult:
 
     def __str__(self) -> str:
         decisive = self.games - self.draws
+        a_name, b_name = self.name.split(" vs ", 1) if " vs " in self.name else ("A", "B")
         return (
-            f"{self.name:30s} "
-            f"  USSR {self.ussr_wins:3d}/{decisive:3d} ({100*self.ussr_winrate:5.1f}%)  "
-            f"US {self.us_wins:3d}/{decisive:3d} ({100*self.us_winrate:5.1f}%)  "
-            f"Draw {self.draws:2d}/{self.games} ({100*self.draw_rate:4.1f}%)  "
+            f"{self.name:35s} "
+            f"  {a_name[:12]:12s} {self.policy_a_wins:3d}/{decisive:3d} ({100*self.a_winrate:5.1f}%)  "
+            f"{b_name[:12]:12s} {self.policy_b_wins:3d}/{decisive:3d} ({100*self.b_winrate:5.1f}%)  "
+            f"Draw {self.draws:2d}/{self.games}  "
             f"Time {self.avg_wall_time_per_move*1000:.1f}ms/move"
         )
 
@@ -171,14 +176,19 @@ def run_matchup(
     vf_value_fn=None,
     vf_n_sim: int = 0,
 ) -> BenchmarkResult:
-    """Play n_games between two policies, alternating sides."""
-    ussr_wins = us_wins = draws = 0
+    """Play n_games between policy_a and policy_b, alternating sides.
+
+    policy_a plays USSR on even games and US on odd games.
+    Wins are tracked by policy (not side) so results are unbiased by TS's side asymmetry.
+    """
+    a_wins = b_wins = draws = 0
     total_time = 0.0
     move_count = 0
 
     for game_idx in range(n_games):
-        # Alternate sides
-        if game_idx % 2 == 0:
+        # Alternate sides: policy_a plays USSR on even, US on odd.
+        a_is_ussr = (game_idx % 2 == 0)
+        if a_is_ussr:
             ussr_pol, us_pol = policy_a, policy_b
         else:
             ussr_pol, us_pol = policy_b, policy_a
@@ -188,32 +198,29 @@ def run_matchup(
             result = play_game(ussr_pol, us_pol, seed=seed + game_idx)
         else:
             global _VF_SIDE, _VF_OPPONENT_POLICY
-            _VF_SIDE = Side.USSR if game_idx % 2 == 0 else Side.US
+            _VF_SIDE = Side.USSR if a_is_ussr else Side.US
             _VF_OPPONENT_POLICY = us_pol if _VF_SIDE == Side.USSR else ussr_pol
-            result = play_game_with_vf_uct(
-                vf_value_fn,
-                vf_n_sim,
-                seed + game_idx,
-            )
+            result = play_game_with_vf_uct(vf_value_fn, vf_n_sim, seed + game_idx)
         t1 = time.time()
         total_time += t1 - t0
 
-        if result.winner == Side.USSR:
-            ussr_wins += 1
-        elif result.winner == Side.US:
-            us_wins += 1
-        else:
+        # Count win for the policy that won (not the side).
+        a_side = Side.USSR if a_is_ussr else Side.US
+        if result.winner is None:
             draws += 1
+        elif result.winner == a_side:
+            a_wins += 1
+        else:
+            b_wins += 1
 
-        # Rough estimate of move count per game (~50-150 moves typically)
-        move_count += 100
+        move_count += 100  # rough estimate
 
     avg_time = total_time / max(1, move_count)
     return BenchmarkResult(
         name=name,
         games=n_games,
-        ussr_wins=ussr_wins,
-        us_wins=us_wins,
+        policy_a_wins=a_wins,
+        policy_b_wins=b_wins,
         draws=draws,
         avg_wall_time_per_move=avg_time,
     )
