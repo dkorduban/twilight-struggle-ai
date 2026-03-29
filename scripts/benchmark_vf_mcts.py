@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
 from tsrl.engine.game_loop import GameResult, Policy, make_random_policy, play_game
 from tsrl.engine.mcts import uct_mcts
-from tsrl.policies.learned_policy import make_value_function
+from tsrl.policies.learned_policy import make_model_candidate_fn, make_value_function
 from tsrl.policies.minimal_hybrid import make_minimal_hybrid_policy
 from tsrl.schemas import Side
 
@@ -100,8 +100,6 @@ def play_game_with_vf_uct(
     )
     from tsrl.engine.legal_actions import sample_action
 
-    del candidate_fn
-
     if _VF_OPPONENT_POLICY is None:
         raise RuntimeError("opponent policy not configured")
 
@@ -115,7 +113,12 @@ def play_game_with_vf_uct(
 
         gs_snap = clone_game_state(gs)
         gs_snap.hands[side] = hand
-        action = uct_mcts(gs_snap, n_sim, value_fn=value_fn, rng=rng)
+        action = uct_mcts(
+            gs_snap, n_sim,
+            value_fn=value_fn,
+            candidate_fn=candidate_fn,
+            rng=rng,
+        )
         if action is None:
             action = sample_action(hand, pub, side, holds_china=holds_china, rng=rng)
         return action
@@ -175,6 +178,7 @@ def run_matchup(
     *,
     vf_value_fn=None,
     vf_n_sim: int = 0,
+    vf_candidate_fn=None,
 ) -> BenchmarkResult:
     """Play n_games between policy_a and policy_b, alternating sides.
 
@@ -200,7 +204,10 @@ def run_matchup(
             global _VF_SIDE, _VF_OPPONENT_POLICY
             _VF_SIDE = Side.USSR if a_is_ussr else Side.US
             _VF_OPPONENT_POLICY = us_pol if _VF_SIDE == Side.USSR else ussr_pol
-            result = play_game_with_vf_uct(vf_value_fn, vf_n_sim, seed + game_idx)
+            result = play_game_with_vf_uct(
+                vf_value_fn, vf_n_sim, seed + game_idx,
+                candidate_fn=vf_candidate_fn,
+            )
         t1 = time.time()
         total_time += t1 - t0
 
@@ -215,6 +222,14 @@ def run_matchup(
 
         move_count += 100  # rough estimate
 
+        if (game_idx + 1) % 5 == 0 or game_idx == 0:
+            elapsed = t1 - t0
+            print(
+                f"  [{name}] game {game_idx+1}/{n_games}"
+                f"  a_wins={a_wins} b_wins={b_wins} draws={draws}"
+                f"  game_time={elapsed:.1f}s"
+            )
+
     avg_time = total_time / max(1, move_count)
     return BenchmarkResult(
         name=name,
@@ -227,6 +242,9 @@ def run_matchup(
 
 
 def main():
+    import sys as _sys
+    _sys.stdout.reconfigure(line_buffering=True)
+
     p = argparse.ArgumentParser(
         description="Benchmark value-function MCTS against baselines."
     )
@@ -238,6 +256,10 @@ def main():
     p.add_argument("--n-games", type=int, default=20, help="Games per matchup")
     p.add_argument("--n-sim", type=int, default=5, help="MCTS simulations per move")
     p.add_argument("--seed", type=int, default=42, help="RNG seed")
+    p.add_argument(
+        "--n-candidates", type=int, default=0,
+        help="If >0, use model candidate fn with this many candidates (model-guided MCTS)"
+    )
     args = p.parse_args()
 
     if not os.path.exists(args.checkpoint):
@@ -254,10 +276,22 @@ def main():
 
     try:
         value_fn = make_value_function(args.checkpoint)
-        print(f"✓ Value function loaded\n")
+        print(f"✓ Value function loaded")
     except Exception as e:
         print(f"ERROR loading value function: {e}")
         sys.exit(1)
+
+    candidate_fn = None
+    if args.n_candidates > 0:
+        try:
+            candidate_fn = make_model_candidate_fn(
+                args.checkpoint, n_candidates=args.n_candidates
+            )
+            print(f"✓ Model candidate fn loaded (n_candidates={args.n_candidates})")
+        except Exception as e:
+            print(f"ERROR loading candidate fn: {e}")
+            sys.exit(1)
+    print()
 
     # Run benchmarks
     print("=" * 120)
@@ -280,33 +314,54 @@ def main():
     results.append(r)
     print(f"   {r}")
 
-    # 3. vf_mcts5 vs random
-    print("\n3. vf_mcts5 vs random")
+    # 3. vf_mcts vs random
+    n_sim = args.n_sim
+    tag = f"vf_mcts{n_sim}"
+    print(f"\n3. {tag} vs random")
     r = run_matchup(
-        "vf_mcts5 vs random",
+        f"{tag} vs random",
         random_pol,
         random_pol,
         args.n_games,
         args.seed + 200,
         vf_value_fn=value_fn,
-        vf_n_sim=5,
+        vf_n_sim=n_sim,
+        vf_candidate_fn=candidate_fn,
     )
     results.append(r)
     print(f"   {r}")
 
-    # 4. vf_mcts5 vs heuristic
-    print("\n4. vf_mcts5 vs heuristic")
+    # 4. vf_mcts vs heuristic
+    print(f"\n4. {tag} vs heuristic")
     r = run_matchup(
-        "vf_mcts5 vs heuristic",
+        f"{tag} vs heuristic",
         heuristic_pol,
         heuristic_pol,
         args.n_games,
         args.seed + 300,
         vf_value_fn=value_fn,
-        vf_n_sim=5,
+        vf_n_sim=n_sim,
+        vf_candidate_fn=candidate_fn,
     )
     results.append(r)
     print(f"   {r}")
+
+    # 5. learned policy (no MCTS) vs heuristic — direct policy comparison
+    if candidate_fn is not None:
+        from tsrl.policies.learned_policy import make_learned_policy
+        from tsrl.schemas import Side as _Side
+        print(f"\n5. learned_policy(USSR) vs heuristic")
+        learned_ussr = make_learned_policy(args.checkpoint, _Side.USSR)
+        learned_us = make_learned_policy(args.checkpoint, _Side.US)
+        r = run_matchup(
+            "learned vs heuristic",
+            learned_ussr,
+            heuristic_pol,
+            args.n_games,
+            args.seed + 400,
+        )
+        results.append(r)
+        print(f"   {r}")
 
 
 if __name__ == "__main__":

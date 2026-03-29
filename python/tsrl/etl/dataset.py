@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,7 @@ from tsrl.etl.reducer import reduce_game
 from tsrl.etl.resolver import resolve_names
 from tsrl.etl.smoother import OfflineLabels, smooth_game
 from tsrl.schemas import (
+    ActionMode,
     EventKind,
     HandKnowledge,
     OfflineLabels,
@@ -41,6 +43,36 @@ from tsrl.schemas import (
     ReplayEvent,
     Side,
 )
+
+# ---------------------------------------------------------------------------
+# Action-mode extraction from ACTION_ROUND_START raw_line
+# ---------------------------------------------------------------------------
+
+_PAT_MODE_INFLUENCE = re.compile(r"Place Influence", re.IGNORECASE)
+_PAT_MODE_COUP = re.compile(r"\bCoup\b", re.IGNORECASE)
+_PAT_MODE_REALIGN = re.compile(r"Realignment", re.IGNORECASE)
+_PAT_MODE_SPACE = re.compile(r"Space Race", re.IGNORECASE)
+_PAT_MODE_EVENT = re.compile(r"\bEvent\b", re.IGNORECASE)
+
+
+def _mode_from_ars_line(raw_line: str | None) -> int:
+    """Extract ActionMode int from an ACTION_ROUND_START raw_line.
+
+    Returns -1 if the mode cannot be determined.
+    """
+    if not raw_line:
+        return -1
+    if _PAT_MODE_INFLUENCE.search(raw_line):
+        return int(ActionMode.INFLUENCE)
+    if _PAT_MODE_COUP.search(raw_line):
+        return int(ActionMode.COUP)
+    if _PAT_MODE_REALIGN.search(raw_line):
+        return int(ActionMode.REALIGN)
+    if _PAT_MODE_SPACE.search(raw_line):
+        return int(ActionMode.SPACE)
+    if _PAT_MODE_EVENT.search(raw_line):
+        return int(ActionMode.EVENT)
+    return -1
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +95,16 @@ _DECISION_KINDS: frozenset[EventKind] = frozenset({
     EventKind.PLAY,
     EventKind.HEADLINE,
 })
+
+_TARGET_SCAN_STOP_KINDS: frozenset[EventKind] = frozenset({
+    EventKind.PLAY,
+    EventKind.HEADLINE,
+    EventKind.ACTION_ROUND_START,
+    EventKind.TURN_END,
+    EventKind.GAME_END,
+})
+
+_VALID_ACTION_MODE_VALUES: frozenset[int] = frozenset(int(mode) for mode in ActionMode)
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +143,17 @@ def _game_id(path: Path) -> str:
 
 @dataclass
 class _Row:
-    """One training row (one decision point)."""
+    """One training row (one decision point).
+
+    Column names match the selfplay Parquet schema so human-log rows can be
+    concatenated with self-play rows in ``TS_SelfPlayDataset``.
+
+    Training-label columns shared with selfplay collector:
+      action_card_id  — card played (1..111; -1 = unresolved)
+      action_mode     — ActionMode int value
+      action_targets  — comma-separated country IDs, or empty string
+      winner_side     — +1=USSR, -1=US, 0=draw/unknown
+    """
     # Identity
     game_id: str
     step_idx: int
@@ -109,9 +161,11 @@ class _Row:
     turn: int
     ar: int
     phasing: int          # Side int value (0=USSR, 1=US)
-    action_kind: int      # EventKind int value
-    card_id: int          # -1 if unknown
-    country_id: int       # -1 if not applicable
+    action_kind: int      # EventKind int value (kept for replay-level debugging)
+    action_card_id: int   # card played (1..111; -1 if unresolved)
+    action_mode: int      # ActionMode int value
+    action_targets: str   # comma-separated country IDs, or ""
+    winner_side: int      # +1=USSR, -1=US, 0=draw/unknown
     # Global state
     vp: int
     defcon: int
@@ -154,6 +208,8 @@ def _build_row(
     ussr_hand: HandKnowledge,
     us_hand: HandKnowledge,
     label: OfflineLabels,
+    action_mode_hint: int = -1,
+    action_targets_hint: str = "",
 ) -> _Row:
     """Assemble one training row from state + label at a decision point."""
     actor = event.phasing
@@ -174,8 +230,12 @@ def _build_row(
         ar=event.ar,
         phasing=int(actor),
         action_kind=int(event.kind),
-        card_id=event.card_id if event.card_id is not None else -1,
-        country_id=event.country_id if event.country_id is not None else -1,
+        action_card_id=event.card_id if event.card_id is not None else -1,
+        # HEADLINE events are always played for EVENT effect (ActionMode.EVENT=4).
+        # PLAY events: use the hint extracted from the preceding ACTION_ROUND_START.
+        action_mode=int(ActionMode.EVENT) if event.kind == EventKind.HEADLINE else action_mode_hint,
+        action_targets=action_targets_hint,
+        winner_side=0,  # unknown for human logs; treated as draw for value head
         vp=pub.vp,
         defcon=pub.defcon,
         milops_ussr=pub.milops[Side.USSR],
@@ -203,6 +263,69 @@ def _build_row(
         lbl_card_quality=cq,
         lbl_opponent_possible=_card_mask(label.opponent_possible),
     )
+
+
+def _build_action_targets_map(
+    resolved: Sequence[ReplayEvent],
+    mode_hint_map: dict[int, int],
+) -> dict[int, str]:
+    """Reconstruct action_targets strings for decision events from later events."""
+    action_targets_map: dict[int, str] = {}
+
+    for ev_idx, event in enumerate(resolved):
+        if event.kind not in _DECISION_KINDS:
+            continue
+
+        mode_hint = mode_hint_map.get(ev_idx, -1)
+        if event.kind == EventKind.HEADLINE:
+            mode: ActionMode | None = ActionMode.EVENT
+        elif mode_hint in _VALID_ACTION_MODE_VALUES:
+            mode = ActionMode(mode_hint)
+        else:
+            mode = None
+        if mode in (None, ActionMode.SPACE, ActionMode.EVENT):
+            action_targets_map[ev_idx] = ""
+            continue
+
+        targets: list[str] = []
+        single_target: str = ""
+
+        for next_event in resolved[ev_idx + 1:]:
+            if next_event.kind in _TARGET_SCAN_STOP_KINDS:
+                break
+            if (
+                next_event.kind == EventKind.ACTION_ROUND_START
+                and next_event.ar != event.ar
+            ):
+                break
+
+            if mode == ActionMode.INFLUENCE:
+                if next_event.kind != EventKind.PLACE_INFLUENCE:
+                    continue
+                if next_event.country_id is None:
+                    continue
+                amount = next_event.amount if next_event.amount and next_event.amount > 0 else 1
+                targets.extend([str(next_event.country_id)] * amount)
+                continue
+
+            if mode in (ActionMode.COUP, ActionMode.REALIGN):
+                if next_event.kind not in (EventKind.COUP, EventKind.REALIGN):
+                    continue
+                if next_event.country_id is None:
+                    continue
+                single_target = str(next_event.country_id)
+                break
+
+        if mode == ActionMode.INFLUENCE:
+            action_targets_map[ev_idx] = ",".join(targets)
+        elif single_target:
+            action_targets_map[ev_idx] = single_target
+        elif event.country_id is not None:
+            action_targets_map[ev_idx] = str(event.country_id)
+        else:
+            action_targets_map[ev_idx] = ""
+
+    return action_targets_map
 
 
 # ---------------------------------------------------------------------------
@@ -258,12 +381,27 @@ def process_game(
         )
         return []
 
+    # Build a mapping from event index to action_mode_hint by scanning for
+    # ACTION_ROUND_START events that precede each PLAY event.
+    mode_hint_map: dict[int, int] = {}
+    last_mode_hint = -1
+    for i, ev in enumerate(resolved):
+        if ev.kind == EventKind.ACTION_ROUND_START:
+            last_mode_hint = _mode_from_ars_line(ev.raw_line)
+        elif ev.kind in _DECISION_KINDS:
+            mode_hint_map[i] = last_mode_hint
+    action_targets_map = _build_action_targets_map(resolved, mode_hint_map)
+
     rows: list[_Row] = []
     for step_idx, (ev_idx, event) in enumerate(decision_events):
         pub, ussr_hand, us_hand = states[ev_idx]
         label = labels[step_idx]
         rows.append(
-            _build_row(game_id, step_idx, event, pub, ussr_hand, us_hand, label)
+            _build_row(
+                game_id, step_idx, event, pub, ussr_hand, us_hand, label,
+                action_mode_hint=mode_hint_map.get(ev_idx, -1),
+                action_targets_hint=action_targets_map.get(ev_idx, ""),
+            )
         )
 
     return rows

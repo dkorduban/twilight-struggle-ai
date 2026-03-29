@@ -95,10 +95,17 @@ def make_device() -> torch.device:
     return torch.device("cpu")
 
 
-def accuracy(logits: torch.Tensor, targets: torch.Tensor) -> float:
-    """Top-1 accuracy as a Python float."""
+def accuracy(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    ignore_index: int = -100,
+) -> float:
+    """Top-1 accuracy as a Python float, skipping ignore_index targets."""
+    mask = targets != ignore_index
+    if not mask.any():
+        return float("nan")
     preds = logits.argmax(dim=-1)
-    return (preds == targets).float().mean().item()
+    return (preds[mask] == targets[mask]).float().mean().item()
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +130,9 @@ def run_epoch(
     model.train(is_train)
 
     ce_loss_fn = nn.CrossEntropyLoss()
+    # ignore_index=-1 skips rows where action_mode is unknown (human-log rows
+    # where the play mode cannot be inferred from the PLAY event alone).
+    mode_ce_loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
     mse_loss_fn = nn.MSELoss()
 
     total_loss = 0.0
@@ -157,7 +167,7 @@ def run_epoch(
             value_pred = outputs["value"]
 
             card_loss = ce_loss_fn(card_logits, card_target)
-            mode_loss = ce_loss_fn(mode_logits, mode_target)
+            mode_loss = mode_ce_loss_fn(mode_logits, mode_target)
             value_loss = mse_loss_fn(value_pred, value_target)
 
             # Country loss: only on rows with at least one country op target.
@@ -189,7 +199,7 @@ def run_epoch(
             total_country_loss += country_loss.item()
             total_value_loss += value_loss.item()
             total_card_acc += accuracy(card_logits, card_target)
-            total_mode_acc += accuracy(mode_logits, mode_target)
+            total_mode_acc += accuracy(mode_logits, mode_target, ignore_index=-1)
             total_country_ce += country_loss.item()
             total_country_top1 += country_top1
             total_value_mse += value_loss.item()
@@ -206,7 +216,7 @@ def run_epoch(
                     f"  country_ce={country_loss.item():.4f}"
                     f"  value_mse={value_loss.item():.4f}"
                     f"  card_top1={accuracy(card_logits, card_target):.3f}"
-                    f"  mode_acc={accuracy(mode_logits, mode_target):.3f}"
+                    f"  mode_acc={accuracy(mode_logits, mode_target, ignore_index=-1):.3f}"
                     f"  country_top1={country_top1:.3f}"
                     f"  elapsed={elapsed:.1f}s"
                 )
@@ -263,6 +273,7 @@ def main() -> None:
         num_workers=args.num_workers,
         generator=generator,
         drop_last=False,
+        persistent_workers=(args.num_workers > 0),  # avoids per-epoch worker restart
     )
     val_loader = DataLoader(
         val_ds,
@@ -270,6 +281,7 @@ def main() -> None:
         shuffle=False,
         num_workers=args.num_workers,
         drop_last=False,
+        persistent_workers=(args.num_workers > 0),
     )
 
     # ---- model ----
