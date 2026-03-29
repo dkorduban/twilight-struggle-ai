@@ -194,16 +194,18 @@ class InfluenceArray:
             return default
         return self._data[idx]
 
-    def pop(self, key, default=None):
+    _MISSING = object()
+
+    def pop(self, key, default=_MISSING):
         side, cid = key
         idx = int(side) * 84 + (cid - 1)
         if idx < 0 or idx >= 168:
-            if default is None:
+            if default is InfluenceArray._MISSING:
                 raise KeyError(key)
             return default
         old = self._data[idx]
         if old == 0:
-            if default is None:
+            if default is InfluenceArray._MISSING:
                 raise KeyError(key)
             return default
         self._data[idx] = 0
