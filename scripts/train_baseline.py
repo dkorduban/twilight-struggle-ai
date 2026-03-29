@@ -18,7 +18,7 @@ Losses
                                                strategy_logits,
                                                country_ops_target)
     value_loss   = MSELoss(value_pred, value_target)
-    total        = card_loss + mode_loss + country_loss + value_loss
+    total        = card_loss + mode_loss + country_loss + value_weight * value_loss
 
 Checkpoints are saved to <out-dir>/baseline_epoch{N}.pt after each epoch.
 """
@@ -88,6 +88,13 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="DataLoader worker processes (default 0 = main process)",
     )
+    p.add_argument(
+        "--value-weight",
+        type=float,
+        default=1.0,
+        help="Multiplier on value MSE loss relative to card/mode/country losses (default 1.0)."
+             " Increase (e.g. 5.0) if value_mse is not converging due to country_loss dominating.",
+    )
     return p.parse_args()
 
 
@@ -136,6 +143,7 @@ def run_epoch(
     epoch_label: str,
     label_smoothing: float = 0.0,
     scheduler=None,
+    value_weight: float = 1.0,
 ) -> dict[str, float]:
     """Run one full pass over ``loader``.
 
@@ -209,7 +217,7 @@ def run_epoch(
             else:
                 country_loss = torch.tensor(0.0, device=device)
 
-            loss = card_loss + mode_loss + country_loss + value_loss
+            loss = card_loss + mode_loss + country_loss + value_weight * value_loss
 
             if is_train:
                 optimizer.zero_grad()
@@ -365,10 +373,12 @@ def main() -> None:
             model, train_loader, optimizer, device, args.log_interval, f"train e{epoch}",
             label_smoothing=args.label_smoothing,
             scheduler=scheduler,
+            value_weight=args.value_weight,
         )
         val_metrics = run_epoch(
             model, val_loader, None, device, args.log_interval, f"val   e{epoch}",
             label_smoothing=args.label_smoothing,
+            value_weight=args.value_weight,
         )
 
         elapsed = time.time() - t_epoch
