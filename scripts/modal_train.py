@@ -86,25 +86,27 @@ def train(
     dropout: float = 0.1,
     label_smoothing: float = 0.05,
     value_target: str = "final_vp",
-    data_filename: str = "filtered_v20.parquet",
+    data_dir: str = "data",   # subdirectory under /vol — all *.parquet files are used
     tag: str = "exp",
 ) -> dict:
-    import os, subprocess, torch
+    import os, subprocess, torch, glob
 
-    data_file = f"{VMOUNT}/data/{data_filename}"
+    data_path = f"{VMOUNT}/{data_dir}"
     out_dir   = f"{VMOUNT}/checkpoints/{tag}"
 
-    if not os.path.exists(data_file):
+    parquets = glob.glob(f"{data_path}/*.parquet")
+    if not parquets:
         raise FileNotFoundError(
-            f"{data_file} not found on volume. "
-            f"Upload: modal volume put ts-experiments <local.parquet> /data/{data_filename}"
+            f"No *.parquet files in {data_path}. "
+            f"Upload: modal volume put ts-experiments <local.parquet> /{data_dir}/<name>.parquet"
         )
+    print(f"[modal] data_dir={data_path}  {len(parquets)} parquet(s): {[os.path.basename(p) for p in parquets]}", flush=True)
 
     os.makedirs(out_dir, exist_ok=True)
 
     cmd = [
         sys.executable, "/root/scripts/train_baseline.py",
-        "--data-dir", os.path.dirname(data_file),
+        "--data-dir", data_path,
         "--out-dir", out_dir,
         "--epochs",          str(epochs),
         "--batch-size",      str(batch_size),
@@ -200,7 +202,7 @@ def main(
     dropout: float = 0.1,
     label_smoothing: float = 0.05,
     value_target: str = "final_vp",
-    data_filename: str = "filtered_v20.parquet",
+    data_dir: str = "data",
     tag: str = "",
     # Set to fetch + print results already saved to volume (no new training run)
     fetch: str = "",
@@ -221,7 +223,7 @@ def main(
         hidden_dim=hidden_dim, n_blocks=n_blocks, epochs=epochs,
         batch_size=batch_size, lr=lr, weight_decay=weight_decay,
         dropout=dropout, label_smoothing=label_smoothing,
-        value_target=value_target, data_filename=data_filename, tag=tag,
+        value_target=value_target, data_dir=data_dir, tag=tag,
     )
     elapsed = time.time() - t0
 
@@ -230,6 +232,7 @@ def main(
         "batch_size": batch_size, "lr": lr, "weight_decay": weight_decay,
         "dropout": dropout, "label_smoothing": label_smoothing,
         "value_target": value_target,
+        "data_dir": data_dir,
     }})
 
     Path("results").mkdir(exist_ok=True)
