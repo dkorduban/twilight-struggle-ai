@@ -18,6 +18,7 @@ Losses
                                                strategy_logits,
                                                country_ops_target)
     value_loss   = MSELoss(value_pred, value_target)  # target = winner_side or final_vp/20
+                                                     #   (defcon1/europe_control always use winner_side)
     total        = card_loss + mode_loss + country_loss + value_weight * value_loss
 
 Checkpoints are saved to <out-dir>/baseline_epoch{N}.pt after each epoch.
@@ -319,6 +320,10 @@ def main() -> None:
     generator = torch.Generator().manual_seed(args.seed)
     train_ds, val_ds = random_split(full_dataset, [n_train, n_val], generator=generator)
 
+    # Use 'forkserver' (or 'spawn') to avoid Polars/OpenMP thread-pool corruption
+    # after fork. Polars uses internal Rayon/BLAS thread pools that deadlock in
+    # forked child processes. 'forkserver' spawns a clean server process instead.
+    mp_ctx = "forkserver" if args.num_workers > 0 else None
     train_loader = DataLoader(
         train_ds,
         batch_size=args.batch_size,
@@ -326,8 +331,9 @@ def main() -> None:
         num_workers=args.num_workers,
         generator=generator,
         drop_last=False,
-        persistent_workers=(args.num_workers > 0),  # avoids per-epoch worker restart
+        persistent_workers=(args.num_workers > 0),
         pin_memory=args.pin_memory,
+        multiprocessing_context=mp_ctx,
     )
     val_loader = DataLoader(
         val_ds,
@@ -337,6 +343,7 @@ def main() -> None:
         drop_last=False,
         persistent_workers=(args.num_workers > 0),
         pin_memory=args.pin_memory,
+        multiprocessing_context=mp_ctx,
     )
 
     # ---- model ----

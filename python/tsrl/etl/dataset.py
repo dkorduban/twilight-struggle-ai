@@ -83,14 +83,11 @@ log = logging.getLogger(__name__)
 # Cards are IDs 1..MAX_CARD_ID.  Index 0 is unused (sentinel).
 MAX_CARD_ID: int = 111
 # Countries are IDs 0..85 (Austria=0..Taiwan=85, 86 total).
-# Model features currently use only IDs 1..84 (84 countries, 168-dim influence vector).
-# Austria (ID 0) and Taiwan (ID 85) are excluded from model features.
-# TODO: expand to all 86 countries (170-dim) in a future training round;
-#       requires rebuilding dataset + retraining from scratch. See model.py NUM_COUNTRIES.
-MAX_COUNTRY_ID: int = 83  # highest country ID included in model features (exclusive of Austria/Taiwan)
+# Model features use all 86 countries (172-dim influence vector).
+MAX_COUNTRY_ID: int = 85  # highest country ID (inclusive; Taiwan=85)
 
 _CARD_MASK_LEN: int = MAX_CARD_ID + 1        # length 112; index 0 unused
-_COUNTRY_MASK_LEN: int = MAX_COUNTRY_ID + 1  # length 84 (countries 1..84 only)
+_COUNTRY_MASK_LEN: int = MAX_COUNTRY_ID + 1  # length 86 (countries 0..85)
 
 # Decision point EventKinds that produce training rows.
 # SPACE_RACE is a result event (card advancement), not a decision —
@@ -126,16 +123,9 @@ def _card_mask(card_ids: frozenset[int]) -> list[int]:
 
 
 def _influence_array(pub: PublicState, side: Side) -> list[int]:
-    """Influence values for one side for countries 1..84, shape (84,).
-
-    Country IDs are 0-indexed in the game (0=Austria..85=Taiwan).  The model
-    was trained on a 84-element vector corresponding to country_ids 1..84.
-    Country 0 (Austria) and 85 (Taiwan) are excluded from model features.
-    This matches the behaviour of the pre-InfluenceArray code which iterated
-    `(side, i+1)` for i in range(84).
-    """
+    """Influence values for one side for all 86 countries (IDs 0..85), shape (86,)."""
     base = int(side) * pub.influence._STRIDE
-    return list(pub.influence._data[base + 1 : base + 85])
+    return list(pub.influence._data[base : base + 86])
 
 
 def _game_id(path: Path) -> str:
