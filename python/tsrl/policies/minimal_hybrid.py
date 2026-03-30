@@ -47,8 +47,69 @@ _COUP_MILOPS_URGENCY_SCALE = 4.0
 _OPENING_IRAN_COUP_BONUS = 35.0
 _EMPTY_COUP_PENALTY = 15.0
 _DEFCON2_BATTLEGROUND_SUICIDE_PENALTY = 1_000_000.0
-_MAX_INFLUENCE_TARGETS = 84
+_MAX_INFLUENCE_TARGETS = 86
 _DEFCON3_BATTLEGROUND_SUICIDE_PENALTY = 1_000_000.0
+# Non-BG coups don't lower DEFCON — explicitly reward them as the safe milops path.
+# Human data: at DEFCON 3, humans do 748 non-BG coups vs only 115 BG coups.
+# At DEFCON 2, humans coup exclusively in non-BG countries (Colombia, Saharan, Nicaragua).
+_DEFCON3_NONBG_SAFE_COUP_BONUS = 5.0   # tip balance vs BG's higher expected swing
+_DEFCON2_NONBG_SAFE_COUP_BONUS = 12.0  # strong preference when BG = certain death
+
+# Cards whose event ALWAYS lowers DEFCON by 1.
+# At DEFCON 2: triggering their event is nuclear suicide for the phasing player.
+# At DEFCON 3: triggering their event brings DEFCON to 2 (very dangerous).
+# Includes war cards that do free coups against BG countries — at DEFCON 2 this is instant death.
+_DEFCON_LOWERING_CARDS: frozenset[int] = frozenset({
+    4,   # Duck and Cover (US) — DEFCON -1, US gains VP
+    53,  # We Will Bury You (USSR) — DEFCON -1, USSR gains 3 VP
+    92,  # Soviets Shoot Down KAL 007 (US) — DEFCON -1, US gains 2 VP
+    105, # Iran-Iraq War* — coups Iran or Iraq (both BGs) → always lowers DEFCON
+    # War cards: their events do free BG coups → always lowers DEFCON when event fires.
+    11,  # Korean War (USSR) — coup South Korea (BG, stab 3)
+    13,  # Arab-Israeli War (USSR) — coup Israel (BG, stab 4)
+    24,  # Indo-Pakistani War (USSR) — coup Pakistan or India (both BG, stab 2)
+})
+_DEFCON_LOWERING_SUICIDE_PENALTY = 1_000_000.0
+_DEFCON_LOWERING_DEFCON3_PENALTY = 20.0  # softer: brings DEFCON to 2, not instant death
+
+# Cards whose event has a ~100% chance of lowering DEFCON when played at low DEFCON.
+# Olympic Games (20): the OPPONENT decides whether to boycott. A rational opponent
+# ALWAYS boycotts at DEFCON 2 (phasing player loses). At DEFCON 3, opponent boycotts
+# if it benefits them (typically yes, since DEFCON 2 is dangerous for phasing player).
+# Treat as near-certain DEFCON drop at DEFCON 2, and risky at DEFCON 3.
+_DEFCON_PROB_LOWERING_CARDS: frozenset[int] = frozenset({
+    20,  # Olympic Games (neutral) — opponent CHOOSES boycott → DEFCON -1
+})
+_DEFCON_PROB_SUICIDE_PENALTY = 1_000_000.0  # at DEFCON 2, opponent always boycotts = certain death
+_DEFCON_PROB_DEFCON3_PENALTY = 50.0         # at DEFCON 3, opponent likely boycotts = near-certain DEFCON 2
+
+# Cards whose event does a random coup in a pool that includes battleground countries.
+# Playing these at DEFCON 2 risks hitting a BG → DEFCON 1.
+# Brush War (39): random stab-1/2 worldwide (~10-15% chance of BG).
+# Che (83): 2 coups in CA/SA/Africa stab-1/2 (~25-30% chance of hitting a BG).
+# Penalty is applied when fired as EVENT (own card) OR via §5.2 (opponent plays for ops).
+_DEFCON_RANDOM_COUP_CARDS: frozenset[int] = frozenset({
+    39,  # Brush War (USSR) — free coup in random stab-1/2 country
+    83,  # Che (USSR) — two free coups in CA/SA/Africa stab-1/2 countries
+})
+_OPPONENT_DEFCON_BOMB_CARDS: frozenset[int] = (
+    _DEFCON_LOWERING_CARDS
+    | _DEFCON_PROB_LOWERING_CARDS
+    | _DEFCON_RANDOM_COUP_CARDS
+)
+_DEFCON_RANDOM_COUP_SUICIDE_PENALTY = 1_000_000.0  # same magnitude as direct DEFCON-lowering
+_DEFCON_RANDOM_COUP_DEFCON3_PENALTY = 100.0        # risky at DEFCON 3 for EVENT (random BG coup)
+_DEFCON_RANDOM_COUP_DEFCON3_OPS_PENALTY = 500.0    # §5.2 at DEFCON 3: strongly prefer EVENT dump instead
+_LATE_TURN_DANGEROUS_OPP_EVENT_BONUS = 120.0
+_FINAL_TWO_ARS_DANGEROUS_OPP_EVENT_BONUS = 260.0
+
+# Cat-C cards that, via §5.2, randomly discard and fire US events from the USSR hand.
+# Five Year Plan (5): discards a random USSR-held card; if it's a US card, fires its event.
+# Grain Sales (68): US takes a random USSR-held card and plays it.
+# If USSR holds Duck and Cover (4), KAL 007 (92), etc. and DEFCON is low, this is suicide.
+_CAT_C_HAND_RISKY_CARDS: frozenset[int] = frozenset({5, 68})
+# The set of US-side DEFCON-lowering cards (those that fire DEFCON-1 when their event is used).
+_US_DEFCON_LOWERING_CARDS: frozenset[int] = frozenset({4, 92})  # Duck and Cover, KAL 007
 
 _EARLY_REGION_WEIGHT = (0.85, 1.35, 1.10, 0.60, 0.55, 0.65, 1.25)
 _MID_REGION_WEIGHT = (0.95, 1.00, 1.00, 0.95, 1.20, 1.20, 0.90)
@@ -94,6 +155,7 @@ class MinimalHybridParams:
     coup_battleground_bonus: float = 2.5
     coup_defcon2_penalty: float = -8.0
     coup_defcon3_penalty: float = -6.0
+    coup_defcon3_bg_threshold: float = 0.65
     realign_base_penalty: float = -4.0
     realign_country_scale: float = 0.55
     realign_defcon2_bonus: float = 2.0
@@ -173,14 +235,61 @@ def choose_minimal_hybrid(
     if not candidates:
         return None
 
+    # Pre-compute: does our hand contain US DEFCON-lowering cards that Cat-C §5.2
+    # could randomly discard and fire? (Checked once per call, not per-action.)
+    _held_us_defcon_cards = hand & _US_DEFCON_LOWERING_CARDS
+
     scored: list[tuple[ActionEncoding, float]] = []
     for action, cached_score in candidates:
         score = cached_score if cached_score is not None else _score_action(context, action)
         if pub.ar == 0:
             score += _headline_adjustment(context, action)
+        # Apply DEFCON safety unconditionally — INFLUENCE actions use cached scores that
+        # bypass _card_bias, so this is the only place the penalty is guaranteed to fire.
+        card = context.card_cache[action.card_id]
+        score += _defcon_safety_penalty(context, action, card)
+        # Cat-C hand-composition risk: Five Year Plan (5) and Grain Sales (68)
+        # randomly discard / steal a card from our hand and fire its event.
+        # - Five Year Plan: discards random USSR-held card; if US card, fires its event.
+        #   Dangerous if we hold Duck and Cover (4) or KAL 007 (92).
+        # - Grain Sales: US steals random card and plays it for ops (§5.2 fires if USSR card).
+        #   Dangerous if we hold We Will Bury You (53).
+        # This applies for BOTH EVENT mode (direct play) and non-EVENT (§5.2 trigger).
+        if action.card_id in _CAT_C_HAND_RISKY_CARDS and pub.defcon <= 2:
+            # US DEFCON-lowering cards in hand: Five Year Plan could fire them
+            if _held_us_defcon_cards:
+                hand_size_after = max(1, len(hand) - (0 if action.mode == ActionMode.EVENT else 1))
+                p_disaster = len(_held_us_defcon_cards) / hand_size_after
+                score -= _DEFCON_LOWERING_SUICIDE_PENALTY * p_disaster
+            # USSR DEFCON-lowering cards in hand: Grain Sales could steal and fire them via §5.2
+            if action.card_id == 68:  # Grain Sales specifically
+                held_ussr_defcon = hand & frozenset({53})  # We Will Bury You
+                if held_ussr_defcon:
+                    hand_size_after = max(1, len(hand) - (0 if action.mode == ActionMode.EVENT else 1))
+                    p_disaster = len(held_ussr_defcon) / hand_size_after
+                    score -= _DEFCON_LOWERING_SUICIDE_PENALTY * p_disaster
         scored.append((action, score))
 
-    return min(scored, key=lambda item: _action_sort_key(item[0], item[1]))[0]
+    # Grain Sales (#68, US card): §5.2 fires → US steals random USSR card and plays it.
+    # Suicidal if USSR hand contains WWBY (#53, DEFCON-1) OR Brush War/Che (random BG coup).
+    _grain_sales_risky_cards = hand & (frozenset({53}) | _DEFCON_RANDOM_COUP_CARDS)
+    grain_sales_suicidal = pub.defcon <= 2 and bool(_grain_sales_risky_cards)
+    safe = [
+        (action, score)
+        for action, score in scored
+        if not _is_suicidal_action(action, context.card_cache[action.card_id], pub, side)
+        and not (grain_sales_suicidal and action.card_id == 68)
+    ]
+    if safe:
+        final_pool = safe
+    else:
+        tier2 = [
+            (action, score)
+            for action, score in scored
+            if not (action.mode == ActionMode.COUP and pub.defcon <= 2)
+        ]
+        final_pool = tier2 if tier2 else scored
+    return min(final_pool, key=lambda item: _action_sort_key(item[0], item[1]))[0]
 
 
 def make_minimal_hybrid_policy(
@@ -222,13 +331,24 @@ def analyze_minimal_hybrid_decision(
             key=lambda item: _action_sort_key(item.action, item.total_score),
         )
     )
+    safe_ranked = tuple(
+        item
+        for item in ranked
+        if not _is_suicidal_action(
+            item.action,
+            context.card_cache[item.action.card_id],
+            pub,
+            side,
+        )
+    )
+    final_ranked = safe_ranked if safe_ranked else ranked
     if top_n is not None:
-        ranked = ranked[:top_n]
+        final_ranked = final_ranked[:top_n]
 
     return DecisionAnalysis(
-        chosen_action=ranked[0].action,
+        chosen_action=final_ranked[0].action,
         legal_action_count=_legal_action_count(pub, hand, side, holds_china),
-        ranked_actions=ranked,
+        ranked_actions=final_ranked,
     )
 
 
@@ -646,8 +766,15 @@ def _score_coup(
                 score -= _DEFCON2_BATTLEGROUND_SUICIDE_PENALTY
         elif pub.defcon == 3:
             score += context.params.coup_defcon3_penalty
-            if _milops_urgency(pub, side) < 0.5:
+            if _milops_urgency(pub, side) < context.params.coup_defcon3_bg_threshold:
                 score -= _DEFCON3_BATTLEGROUND_SUICIDE_PENALTY
+    else:
+        # Non-BG coups never lower DEFCON — reward them as the safe milops path.
+        # Human data shows 748 non-BG vs 115 BG coups at DEFCON 3.
+        if pub.defcon == 3:
+            score += _DEFCON3_NONBG_SAFE_COUP_BONUS
+        elif pub.defcon == 2:
+            score += _DEFCON2_NONBG_SAFE_COUP_BONUS
 
     if pub.turn == 1 and side == Side.USSR and country.name == "Iran":
         score += _OPENING_IRAN_COUP_BONUS
@@ -704,6 +831,87 @@ def _headline_adjustment(
     return score
 
 
+def _defcon_safety_penalty(
+    context: DecisionContext,
+    action: ActionEncoding,
+    card: CardSpec,
+) -> float:
+    """Return a large negative penalty for actions that risk nuclear war.
+
+    This function is applied unconditionally to every candidate action,
+    including INFLUENCE whose scores are pre-cached by _best_influence_action_dp
+    and therefore bypass the main _card_bias path.
+    """
+    pub = context.pub
+    side = context.side
+    penalty = 0.0
+
+    if action.mode == ActionMode.EVENT:
+        if action.card_id in _DEFCON_LOWERING_CARDS:
+            if pub.defcon <= 2:
+                penalty -= _DEFCON_LOWERING_SUICIDE_PENALTY
+            elif pub.defcon == 3:
+                if card.side not in (side, Side.NEUTRAL):
+                    # Opponent's DEFCON-lowering card at DEFCON 3: dump it now via EVENT.
+                    # Firing it drops DEFCON to 2, but DEFCON recovers at end of turn.
+                    # Holding it until DEFCON 2 = forced nuclear war.  Forward-looking
+                    # bonus that beats typical influence plays (~20 pts).
+                    penalty += 50.0
+                else:
+                    # Own DEFCON-lowering card: penalty for voluntarily lowering DEFCON.
+                    penalty -= _DEFCON_LOWERING_DEFCON3_PENALTY
+            elif pub.defcon >= 4 and card.side not in (side, Side.NEUTRAL):
+                # "Dump early" bonus: fire opponent's DEFCON-lowering card as EVENT now
+                # while DEFCON is high, rather than risk forced suicide at DEFCON 2.
+                # DEFCON 5: nearly free (no VP loss, DEFCON recovers end of turn).
+                # DEFCON 4: small VP cost — far better than game-ending at DEFCON 2.
+                # These must be large enough to beat valuable influence/coup plays.
+                penalty += 200.0 if pub.defcon >= 5 else 100.0
+        if action.card_id in _DEFCON_PROB_LOWERING_CARDS:
+            if pub.defcon <= 2:
+                penalty -= _DEFCON_PROB_SUICIDE_PENALTY
+            elif pub.defcon == 3:
+                penalty -= _DEFCON_PROB_DEFCON3_PENALTY
+        # Brush War / Che: their events do random coups that may hit battlegrounds.
+        if action.card_id in _DEFCON_RANDOM_COUP_CARDS:
+            if pub.defcon <= 2:
+                penalty -= _DEFCON_RANDOM_COUP_SUICIDE_PENALTY
+            elif pub.defcon == 3:
+                penalty -= _DEFCON_RANDOM_COUP_DEFCON3_PENALTY
+    else:
+        # §5.2: playing any opponent card for ops/space fires the opponent's event.
+        if card.side not in (side, Side.NEUTRAL):
+            if action.card_id in _DEFCON_LOWERING_CARDS:
+                if pub.defcon <= 2:
+                    penalty -= _DEFCON_LOWERING_SUICIDE_PENALTY
+                elif pub.defcon == 3:
+                    # Using opponent DEFCON-lowering card for ops at DEFCON 3:
+                    # same DEFCON consequence as EVENT dump but WITHOUT the priority benefit.
+                    # Large penalty to force EVENT dump instead.
+                    penalty -= 200.0
+                # Ops modes at DEFCON 4-5: penalise hard to push toward EVENT (dump early).
+                # Must overcome the value of influence plays in contested countries.
+                elif pub.defcon >= 4:
+                    penalty -= 150.0
+            if action.card_id in _DEFCON_PROB_LOWERING_CARDS:
+                if pub.defcon <= 2:
+                    penalty -= _DEFCON_PROB_SUICIDE_PENALTY
+                elif pub.defcon == 3:
+                    penalty -= _DEFCON_PROB_DEFCON3_PENALTY
+            if action.card_id in _DEFCON_RANDOM_COUP_CARDS:
+                if pub.defcon <= 2:
+                    penalty -= _DEFCON_RANDOM_COUP_SUICIDE_PENALTY
+                    if action.mode == ActionMode.COUP:
+                        penalty -= _DEFCON_RANDOM_COUP_SUICIDE_PENALTY
+                elif pub.defcon == 3:
+                    # Non-EVENT ops at DEFCON 3 triggers §5.2 → random BG coup without the
+                    # strategic benefit of dumping the card early.  Heavily penalise to force
+                    # EVENT dump instead (which fires the same risk but retires the card).
+                    penalty -= _DEFCON_RANDOM_COUP_DEFCON3_OPS_PENALTY
+
+    return penalty
+
+
 def _card_bias(
     context: DecisionContext,
     action: ActionEncoding,
@@ -718,6 +926,31 @@ def _card_bias(
             score += 1.0
         else:
             score -= 3.0
+        # DEFCON safety for EVENT mode is handled by _defcon_safety_penalty (applied globally).
+
+        # "Dump early" bonus: proactively fire an opponent's DEFCON-lowering card as EVENT
+        # while DEFCON is still high, before we risk being stuck with it at DEFCON 2.
+        # At DEFCON 5: costs 0 VP, DEFCON recovers end of turn — almost free.
+        # At DEFCON 4: costs ~1 VP max — much better than forced suicide at DEFCON 2.
+        # At DEFCON 3: brings DEFCON to 2, but STILL BETTER than holding until DEFCON 2
+        #   (because at DEFCON 2 the card causes forced nuclear war on any mode).
+        if card.side not in (side, Side.NEUTRAL) and action.card_id in _DEFCON_LOWERING_CARDS:
+            if pub.defcon >= 5:
+                score += 150.0  # nearly free: DEFCON recovers, minimal VP loss
+            elif pub.defcon == 4:
+                score += 80.0   # small cost, strongly prefer over holding until DEFCON 2
+            elif pub.defcon == 3:
+                score += 40.0   # dumps to DEFCON 2 now, but avoids -1M forced suicide later
+        # Brush War / Che: random coups can suicide at low DEFCON — dump early too.
+        # At DEFCON 3, the safety penalty is -100 but the EXPECTED cost of holding until DEFCON 2
+        # is far larger (forced suicide risk).  Needs a large bonus to override the penalty.
+        if card.side not in (side, Side.NEUTRAL) and action.card_id in _DEFCON_RANDOM_COUP_CARDS:
+            if pub.defcon >= 5:
+                score += 80.0
+            elif pub.defcon == 4:
+                score += 120.0  # decisively prefer dump over own-card COUP (+30)
+            elif pub.defcon == 3:
+                score += 300.0  # must override -100 safety penalty + beat own-card options
 
     if action.mode == ActionMode.SPACE:
         if card.side not in (side, Side.NEUTRAL) and not card.is_scoring:
@@ -730,6 +963,33 @@ def _card_bias(
     if action.mode in (ActionMode.INFLUENCE, ActionMode.COUP, ActionMode.REALIGN):
         if card.side not in (side, Side.NEUTRAL) and not card.is_scoring:
             score -= _OFFSIDE_OPS_PENALTY_BASE + (_OFFSIDE_OPS_PENALTY_PER_OP * card.ops)
+
+    # At DEFCON 3, holding an opponent DEFCON-lowering or random-coup card is a ticking bomb.
+    # If DEFCON drops to 2 before it's played (via BG coup), ALL modes become -1M forced suicide.
+    # Apply a priority bonus to play it NOW (any mode) while DEFCON is still 3.
+    if pub.defcon == 3 and card.side not in (side, Side.NEUTRAL):
+        if action.card_id in _DEFCON_LOWERING_CARDS:
+            score += 50.0  # strong: play it now before DEFCON can drop further
+        elif action.card_id in _DEFCON_RANDOM_COUP_CARDS:
+            score += 30.0  # similar risk: random coup may hit BG and drop DEFCON to 2
+
+    if (
+        pub.defcon >= 3
+        and pub.ar > 0
+        and card.side not in (side, Side.NEUTRAL)
+        and action.card_id in _OPPONENT_DEFCON_BOMB_CARDS
+    ):
+        remaining = _remaining_ars(pub)
+        if remaining <= 3:
+            urgency = _LATE_TURN_DANGEROUS_OPP_EVENT_BONUS
+            if remaining <= 2:
+                urgency += _FINAL_TWO_ARS_DANGEROUS_OPP_EVENT_BONUS
+            if action.mode == ActionMode.EVENT:
+                score += urgency
+            else:
+                score -= urgency
+
+    # DEFCON safety for non-EVENT §5.2 cases is handled by _defcon_safety_penalty (applied globally).
 
     if card.card_id == _CHINA_CARD_ID:
         if pub.turn <= _EARLY_LAST_TURN:
@@ -848,6 +1108,84 @@ def _defcon2_battleground_coup_is_free(
     if pub.defcon != 2 or not country.is_battleground:
         return True
     return side == Side.US and pub.nuclear_subs_active
+
+
+def _is_suicidal_action(
+    action: ActionEncoding,
+    card: CardSpec,
+    pub: PublicState,
+    side: Side,
+) -> bool:
+    # Headline picks are always executed as EVENT, regardless of the policy's chosen mode.
+    if pub.ar == 0:
+        if action.card_id in _DEFCON_RANDOM_COUP_CARDS and pub.defcon <= 3:
+            return True
+        if action.card_id in _DEFCON_LOWERING_CARDS and pub.defcon <= 2:
+            return True
+        if action.card_id in _DEFCON_PROB_LOWERING_CARDS and pub.defcon <= 2:
+            return True
+
+    # SPACE mode never triggers §5.2 — the card goes directly to the space track
+    # without firing any event. Always safe regardless of card content.
+    if action.mode == ActionMode.SPACE:
+        return False
+
+    if action.mode == ActionMode.COUP:
+        country = _countries()[action.targets[0]]
+        # Direct suicide: BG coup at DEFCON=2 lowers DEFCON to 1.
+        if (
+            pub.defcon <= 2
+            and country.is_battleground
+            and not _defcon2_battleground_coup_is_free(pub, side, country)
+        ):
+            return True
+        # §5.2 suicide: opponent's Brush War / Che played as COUP (any target) at DEFCON=2.
+        # The §5.2 rule fires their event — a random BG coup — which will lower DEFCON to 1.
+        if (
+            pub.defcon <= 2
+            and card.side not in (side, Side.NEUTRAL)
+            and action.card_id
+            in (
+                _DEFCON_RANDOM_COUP_CARDS
+                | _DEFCON_LOWERING_CARDS
+                | _CAT_C_HAND_RISKY_CARDS
+            )
+        ):
+            return True
+        return False
+
+    if pub.defcon > 2:
+        return False
+
+    if action.mode == ActionMode.EVENT:
+        if action.card_id == 83 and pub.defcon <= 3:
+            return True
+        if action.card_id == 39 and pub.defcon <= 2:
+            return True
+        # Cat-C cards randomly interact with the opponent hand when their event fires.
+        # At DEFCON 2, that can reveal and fire a DEFCON-lowering event immediately.
+        if action.card_id in _CAT_C_HAND_RISKY_CARDS and pub.defcon <= 2:
+            return True
+        return (
+            action.card_id in _DEFCON_LOWERING_CARDS
+            or action.card_id in _DEFCON_PROB_LOWERING_CARDS
+        )
+
+    if card.side in (side, Side.NEUTRAL):
+        return False
+
+    if (
+        action.card_id in _CAT_C_HAND_RISKY_CARDS
+        and action.mode != ActionMode.EVENT
+        and pub.defcon <= 2
+    ):
+        return True
+
+    return (
+        action.card_id in _DEFCON_LOWERING_CARDS
+        or action.card_id in _DEFCON_RANDOM_COUP_CARDS
+        or action.card_id in _DEFCON_PROB_LOWERING_CARDS
+    )
 
 
 def _influence(context: DecisionContext, side: Side, country_id: int) -> int:

@@ -18,6 +18,7 @@ from tsrl.engine.legal_actions import (
     load_adjacency,
 )
 from tsrl.etl.dataset import _card_mask, _influence_array
+from tsrl.policies.minimal_hybrid import _DEFCON_LOWERING_CARDS
 from tsrl.policies.model import TSBaselineModel
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side
 
@@ -79,13 +80,12 @@ def _build_action_from_country_logits(
     if not accessible:
         return None
 
-    # Mask logits to accessible countries only (0-indexed = country_id - 1).
-    # Filter out IDs that exceed the model's 84-country vocabulary (e.g. superpower
-    # anchors USA=81 / USSR=82 are not board countries; Taiwan=85 is beyond index 83).
-    valid_accessible = [c for c in accessible if 1 <= c <= 84]
+    # Mask logits to accessible countries only (0-indexed = country_id, range 0..85).
+    # Filter out superpower anchor IDs that are not board countries.
+    valid_accessible = [c for c in accessible if 0 <= c <= 85]
     if not valid_accessible:
         return None
-    indices = torch.tensor([c - 1 for c in valid_accessible], dtype=torch.long)
+    indices = torch.tensor([c for c in valid_accessible], dtype=torch.long)
     source_logits = country_logits
     if strategy_logits is not None and country_strategy_logits is not None:
         strategy_idx = int(strategy_logits.argmax().item())
@@ -95,13 +95,13 @@ def _build_action_from_country_logits(
     masked[indices] = source_logits[indices]
     probs = torch.softmax(masked, dim=0)
 
-    # Multinomial samples an index into the 84-dim vector; add 1 for country_id.
+    # Multinomial samples a country_id directly (0-indexed, 0..85).
     if mode == ActionMode.COUP:
-        target = int(torch.multinomial(probs, 1).item()) + 1
+        target = int(torch.multinomial(probs, 1).item())
         return ActionEncoding(card_id=card_id, mode=mode, targets=(target,))
 
     if mode == ActionMode.REALIGN:
-        target = int(torch.multinomial(probs, 1).item()) + 1
+        target = int(torch.multinomial(probs, 1).item())
         return ActionEncoding(card_id=card_id, mode=mode, targets=(target,))
 
     # INFLUENCE: allocate integer ops by largest remainder after proportional split.
@@ -201,16 +201,61 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
         masked_card[legal_indices] = card_logits[legal_indices]
         sampled_card_id = int(torch.multinomial(torch.softmax(masked_card, dim=0), 1).item()) + 1
 
-        # --- pick mode ---
+        # --- pick mode (use mode_logits, not random choice) ---
+        mode_logits = outputs["mode_logits"][0]
         modes = list(legal_modes(sampled_card_id, pub, side, adj=adj))
         if not modes:
             return None
-        rng = random.Random()
-        mode = rng.choice(modes)
+        mode_mask = torch.full_like(mode_logits, float("-inf"))
+        for m in modes:
+            mode_mask[int(m)] = 0.0
+        mode = ActionMode(int((mode_logits + mode_mask).argmax().item()))
+
+        # --- DEFCON safety: never coup at DEFCON 2 (any coup drops to 1, phasing player loses) ---
+        if mode == ActionMode.COUP and pub.defcon <= 2:
+            safe_modes = [m for m in modes if m != ActionMode.COUP]
+            if not safe_modes:
+                return None  # only legal option is suicide coup — yield no action
+            mode_mask2 = torch.full_like(mode_logits, float("-inf"))
+            for m in safe_modes:
+                mode_mask2[int(m)] = 0.0
+            mode = ActionMode(int((mode_logits + mode_mask2).argmax().item()))
+
+        # --- DEFCON safety: never play EVENT for DEFCON-lowering cards at DEFCON ≤ 2 ---
+        # Cards like Duck and Cover (#4), We Will Bury You (#53), war cards (#11,#13,#24),
+        # Iran-Iraq War (#105) lower DEFCON when their event fires. At DEFCON 2 this is
+        # instant nuclear defeat for the phasing player.
+        if mode == ActionMode.EVENT and pub.defcon <= 2 and sampled_card_id in _DEFCON_LOWERING_CARDS:
+            safe_modes = [m for m in modes if m != ActionMode.EVENT]
+            if not safe_modes:
+                # All modes are EVENT (shouldn't happen) — try a different card
+                safe_card_ids = [
+                    c for c in legal_card_ids
+                    if not (ActionMode.EVENT in legal_modes(c, pub, side, adj=adj)
+                            and c in _DEFCON_LOWERING_CARDS
+                            and all(m == ActionMode.EVENT for m in legal_modes(c, pub, side, adj=adj)))
+                ]
+                if safe_card_ids:
+                    safe_card_mask = torch.full_like(card_logits, float("-inf"))
+                    safe_indices = torch.tensor([c - 1 for c in safe_card_ids], dtype=torch.long)
+                    safe_card_mask[safe_indices] = card_logits[safe_indices]
+                    sampled_card_id = int(torch.multinomial(torch.softmax(safe_card_mask, dim=0), 1).item()) + 1
+                    modes = list(legal_modes(sampled_card_id, pub, side, adj=adj))
+                    mode_mask = torch.full_like(mode_logits, float("-inf"))
+                    for m in modes:
+                        mode_mask[int(m)] = 0.0
+                    mode = ActionMode(int((mode_logits + mode_mask).argmax().item()))
+                # else: no safe card found — fall through and accept the EVENT (rare edge case)
+            else:
+                mode_mask3 = torch.full_like(mode_logits, float("-inf"))
+                for m in safe_modes:
+                    mode_mask3[int(m)] = 0.0
+                mode = ActionMode(int((mode_logits + mode_mask3).argmax().item()))
 
         if mode in (ActionMode.SPACE, ActionMode.EVENT):
             return ActionEncoding(card_id=sampled_card_id, mode=mode, targets=())
 
+        rng = random.Random()
         # --- pick targets using country head if available ---
         if use_country_head and has_strategy_heads and country_logits is not None:
             action = _build_action_from_country_logits(
@@ -305,10 +350,24 @@ def make_model_candidate_fn(
             card_score = float(card_probs[card_id - 1].item())
             modes = sorted(legal_modes(card_id, pub, side, adj=adj), key=int)
             for mode in modes:
+                # DEFCON safety: skip EVENT for DEFCON-lowering cards at DEFCON ≤ 2.
+                if mode == ActionMode.EVENT and pub.defcon <= 2 and card_id in _DEFCON_LOWERING_CARDS:
+                    continue
+                # DEFCON safety: skip COUP at DEFCON ≤ 2.
+                if mode == ActionMode.COUP and pub.defcon <= 2:
+                    continue
                 scored_pairs.append((card_id, mode, card_score * float(mode_probs[int(mode)].item())))
 
         if not scored_pairs:
-            return []
+            # Fallback: safety filters removed all candidates (very rare edge case at low DEFCON).
+            # Re-add all legal (card, mode) pairs without filtering so MCTS can still operate.
+            for card_id in playable:
+                card_score = float(card_probs[card_id - 1].item())
+                modes = sorted(legal_modes(card_id, pub, side, adj=adj), key=int)
+                for mode in modes:
+                    scored_pairs.append((card_id, mode, card_score * float(mode_probs[int(mode)].item())))
+            if not scored_pairs:
+                return []
 
         limit = min(n, n_candidates, len(scored_pairs))
         if limit <= 0:
