@@ -33,7 +33,7 @@ V13_VS_HEU_OUT=data/selfplay/learned_v13_vs_heuristic_2k_seed17000.parquet
 if [ -f "$VS_HEURISTIC_SCRIPT" ] && [ ! -f "$V13_VS_HEU_OUT" ]; then
     echo "[$(date)] Collecting v13-vs-heuristic..."
     nice -n 10 uv run python "$VS_HEURISTIC_SCRIPT" \
-        --checkpoint "$V13_CKPT" --n-games 2000 --pool-size 256 \
+        --checkpoint "$V13_CKPT" --n-games 2000 --workers 8 \
         --seed 17000 --out "$V13_VS_HEU_OUT" \
         2>&1 | tee /tmp/collect_v13_vs_heuristic.log
     echo "[$(date)] v13-vs-heuristic collection done."
