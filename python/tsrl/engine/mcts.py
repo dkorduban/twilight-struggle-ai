@@ -1,19 +1,27 @@
 """
 Monte Carlo Tree Search (UCT) for Twilight Struggle.
 
-Two implementations:
+Three implementations:
 
-  flat_mcts(gs, n_sim, side, rng) → ActionEncoding
+  flat_mcts(gs, n_sim, rng) → ActionEncoding
     For each legal action at the root, run n_sim//n_actions rollouts.
     Fast, simple, suitable as an initial baseline over random policy.
 
-  uct_mcts(gs, n_sim, side, rng, c) → ActionEncoding
-    Full UCT with UCB1 selection, expansion, rollout, and backpropagation.
-    Better sample efficiency than flat Monte Carlo.
+  uct_mcts(gs, n_sim, rng, c) → ActionEncoding
+    Full UCT with UCB1 selection, expansion, rollout/value, backpropagation.
+    Single-tree. Supports an optional batch_value_fn that defers all leaf
+    evaluations to one call after all simulations complete (keeps the
+    batch_value_fn interface for callers that already construct it).
 
-Both use perfect-information rollouts (both hands visible), which is
-appropriate for self-play training data generation.  Hidden-information
-(opponent-hand sampling / IS-MCTS) is a Month 3 concern.
+  interleaved_uct_mcts(game_states, n_sim, batch_value_fn) → list[ActionEncoding]
+    Run N UCT trees in lockstep, sharing one batched value function call per
+    round.  Each round: every tree does one select+expand step, all leaf
+    states are evaluated together, every tree backpropagates.  UCB1 is
+    correct (stats updated before each round's selection) and the GPU batch
+    size equals N (number of parallel positions) rather than 1.
+
+All use perfect-information rollouts (both hands visible), appropriate for
+self-play training data generation.
 
 Value convention: +1.0 = USSR wins, -1.0 = US wins, 0.0 = draw.
 All UCB1 statistics are stored from USSR's perspective for consistency.
@@ -148,6 +156,7 @@ def uct_mcts(
     rollout_policy: Optional[Policy] = None,
     candidate_fn=None,
     value_fn: Optional[Callable[[GameState], float]] = None,
+    batch_value_fn: Optional[Callable[[list[GameState]], list[float]]] = None,
     rng: Optional[random.Random] = None,
 ) -> Optional[ActionEncoding]:
     """Run UCT (Upper Confidence Trees) and return the most-visited root action.
@@ -160,6 +169,9 @@ def uct_mcts(
         value_fn:       Optional value function for leaf evaluation. If provided,
                         replaces rollout. Takes GameState, returns value in [-1, +1]
                         from USSR perspective.
+        batch_value_fn: Optional batched leaf evaluator. When provided, collects
+                        the leaf GameState for each simulation and evaluates them
+                        in one call after tree traversal/expansion.
         rng:            RNG for sampling.
 
     Returns the action with the highest visit count at the root.
@@ -180,6 +192,10 @@ def uct_mcts(
         root.untried = _sample_candidates(gs, side, holds_china, max(n_sim, 50), _rng)
     if not root.untried:
         return None
+
+    pending_paths: list[list[tuple[_Node, ActionEncoding, Side]]] = []
+    pending_terminal_values: list[float | None] = []
+    pending_leaf_states: list[GameState] = []
 
     for _ in range(n_sim):
         sim = clone_game_state(gs)
@@ -215,16 +231,34 @@ def uct_mcts(
             sim_side = next_side
             path.append((node, action, sim_side))
 
-        # --- Simulation (rollout or value function) ---
+        pending_paths.append(path)
         if node.is_terminal:
-            value = node.terminal_value
-        elif value_fn is not None:
-            # Use value function (trained model) instead of rollout.
-            value = value_fn(sim)
+            pending_terminal_values.append(node.terminal_value)
         else:
-            # Fall back to rollout simulation with rollout_policy.
-            result = play_from_state(sim, _rollout, _rollout, rng=_rng)
-            value = _result_value(result)
+            pending_terminal_values.append(None)
+            pending_leaf_states.append(sim)
+
+    leaf_values: list[float] = []
+    if pending_leaf_states:
+        if batch_value_fn is not None:
+            leaf_values = batch_value_fn(pending_leaf_states)
+            if len(leaf_values) != len(pending_leaf_states):
+                raise ValueError("batch_value_fn returned wrong number of values")
+        elif value_fn is not None:
+            leaf_values = [value_fn(sim) for sim in pending_leaf_states]
+        else:
+            leaf_values = [
+                _result_value(play_from_state(sim, _rollout, _rollout, rng=_rng))
+                for sim in pending_leaf_states
+            ]
+
+    leaf_idx = 0
+    for path, terminal_value in zip(pending_paths, pending_terminal_values, strict=True):
+        if terminal_value is not None:
+            value = terminal_value
+        else:
+            value = leaf_values[leaf_idx]
+            leaf_idx += 1
 
         # --- Backpropagation ---
         root.visits += 1
@@ -240,6 +274,149 @@ def uct_mcts(
     # Return most-visited child.
     best = max(root.children.items(), key=lambda kv: kv[1].visits)
     return best[0]
+
+
+# ---------------------------------------------------------------------------
+# Interleaved UCT — N trees share one batched value call per round
+# ---------------------------------------------------------------------------
+
+
+def interleaved_uct_mcts(
+    game_states: list[GameState],
+    n_sim: int,
+    batch_value_fn: Callable[[list[GameState]], list[float]],
+    *,
+    c: float = 1.41,
+    candidate_fn=None,
+    rng: Optional[random.Random] = None,
+) -> list[Optional[ActionEncoding]]:
+    """Run N UCT trees interleaved, sharing one batched value call per round.
+
+    For each of n_sim rounds:
+      1. Every tree does one select+expand step on a clone of its game state,
+         producing a leaf GameState.
+      2. All non-terminal leaf states are evaluated together in one
+         batch_value_fn call (batch size = N).
+      3. Every tree backpropagates its leaf value.
+
+    UCB1 is correct: each round's selection uses stats from all prior rounds.
+    Batch size per value call = len(game_states), independent of n_sim.
+
+    Args:
+        game_states:    N positions to search.  Not mutated.
+        n_sim:          Simulations per tree (= number of rounds).
+        batch_value_fn: fn(list[GameState]) -> list[float] in [-1,+1] (USSR
+                        perspective).  Called once per round with up to N states.
+        c:              UCB1 exploration constant.
+        candidate_fn:   Optional fn(gs, side, holds_china, n, rng) ->
+                        list[ActionEncoding].  Defaults to random sampling.
+        rng:            Master RNG; each tree gets a derived independent RNG so
+                        results are deterministic regardless of N.
+
+    Returns:
+        list[ActionEncoding | None] — best action for each input position.
+        None if that position has no legal actions.
+    """
+    if not game_states:
+        return []
+
+    _rng = rng or random.Random()
+    N = len(game_states)
+
+    # Derive an independent RNG per tree so simulation order doesn't matter.
+    tree_rngs = [random.Random(_rng.randint(0, 2**32)) for _ in range(N)]
+
+    # Compute root side / china for each tree.
+    sides: list[Side] = []
+    for gs in game_states:
+        sides.append(gs.pub.phasing)
+
+    # Initialise root nodes and candidate lists.
+    roots: list[_Node] = []
+    for i, (gs, side) in enumerate(zip(game_states, sides)):
+        root = _Node()
+        holds_china = _holds_china(gs, side)
+        if candidate_fn is not None:
+            root.untried = candidate_fn(
+                gs, side, holds_china, max(n_sim, 50), rng=tree_rngs[i]
+            )
+        else:
+            root.untried = _sample_candidates(
+                gs, side, holds_china, max(n_sim, 50), tree_rngs[i]
+            )
+        roots.append(root)
+
+    # ── Main loop: one simulation step per tree per round ─────────────────────
+    for _ in range(n_sim):
+        leaf_states: list[GameState] = []
+        # For each tree: (root, path, is_terminal, terminal_value)
+        backprop: list[tuple[_Node, list[tuple[_Node, ActionEncoding, Side]], bool, float]] = []
+
+        for i, (gs, side, root, trng) in enumerate(
+            zip(game_states, sides, roots, tree_rngs)
+        ):
+            sim = clone_game_state(gs)
+            node = root
+            path: list[tuple[_Node, ActionEncoding, Side]] = []
+            sim_side = side
+
+            # Selection
+            while node.untried == [] and node.children and not node.is_terminal:
+                action, node = _ucb1_select(node, sim_side, c)
+                _apply_action_to_gs(sim, action, sim_side, trng)
+                sim_side = _next_side(sim_side)
+                path.append((node, action, sim_side))
+
+            # Expansion
+            if node.untried and not node.is_terminal:
+                action = trng.choice(node.untried)
+                node.untried = [a for a in node.untried if a != action]
+                _apply_action_to_gs(sim, action, sim_side, trng)
+                child = _Node()
+                next_side = _next_side(sim_side)
+                next_holds_china = _holds_china(sim, next_side)
+                if candidate_fn is not None:
+                    child.untried = candidate_fn(
+                        sim, next_side, next_holds_china,
+                        max(n_sim // 4, 20), rng=trng,
+                    )
+                else:
+                    child.untried = _sample_candidates(
+                        sim, next_side, next_holds_china, max(n_sim // 4, 20), trng
+                    )
+                node.children[action] = child
+                node = child
+                sim_side = next_side
+                path.append((node, action, sim_side))
+
+            if node.is_terminal:
+                backprop.append((root, path, True, node.terminal_value))
+            else:
+                backprop.append((root, path, False, 0.0))
+                leaf_states.append(sim)
+
+        # Batch-evaluate all non-terminal leaves in one call.
+        leaf_values = batch_value_fn(leaf_states) if leaf_states else []
+
+        # Backpropagate — stats are live for the next round's UCB1 selection.
+        leaf_iter = iter(leaf_values)
+        for root, path, is_terminal, terminal_value in backprop:
+            value = terminal_value if is_terminal else next(leaf_iter)
+            root.visits += 1
+            root.total_value += value
+            for child_node, _, _ in path:
+                child_node.visits += 1
+                child_node.total_value += value
+
+    # Return most-visited child action for each tree.
+    results: list[Optional[ActionEncoding]] = []
+    for root in roots:
+        if not root.children:
+            results.append(root.untried[0] if root.untried else None)
+        else:
+            best = max(root.children.items(), key=lambda kv: kv[1].visits)
+            results.append(best[0])
+    return results
 
 
 # ---------------------------------------------------------------------------

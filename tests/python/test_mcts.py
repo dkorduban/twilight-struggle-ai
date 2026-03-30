@@ -6,7 +6,7 @@ These tests are kept fast by using small n_sim values (2-5).
 import random
 import pytest
 from tsrl.engine.game_state import reset, clone_game_state
-from tsrl.engine.mcts import flat_mcts, uct_mcts, collect_self_play_game, SelfPlayStep
+from tsrl.engine.mcts import flat_mcts, uct_mcts, interleaved_uct_mcts, collect_self_play_game, SelfPlayStep
 from tsrl.engine.game_loop import GameResult
 from tsrl.schemas import ActionEncoding, Side
 
@@ -150,9 +150,21 @@ class TestUCTMCTS:
         import os
         from tsrl.engine.game_state import reset, deal_cards
 
-        ckpt = "data/checkpoints/baseline_epoch20.pt"
-        if not os.path.exists(ckpt):
-            pytest.skip("checkpoint not found")
+        # Prefer v16 checkpoint (86-country, 172-dim); fall back to older one if present
+        for _ckpt in [
+            "data/checkpoints/retrain_v16/baseline_best.pt",
+            "data/checkpoints/baseline_epoch20.pt",
+        ]:
+            if os.path.exists(_ckpt):
+                ckpt = _ckpt
+                break
+        else:
+            pytest.skip("no checkpoint found")
+        # Skip if checkpoint has incompatible shape (old 84-country model)
+        import torch as _torch
+        _sd = _torch.load(ckpt, map_location="cpu", weights_only=True)
+        if _sd.get("influence_encoder.weight", _torch.empty(0)).shape != (128, 172):
+            pytest.skip(f"checkpoint {ckpt} has incompatible influence dim (not 172)")
 
         from tsrl.policies.learned_policy import make_value_function
 
@@ -266,3 +278,80 @@ class TestMCTSIntegration:
         side = gs.pub.phasing
         assert action.card_id in gs.hands[side], \
             "MCTS action should reference a card in the phasing player's hand"
+
+
+class TestInterleavedUCTMCTS:
+    """Tests for interleaved_uct_mcts (N trees, one batched value call per round)."""
+
+    def _zero_value_fn(self, game_states):
+        """Trivial value function: always returns 0.0 (USSR perspective)."""
+        return [0.0] * len(game_states)
+
+    def test_returns_one_action_per_game_state(self):
+        """Should return exactly N actions for N input game states."""
+        game_states = [reset(seed=i) for i in range(4)]
+        rng = random.Random(0)
+        results = interleaved_uct_mcts(game_states, n_sim=3, batch_value_fn=self._zero_value_fn, rng=rng)
+        assert len(results) == 4
+        for r in results:
+            assert r is None or isinstance(r, ActionEncoding)
+
+    def test_returns_legal_action_for_each_state(self):
+        """Each returned action must reference a card in the phasing player's hand."""
+        game_states = [reset(seed=10 + i) for i in range(3)]
+        rng = random.Random(42)
+        results = interleaved_uct_mcts(game_states, n_sim=5, batch_value_fn=self._zero_value_fn, rng=rng)
+        for gs, action in zip(game_states, results):
+            assert action is not None
+            side = gs.pub.phasing
+            assert action.card_id in gs.hands[side], (
+                f"action card {action.card_id} not in hand {gs.hands[side]}"
+            )
+
+    def test_does_not_mutate_input_states(self):
+        """interleaved_uct_mcts must not modify the input GameStates."""
+        game_states = [reset(seed=20 + i) for i in range(3)]
+        snapshots = [(gs.pub.vp, gs.pub.defcon, dict(gs.pub.influence)) for gs in game_states]
+        rng = random.Random(7)
+        interleaved_uct_mcts(game_states, n_sim=4, batch_value_fn=self._zero_value_fn, rng=rng)
+        for gs, (vp, defcon, influence) in zip(game_states, snapshots):
+            assert gs.pub.vp == vp
+            assert gs.pub.defcon == defcon
+            assert dict(gs.pub.influence) == influence
+
+    def test_batch_value_fn_called_with_nonempty_batches(self):
+        """batch_value_fn should be called at least once with non-empty batches."""
+        call_sizes = []
+        def counting_value_fn(states):
+            call_sizes.append(len(states))
+            return [0.0] * len(states)
+
+        game_states = [reset(seed=30 + i) for i in range(5)]
+        rng = random.Random(99)
+        interleaved_uct_mcts(game_states, n_sim=4, batch_value_fn=counting_value_fn, rng=rng)
+        assert len(call_sizes) > 0
+        assert all(s > 0 for s in call_sizes)
+
+    def test_empty_input_returns_empty(self):
+        """Empty game_states list should return empty list without error."""
+        results = interleaved_uct_mcts([], n_sim=5, batch_value_fn=self._zero_value_fn)
+        assert results == []
+
+    def test_single_game_state(self):
+        """Should work with N=1 (degenerates to single-tree UCT)."""
+        gs = reset(seed=50)
+        rng = random.Random(50)
+        results = interleaved_uct_mcts([gs], n_sim=5, batch_value_fn=self._zero_value_fn, rng=rng)
+        assert len(results) == 1
+        assert results[0] is not None
+        assert isinstance(results[0], ActionEncoding)
+
+    def test_deterministic_with_same_seed(self):
+        """Same seed produces same actions."""
+        game_states_a = [reset(seed=i) for i in range(3)]
+        game_states_b = [reset(seed=i) for i in range(3)]
+        r1 = interleaved_uct_mcts(game_states_a, n_sim=4, batch_value_fn=self._zero_value_fn,
+                                   rng=random.Random(77))
+        r2 = interleaved_uct_mcts(game_states_b, n_sim=4, batch_value_fn=self._zero_value_fn,
+                                   rng=random.Random(77))
+        assert [(a.card_id, int(a.mode)) for a in r1] == [(a.card_id, int(a.mode)) for a in r2]

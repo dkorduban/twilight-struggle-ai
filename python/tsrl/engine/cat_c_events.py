@@ -139,7 +139,13 @@ def _apply_ops_randomly(
             pub.influence[(side, target)] = pub.influence.get((side, target), 0) + 1
 
     elif mode == ActionMode.COUP:
-        target = rng.choice(accessible)
+        # Never coup a battleground at DEFCON ≤ 2 — that lowers DEFCON to 1 (nuclear war).
+        safe_targets = (
+            [t for t in accessible if not (c.get(t) and c[t].is_battleground)]
+            if pub.defcon <= 2
+            else accessible
+        )
+        target = rng.choice(safe_targets if safe_targets else accessible)
         stability = c[target].stability if target in c else 1
         is_bg = c[target].is_battleground if target in c else False
         net = coup_result(ops, stability, rng=rng)

@@ -528,6 +528,10 @@ def _run_action_rounds_gen(
                 # AR consumed by trap attempt; skip policy call.
                 continue
 
+            # Skip yield if no legal actions (e.g. hand emptied by card event).
+            if not legal_cards(hand, gs.pub, side, holds_china=holds_china):
+                continue
+
             action = yield DecisionRequest(
                 side=side,
                 pub=gs.pub,
