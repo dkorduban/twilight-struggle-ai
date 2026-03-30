@@ -54,7 +54,7 @@ def pytest_collection_modifyitems(config, items):
 # Synthetic self-play dataset fixture
 # ---------------------------------------------------------------------------
 
-_COUNTRY_LEN = 84
+_COUNTRY_LEN = 86
 _CARD_LEN = 112
 _ROW_COUNT = 50
 
@@ -73,7 +73,7 @@ def tiny_selfplay_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
         return [1 if (idx + offset) % period == 0 else 0 for idx in range(_CARD_LEN)]
 
     rows: list[dict[str, object]] = []
-    target_patterns = ("", "1", "2,3", "10,10,11", "84")
+    target_patterns = ("", "0", "1", "2,3", "10,10,11", "85")
     for row_idx in range(_ROW_COUNT):
         rows.append(
             {
@@ -99,6 +99,7 @@ def tiny_selfplay_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 "action_targets": rng.choice(target_patterns),
                 "winner_side": (-1, 0, 1)[row_idx % 3],
                 "final_vp": ((row_idx * 3) % 41) - 20,
+                "end_reason": ("turn_limit", "defcon1", "europe_control", "vp_threshold")[row_idx % 4],
             }
         )
 
