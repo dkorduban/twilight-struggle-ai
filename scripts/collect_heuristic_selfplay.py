@@ -16,12 +16,13 @@ train_baseline.py can consume both together.
 from __future__ import annotations
 
 import argparse
-import copy
 import datetime
 import logging
 import multiprocessing
 import os
+import random
 import sys
+from copy import copy
 from pathlib import Path
 
 logging.basicConfig(
@@ -44,25 +45,12 @@ def _collect_heuristic_game(seed: int) -> tuple[list[dict], dict]:
 
     Returns a list of row dicts ready for polars + a summary dict.
     """
-    import random
-
     from tsrl.engine.game_loop import (
         GameResult,
-        _MID_WAR_TURN,
-        _LATE_WAR_TURN,
-        _MAX_TURNS,
-        _run_headline_phase,
-        _run_action_rounds,
-        _end_of_turn,
+        DecisionRequest,
+        _run_game_gen,
     )
-    from tsrl.engine.game_state import (
-        reset,
-        deal_cards,
-        _ars_for_turn,
-        advance_to_mid_war,
-        advance_to_late_war,
-        clone_game_state,
-    )
+    from tsrl.engine.game_state import reset
     from tsrl.engine.legal_actions import sample_action
     from tsrl.engine.mcts import SelfPlayStep
     from tsrl.policies.minimal_hybrid import choose_minimal_hybrid
@@ -70,85 +58,81 @@ def _collect_heuristic_game(seed: int) -> tuple[list[dict], dict]:
     from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side
 
     rng = random.Random(seed)
-    gs = reset(seed=rng.randint(0, 2**32))
+    gs = reset(seed=seed)
     steps: list[SelfPlayStep] = []
-    _pending: list[SelfPlayStep | None] = [None]
+    pending_step: SelfPlayStep | None = None
 
-    def _snapshot_pub(p: PublicState) -> PublicState:
-        c2 = copy.copy(p)
-        c2.milops = list(p.milops)
-        c2.space = list(p.space)
-        c2.space_attempts = list(p.space_attempts)
-        c2.ops_modifier = list(p.ops_modifier)
-        c2.influence = dict(p.influence)
-        return c2
+    def _snapshot_pub(pub: PublicState) -> PublicState:
+        snap = copy(pub)
+        snap.milops = list(pub.milops)
+        snap.space = list(pub.space)
+        snap.space_attempts = list(pub.space_attempts)
+        snap.ops_modifier = list(pub.ops_modifier)
+        snap.influence = pub.influence.copy()
+        return snap
 
-    def _heuristic_policy(pub: PublicState, hand: frozenset[int], holds_china: bool):
-        # Fill post_pub for the previous step now that gs.pub is updated.
-        if _pending[0] is not None:
-            _pending[0].post_pub = _snapshot_pub(gs.pub)
-            _pending[0] = None
+    gen = _run_game_gen(gs, rng, max_turns=10)
 
-        _side = pub.phasing
-        action = choose_minimal_hybrid(pub, hand, holds_china)
-
-        if action is None:
-            # Fallback: random action
-            action = sample_action(hand, pub, _side, holds_china=holds_china, rng=rng)
-
-        if action is not None:
-            # During headline phase (ar == 0), game_loop forces the played card
-            # to EVENT mode with no targets.  Record the mode-forced action.
-            recorded_action = action
-            if pub.ar == 0:
-                recorded_action = ActionEncoding(
-                    card_id=action.card_id,
+    try:
+        req = next(gen)
+    except StopIteration as exc:
+        result = exc.value
+    else:
+        while True:
+            assert isinstance(req, DecisionRequest)
+            action = choose_minimal_hybrid(req.pub, req.hand, req.holds_china)
+            if action is None:
+                action = sample_action(
+                    req.hand,
+                    req.pub,
+                    req.side,
+                    holds_china=req.holds_china,
+                    rng=rng,
+                )
+            if action is None and req.pub.ar == 0 and req.hand:
+                action = ActionEncoding(
+                    card_id=rng.choice(sorted(req.hand)),
                     mode=ActionMode.EVENT,
                     targets=(),
                 )
-            step = SelfPlayStep(
-                pub_snapshot=copy.copy(pub),
-                side=_side,
-                hand=hand,
-                holds_china=holds_china,
-                action=recorded_action,
-            )
-            steps.append(step)
-            _pending[0] = step
+            if action is not None:
+                recorded_action = action
+                if req.pub.ar == 0:
+                    recorded_action = ActionEncoding(
+                        card_id=action.card_id,
+                        mode=ActionMode.EVENT,
+                        targets=(),
+                    )
 
-        return action
+                current_step = SelfPlayStep(
+                    pub_snapshot=_snapshot_pub(req.pub),
+                    side=req.side,
+                    hand=req.hand,
+                    holds_china=req.holds_china,
+                    action=recorded_action,
+                )
+                steps.append(current_step)
+                pending_step = current_step
 
-    # Run full game loop
-    result = None
-    for turn in range(1, _MAX_TURNS + 1):
-        gs.pub.turn = turn
-        if turn == _MID_WAR_TURN:
-            advance_to_mid_war(gs, rng)
-        elif turn == _LATE_WAR_TURN:
-            advance_to_late_war(gs, rng)
-        deal_cards(gs, Side.USSR, rng)
-        deal_cards(gs, Side.US, rng)
-        result = _run_headline_phase(gs, _heuristic_policy, _heuristic_policy, rng)
-        if result is not None:
-            break
-        result = _run_action_rounds(gs, _heuristic_policy, _heuristic_policy, rng, _ars_for_turn(turn))
-        if result is not None:
-            break
-        result = _end_of_turn(gs, rng, turn)
-        if result is not None:
-            break
+            try:
+                req = gen.send(action)
+            except StopIteration as exc:
+                result = exc.value
+                if pending_step is not None:
+                    pending_step.post_pub = _snapshot_pub(gs.pub)
+                    pending_step = None
+                break
 
-    if result is None:
-        winner = None
-        if gs.pub.vp > 0:
-            winner = Side.USSR
-        elif gs.pub.vp < 0:
-            winner = Side.US
-        result = GameResult(winner, gs.pub.vp, _MAX_TURNS, "turn_limit")
+            if pending_step is not None:
+                pending_step.post_pub = _snapshot_pub(gs.pub)
+                pending_step = None
 
-    # Fill post_pub for the last step.
-    if _pending[0] is not None:
-        _pending[0].post_pub = _snapshot_pub(gs.pub)
+    if pending_step is not None:
+        pending_step.post_pub = _snapshot_pub(gs.pub)
+        pending_step = None
+
+    if not isinstance(result, GameResult):
+        raise RuntimeError("game generator ended without a GameResult")
 
     # Annotate all steps with game result.
     for step in steps:

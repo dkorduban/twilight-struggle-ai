@@ -1,29 +1,28 @@
-"""Collect learned self-play games using batched threaded inference.
+"""Collect learned self-play games using multiprocessing + vectorized runner.
 
-Uses one shared TSBaselineModel checkpoint across concurrent game threads.
-All policy inference requests are batched by BatchInferenceServer to improve
-throughput over separate batch-size-1 calls.
+Each worker process loads its own TSBaselineModel checkpoint and runs a slice of
+games via run_games_vectorized(). Results are written as partial Parquet files,
+then concatenated into the requested output path.
 
 Usage::
 
-    uv run python scripts/collect_learned_selfplay_batched.py \
+    nice -n 10 uv run python scripts/collect_learned_selfplay_batched.py \
         --checkpoint data/checkpoints/retrain_v5/baseline_best.pt \
         --n-games 100 \
-        --workers 16 \
-        --batch-size 8
+        --workers 8 \
+        --seed 42
 """
 from __future__ import annotations
 
 import argparse
-import copy
 import datetime
 import logging
+import multiprocessing
 import os
-import queue
 import random
 import sys
-import threading
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -33,65 +32,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-_GAMES_PER_PART = 50
-_MID_WAR_TURN = 4
-_LATE_WAR_TURN = 8
 _MAX_TURNS = 10
-
-
-class BatchInferenceServer:
-    """Batches model inference across concurrent game threads."""
-
-    def __init__(self, model, batch_size: int, flush_timeout: float = 0.005):
-        self.model = model
-        self.batch_size = batch_size
-        self.flush_timeout = flush_timeout
-        self._queue: queue.Queue[tuple[torch.Tensor, torch.Tensor, torch.Tensor, queue.Queue]] = (
-            queue.Queue()
-        )
-        self._stop = threading.Event()
-        self._batcher_thread = threading.Thread(target=self._batcher, daemon=True)
-        self._batcher_thread.start()
-
-    def request(self, influence, cards, scalars):
-        """Submit one inference request and block until its result is ready."""
-        result_q: queue.Queue[dict[str, torch.Tensor]] = queue.Queue(maxsize=1)
-        self._queue.put((influence, cards, scalars, result_q))
-        return result_q.get()
-
-    def stop(self):
-        self._stop.set()
-        self._batcher_thread.join(timeout=2.0)
-
-    def _batcher(self):
-        pending = []
-        while not self._stop.is_set():
-            try:
-                item = self._queue.get(timeout=self.flush_timeout)
-                pending.append(item)
-                while len(pending) < self.batch_size:
-                    try:
-                        pending.append(self._queue.get_nowait())
-                    except queue.Empty:
-                        break
-                if len(pending) >= self.batch_size:
-                    self._flush(pending)
-                    pending = []
-            except queue.Empty:
-                if pending:
-                    self._flush(pending)
-                    pending = []
-        if pending:
-            self._flush(pending)
-
-    def _flush(self, items):
-        influence = torch.cat([x[0] for x in items], dim=0)
-        cards_t = torch.cat([x[1] for x in items], dim=0)
-        scalars = torch.cat([x[2] for x in items], dim=0)
-        with torch.no_grad():
-            outputs = self.model(influence, cards_t, scalars)
-        for i, (*_, result_q) in enumerate(items):
-            result_q.put({k: v[i : i + 1] for k, v in outputs.items()})
 
 
 def _sample_index_from_probs(probs: torch.Tensor, rng: random.Random) -> int:
@@ -166,10 +107,10 @@ def _build_action_from_country_logits(
     if not accessible:
         return None
 
-    valid_accessible = [c for c in accessible if 1 <= c <= 84]
+    valid_accessible = [c for c in accessible if 0 <= c <= 85]
     if not valid_accessible:
         return None
-    indices = torch.tensor([c - 1 for c in valid_accessible], dtype=torch.long)
+    indices = torch.tensor([c for c in valid_accessible], dtype=torch.long)
     source_logits = country_logits
     if strategy_logits is not None and country_strategy_logits is not None:
         strategy_idx = int(strategy_logits.argmax().item())
@@ -180,7 +121,7 @@ def _build_action_from_country_logits(
     probs = torch.softmax(masked, dim=0)
 
     if mode in (ActionMode.COUP, ActionMode.REALIGN):
-        target = _sample_index_from_probs(probs, rng) + 1
+        target = _sample_index_from_probs(probs, rng)
         return ActionEncoding(card_id=card_id, mode=mode, targets=(target,))
 
     ops = effective_ops(card_id, pub, side)
@@ -212,7 +153,9 @@ def _load_model(checkpoint_path: str):
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
-    model = TSBaselineModel()
+    ckpt_args = checkpoint.get("args", {})
+    hidden_dim = ckpt_args.get("hidden_dim", 256)
+    model = TSBaselineModel(hidden_dim=hidden_dim)
     model.load_state_dict(state_dict, strict=False)
     has_strategy_heads = all(
         key in state_dict
@@ -227,38 +170,55 @@ def _load_model(checkpoint_path: str):
     return model, has_strategy_heads, model.influence_encoder.in_features
 
 
-def _make_thread_policy(
-    server: BatchInferenceServer,
-    side,
+def _infer_batch(
+    requests,
+    model,
     has_strategy_heads: bool,
     expected_influence_dim: int,
-    rng,
+    rng: random.Random,
 ):
     from tsrl.engine.legal_actions import legal_cards, legal_modes, load_adjacency
     from tsrl.schemas import ActionEncoding, ActionMode
 
     adj = load_adjacency()
 
-    def _policy(pub, hand: frozenset[int], holds_china: bool):
-        hand_set = frozenset(hand)
-        playable = legal_cards(hand_set, pub, side, holds_china=holds_china)
+    influence_list = []
+    cards_list = []
+    scalars_list = []
+    for req in requests:
+        inf, crd, scl = _extract_features(req.pub, req.hand, req.holds_china, req.side)
+        inf = _normalize_influence_features(inf, expected_influence_dim)
+        influence_list.append(inf)
+        cards_list.append(crd)
+        scalars_list.append(scl)
+
+    influence_batch = torch.cat(influence_list, dim=0)
+    cards_batch = torch.cat(cards_list, dim=0)
+    scalars_batch = torch.cat(scalars_list, dim=0)
+
+    with torch.no_grad():
+        outputs = model(influence_batch, cards_batch, scalars_batch)
+
+    card_logits_batch = outputs["card_logits"]
+    country_logits_batch = outputs.get("country_logits")
+    strategy_logits_batch = outputs.get("strategy_logits")
+    country_strategy_logits_batch = outputs.get("country_strategy_logits")
+
+    actions = []
+    for i, req in enumerate(requests):
+        side = req.side
+        pub = req.pub
+        hand_set = frozenset(req.hand)
+        playable = legal_cards(hand_set, pub, side, holds_china=req.holds_china)
+
         if not playable:
-            return None
+            from tsrl.engine.legal_actions import sample_action
 
-        influence, cards, scalars = _extract_features(pub, hand_set, holds_china, side)
-        influence = _normalize_influence_features(influence, expected_influence_dim)
-        outputs = server.request(influence, cards, scalars)
-        card_logits = outputs["card_logits"][0]
-        country_logits = outputs.get("country_logits")
-        if country_logits is not None:
-            country_logits = country_logits[0]
-        strategy_logits = outputs.get("strategy_logits")
-        if strategy_logits is not None:
-            strategy_logits = strategy_logits[0]
-        country_strategy_logits = outputs.get("country_strategy_logits")
-        if country_strategy_logits is not None:
-            country_strategy_logits = country_strategy_logits[0]
+            action = sample_action(hand_set, pub, side, holds_china=req.holds_china, rng=rng)
+            actions.append(action)
+            continue
 
+        card_logits = card_logits_batch[i]
         legal_card_ids = sorted(playable)
         masked_card = torch.full_like(card_logits, float("-inf"))
         legal_indices = torch.tensor([c - 1 for c in legal_card_ids], dtype=torch.long)
@@ -268,11 +228,25 @@ def _make_thread_policy(
 
         modes = list(legal_modes(sampled_card_id, pub, side, adj=adj))
         if not modes:
-            return None
+            from tsrl.engine.legal_actions import sample_action
+
+            action = sample_action(hand_set, pub, side, holds_china=req.holds_china, rng=rng)
+            actions.append(action)
+            continue
+
         mode = rng.choice(modes)
 
         if mode in (ActionMode.SPACE, ActionMode.EVENT):
-            return ActionEncoding(card_id=sampled_card_id, mode=mode, targets=())
+            actions.append(ActionEncoding(card_id=sampled_card_id, mode=mode, targets=()))
+            continue
+
+        country_logits = country_logits_batch[i] if country_logits_batch is not None else None
+        strategy_logits = strategy_logits_batch[i] if strategy_logits_batch is not None else None
+        cs_logits = (
+            country_strategy_logits_batch[i]
+            if country_strategy_logits_batch is not None
+            else None
+        )
 
         if has_strategy_heads and country_logits is not None:
             action = _build_action_from_country_logits(
@@ -284,211 +258,125 @@ def _make_thread_policy(
                 adj,
                 rng,
                 strategy_logits=strategy_logits,
-                country_strategy_logits=country_strategy_logits,
+                country_strategy_logits=cs_logits,
             )
             if action is not None:
-                return action
+                actions.append(action)
+                continue
 
-        return _build_random_targets(sampled_card_id, mode, pub, side, adj, rng)
+        action = _build_random_targets(sampled_card_id, mode, pub, side, adj, rng)
+        if action is None:
+            from tsrl.engine.legal_actions import sample_action
 
-    return _policy
+            action = sample_action(hand_set, pub, side, holds_china=req.holds_china, rng=rng)
+        actions.append(action)
 
-
-def _collect_learned_game(seed: int, ussr_policy, us_policy):
-    from tsrl.engine.game_loop import (
-        GameResult,
-        _end_of_turn,
-        _run_action_rounds,
-        _run_headline_phase,
-    )
-    from tsrl.engine.game_state import (
-        _ars_for_turn,
-        advance_to_late_war,
-        advance_to_mid_war,
-        deal_cards,
-        reset,
-    )
-    from tsrl.engine.legal_actions import sample_action
-    from tsrl.engine.mcts import SelfPlayStep
-    from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side
-    from tsrl.selfplay.collector import _GAME_RESULT_STR, _step_to_row
-
-    rng = random.Random(seed)
-    gs = reset(seed=rng.randint(0, 2**32))
-    steps: list[SelfPlayStep] = []
-    pending: list[SelfPlayStep | None] = [None]
-
-    def _snapshot_pub(p: PublicState) -> PublicState:
-        c = copy.copy(p)
-        c.milops = list(p.milops)
-        c.space = list(p.space)
-        c.space_attempts = list(p.space_attempts)
-        c.ops_modifier = list(p.ops_modifier)
-        c.influence = p.influence.copy()
-        return c
-
-    def _wrap(base_policy):
-        def _policy(pub: PublicState, hand: frozenset[int], holds_china: bool):
-            if pending[0] is not None:
-                pending[0].post_pub = _snapshot_pub(gs.pub)
-                pending[0] = None
-
-            side = pub.phasing
-            action = base_policy(pub, hand, holds_china)
-            if action is None:
-                action = sample_action(hand, pub, side, holds_china=holds_china, rng=rng)
-
-            if action is not None:
-                recorded_action = action
-                if pub.ar == 0:
-                    recorded_action = ActionEncoding(
-                        card_id=action.card_id,
-                        mode=ActionMode.EVENT,
-                        targets=(),
-                    )
-                step = SelfPlayStep(
-                    pub_snapshot=copy.copy(pub),
-                    side=side,
-                    hand=hand,
-                    holds_china=holds_china,
-                    action=recorded_action,
-                )
-                steps.append(step)
-                pending[0] = step
-
-            return action
-
-        return _policy
-
-    ussr_wrapped = _wrap(ussr_policy)
-    us_wrapped = _wrap(us_policy)
-
-    result = None
-    for turn in range(1, _MAX_TURNS + 1):
-        gs.pub.turn = turn
-        if turn == _MID_WAR_TURN:
-            advance_to_mid_war(gs, rng)
-        elif turn == _LATE_WAR_TURN:
-            advance_to_late_war(gs, rng)
-        deal_cards(gs, Side.USSR, rng)
-        deal_cards(gs, Side.US, rng)
-        result = _run_headline_phase(gs, ussr_wrapped, us_wrapped, rng)
-        if result is not None:
-            break
-        result = _run_action_rounds(gs, ussr_wrapped, us_wrapped, rng, _ars_for_turn(turn))
-        if result is not None:
-            break
-        result = _end_of_turn(gs, rng, turn)
-        if result is not None:
-            break
-
-    if result is None:
-        winner = None
-        if gs.pub.vp > 0:
-            winner = Side.USSR
-        elif gs.pub.vp < 0:
-            winner = Side.US
-        result = GameResult(winner, gs.pub.vp, _MAX_TURNS, "turn_limit")
-
-    if pending[0] is not None:
-        pending[0].post_pub = _snapshot_pub(gs.pub)
-
-    for step in steps:
-        step.game_result = result
-
-    game_id = f"learned_{seed}"
-    rows = []
-    for step_idx, step in enumerate(steps):
-        try:
-            rows.append(_step_to_row(step, game_id, step_idx))
-        except Exception as exc:
-            log.warning("step %d row build failed: %s", step_idx, exc)
-
-    summary = {
-        "game_id": game_id,
-        "steps": len(rows),
-        "result": _GAME_RESULT_STR[result.winner],
-        "vp": result.final_vp,
-        "end_turn": result.end_turn,
-    }
-    return rows, summary
+    return actions
 
 
-def _write_parquet(rows: list[dict], out_path: Path) -> None:
-    import polars as pl
-
-    if not rows:
-        log.warning("No rows to write; skipping %s", out_path)
-        return
-    df = pl.DataFrame(rows)
-    df.write_parquet(str(out_path))
-    log.info("Wrote %d rows  (%d columns)  ->  %s", len(rows), len(df.columns), out_path)
-
-
-def _concat_part_parquets(part_paths: list[Path], out_path: Path) -> None:
-    import polars as pl
-
-    pl.concat([pl.scan_parquet(str(path)) for path in part_paths], how="vertical").sink_parquet(
-        str(out_path)
-    )
-    log.info("Merged %d part files -> %s", len(part_paths), out_path)
-
-
-def _worker_loop(
-    *,
-    worker_id: int,
-    seed_base: int,
-    n_games: int,
-    counter_lock: threading.Lock,
-    next_game_idx: list[int],
-    completed_games: list[int],
-    results_q: queue.Queue,
-    server: BatchInferenceServer,
-    has_strategy_heads: bool,
-    expected_influence_dim: int,
-):
-    from tsrl.schemas import Side
-
+def _worker_fn(args: dict[str, Any]) -> dict[str, Any]:
     try:
         os.nice(10)
     except OSError:
         pass
 
-    while True:
-        with counter_lock:
-            if next_game_idx[0] >= n_games:
-                return
-            game_idx = next_game_idx[0]
-            next_game_idx[0] += 1
-        seed = seed_base + game_idx
-        rng = random.Random(seed ^ ((worker_id + 1) * 1_000_003))
-        ussr_policy = _make_thread_policy(
-            server, Side.USSR, has_strategy_heads, expected_influence_dim, rng
+    worker_id: int = args["worker_id"]
+    seed_base: int = args["seed_base"]
+    game_indices: list[int] = args["game_indices"]
+    checkpoint: str = args["checkpoint"]
+    out_path_str: str = args["out_path"]
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format=f"%(asctime)s %(levelname)s worker{worker_id}: %(message)s",
+    )
+    wlog = logging.getLogger(f"worker{worker_id}")
+
+    from tsrl.engine.game_state import reset
+    from tsrl.engine.vec_runner import run_games_vectorized
+    from tsrl.schemas import Side
+    from tsrl.selfplay.collector import _GAME_RESULT_STR, _step_to_row
+
+    model, has_strategy_heads, expected_influence_dim = _load_model(checkpoint)
+    model.eval()
+    rng = random.Random(seed_base ^ (worker_id * 1_000_003 + 7))
+
+    n_local = len(game_indices)
+    game_counter = [0]
+
+    def make_game_fn():
+        global_idx = game_indices[game_counter[0]]
+        gs = reset(seed=seed_base + global_idx)
+        game_counter[0] += 1
+        return gs
+
+    def learned_side_fn(local_game_idx: int) -> Side:
+        return Side.USSR if (game_indices[local_game_idx] % 2 == 0) else Side.US
+
+    def learned_infer_fn(requests):
+        return _infer_batch(requests, model, has_strategy_heads, expected_influence_dim, rng)
+
+    def heuristic_fn(req):
+        return _infer_batch(
+            [req], model, has_strategy_heads, expected_influence_dim, rng
+        )[0]
+
+    all_rows: list[dict] = []
+    completed = [0]
+
+    def on_game_done(local_game_idx, steps, result):
+        global_idx = game_indices[local_game_idx]
+        game_id = f"learned_{seed_base + global_idx}"
+        rows = []
+        for step_idx, step in enumerate(steps):
+            try:
+                rows.append(_step_to_row(step, game_id, step_idx))
+            except Exception as exc:
+                wlog.warning("step %d row build failed: %s", step_idx, exc)
+        all_rows.extend(rows)
+        completed[0] += 1
+        wlog.info(
+            "game %s  steps=%d  result=%-10s  vp=%+d  end_turn=%d  (%d/%d)",
+            game_id,
+            len(rows),
+            _GAME_RESULT_STR[result.winner],
+            result.final_vp,
+            result.end_turn,
+            completed[0],
+            n_local,
         )
-        us_policy = _make_thread_policy(
-            server, Side.US, has_strategy_heads, expected_influence_dim, rng
-        )
-        try:
-            rows, summary = _collect_learned_game(seed, ussr_policy, us_policy)
-            log.info(
-                "game %-35s  steps=%d  result=%-10s  vp=%+d  end_turn=%d",
-                summary["game_id"],
-                summary["steps"],
-                summary["result"],
-                summary["vp"],
-                summary["end_turn"],
-            )
-        except Exception as exc:
-            log.warning("game seed=%d idx=%d failed: %s", seed, game_idx, exc)
-            rows, summary = [], {}
-        with counter_lock:
-            completed_games[0] += 1
-        results_q.put((game_idx, rows, summary))
+
+    run_games_vectorized(
+        n_games=n_local,
+        make_game_fn=make_game_fn,
+        learned_side_fn=learned_side_fn,
+        learned_infer_fn=learned_infer_fn,
+        heuristic_fn=heuristic_fn,
+        seed_base=seed_base,
+        max_turns=_MAX_TURNS,
+        on_game_done=on_game_done,
+    )
+
+    if all_rows:
+        import polars as pl
+
+        df = pl.DataFrame(all_rows)
+        df.write_parquet(out_path_str)
+        wlog.info("Wrote %d rows -> %s", len(all_rows), out_path_str)
+    else:
+        wlog.warning("No rows collected for worker %d", worker_id)
+
+    return {
+        "worker_id": worker_id,
+        "rows": len(all_rows),
+        "games": completed[0],
+        "out_path": out_path_str if all_rows else None,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Collect learned-vs-learned self-play games with batched inference.",
+        description="Collect learned-vs-learned self-play games with multiprocessing.",
     )
     parser.add_argument("--checkpoint", required=True, help="Path to model checkpoint.")
     parser.add_argument(
@@ -503,22 +391,26 @@ def main(argv: list[str] | None = None) -> int:
         "--workers",
         type=int,
         default=16,
-        help="Parallel game threads (default: 16)",
+        help="Number of worker processes (default: 16)",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=8,
-        help="Inference batch size (default: 8)",
+        default=None,
+        dest="batch_size",
+        help="[deprecated] Use --workers instead. If provided, workers=min(batch_size, 16).",
     )
     args = parser.parse_args(argv)
 
     if args.n_games <= 0:
         raise ValueError("--n-games must be > 0")
-    if args.workers <= 0:
-        raise ValueError("--workers must be > 0")
-    if args.batch_size <= 0:
-        raise ValueError("--batch-size must be > 0")
+
+    n_workers = args.workers
+    if args.batch_size is not None:
+        n_workers = min(args.batch_size, 16)
+        log.info("--batch-size %d -> --workers %d", args.batch_size, n_workers)
+
+    n_workers = min(n_workers, args.n_games)
 
     try:
         os.nice(10)
@@ -535,100 +427,79 @@ def main(argv: list[str] | None = None) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     log.info(
-        "Collecting %d learned games  |  workers=%d  |  batch_size=%d  |  checkpoint=%s"
+        "Collecting %d learned self-play games  |  workers=%d  |  checkpoint=%s"
         "  |  seed=%d  ->  %s",
         args.n_games,
-        args.workers,
-        args.batch_size,
+        n_workers,
         args.checkpoint,
         args.seed,
         out_path,
     )
 
-    model, has_strategy_heads, expected_influence_dim = _load_model(args.checkpoint)
-    server = BatchInferenceServer(model, batch_size=args.batch_size)
-    counter_lock = threading.Lock()
-    next_game_idx = [0]
-    completed_games = [0]
-    results_q: queue.Queue[tuple[int, list[dict], dict]] = queue.Queue()
-    batch_rows: list[dict] = []
-    batch_games = 0
-    part_idx = 0
-    part_paths: list[Path] = []
-    total_rows = 0
+    all_indices = list(range(args.n_games))
+    chunks = [[] for _ in range(n_workers)]
+    for i, idx in enumerate(all_indices):
+        chunks[i % n_workers].append(idx)
 
-    def _flush_batch() -> None:
-        nonlocal batch_rows, batch_games, part_idx, total_rows
-        if not batch_rows:
-            batch_games = 0
-            return
-        part_path = Path(f"{out_path}.part_{part_idx:04d}.parquet")
-        _write_parquet(batch_rows, part_path)
-        part_paths.append(part_path)
-        total_rows += len(batch_rows)
-        batch_rows = []
-        batch_games = 0
-        part_idx += 1
-
-    threads = [
-        threading.Thread(
-            target=_worker_loop,
-            kwargs={
-                "worker_id": worker_id,
+    worker_args = []
+    for wid, chunk in enumerate(chunks):
+        if not chunk:
+            continue
+        part_path = out_path.parent / f"part_{wid:04d}.parquet"
+        worker_args.append(
+            {
+                "worker_id": wid,
                 "seed_base": args.seed,
-                "n_games": args.n_games,
-                "counter_lock": counter_lock,
-                "next_game_idx": next_game_idx,
-                "completed_games": completed_games,
-                "results_q": results_q,
-                "server": server,
-                "has_strategy_heads": has_strategy_heads,
-                "expected_influence_dim": expected_influence_dim,
-            },
-            daemon=True,
+                "game_indices": chunk,
+                "checkpoint": args.checkpoint,
+                "out_path": str(part_path),
+            }
         )
-        for worker_id in range(args.workers)
-    ]
 
-    for thread in threads:
-        thread.start()
+    ctx = multiprocessing.get_context("spawn")
+    total_rows = 0
+    produced_parts: list[str] = []
 
-    try:
-        received_games = 0
-        while received_games < args.n_games:
-            _, rows, _ = results_q.get()
-            batch_rows.extend(rows)
-            batch_games += 1
-            received_games += 1
-            if batch_games >= _GAMES_PER_PART:
-                _flush_batch()
-    finally:
-        for thread in threads:
-            thread.join()
-        server.stop()
+    with ctx.Pool(processes=n_workers) as pool:
+        for result in pool.imap_unordered(_worker_fn, worker_args):
+            wid = result["worker_id"]
+            log.info(
+                "Worker %d done: %d games, %d rows",
+                wid,
+                result["games"],
+                result["rows"],
+            )
+            total_rows += result["rows"]
+            if result["out_path"]:
+                produced_parts.append(result["out_path"])
 
-    _flush_batch()
-
-    if not part_paths:
-        log.error("No rows collected; check errors above.")
+    if not produced_parts:
+        log.error("No rows collected; check worker errors above.")
         return 1
 
-    _concat_part_parquets(part_paths, out_path)
+    import polars as pl
+
+    pl.concat([pl.scan_parquet(p) for p in produced_parts], how="vertical").sink_parquet(
+        str(out_path)
+    )
 
     if out_path.exists() and out_path.stat().st_size > 0:
-        for part_path in part_paths:
-            part_path.unlink()
+        for p in produced_parts:
+            try:
+                Path(p).unlink()
+            except OSError:
+                pass
         log.info(
-            "Done. %d rows total from %d games. completed_games=%d",
+            "Done. %d rows total from %d games. -> %s",
             total_rows,
             args.n_games,
-            completed_games[0],
+            out_path,
         )
         return 0
 
     log.error(
-        "Merge output missing or empty; part files kept for recovery: %s",
-        [str(p) for p in part_paths],
+        "Merge output missing or empty; part files kept: %s",
+        produced_parts,
     )
     return 1
 
