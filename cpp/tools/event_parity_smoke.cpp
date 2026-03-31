@@ -42,6 +42,20 @@ PublicState apply_event(PublicState pub, ts::CardId card_id, Side side, uint32_t
     return next;
 }
 
+std::tuple<PublicState, bool, std::optional<Side>> apply_event_result(PublicState pub, ts::CardId card_id, Side side, uint32_t seed) {
+    std::mt19937 rng(seed);
+    return ts::apply_action(
+        pub,
+        ActionEncoding{
+            .card_id = card_id,
+            .mode = ActionMode::Event,
+            .targets = {},
+        },
+        side,
+        rng
+    );
+}
+
 void test_duck_and_cover() {
     PublicState pub;
     pub.defcon = 3;
@@ -120,6 +134,13 @@ void test_truman_doctrine() {
     require(next.truman_doctrine_played, "Truman Doctrine should set the NATO prerequisite flag");
 }
 
+void test_captured_nazi_scientist() {
+    PublicState pub;
+    const auto next = apply_event(pub, 18, Side::US, 22U);
+    require(next.space[ts::to_index(Side::US)] == 1, "Captured Nazi Scientist should advance the phasing side one space level");
+    require(next.vp == -2, "Captured Nazi Scientist should award first-to-level VP to US");
+}
+
 void test_warsaw_pact() {
     PublicState pub;
     pub.set_influence(Side::US, 13, 2);
@@ -136,6 +157,23 @@ void test_us_japan_pact() {
     const auto next = apply_event(pub, 27, Side::US, 12U);
     require(next.us_japan_pact_active, "US/Japan Pact should set its ongoing protection flag");
     require(ts::controls_country(Side::US, 22, next), "US/Japan Pact should give the US control of Japan");
+}
+
+void test_nixon_and_hostage_crisis() {
+    PublicState pub;
+    pub.china_held_by = Side::USSR;
+    pub.china_playable = true;
+    auto next = apply_event(pub, 72, Side::US, 23U);
+    require(next.vp == -2, "Nixon Plays the China Card should award 2 VP to US when taking China from USSR");
+    require(next.china_held_by == Side::US, "Nixon Plays the China Card should transfer China to US");
+    require(!next.china_playable, "Nixon Plays the China Card should take China face-down");
+
+    pub = PublicState{};
+    pub.set_influence(Side::US, 28, 2);
+    next = apply_event(pub, 85, Side::USSR, 24U);
+    require(next.influence_of(Side::US, 28) == 0, "Iranian Hostage Crisis should remove all US influence from Iran");
+    require(next.influence_of(Side::USSR, 28) == 2, "Iranian Hostage Crisis should add 2 USSR influence to Iran");
+    require(next.iran_hostage_crisis_active, "Iranian Hostage Crisis should set its ongoing flag");
 }
 
 void test_camp_david_accords() {
@@ -186,6 +224,16 @@ void test_flower_power_cancel() {
     require(next.vp == -1, "An Evil Empire should cost USSR 1 VP");
     require(next.flower_power_cancelled, "An Evil Empire should set the Flower Power cancelled flag");
     require(!next.flower_power_active, "An Evil Empire should deactivate Flower Power");
+}
+
+void test_wargames() {
+    PublicState pub;
+    pub.defcon = 2;
+    pub.vp = 1;
+    const auto [next, over, winner] = apply_event_result(pub, 103, Side::USSR, 25U);
+    require(over, "Wargames should end the game immediately at DEFCON 2");
+    require(next.vp == -5, "Wargames should transfer 6 VP to the opponent");
+    require(winner.has_value() && *winner == Side::US, "Wargames winner should be the side ahead after the VP transfer");
 }
 
 void test_korean_war() {
@@ -247,12 +295,15 @@ int main() {
     test_cuban_missile_crisis();
     test_ops_and_flags_batch();
     test_truman_doctrine();
+    test_captured_nazi_scientist();
     test_warsaw_pact();
     test_us_japan_pact();
+    test_nixon_and_hostage_crisis();
     test_camp_david_accords();
     test_opec_and_awacs();
     test_iron_lady_and_yuri();
     test_flower_power_cancel();
+    test_wargames();
     test_korean_war();
     test_olympic_games();
     test_indo_pakistani_war();
