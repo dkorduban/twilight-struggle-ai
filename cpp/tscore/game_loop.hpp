@@ -35,6 +35,13 @@ struct TracedGame {
     GameResult result;
 };
 
+std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    std::mt19937& rng
+);
+
 GameResult play_game_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,

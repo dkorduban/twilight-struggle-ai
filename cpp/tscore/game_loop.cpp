@@ -535,6 +535,15 @@ std::optional<GameResult> end_of_turn(GameState& gs, int turn) {
 
 }  // namespace
 
+std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    std::mt19937& rng
+) {
+    return apply_action_with_hands(gs, action, side, rng);
+}
+
 GameResult play_game_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
     return play_game_traced_fn(ussr_policy, us_policy, seed).result;
 }

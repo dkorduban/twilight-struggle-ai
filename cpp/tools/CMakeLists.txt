@@ -54,3 +54,14 @@ target_link_libraries(ts_event_parity_smoke
 )
 
 target_compile_features(ts_event_parity_smoke PRIVATE cxx_std_23)
+
+add_executable(ts_cat_c_smoke
+    cat_c_smoke.cpp
+)
+
+target_link_libraries(ts_cat_c_smoke
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_cat_c_smoke PRIVATE cxx_std_23)
