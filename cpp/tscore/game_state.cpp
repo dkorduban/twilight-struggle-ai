@@ -74,8 +74,10 @@ GameState reset_game(std::optional<uint32_t> seed) {
     const auto hand_size = hand_size_for_turn(1);
     for (const auto side : {Side::USSR, Side::US}) {
         for (int i = 0; i < hand_size && !gs.deck.empty(); ++i) {
-            const auto card_id = gs.deck.back();
-            gs.deck.pop_back();
+            // Python reset() deals the initial turn-1 hands from the front of
+            // the shuffled deck before switching to pop-from-end draws later.
+            const auto card_id = gs.deck.front();
+            gs.deck.erase(gs.deck.begin());
             gs.hands[to_index(side)].set(card_id);
         }
     }

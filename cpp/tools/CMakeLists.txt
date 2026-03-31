@@ -9,6 +9,28 @@ target_link_libraries(ts_benchmark_matchup
 
 target_compile_features(ts_benchmark_matchup PRIVATE cxx_std_23)
 
+add_executable(ts_dump_native_setup
+    dump_native_setup.cpp
+)
+
+target_link_libraries(ts_dump_native_setup
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_dump_native_setup PRIVATE cxx_std_23)
+
+add_executable(ts_pcg64_smoke
+    pcg64_smoke.cpp
+)
+
+target_link_libraries(ts_pcg64_smoke
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_pcg64_smoke PRIVATE cxx_std_23)
+
 if(TS_BUILD_TORCH_RUNTIME)
     add_executable(ts_learned_matchup
         learned_matchup.cpp
