@@ -64,14 +64,14 @@ trap "kill $MONITOR_PID 2>/dev/null || true" EXIT
 # ── Train ─────────────────────────────────────────────────────────────────────
 if [ ! -f "$CKPT" ]; then
     uv run python scripts/resource_monitor.py --tag "train" --out "$MONITOR_LOG"
-    echo "[$(date)] Training v${N} (hidden_dim=256, up to 60 epochs, patience=8)..."
+    echo "[$(date)] Training v${N} (hidden_dim=256, up to 120 epochs, patience=12)..."
     nice -n 10 uv run python scripts/train_baseline.py \
         --data-dir "$COMBINED" \
         --out-dir "$CKPT_DIR" \
-        --epochs 60 --batch-size 8192 --lr 2.4e-3 \
+        --epochs 120 --batch-size 8192 --lr 2.4e-3 \
         --weight-decay 1e-4 --dropout 0.1 --label-smoothing 0.05 \
         --value-target final_vp --num-workers 0 --amp --one-cycle \
-        --patience 8 --advantage-weight 0.5 \
+        --patience 12 --advantage-weight 0.5 \
         2>&1 | tee /tmp/train_v${N}.log
     echo "[$(date)] v${N} training done."
 else
