@@ -43,3 +43,14 @@ target_link_libraries(ts_collect_selfplay_rows_jsonl
 )
 
 target_compile_features(ts_collect_selfplay_rows_jsonl PRIVATE cxx_std_23)
+
+add_executable(ts_event_parity_smoke
+    event_parity_smoke.cpp
+)
+
+target_link_libraries(ts_event_parity_smoke
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_event_parity_smoke PRIVATE cxx_std_23)
