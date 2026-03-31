@@ -19,12 +19,14 @@ import datetime
 import logging
 import multiprocessing
 import os
-import random
 import sys
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
+
+from tsrl.engine.rng import RNG, make_rng
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,7 +37,7 @@ log = logging.getLogger(__name__)
 _MAX_TURNS = 10
 
 
-def _sample_index_from_probs(probs: torch.Tensor, rng: random.Random) -> int:
+def _sample_index_from_probs(probs: torch.Tensor, rng: RNG) -> int:
     values = probs.tolist()
     total = float(sum(values))
     if total <= 0.0:
@@ -83,9 +85,9 @@ def _build_random_targets(card_id, mode, pub, side, adj, rng):
     if not accessible:
         return None
     if mode in (ActionMode.COUP, ActionMode.REALIGN):
-        return ActionEncoding(card_id=card_id, mode=mode, targets=(rng.choice(accessible),))
+        return ActionEncoding(card_id=card_id, mode=mode, targets=(int(rng.choice(accessible)),))
     ops = effective_ops(card_id, pub, side)
-    targets = tuple(rng.choice(accessible) for _ in range(ops))
+    targets = tuple(int(rng.choice(accessible)) for _ in range(ops))
     return ActionEncoding(card_id=card_id, mode=mode, targets=targets)
 
 
@@ -96,7 +98,7 @@ def _build_action_from_country_logits(
     pub,
     side,
     adj,
-    rng: random.Random,
+    rng: RNG,
     strategy_logits: torch.Tensor | None = None,
     country_strategy_logits: torch.Tensor | None = None,
 ):
@@ -175,7 +177,7 @@ def _infer_batch(
     model,
     has_strategy_heads: bool,
     expected_influence_dim: int,
-    rng: random.Random,
+    rng: RNG,
 ):
     from tsrl.engine.legal_actions import legal_cards, legal_modes, load_adjacency
     from tsrl.schemas import ActionEncoding, ActionMode
@@ -299,7 +301,7 @@ def _worker_fn(args: dict[str, Any]) -> dict[str, Any]:
 
     model, has_strategy_heads, expected_influence_dim = _load_model(checkpoint)
     model.eval()
-    rng = random.Random(seed_base ^ (worker_id * 1_000_003 + 7))
+    rng = make_rng(seed_base ^ (worker_id * 1_000_003 + 7))
 
     n_local = len(game_indices)
     game_counter = [0]

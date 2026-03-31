@@ -7,10 +7,9 @@ Usage:
         --n-sim 5
 
 Compares:
-  1. vf_mcts5 (value-function MCTS, n_sim=5) vs random
-  2. vf_mcts5 vs heuristic
-  3. vf_mcts20 vs heuristic
-  4. Prints wall-time per move for profiling
+  1. learned policy (no MCTS) vs heuristic  ← only signal that matters
+  2. vf_mcts vs random    (only when --n-sim > 0)
+  3. vf_mcts vs heuristic (only when --n-sim > 0)
 """
 from __future__ import annotations
 
@@ -18,7 +17,6 @@ import argparse
 import math
 import multiprocessing
 import os
-import random
 import sys
 import time
 from dataclasses import dataclass
@@ -26,8 +24,10 @@ from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
+import numpy as np
 import torch
 
+from tsrl.engine.rng import RNG, make_rng
 from tsrl.engine.game_loop import GameResult, Policy, make_random_policy, play_game
 from tsrl.engine.game_state import GameState, reset
 from tsrl.engine.mcts import interleaved_uct_mcts
@@ -200,7 +200,7 @@ def _make_candidate_fn(
         holds_china: bool,
         n: int,
         *,
-        rng: random.Random | None = None,
+        rng: RNG | None = None,
     ) -> list[ActionEncoding]:
         hand = gs.hands[side]
         pub = gs.pub
@@ -249,7 +249,7 @@ def _make_candidate_fn(
         scored_pairs.sort(key=lambda item: (-item[2], item[0], int(item[1])))
         selected_pairs = [(card_id, mode) for card_id, mode, _ in scored_pairs[:limit]]
 
-        _rng = rng or random.Random()
+        _rng = rng or make_rng()
         actions: list[ActionEncoding] = []
         for card_id, mode in selected_pairs:
             if mode in (ActionMode.SPACE, ActionMode.EVENT):
@@ -280,7 +280,7 @@ def _make_candidate_fn(
 
 def _build_policy(kind: str, seed: int) -> Policy:
     if kind == "random":
-        return make_random_policy(random.Random(seed))
+        return make_random_policy(make_rng(seed))
     if kind == "heuristic":
         return make_minimal_hybrid_policy()
     raise ValueError(f"unsupported policy kind for multiprocessing benchmark: {kind}")
@@ -325,8 +325,8 @@ def play_game_with_vf_uct(
     )
     from tsrl.engine.legal_actions import sample_action
 
-    rng = random.Random(seed)
-    gs = reset(seed=rng.randint(0, 2**32))
+    rng = make_rng(seed)
+    gs = reset(seed=int(rng.integers(0, 2**32)))
 
     def _vf_policy(pub, hand, holds_china):
         side = pub.phasing
@@ -445,8 +445,8 @@ def _run_learned_games_vectorized(
     need a learned-policy decision are batched into a single forward pass.
     The opponent (random/heuristic) is stepped cheaply in the same loop.
     """
-    rng_main = random.Random(seed)
-    game_seeds = [rng_main.randint(0, 2**32) for _ in range(n_games)]
+    rng_main = make_rng(seed)
+    game_seeds = [int(rng_main.integers(0, 2**32)) for _ in range(n_games)]
     live_game_states = []
     device = next(model.parameters()).device
 
@@ -496,11 +496,11 @@ def _run_learned_games_vectorized(
 
     # ── Candidate function: model-guided top-k (card × mode) ─────────────────
     def model_candidate_fn(
-        gs: GameState, side: Side, holds_china: bool, n: int, *, rng: random.Random | None = None,
+        gs: GameState, side: Side, holds_china: bool, n: int, *, rng: RNG | None = None,
     ) -> list[ActionEncoding]:
         if n_candidates <= 0:
             from tsrl.engine.mcts import _sample_candidates
-            return _sample_candidates(gs, side, holds_china, n, rng or random.Random())
+            return _sample_candidates(gs, side, holds_china, n, rng or make_rng())
         playable = sorted(legal_cards(gs.hands[side], gs.pub, side, holds_china=holds_china))
         if not playable:
             return []
@@ -528,10 +528,10 @@ def _run_learned_games_vectorized(
         if not scored:
             # All pairs were filtered — fall back to random sampling
             from tsrl.engine.mcts import _sample_candidates
-            return _sample_candidates(gs, side, holds_china, n, rng or random.Random())
+            return _sample_candidates(gs, side, holds_china, n, rng or make_rng())
 
         scored.sort(key=lambda x: (-x[2], x[0], int(x[1])))
-        _rng = rng or random.Random()
+        _rng = rng or make_rng()
         actions: list[ActionEncoding] = []
         seen: set[ActionEncoding] = set()
         for card_id, mode, _ in scored[:max(1, n)]:
@@ -557,7 +557,7 @@ def _run_learned_games_vectorized(
             mode_logits = out["mode_logits"][i].cpu()
             cl = out.get("country_logits")
             cl_i = cl[i].cpu() if cl is not None else None
-            _rng = random.Random(seed + i)
+            _rng = make_rng(seed + i)
 
             legal_c = legal_cards(req.hand, req.pub, req.side, holds_china=req.holds_china)
             mask = torch.full((card_logits.shape[0],), float("-inf"))
@@ -603,7 +603,7 @@ def _run_learned_games_vectorized(
     # ── MCTS inference via interleaved_uct_mcts ───────────────────────────────
     def mcts_infer_fn(requests: list, game_states_arg: list[GameState]) -> list[ActionEncoding]:
         from tsrl.engine.legal_actions import sample_action
-        mcts_rng = random.Random(seed)
+        mcts_rng = make_rng(seed)
         results = interleaved_uct_mcts(
             game_states_arg,
             n_sim,
@@ -618,7 +618,7 @@ def _run_learned_games_vectorized(
             if action is None:
                 action = sample_action(
                     req.hand, req.pub, req.side, holds_china=req.holds_china,
-                    rng=random.Random(seed),
+                    rng=make_rng(seed),
                 )
             actions.append(action)
         return actions
@@ -626,14 +626,14 @@ def _run_learned_games_vectorized(
     learned_infer_fn = mcts_infer_fn if n_sim > 0 else plain_infer_fn
 
     if opponent_kind == "random":
-        rng_opp = random.Random(seed ^ 0xDEAD)
+        rng_opp = make_rng(seed ^ 0xDEAD)
         def heuristic_fn(req):
             from tsrl.engine.legal_actions import sample_action
             return sample_action(req.hand, req.pub, req.side, holds_china=req.holds_china, rng=rng_opp)
     else:
         from tsrl.policies.minimal_hybrid import choose_minimal_hybrid
         from tsrl.engine.legal_actions import sample_action
-        rng_fb = random.Random(seed ^ 0xBEEF)
+        rng_fb = make_rng(seed ^ 0xBEEF)
         def heuristic_fn(req):
             action = choose_minimal_hybrid(req.pub, req.hand, req.holds_china)
             if action is None:
@@ -814,7 +814,7 @@ def main():
     print(f"MCTS simulations: {args.n_sim}\n")
 
     # Make policies
-    random_pol = make_random_policy(random.Random(args.seed))
+    random_pol = make_random_policy(make_rng(args.seed))
     heuristic_pol = make_minimal_hybrid_policy()
 
     try:
@@ -842,38 +842,11 @@ def main():
 
     results = []
 
-    # 1. Random vs Random (baseline)
-    print("\n1. Baseline: random vs random")
-    r = run_matchup("random vs random", random_pol, random_pol, args.n_games, args.seed)
-    results.append(r)
-    print(f"   {r}")
-
-    # 2. Heuristic vs Random
-    print("\n2. Heuristic vs random")
-    r = run_matchup(
-        "heuristic vs random", heuristic_pol, random_pol, args.n_games, args.seed + 100
-    )
-    results.append(r)
-    print(f"   {r}")
-
-    # 3 & 4. learned policy (no MCTS) vs random + heuristic — fast key signal
+    # 1. learned policy (no MCTS) vs heuristic — only signal that matters
     n_sim = args.n_sim
     tag = f"vf_mcts{n_sim}"
     if candidate_fn is not None:
-        print(f"\n3. learned_policy (no MCTS) vs random")
-        r = run_matchup(
-            "learned vs random",
-            make_learned_policy(args.checkpoint, Side.USSR),
-            random_pol,
-            args.n_games,
-            args.seed + 500,
-            learned_checkpoint=args.checkpoint,
-            pool_size=args.pool_size,
-        )
-        results.append(r)
-        print(f"   {r}")
-
-        print(f"\n4. learned_policy (no MCTS) vs heuristic")
+        print(f"\n1. learned_policy vs heuristic")
         r = run_matchup(
             "learned vs heuristic",
             make_learned_policy(args.checkpoint, Side.USSR),
@@ -886,39 +859,40 @@ def main():
         results.append(r)
         print(f"   {r}")
 
-    # 5. vf_mcts vs random
-    print(f"\n5. {tag} vs random")
-    r = run_matchup(
-        f"{tag} vs random",
-        random_pol,
-        random_pol,
-        args.n_games,
-        args.seed + 200,
-        vf_value_fn=value_fn,
-        vf_n_sim=n_sim,
-        vf_candidate_fn=candidate_fn,
-        pool_size=args.pool_size,
-        learned_checkpoint=args.checkpoint,
-    )
-    results.append(r)
-    print(f"   {r}")
+    # 3. vf_mcts vs random  (skipped when n_sim=0)
+    if n_sim > 0:
+        print(f"\n3. {tag} vs random")
+        r = run_matchup(
+            f"{tag} vs random",
+            random_pol,
+            random_pol,
+            args.n_games,
+            args.seed + 200,
+            vf_value_fn=value_fn,
+            vf_n_sim=n_sim,
+            vf_candidate_fn=candidate_fn,
+            pool_size=args.pool_size,
+            learned_checkpoint=args.checkpoint,
+        )
+        results.append(r)
+        print(f"   {r}")
 
-    # 6. vf_mcts vs heuristic
-    print(f"\n6. {tag} vs heuristic")
-    r = run_matchup(
-        f"{tag} vs heuristic",
-        heuristic_pol,
-        heuristic_pol,
-        args.n_games,
-        args.seed + 300,
-        vf_value_fn=value_fn,
-        vf_n_sim=n_sim,
-        vf_candidate_fn=candidate_fn,
-        pool_size=args.pool_size,
-        learned_checkpoint=args.checkpoint,
-    )
-    results.append(r)
-    print(f"   {r}")
+        # 4. vf_mcts vs heuristic
+        print(f"\n4. {tag} vs heuristic")
+        r = run_matchup(
+            f"{tag} vs heuristic",
+            heuristic_pol,
+            heuristic_pol,
+            args.n_games,
+            args.seed + 300,
+            vf_value_fn=value_fn,
+            vf_n_sim=n_sim,
+            vf_candidate_fn=candidate_fn,
+            pool_size=args.pool_size,
+            learned_checkpoint=args.checkpoint,
+        )
+        results.append(r)
+        print(f"   {r}")
 
 
 if __name__ == "__main__":

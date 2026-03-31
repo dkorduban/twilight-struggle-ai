@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import random
 from copy import copy
+
+from tsrl.engine.rng import make_rng
 from dataclasses import dataclass, field
 from typing import Callable, Generator, Optional
 
@@ -111,7 +112,7 @@ def run_games_vectorized(
 
     for game_idx in range(n_games):
         gs = make_game_fn()
-        rng = random.Random(seed_base + game_idx)
+        rng = make_rng(seed_base + game_idx)
         gen = _run_game_gen(gs, rng, max_turns)
         try:
             req = next(gen)

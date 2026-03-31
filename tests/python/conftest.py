@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-import random
+from tsrl.engine.rng import make_rng
 from pathlib import Path
 
 import polars as pl
@@ -64,7 +64,7 @@ def tiny_selfplay_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Create a minimal self-play parquet directory for dataset tests."""
     out_dir = tmp_path_factory.mktemp("tiny_selfplay")
     parquet_path = out_dir / "tiny_selfplay.parquet"
-    rng = random.Random(0)
+    rng = make_rng(0)
 
     def country_vec(offset: int) -> list[int]:
         return [int((idx + offset) % 4) for idx in range(_COUNTRY_LEN)]

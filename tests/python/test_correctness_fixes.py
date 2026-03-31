@@ -14,8 +14,26 @@ Covers:
 """
 from __future__ import annotations
 
-import random
+from tsrl.engine.rng import make_rng
 from typing import Optional
+
+
+class _FixedRollRNG:
+    """Minimal mock RNG that always returns a fixed integer for roll/integers calls."""
+
+    def __init__(self, fixed: int):
+        self._fixed = fixed
+
+    def integers(self, a: int, b: int) -> int:
+        return self._fixed
+
+    def choice(self, seq, size=None, replace=True):
+        if size is None:
+            return seq[0]
+        return list(seq[:size])
+
+    def shuffle(self, lst) -> None:
+        pass  # no-op
 
 import pytest
 
@@ -183,7 +201,7 @@ def test_scoring_card_held_at_turn_end_loses():
     gs = _make_gs(pub)
     gs.hands[Side.USSR] = frozenset({scoring_cid})
     gs.hands[Side.US] = frozenset()
-    rng = random.Random(42)
+    rng = make_rng(42)
 
     result = _end_of_turn(gs, rng, turn=1)
     assert result is not None, "Expected game over from scoring card held"
@@ -205,7 +223,7 @@ def test_scoring_card_held_us_loses():
     gs = _make_gs(pub)
     gs.hands[Side.US] = frozenset({scoring_cid})
     gs.hands[Side.USSR] = frozenset()
-    rng = random.Random(42)
+    rng = make_rng(42)
 
     result = _end_of_turn(gs, rng, turn=1)
     assert result is not None
@@ -272,8 +290,7 @@ def test_bear_trap_escape_low_roll():
     gs = _make_gs_with_trap(Side.USSR)
 
     # Force roll = 2 (escape).
-    rng = random.Random()
-    rng.randint = lambda a, b: 2   # type: ignore[method-assign]
+    rng = _FixedRollRNG(2)
 
     result = _resolve_trap_ar(gs, Side.USSR, rng)
     assert result is not None, "Should have consumed AR and returned trap result"
@@ -287,8 +304,7 @@ def test_bear_trap_escape_high_roll():
     """Roll 5-6 → bear_trap_active remains, card still discarded."""
     gs = _make_gs_with_trap(Side.USSR)
 
-    rng = random.Random()
-    rng.randint = lambda a, b: 6   # type: ignore[method-assign]
+    rng = _FixedRollRNG(6)
 
     result = _resolve_trap_ar(gs, Side.USSR, rng)
     assert result is not None
@@ -301,8 +317,7 @@ def test_bear_trap_escape_high_roll():
 def test_quagmire_escape_low_roll():
     """Roll ≤ 4 → quagmire_active cleared for US."""
     gs = _make_gs_with_trap(Side.US)
-    rng = random.Random()
-    rng.randint = lambda a, b: 3   # type: ignore[method-assign]
+    rng = _FixedRollRNG(3)
 
     result = _resolve_trap_ar(gs, Side.US, rng)
     assert result is not None
@@ -315,7 +330,7 @@ def test_no_trap_returns_none():
     gs = _make_gs_with_trap(Side.USSR)
     gs.pub.bear_trap_active = False  # no trap
 
-    rng = random.Random(42)
+    rng = make_rng(42)
     result = _resolve_trap_ar(gs, Side.USSR, rng)
     assert result is None, "Should return None when not trapped"
 
@@ -337,7 +352,7 @@ def test_trap_no_eligible_card_forfeits_ar():
     # Card 1 = Europe Scoring, card 2 = Middle East Scoring.
     gs.hands[Side.USSR] = frozenset({_CARD_EUROPE_SCORING, _CARD_MIDDLE_EAST_SCORING})
 
-    rng = random.Random(42)
+    rng = make_rng(42)
     result = _resolve_trap_ar(gs, Side.USSR, rng)
     assert result is not None, "Should return (pub, over, winner), not None — AR is forfeited"
     new_pub, over, winner = result
@@ -360,7 +375,7 @@ def test_quagmire_no_eligible_card_forfeits_ar():
     # Only scoring cards — no eligible escape card.
     gs.hands[Side.US] = frozenset({_CARD_ASIA_SCORING})
 
-    rng = random.Random(42)
+    rng = make_rng(42)
     result = _resolve_trap_ar(gs, Side.US, rng)
     assert result is not None, "Should return (pub, over, winner), not None — AR is forfeited"
     new_pub, over, winner = result
@@ -381,7 +396,7 @@ def test_wargames_winner_is_ahead_side():
 
     pub = _make_pub(defcon=2, vp=2)  # USSR leads by 2
     # USSR plays Wargames (card 103).
-    new_pub, over, winner = apply_event_card(pub, 103, Side.USSR, random.Random(1))
+    new_pub, over, winner = apply_event_card(pub, 103, Side.USSR, make_rng(1))
     assert over
     assert winner == Side.US, (
         f"After USSR gives 6VP (from +2 to -4), US should win. Got: winner={winner}"
@@ -394,7 +409,7 @@ def test_wargames_player_wins_if_was_leading():
     from tsrl.engine.events import apply_event_card
 
     pub = _make_pub(defcon=2, vp=10)  # USSR leads by 10
-    new_pub, over, winner = apply_event_card(pub, 103, Side.USSR, random.Random(1))
+    new_pub, over, winner = apply_event_card(pub, 103, Side.USSR, make_rng(1))
     assert over
     assert winner == Side.USSR, (
         f"USSR was +10, gives 6VP → +4, USSR still leads. Got: winner={winner}"
@@ -408,7 +423,7 @@ def test_wargames_draw_on_zero():
 
     pub = _make_pub(defcon=2, vp=-6)  # US leads by 6
     # US plays Wargames: gives 6VP to USSR (VP: -6 + 6 = 0).
-    new_pub, over, winner = apply_event_card(pub, 103, Side.US, random.Random(1))
+    new_pub, over, winner = apply_event_card(pub, 103, Side.US, make_rng(1))
     assert over
     assert winner is None, f"VP=0 should be draw, got winner={winner}"
 
@@ -449,7 +464,7 @@ def test_olympic_games_compete_2vp():
         def random(self):
             return 0.9   # ≥ 0.5 → compete
 
-        def randint(self, a, b):
+        def integers(self, a, b):
             # First call: phasing side rolls 6; second call: opponent rolls 1 → phasing wins.
             if not hasattr(self, '_calls'):
                 self._calls = 0
@@ -485,7 +500,7 @@ def test_five_year_plan_scoring_card_scores():
     gs.deck = []
 
     action = ActionEncoding(card_id=5, mode=ActionMode.EVENT, targets=())
-    rng = random.Random(42)
+    rng = make_rng(42)
 
     new_pub, over, winner = apply_hand_event(gs, action, Side.US, rng)
     # Scoring card should have been discarded from USSR's hand.
@@ -521,10 +536,10 @@ def test_comecon_does_not_place_in_austria():
     pub.influence[(Side.USSR, _AUSTRIA)] = 0  # no USSR inf in Austria
 
     action = ActionEncoding(card_id=_COMECON, mode=ActionMode.EVENT, targets=())
-    rng = random.Random(0)
+    rng = make_rng(0)
     # Run many times to rule out lucky avoidance.
     for seed in range(20):
-        new_pub, _, _ = apply_action(pub, action, Side.USSR, rng=random.Random(seed))
+        new_pub, _, _ = apply_action(pub, action, Side.USSR, rng=make_rng(seed))
         assert new_pub.influence.get((Side.USSR, _AUSTRIA), 0) == 0, \
             f"COMECON placed influence in Austria on seed {seed}"
 
@@ -611,8 +626,8 @@ def test_latam_death_squads_bonus_to_phasing_side():
 
     class FixedRoll3RNG:
         """Always rolls 3 (net = 3 + ops - 2*stability)."""
-        def randint(self, a, b): return 3
-        def choice(self, seq): return seq[0]
+        def integers(self, a, b): return 3
+        def choice(self, seq, size=None, replace=True): return seq[0]
 
     pub = PublicState()
     pub.defcon = 5
@@ -638,8 +653,8 @@ def test_latam_death_squads_penalty_to_opponent():
     _CUBA = 36
 
     class FixedRoll4RNG:
-        def randint(self, a, b): return 4
-        def choice(self, seq): return seq[0]
+        def integers(self, a, b): return 4
+        def choice(self, seq, size=None, replace=True): return seq[0]
 
     pub = PublicState()
     pub.defcon = 5
@@ -666,8 +681,8 @@ def test_latam_death_squads_no_effect_outside_region():
     _EGYPT = 26   # Middle East, not C/S America
 
     class FixedRoll3RNG:
-        def randint(self, a, b): return 3
-        def choice(self, seq): return seq[0]
+        def integers(self, a, b): return 3
+        def choice(self, seq, size=None, replace=True): return seq[0]
 
     pub = PublicState()
     pub.defcon = 5
@@ -721,11 +736,11 @@ def test_flower_power_awards_vp_on_us_war_event():
 
         pub_base = PublicState()
         pub_base.flower_power_active = False
-        base, _, _ = apply_action(pub_base, action, Side.US, rng=random.Random(seed))
+        base, _, _ = apply_action(pub_base, action, Side.US, rng=make_rng(seed))
 
         pub_fp = PublicState()
         pub_fp.flower_power_active = True
-        fp, _, _ = apply_action(pub_fp, action, Side.US, rng=random.Random(seed))
+        fp, _, _ = apply_action(pub_fp, action, Side.US, rng=make_rng(seed))
 
         assert fp.vp == base.vp + 2, \
             f"War card {war_card}: expected +2 VP delta, got base={base.vp} fp={fp.vp}"
@@ -742,12 +757,12 @@ def test_flower_power_no_vp_when_cancelled():
     pub.flower_power_cancelled = True
     vp_before = pub.vp
     action = ActionEncoding(card_id=11, mode=ActionMode.EVENT, targets=())  # Korean War
-    new_pub, _, _ = apply_action(pub, action, Side.US, rng=random.Random(0))
+    new_pub, _, _ = apply_action(pub, action, Side.US, rng=make_rng(0))
     # VP delta from Korean War itself varies, but flower power bonus (+2) must NOT be added.
     # Simply check no extra +2 beyond what the card itself does (we check same result as inactive).
     pub2 = PublicState()
     pub2.flower_power_active = False
-    new_pub2, _, _ = apply_action(pub2, action, Side.US, rng=random.Random(0))
+    new_pub2, _, _ = apply_action(pub2, action, Side.US, rng=make_rng(0))
     assert new_pub.vp == new_pub2.vp
 
 
@@ -762,14 +777,14 @@ def test_flower_power_no_vp_when_ussr_plays_war_card():
     vp_before = pub.vp
     # Korean War (11) is US-sided; when USSR plays it, the event fires but no FP bonus.
     action = ActionEncoding(card_id=11, mode=ActionMode.EVENT, targets=())
-    new_pub, _, _ = apply_action(pub, action, Side.USSR, rng=random.Random(0))
+    new_pub, _, _ = apply_action(pub, action, Side.USSR, rng=make_rng(0))
     # Flower Power bonus (+2 USSR VP) should NOT apply.
     # Korean War when played by USSR as opponent card: war_roll applies, VP changes by war result,
     # but not an additional +2 on top.
     # Check: result without flower_power_active must be the same.
     pub2 = PublicState()
     pub2.flower_power_active = False
-    new_pub2, _, _ = apply_action(pub2, action, Side.USSR, rng=random.Random(0))
+    new_pub2, _, _ = apply_action(pub2, action, Side.USSR, rng=make_rng(0))
     assert new_pub.vp == new_pub2.vp
 
 

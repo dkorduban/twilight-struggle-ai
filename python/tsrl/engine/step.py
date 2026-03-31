@@ -16,18 +16,21 @@ Month 2 without changing this interface.
 
 Usage::
 
-    import random
+    from tsrl.engine.rng import make_rng
     from tsrl.engine.step import apply_action
     from tsrl.schemas import ActionEncoding, ActionMode, Side
 
-    rng = random.Random(42)
+    rng = make_rng(42)
     new_pub = apply_action(pub, action, side, rng=rng)
 """
 from __future__ import annotations
 
 import copy
-import random as _random_module
 from typing import Optional
+
+import numpy as np
+
+from tsrl.engine.rng import RNG, make_rng
 
 from tsrl.engine.adjacency import neighbors, load_adjacency
 from tsrl.engine.dice import coup_result, realign_result, space_result
@@ -50,7 +53,7 @@ def apply_action(
     action: ActionEncoding,
     side: Side,
     *,
-    rng: Optional[_random_module.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Apply a legal action, returning (new_pub, game_over, winner).
 
@@ -135,7 +138,7 @@ def _apply_coup(
     action: ActionEncoding,
     side: Side,
     *,
-    rng: Optional[_random_module.Random],
+    rng: Optional[RNG],
 ) -> PublicState:
     """Apply a coup in action.targets[0].
 
@@ -205,7 +208,7 @@ def _apply_realign(
     action: ActionEncoding,
     side: Side,
     *,
-    rng: Optional[_random_module.Random],
+    rng: Optional[RNG],
 ) -> PublicState:
     """Apply one realignment attempt per target in action.targets.
 
@@ -299,7 +302,7 @@ def _apply_space(
     action: ActionEncoding,
     side: Side,
     *,
-    rng: Optional[_random_module.Random],
+    rng: Optional[RNG],
 ) -> PublicState:
     """Attempt to advance in the Space Race.
 
@@ -346,7 +349,7 @@ def _apply_event(
     action: ActionEncoding,
     side: Side,
     *,
-    rng: Optional[_random_module.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Apply card event.  Scoring cards: compute score.  Others: discard only."""
     from tsrl.etl.game_data import load_cards as _lc
@@ -372,7 +375,7 @@ def _apply_event(
 
     # Dispatch to event registry for non-scoring cards.
     from tsrl.engine.events import apply_event_card
-    r = rng or _random_module.Random()
+    r = rng or make_rng()
     new_pub, over, winner = apply_event_card(new_pub, action.card_id, side, r)
     if over:
         _handle_card_played(new_pub, action.card_id, side, mode=ActionMode.EVENT)

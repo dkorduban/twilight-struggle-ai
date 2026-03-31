@@ -30,6 +30,7 @@ from __future__ import annotations
 from itertools import combinations_with_replacement
 from typing import Sequence
 
+from tsrl.engine.rng import RNG, make_rng
 from tsrl.engine.adjacency import load_adjacency
 from tsrl.etl.game_data import CardSpec, load_cards, load_countries
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Region, Side
@@ -501,15 +502,14 @@ def sample_action(
     *,
     holds_china: bool = False,
     adj: dict | None = None,
-    rng=None,
+    rng: "RNG | None" = None,
 ) -> "ActionEncoding | None":
     """Sample one random legal action without enumerating all actions.
 
     O(|hand| + |accessible|) instead of O(C(accessible+ops, ops)).
     Returns None if no legal actions exist.
     """
-    import random as _rand
-    r = rng if rng is not None else _rand
+    r = rng if rng is not None else make_rng()
     g = adj or load_adjacency()
     cards_spec = _cards()
 
@@ -537,7 +537,7 @@ def sample_action(
             continue
 
         if mode == ActionMode.COUP:
-            target = r.choice(accessible)
+            target = int(r.choice(accessible))
             return ActionEncoding(card_id=card_id, mode=mode, targets=(target,))
 
         # INFLUENCE or REALIGN: sample ops countries with replacement.
@@ -547,9 +547,9 @@ def sample_action(
             _ctry = load_countries()
             asia_accessible = [c for c in accessible if _ctry.get(c) and _ctry[c].region == Region.ASIA]
             if asia_accessible and r.random() < 0.5:
-                targets = tuple(r.choice(asia_accessible) for _ in range(ops + 1))
+                targets = tuple(int(r.choice(asia_accessible)) for _ in range(ops + 1))
                 return ActionEncoding(card_id=card_id, mode=mode, targets=targets)
-        targets = tuple(r.choice(accessible) for _ in range(ops))
+        targets = tuple(int(r.choice(accessible)) for _ in range(ops))
         return ActionEncoding(card_id=card_id, mode=mode, targets=targets)
 
     return None

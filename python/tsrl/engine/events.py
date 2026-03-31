@@ -15,9 +15,11 @@ Remaining stubs (noted in individual docstrings):
 """
 from __future__ import annotations
 
-import random
 from typing import Callable, Collection, Optional
 
+import numpy as np
+
+from tsrl.engine.rng import RNG
 from tsrl.schemas import ActionMode, PublicState, Region, Side
 
 # ---------------------------------------------------------------------------
@@ -86,7 +88,7 @@ _SOUTH_AFRICA_NEIGHBORS = [58, 69, 74]  # Botswana(58), SEAfricanStates(69), Zim
 # Handler type
 # ---------------------------------------------------------------------------
 
-EventHandler = Callable[[PublicState, Side, random.Random], tuple[PublicState, bool, Optional[Side]]]
+EventHandler = Callable[[PublicState, Side, RNG], tuple[PublicState, bool, Optional[Side]]]
 
 # ---------------------------------------------------------------------------
 # Country data cache
@@ -148,7 +150,7 @@ def _free_coup(
     side: Side,
     cid: int,
     ops: int,
-    rng: random.Random,
+    rng: RNG,
     *,
     defcon_immune: bool = False,
 ) -> int:
@@ -203,13 +205,13 @@ def _check_win(pub: PublicState) -> tuple[bool, Optional[Side]]:
     return False, None
 
 
-def _sample_up_to(pool: Collection[int], n: int, rng: random.Random) -> list[int]:
+def _sample_up_to(pool: Collection[int], n: int, rng: RNG) -> list[int]:
     """Sample min(n, len(pool)) distinct items from pool. Sorted pool for determinism."""
     pool_list = sorted(pool)
     k = min(n, len(pool_list))
     if k <= 0:
         return []
-    return rng.sample(pool_list, k)
+    return [int(x) for x in rng.choice(pool_list, size=k, replace=False)]
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +220,7 @@ def _sample_up_to(pool: Collection[int], n: int, rng: random.Random) -> list[int
 
 
 def _event_socialist_governments(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 7: Socialist Governments.
     Place 1 USSR inf in up to 3 Western Europe countries that are
@@ -236,7 +238,7 @@ def _event_socialist_governments(
 
 
 def _event_fidel(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 8: Fidel*. Remove all US inf from Cuba; USSR gains control."""
     _remove_all(pub, Side.US, _CUBA)
@@ -245,7 +247,7 @@ def _event_fidel(
 
 
 def _event_romanian_abdication(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 12: Romanian Abdication*. Remove all US from Romania; USSR gains control."""
     _remove_all(pub, Side.US, _ROMANIA)
@@ -254,7 +256,7 @@ def _event_romanian_abdication(
 
 
 def _event_comecon(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 14: COMECON*. Place 1 USSR inf in up to 4 Eastern Bloc countries
     not US-controlled.
@@ -267,7 +269,7 @@ def _event_comecon(
 
 
 def _event_nasser(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 15: Nasser*. Add 2 USSR influence in Egypt; remove half (round up) US influence from Egypt."""
     _add_influence(pub, Side.USSR, _EGYPT, 2)
@@ -279,7 +281,7 @@ def _event_nasser(
 
 
 def _event_warsaw_pact(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 16: Warsaw Pact Formed*.
     Branch A: remove all US inf from up to 4 Eastern Bloc countries.
@@ -303,7 +305,7 @@ def _event_warsaw_pact(
 
 
 def _event_independent_reds(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 22: Independent Reds*. Place 1 US inf in each of 5 fixed countries."""
     for cid in [_YUGOSLAVIA, _ROMANIA, _BULGARIA, _HUNGARY, _CZECHOSLOVAKIA]:
@@ -312,7 +314,7 @@ def _event_independent_reds(
 
 
 def _event_marshall_plan(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 23: Marshall Plan*. Place 1 US inf in up to 7 WE countries not USSR-controlled.
     Sets the NATO prerequisite flag for future plays.
@@ -326,7 +328,7 @@ def _event_marshall_plan(
 
 
 def _event_suez_crisis(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 28: Suez Crisis*. Remove 2 US inf from each of 2 sampled countries
     from {France(7), UK(17), Israel(30)}.
@@ -339,7 +341,7 @@ def _event_suez_crisis(
 
 
 def _event_east_european_unrest(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 29: East European Unrest. Place 1 US inf in 3 Eastern Bloc countries."""
     chosen = _sample_up_to(_EASTERN_BLOC, 3, rng)
@@ -349,7 +351,7 @@ def _event_east_european_unrest(
 
 
 def _event_decolonization(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 30: Decolonization. Place 1 USSR inf in up to 4 Africa or SEA countries."""
     pool = _AFRICA | _SOUTHEAST_ASIA
@@ -360,7 +362,7 @@ def _event_decolonization(
 
 
 def _event_portuguese_empire_crumbles(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 55: Portuguese Empire Crumbles*. 2 USSR inf in Angola and Mozambique."""
     _add_influence(pub, Side.USSR, _ANGOLA, 2)
@@ -369,19 +371,19 @@ def _event_portuguese_empire_crumbles(
 
 
 def _event_south_african_unrest(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 56: South African Unrest. 2 USSR inf in South Africa;
     2 USSR inf in one sampled neighbor of South Africa.
     """
     _add_influence(pub, Side.USSR, _SOUTH_AFRICA, 2)
-    neighbor = rng.choice(_SOUTH_AFRICA_NEIGHBORS)
+    neighbor = int(rng.choice(_SOUTH_AFRICA_NEIGHBORS))
     _add_influence(pub, Side.USSR, neighbor, 2)
     return pub, False, None
 
 
 def _event_allende(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 57: Allende*. 2 USSR inf in Chile."""
     _add_influence(pub, Side.USSR, _CHILE, 2)
@@ -389,7 +391,7 @@ def _event_allende(
 
 
 def _event_camp_david_accords(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 66: Camp David Accords*. US gains 1 VP; 1 US inf in Israel, Egypt, Jordan."""
     _vp_delta(pub, Side.US, 1)
@@ -400,7 +402,7 @@ def _event_camp_david_accords(
 
 
 def _event_puppet_governments(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 67: Puppet Governments. Place 1 US inf in 3 countries where both sides
     have 0 influence (excludes superpowers 81, 82 and LibyaAfrica 64).
@@ -418,7 +420,7 @@ def _event_puppet_governments(
 
 
 def _event_john_paul_ii(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 69: John Paul II Elected Pope*. -2 USSR inf, +1 US inf in Poland."""
     _add_influence(pub, Side.USSR, _POLAND, -2)
@@ -428,20 +430,20 @@ def _event_john_paul_ii(
 
 
 def _event_oas_founded(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 71: OAS Founded*. Place 2 total US inf: sample 2 slots with replacement
     from CA | SA, place 1 US inf each.
     """
     pool = sorted(_CENTRAL_AMERICA | _SOUTH_AMERICA)
-    chosen = rng.choices(pool, k=2)
+    chosen = [int(x) for x in rng.choice(pool, size=2, replace=True)]
     for cid in chosen:
         _add_influence(pub, Side.US, cid, 1)
     return pub, False, None
 
 
 def _event_sadat_expels_soviets(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 73: Sadat Expels Soviets*. Remove all USSR inf from Egypt; add 1 US inf."""
     _remove_all(pub, Side.USSR, _EGYPT)
@@ -450,7 +452,7 @@ def _event_sadat_expels_soviets(
 
 
 def _event_voice_of_america(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 75: Voice of America. Remove 1 USSR inf from up to 4 non-Europe countries
     where USSR has >= 1 inf (excludes _ALL_EUROPE and LibyaAfrica 64).
@@ -468,7 +470,7 @@ def _event_voice_of_america(
 
 
 def _event_liberation_theology(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 76: Liberation Theology. Place 1 USSR inf in up to 3 CA countries
     where USSR inf < 2.
@@ -484,7 +486,7 @@ def _event_liberation_theology(
 
 
 def _event_the_reformer(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 90: The Reformer*. Place 1 USSR inf in up to 4 European countries
     not US-controlled. DEFCON +1.
@@ -501,7 +503,7 @@ def _event_the_reformer(
 
 
 def _event_marine_barracks_bombing(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 91: Marine Barracks Bombing*. Remove all US inf from Lebanon;
     remove 1 US inf from up to 2 other Middle East countries with US inf >= 1.
@@ -519,20 +521,20 @@ def _event_marine_barracks_bombing(
 
 
 def _event_ortega(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 94: Ortega Elected in Nicaragua*. Remove all US from Nicaragua;
     free 2-ops USSR coup in a sampled neighbor of Nicaragua.
     """
     _remove_all(pub, Side.US, _NICARAGUA)
     neighbors = [38, 41, 45]  # ElSalvador(38), Honduras(41), CostaRica(45)
-    neighbor = rng.choice(neighbors)
+    neighbor = int(rng.choice(neighbors))
     _free_coup(pub, Side.USSR, neighbor, 2, rng, defcon_immune=False)
     return pub, *_check_win(pub)
 
 
 def _event_tear_down_this_wall(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 99: Tear Down This Wall*. Remove all USSR from East Germany;
     add 3 US inf to East Germany. Cancels Willy Brandt (restores NATO to West Germany).
@@ -545,7 +547,7 @@ def _event_tear_down_this_wall(
 
 
 def _event_solidarity(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 104: Solidarity*. Add 3 US inf in Poland.
     Fires only if john_paul_ii_played=True.
@@ -558,7 +560,7 @@ def _event_solidarity(
 
 
 def _event_awacs_sale(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 107: AWACS Sale to Saudis*. Add 2 US inf in Saudi Arabia.
     OPEC (64) no longer scores Saudi Arabia for the rest of the game (awacs_active flag).
@@ -574,7 +576,7 @@ def _event_awacs_sale(
 
 
 def _event_duck_and_cover(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 4: Duck and Cover. US gains (5 - defcon) VP; DEFCON drops by 1."""
     pre_defcon = pub.defcon
@@ -584,7 +586,7 @@ def _event_duck_and_cover(
 
 
 def _event_korean_war(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 11: Korean War*. Free 2-ops USSR coup in South Korea (war card: defcon_immune).
     Success: USSR gains 2 VP. Failure: US gains 1 VP.
@@ -598,7 +600,7 @@ def _event_korean_war(
 
 
 def _event_arab_israeli_war(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 13: Arab-Israeli War. Free 2-ops USSR coup in Israel (war card: defcon_immune).
     Failure: US gains 1 VP. No extra VP on success.
@@ -610,12 +612,12 @@ def _event_arab_israeli_war(
 
 
 def _event_indo_pakistani_war(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 24: Indo-Pakistani War. Phasing player coups randomly in India or Pakistan.
     Success: phasing gains 2 VP. Failure: phasing loses 1 VP.
     """
-    target = rng.choice([_INDIA, _PAKISTAN])
+    target = int(rng.choice([_INDIA, _PAKISTAN]))
     net = _free_coup(pub, side, target, 2, rng, defcon_immune=True)
     if net > 0:
         _vp_delta(pub, side, 2)
@@ -625,7 +627,7 @@ def _event_indo_pakistani_war(
 
 
 def _event_nuclear_test_ban(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 34: Nuclear Test Ban. Phasing player gains (defcon - 2) VP; DEFCON +2."""
     vp_gain = max(0, pub.defcon - 2)
@@ -635,7 +637,7 @@ def _event_nuclear_test_ban(
 
 
 def _event_brush_war(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 39: Brush War. USSR coups a random stability-1 or -2 country with 3 ops.
     On success, remove up to 2 more US influence from the target beyond what coup removed.
@@ -649,7 +651,7 @@ def _event_brush_war(
     ]
     if not pool:
         return pub, False, None
-    target = rng.choice(sorted(pool))
+    target = int(rng.choice(sorted(pool)))
     net = _free_coup(pub, Side.USSR, target, 3, rng, defcon_immune=False)
     if net > 0:
         # Additional removal: up to 2 more US influence beyond what coup already removed
@@ -661,7 +663,7 @@ def _event_brush_war(
 
 
 def _event_arms_race(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 42: Arms Race. If phasing player has more MilOps than opponent:
     if own meets DEFCON requirement → 3 VP; else → 1 VP.
@@ -679,7 +681,7 @@ def _event_arms_race(
 
 
 def _event_summit(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 48: Summit. Both sides roll d6; higher roll wins 2 VP.
     DEFCON changes randomly by ±1. USSR wins ties when USSR is phasing.
@@ -691,25 +693,25 @@ def _event_summit(
         winner_side = Side.USSR if ussr_roll >= us_roll else Side.US
     else:
         winner_side = Side.US if us_roll >= ussr_roll else Side.USSR
-    defcon_change = rng.choice([-1, 1])
+    defcon_change = int(rng.choice([-1, 1]))
     pub.defcon = max(1, min(5, pub.defcon + defcon_change))
     _vp_delta(pub, winner_side, 2)
     return pub, *_check_win(pub)
 
 
 def _event_how_i_learned(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 49: How I Learned to Stop Worrying*. DEFCON set to random 1-5;
     phasing player MilOps set to 5.
     """
-    pub.defcon = rng.randint(1, 5)
+    pub.defcon = int(rng.integers(1, 6))
     pub.milops[int(side)] = 5
     return pub, *_check_win(pub)
 
 
 def _event_we_will_bury_you(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 53: We Will Bury You*. DEFCON -1; USSR gains 3 VP."""
     pub.defcon = max(1, pub.defcon - 1)
@@ -718,7 +720,7 @@ def _event_we_will_bury_you(
 
 
 def _event_abm_treaty(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 60: ABM Treaty. DEFCON +1; phasing player gains 1 VP; phasing player
     may immediately place 2 Influence in any countries already containing their influence.
@@ -730,13 +732,13 @@ def _event_abm_treaty(
     eligible = sorted(cid for (s, cid), inf in pub.influence.items() if s == side and inf > 0)
     for _ in range(2):
         if eligible:
-            cid = rng.choice(eligible)
+            cid = int(rng.choice(eligible))
             _add_influence(pub, side, cid, 1)
     return pub, *_check_win(pub)
 
 
 def _event_u2_incident(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 63: U2 Incident*. USSR gains 1 VP.
     Per rules, playing UN Intervention nullifies U2 Incident's VP (hand-check not enforced).
@@ -746,7 +748,7 @@ def _event_u2_incident(
 
 
 def _event_opec(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 64: OPEC. USSR gains 1 VP per OPEC country where USSR has presence.
     Cancelled by Iron Lady (86) or North Sea Oil (89).
@@ -761,7 +763,7 @@ def _event_opec(
 
 
 def _event_lonely_hearts(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 65: "Lone Hearts Club Band" (The)*. DEFCON +1; US gains 1 VP."""
     pub.defcon = min(5, pub.defcon + 1)
@@ -770,7 +772,7 @@ def _event_lonely_hearts(
 
 
 def _event_alliance_for_progress(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 79: Alliance for Progress*. US gains 1 VP per US-controlled battleground
     in Central America or South America.
@@ -785,7 +787,7 @@ def _event_alliance_for_progress(
 
 
 def _event_che(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 83: Che. USSR makes two free 3-ops coups in stability-1/2 countries,
     each in a different region among CA, SA, Africa.
@@ -809,21 +811,21 @@ def _event_che(
     if not pool:
         return pub, False, None
 
-    first = rng.choice(sorted(pool))
+    first = int(rng.choice(sorted(pool)))
     first_region = _region_of(first)
     _free_coup(pub, Side.USSR, first, 3, rng, defcon_immune=False)
 
     # Second coup: different region
     second_pool = [cid for cid in pool if _region_of(cid) != first_region]
     if second_pool:
-        second = rng.choice(sorted(second_pool))
+        second = int(rng.choice(sorted(second_pool)))
         _free_coup(pub, Side.USSR, second, 3, rng, defcon_immune=False)
 
     return pub, *_check_win(pub)
 
 
 def _event_iron_lady(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 86: The Iron Lady*. US gains 1 VP; remove all USSR inf from UK;
     cancel OPEC for the rest of the game.
@@ -835,7 +837,7 @@ def _event_iron_lady(
 
 
 def _event_reagan_bombs_libya(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 87: Reagan Bombs Libya*. US gains 1 VP per USSR inf in Libya (ID 33)."""
     count = pub.influence.get((Side.USSR, _LIBYA), 0)
@@ -844,7 +846,7 @@ def _event_reagan_bombs_libya(
 
 
 def _event_soviets_kal007(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 92: Soviets Shoot Down KAL 007*. DEFCON -1; US gains 2 VP.
     If USSR holds China Card, it passes to US face-up.
@@ -858,7 +860,7 @@ def _event_soviets_kal007(
 
 
 def _event_glasnost(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 93: Glasnost*. USSR gains 2 VP; DEFCON +1.
     If SALT Negotiations is in effect, USSR may take one extra AR.
@@ -871,7 +873,7 @@ def _event_glasnost(
 
 
 def _event_pershing_ii(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 102: Pershing II Deployed*. USSR gains 1 VP; remove 1 US inf from up to
     3 Western Europe countries that have US inf >= 1.
@@ -885,13 +887,13 @@ def _event_pershing_ii(
 
 
 def _event_iran_iraq_war(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 105: Iran-Iraq War. Phasing player coups randomly in Iran or Iraq (2 ops).
     DEFCON drops if target is battleground (not defcon_immune).
     Success: phasing gains 2 VP. Failure: phasing loses 1 VP.
     """
-    target = rng.choice([_IRAN, _IRAQ])
+    target = int(rng.choice([_IRAN, _IRAQ]))
     net = _free_coup(pub, side, target, 2, rng, defcon_immune=False)
     if net > 0:
         _vp_delta(pub, side, 2)
@@ -901,7 +903,7 @@ def _event_iran_iraq_war(
 
 
 def _event_yuri_and_samantha(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 106: Yuri and Samantha*. USSR gains 1 VP per US space attempt this turn."""
     us_attempts = pub.space_attempts[int(Side.US)]
@@ -915,7 +917,7 @@ def _event_yuri_and_samantha(
 
 
 def _event_vietnam_revolts(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 9: Vietnam Revolts*. Place 2 USSR inf in Vietnam; USSR gets +1 ops this turn.
 
@@ -929,7 +931,7 @@ def _event_vietnam_revolts(
 
 
 def _event_nato(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 21: NATO*. US-controlled WE countries blocked from USSR coups/realigns.
 
@@ -941,7 +943,7 @@ def _event_nato(
 
 
 def _event_containment(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 25: Containment*. All US cards are worth +1 ops for the remainder of this turn."""
     pub.ops_modifier[int(Side.US)] += 1
@@ -949,7 +951,7 @@ def _event_containment(
 
 
 def _event_red_scare_purge(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 31: Red Scare/Purge. All opponent's cards -1 ops this turn (min 1)."""
     opp = Side.US if side == Side.USSR else Side.USSR
@@ -958,7 +960,7 @@ def _event_red_scare_purge(
 
 
 def _event_formosan_resolution(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 35: Formosan Resolution*. Taiwan treated as battleground for Asia scoring
     while US controls it. Cancelled if USSR plays China Card for its event.
@@ -971,7 +973,7 @@ def _event_formosan_resolution(
 
 
 def _event_norad(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 38: NORAD*. While active: if DEFCON=2 at end of USSR AR, US may add 1 inf.
 
@@ -982,7 +984,7 @@ def _event_norad(
 
 
 def _event_cuban_missile_crisis(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 43: Cuban Missile Crisis*. DEFCON set to 2; locked there.
     Any BG coup by either player ends the game in nuclear war.
@@ -998,7 +1000,7 @@ def _event_cuban_missile_crisis(
 
 
 def _event_nuclear_subs(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 44: Nuclear Subs*. US coups no longer trigger the DEFCON penalty.
 
@@ -1009,7 +1011,7 @@ def _event_nuclear_subs(
 
 
 def _event_salt_negotiations(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 46: SALT Negotiations*. DEFCON +1; discard visibility; phasing player may
     take one discard card to hand.
@@ -1023,7 +1025,7 @@ def _event_salt_negotiations(
 
 
 def _event_brezhnev_doctrine(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 54: Brezhnev Doctrine*. All USSR cards worth +1 ops for the remainder of this turn."""
     pub.ops_modifier[int(Side.USSR)] += 1
@@ -1031,7 +1033,7 @@ def _event_brezhnev_doctrine(
 
 
 def _event_flower_power(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 62: Flower Power*. USSR gains 2VP each time US plays a war card for its event.
 
@@ -1043,7 +1045,7 @@ def _event_flower_power(
 
 
 def _event_shuttle_diplomacy(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 74: Shuttle Diplomacy. Next Asia or Middle East scoring card excludes
     the highest-stability battleground in that region for both sides.
@@ -1056,7 +1058,7 @@ def _event_shuttle_diplomacy(
 
 
 def _event_north_sea_oil(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 89: North Sea Oil*. Cancels OPEC for the rest of the game.
     US also gets one extra AR this turn.
@@ -1067,7 +1069,7 @@ def _event_north_sea_oil(
 
 
 def _event_iran_contra_scandal(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 96: Iran-Contra Scandal*. All US cards worth -1 ops for the remainder of this turn."""
     pub.ops_modifier[int(Side.US)] -= 1
@@ -1075,7 +1077,7 @@ def _event_iran_contra_scandal(
 
 
 def _event_chernobyl(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 97: Chernobyl*. US designates one region; USSR may not place inf there via ops this turn.
 
@@ -1094,7 +1096,7 @@ def _event_chernobyl(
 
 
 def _event_an_evil_empire(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 100: An Evil Empire*. USSR loses 1 VP; cancels Flower Power."""
     pub.vp -= 1   # USSR loses 1 VP (pub.vp moves toward US)
@@ -1109,7 +1111,7 @@ def _event_an_evil_empire(
 
 
 def _event_de_gaulle_leads_france(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 17: De Gaulle Leads France*. Remove 2 US inf, add 1 USSR inf in France;
     France no longer protected by NATO.
@@ -1121,7 +1123,7 @@ def _event_de_gaulle_leads_france(
 
 
 def _event_truman_doctrine(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 19: Truman Doctrine*. Remove ALL USSR inf from one uncontrolled European country.
 
@@ -1135,14 +1137,14 @@ def _event_truman_doctrine(
         and not _controls(Side.USSR, cid, pub)
     ]
     if pool:
-        target = rng.choice(sorted(pool))
+        target = int(rng.choice(sorted(pool)))
         _remove_all(pub, Side.USSR, target)
     pub.truman_doctrine_played = True
     return pub, False, None
 
 
 def _event_us_japan_pact(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 27: US/Japan Mutual Defense Pact*. Japan cannot be USSR coup/realigned;
     US gains control of Japan.
@@ -1153,7 +1155,7 @@ def _event_us_japan_pact(
 
 
 def _event_de_stalinization(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 33: De-Stalinization*. USSR may move up to 4 influence from any countries
     to any other non-US-controlled countries.
@@ -1179,15 +1181,15 @@ def _event_de_stalinization(
         avail_dests = destinations
         if not avail_sources or not avail_dests:
             break
-        src = rng.choice(avail_sources)
-        dst = rng.choice(avail_dests)
+        src = int(rng.choice(avail_sources))
+        dst = int(rng.choice(avail_dests))
         _add_influence(pub, Side.USSR, src, -1)
         _add_influence(pub, Side.USSR, dst, 1)
     return pub, False, None
 
 
 def _event_special_relationship(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 37: Special Relationship*. If UK is US-controlled AND NATO is active:
     US gains 2 VP + 2 inf anywhere. Otherwise: 1 inf in any WE country.
@@ -1201,16 +1203,16 @@ def _event_special_relationship(
         )
         for _ in range(2):
             if pool:
-                dst = rng.choice(pool)
+                dst = int(rng.choice(pool))
                 _add_influence(pub, Side.US, dst, 1)
     else:
-        target = rng.choice(sorted(_WESTERN_EUROPE))
+        target = int(rng.choice(sorted(_WESTERN_EUROPE)))
         _add_influence(pub, Side.US, target, 1)
     return pub, *_check_win(pub)
 
 
 def _event_willy_brandt(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 58: Willy Brandt*. USSR gains 1 VP; 1 USSR inf in West Germany;
     West Germany no longer NATO-protected.
@@ -1222,7 +1224,7 @@ def _event_willy_brandt(
 
 
 def _event_muslim_revolution(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 59: Muslim Revolution. Remove all US inf from 2 of:
     Sudan(72), Iran(28), Iraq(29), Egypt(26), Libya(33), Saudi Arabia(34), Syria(35), Jordan(31).
@@ -1231,14 +1233,14 @@ def _event_muslim_revolution(
     eligible = [cid for cid in _MUSLIM_REV_POOL if pub.influence.get((Side.US, cid), 0) > 0]
     if len(eligible) < 2:
         eligible = _MUSLIM_REV_POOL
-    chosen = rng.sample(sorted(eligible), min(2, len(eligible)))
+    chosen = [int(x) for x in rng.choice(sorted(eligible), size=min(2, len(eligible)), replace=False)]
     for cid in chosen:
         _remove_all(pub, Side.US, cid)
     return pub, False, None
 
 
 def _event_cultural_revolution(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 61: Cultural Revolution*. If US holds China Card: US must give it to USSR face-up.
     Otherwise: USSR gains 1 VP.
@@ -1252,7 +1254,7 @@ def _event_cultural_revolution(
 
 
 def _event_latin_american_death_squads(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 70: Latin American Death Squads. Phasing player's coups in C/S America +1 to die roll;
     opponent's coups in C/S America -1 to die roll this turn.
@@ -1265,7 +1267,7 @@ def _event_latin_american_death_squads(
 
 
 def _event_iranian_hostage_crisis(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 85: Iranian Hostage Crisis*. Remove all US inf from Iran; add 2 USSR inf to Iran.
     Sets iran_hostage_crisis_active so Terrorism (95) discards 2 US cards instead of 1.
@@ -1277,7 +1279,7 @@ def _event_iranian_hostage_crisis(
 
 
 def _event_latin_american_debt_crisis(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 98: Latin American Debt Crisis*. US must discard two cards totalling 4+ ops,
     or USSR gains 2 VP.
@@ -1309,7 +1311,7 @@ _SPACE_VP_F: dict[int, tuple[int, int]] = {
 
 
 def _event_captured_nazi_scientist(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 18: Captured Nazi Scientist*.
     Phasing player advances ONE level on the Space Race track (automatic, no die roll).
@@ -1328,7 +1330,7 @@ def _event_captured_nazi_scientist(
 
 
 def _event_olympic_games(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 20: Olympic Games. Non-phasing player (opponent) decides compete or boycott.
     Compete: both roll d6; higher roll wins 2 VP (reroll ties).
@@ -1350,22 +1352,22 @@ def _event_olympic_games(
                 if _choice is not None:
                     country = _choice(_accessible)
                 else:
-                    country = _accessible[rng.randint(0, len(_accessible) - 1)]
+                    country = int(rng.integers(0, len(_accessible)))
                 pub.influence[(side, country)] = pub.influence.get((side, country), 0) + 1
     else:
         # Compete: both roll d6, reroll ties.
-        my_roll = rng.randint(1, 6)
-        opp_roll = rng.randint(1, 6)
+        my_roll = int(rng.integers(1, 7))
+        opp_roll = int(rng.integers(1, 7))
         while my_roll == opp_roll:
-            my_roll = rng.randint(1, 6)
-            opp_roll = rng.randint(1, 6)
+            my_roll = int(rng.integers(1, 7))
+            opp_roll = int(rng.integers(1, 7))
         winner_side = side if my_roll > opp_roll else opp
         _vp_delta(pub, winner_side, 2)
     return pub, *_check_win(pub)
 
 
 def _event_junta(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 50: Junta.
     Place 2 influence in any one Central or South American country.
@@ -1375,16 +1377,16 @@ def _event_junta(
     if not pool:
         return pub, False, None
     # Place 2 influence in a randomly chosen C/S American country.
-    place_target = rng.choice(pool)
+    place_target = int(rng.choice(pool))
     _add_influence(pub, side, place_target, 2)
     # Then: free coup (2 ops) in same or different C/S American country.
-    action_target = rng.choice(pool)
+    action_target = int(rng.choice(pool))
     _free_coup(pub, side, action_target, 2, rng, defcon_immune=False)
     return pub, *_check_win(pub)
 
 
 def _event_kitchen_debates(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 51: Kitchen Debates*.
     If US controls more battleground countries than USSR: US gains 1 VP per excess.
@@ -1400,7 +1402,7 @@ def _event_kitchen_debates(
 
 
 def _event_nixon_china(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 72: Nixon Plays the China Card*.
     If USSR holds China Card: US takes it face-down and gains 2 VP.
@@ -1416,7 +1418,7 @@ def _event_nixon_china(
 
 
 def _event_ussuri(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 77: Ussuri River Skirmish*.
     If USSR holds China Card: US takes it face-up; USSR gains 4 influence to distribute anywhere.
@@ -1429,20 +1431,20 @@ def _event_ussuri(
         pub.china_playable = True
         # USSR gains 4 influence anywhere (random for self-play).
         for _ in range(4):
-            target = rng.choice(all_countries)
+            target = int(rng.choice(all_countries))
             _add_influence(pub, Side.USSR, target, 1)
     else:  # US holds (or neutral — treat as US holds for default)
         pub.china_held_by = Side.USSR
         pub.china_playable = True
         # US gains 4 influence anywhere.
         for _ in range(4):
-            target = rng.choice(all_countries)
+            target = int(rng.choice(all_countries))
             _add_influence(pub, Side.US, target, 1)
     return pub, *_check_win(pub)
 
 
 def _event_one_small_step(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 81: One Small Step.
     If the phasing player is BEHIND on the Space Race (lower level than opponent):
@@ -1466,7 +1468,7 @@ def _event_one_small_step(
 
 
 def _event_wargames(
-    pub: PublicState, side: Side, rng: random.Random
+    pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 103: Wargames*. Only playable at DEFCON 2.
     Playing player gives opponent 6 VP, then game ends immediately.
@@ -1588,7 +1590,7 @@ def apply_event_card(
     pub: PublicState,
     card_id: int,
     side: Side,
-    rng: random.Random,
+    rng: RNG,
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Dispatch to registered handler. pub is already a mutable copy.
     Unregistered cards are no-ops (return (pub, False, None)).

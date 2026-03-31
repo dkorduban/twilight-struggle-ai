@@ -9,7 +9,7 @@ Each test constructs a minimal GameState, applies the event, and checks:
 """
 from __future__ import annotations
 
-import random
+from tsrl.engine.rng import RNG, make_rng
 
 import pytest
 
@@ -35,8 +35,8 @@ def _action(card_id: int, mode: ActionMode = ActionMode.EVENT) -> ActionEncoding
     return ActionEncoding(card_id=card_id, mode=mode, targets=())
 
 
-def _rng(seed: int = 0) -> random.Random:
-    return random.Random(seed)
+def _rng(seed: int = 0) -> RNG:
+    return make_rng(seed)
 
 
 def _pub_copy(pub: PublicState) -> PublicState:
@@ -457,7 +457,7 @@ def test_ask_not_hand_size_unchanged_modulo_ask_not():
     (discarded N, drew N — net 0 change, minus the Ask Not card itself which
     is removed by the game loop before calling apply_hand_event).
     """
-    import random as _rand
+
     from tsrl.etl.game_data import load_cards
     gs = _make_gs(seed=20)
     cards = load_cards()
@@ -466,7 +466,7 @@ def test_ask_not_hand_size_unchanged_modulo_ask_not():
     gs.hands[Side.US] = gs.hands[Side.US] - {78}
 
     hand_size_before = len(gs.hands[Side.US])
-    rng = _rand.Random(42)
+    rng = make_rng(42)
 
     new_pub, over, _ = apply_hand_event(gs, _action(78), Side.US, rng)
 

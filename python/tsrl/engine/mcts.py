@@ -29,9 +29,12 @@ All UCB1 statistics are stored from USSR's perspective for consistency.
 from __future__ import annotations
 
 import math
-import random
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+
+import numpy as np
+
+from tsrl.engine.rng import RNG, make_rng
 
 from tsrl.engine.game_loop import GameResult, Policy, make_random_policy, play_from_state
 from tsrl.engine.game_state import GameState, clone_game_state
@@ -72,7 +75,7 @@ def flat_mcts(
     *,
     rollout_policy: Optional[Policy] = None,
     candidate_fn=None,
-    rng: Optional[random.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> Optional[ActionEncoding]:
     """Run flat Monte Carlo and return the action with the highest mean value.
 
@@ -86,7 +89,7 @@ def flat_mcts(
 
     Returns None if the player has no legal actions.
     """
-    _rng = rng or random.Random()
+    _rng = rng or make_rng()
     side = gs.pub.phasing
     holds_china = (side == Side.USSR and gs.ussr_holds_china) or \
                   (side == Side.US and gs.us_holds_china)
@@ -157,7 +160,7 @@ def uct_mcts(
     candidate_fn=None,
     value_fn: Optional[Callable[[GameState], float]] = None,
     batch_value_fn: Optional[Callable[[list[GameState]], list[float]]] = None,
-    rng: Optional[random.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> Optional[ActionEncoding]:
     """Run UCT (Upper Confidence Trees) and return the most-visited root action.
 
@@ -177,7 +180,7 @@ def uct_mcts(
     Returns the action with the highest visit count at the root.
     Returns None if no legal actions exist.
     """
-    _rng = rng or random.Random()
+    _rng = rng or make_rng()
     side = gs.pub.phasing
     holds_china = (side == Side.USSR and gs.ussr_holds_china) or \
                   (side == Side.US and gs.us_holds_china)
@@ -288,7 +291,7 @@ def interleaved_uct_mcts(
     *,
     c: float = 1.41,
     candidate_fn=None,
-    rng: Optional[random.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> list[Optional[ActionEncoding]]:
     """Run N UCT trees interleaved, sharing one batched value call per round.
 
@@ -320,11 +323,11 @@ def interleaved_uct_mcts(
     if not game_states:
         return []
 
-    _rng = rng or random.Random()
+    _rng = rng or make_rng()
     N = len(game_states)
 
     # Derive an independent RNG per tree so simulation order doesn't matter.
-    tree_rngs = [random.Random(_rng.randint(0, 2**32)) for _ in range(N)]
+    tree_rngs = [make_rng(int(_rng.integers(0, 2**32))) for _ in range(N)]
 
     # Compute root side / china for each tree.
     sides: list[Side] = []
@@ -455,7 +458,7 @@ def collect_self_play_game(
         seed:     RNG seed for reproducibility.
     """
     import copy
-    _rng = random.Random(seed)
+    _rng = make_rng(seed)
 
     from tsrl.engine.game_loop import (
         GameResult, _MID_WAR_TURN, _LATE_WAR_TURN, _MAX_TURNS,
@@ -469,7 +472,7 @@ def collect_self_play_game(
     # refers to the live, continuously-updated game state.  Using play_game()
     # would create a second `gs` in its own scope, leaving this `gs` stale and
     # causing MCTS to sample candidates against wrong state (e.g. stale DEFCON).
-    gs = reset(seed=_rng.randint(0, 2**32))
+    gs = reset(seed=int(_rng.integers(0, 2**32)))
     steps: list[SelfPlayStep] = []
     # Holds the most recently appended step so we can fill post_pub retroactively.
     # When the policy is called for action N+1, gs.pub already reflects the result
@@ -577,7 +580,7 @@ def _sample_candidates(
     side: Side,
     holds_china: bool,
     n: int,
-    rng: random.Random,
+    rng: RNG,
 ) -> list[ActionEncoding]:
     """Sample up to n distinct legal actions via factorized sampling."""
     hand = gs.hands[side]
@@ -601,7 +604,7 @@ def _top_heuristic_candidates(
     n: int,
     *,
     temperature: float = 0.0,
-    rng: Optional[random.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> list[ActionEncoding]:
     """Return the top-n actions ranked by the MinimalHybrid heuristic.
 
@@ -629,7 +632,7 @@ def _top_heuristic_candidates(
     if len(scored) <= n or temperature <= 0.0:
         return [action for action, _ in scored[:n]]
 
-    _rng = rng or random.Random()
+    _rng = rng or make_rng()
     remaining: list[tuple[ActionEncoding, float]] = [
         (action, -_key((action, score))[0]) for action, score in scored
     ]
@@ -657,7 +660,7 @@ def _apply_action_to_gs(
     gs: GameState,
     action: ActionEncoding,
     side: Side,
-    rng: random.Random,
+    rng: RNG,
 ) -> None:
     """Apply action to gs in-place, updating pub and hands."""
     if action.card_id in gs.hands[side]:

@@ -21,6 +21,34 @@ Losses
                                                      #   (defcon1/europe_control always use winner_side)
     total        = card_loss + mode_loss + country_loss + value_weight * value_loss
 
+    With --advantage-weight alpha > 0 (train only):
+        advantage_i  = value_target_i - value_pred_i.detach()   # residual, game-level signal
+        w_i          = clamp(1 + alpha * advantage_i, 0.1, 2.0) # always positive
+        policy_loss  = mean(w_i * (card_loss_i + mode_loss_i + country_loss_i))
+
+    Design notes
+    ~~~~~~~~~~~~
+    This is inspired by AWR / AWAC (offline advantage-weighted regression) but
+    uses a **clamped linear** weight rather than the canonical exponential form
+    exp(A/tau).  Key choices and their rationale:
+
+    * value_pred is **detached**: advantage is a reweighting signal only; it
+      must not create a competing gradient path back through the value head.
+
+    * clamp(0.1, 2.0) keeps weights **strictly positive** — gradients are
+      never reversed and bad-outcome games still contribute (at 10x reduced
+      weight) rather than being discarded entirely.  Standard nonneg AWR
+      (w = max(0, A)) would discard the ~86 % of games where the model is
+      currently losing, wasting most of the training data.
+
+    * Linear rather than exponential: avoids the temperature hyperparameter τ
+      and keeps the weight range interpretable.  The downside vs. exp() is
+      that a single very-high-advantage game can saturate at 2× rather than
+      pulling harder — acceptable for a game-level signal with α=0.5.
+
+    * value_target here is final_vp (signed VP margin / 20, ≈ –1 … +1), so
+      the advantage is on a consistent scale across games.
+
 Checkpoints are saved to <out-dir>/baseline_epoch{N}.pt after each epoch.
 """
 
@@ -78,6 +106,12 @@ def parse_args() -> argparse.Namespace:
                    help="Use automatic mixed precision (float16) for faster GPU training")
     p.add_argument("--resume", action="store_true",
                    help="Resume from latest checkpoint in --out-dir")
+    p.add_argument("--patience", type=int, default=0,
+                   help="Early stopping: stop if val_loss hasn't improved for N epochs (0 = disabled)")
+    p.add_argument("--advantage-weight", type=float, default=0.0,
+                   help="Scale policy losses by (1 + alpha * advantage) where advantage = value_target - value_pred. "
+                        "0 = disabled (pure BC). 0.5-1.0 = moderate advantage weighting. "
+                        "Reinforces surprising wins, downweights predicted losses.")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
         "--val-fraction",
@@ -167,6 +201,7 @@ def run_epoch(
     scheduler=None,
     value_weight: float = 1.0,
     scaler: "torch.cuda.amp.GradScaler | None" = None,
+    advantage_weight: float = 0.0,
 ) -> dict[str, float]:
     """Run one full pass over ``loader``.
 
@@ -176,10 +211,13 @@ def run_epoch(
     is_train = optimizer is not None
     model.train(is_train)
 
-    ce_loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    use_adv = advantage_weight > 0.0 and is_train
+    _reduction = "none" if use_adv else "mean"
+    ce_loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing, reduction=_reduction)
     # ignore_index=-1 skips rows where action_mode is unknown (human-log rows
     # where the play mode cannot be inferred from the PLAY event alone).
-    mode_ce_loss_fn = nn.CrossEntropyLoss(ignore_index=-1, label_smoothing=label_smoothing)
+    mode_ce_loss_fn = nn.CrossEntropyLoss(ignore_index=-1, label_smoothing=label_smoothing,
+                                          reduction=_reduction)
     mse_loss_fn = nn.MSELoss()
 
     total_loss = 0.0
@@ -220,9 +258,28 @@ def run_epoch(
                 strategy_logits = outputs["strategy_logits"]
                 value_pred = outputs["value"]
 
-                card_loss = ce_loss_fn(card_logits, card_target)
-                mode_loss = mode_ce_loss_fn(mode_logits, mode_target)
+                card_loss_raw = ce_loss_fn(card_logits, card_target)
+                mode_loss_raw = mode_ce_loss_fn(mode_logits, mode_target)
                 value_loss = mse_loss_fn(value_pred, value_target)
+
+                # Advantage-weighted regression (AWR-inspired, linear form).
+                # advantage = value_target - value_pred  (positive = better than expected)
+                # w = clamp(1 + alpha * advantage, 0.1, 2.0)
+                #   - always positive: never inverts gradients (contrast with raw signed weights)
+                #   - keeps losing games at w≈0.1 rather than discarding (contrast with max(0,A))
+                #   - value_pred detached: advantage is a reweighting signal only,
+                #     not a gradient path back through the value head
+                #   - train only: val loss uses uniform weights for comparability
+                if use_adv:
+                    adv = (value_target - value_pred.detach()).squeeze(-1)
+                    w = (1.0 + advantage_weight * adv).clamp(0.1, 2.0)
+                    card_loss = (card_loss_raw * w).mean()
+                    # mode has ignore_index=-1; mask those out before weighting
+                    mode_mask = (mode_target != -1).float()
+                    mode_loss = ((mode_loss_raw * w) * mode_mask).sum() / mode_mask.sum().clamp(min=1)
+                else:
+                    card_loss = card_loss_raw
+                    mode_loss = mode_loss_raw
 
                 # Country loss: only on rows with at least one country op target.
                 country_ops_mask = country_ops_target.sum(dim=1) > 0
@@ -235,9 +292,14 @@ def run_epoch(
                         country_strategy_logits[country_ops_mask], dim=2
                     )
                     mixture_probs = (mixing.unsqueeze(2) * strategy_probs).sum(dim=1)
-                    country_loss = -(
+                    country_loss_per = -(
                         ops_prob * torch.log(mixture_probs + 1e-8)
-                    ).sum(dim=1).mean()
+                    ).sum(dim=1)
+                    if use_adv:
+                        w_c = w[country_ops_mask]
+                        country_loss = (country_loss_per * w_c).mean()
+                    else:
+                        country_loss = country_loss_per.mean()
                     country_top1 = (
                         country_logits[country_ops_mask].argmax(dim=1)
                         == country_ops_target[country_ops_mask].argmax(dim=1)
@@ -426,6 +488,9 @@ def main() -> None:
     if scaler is not None:
         print("AMP enabled (float16 autocast + GradScaler)")
 
+    # ---- early stopping state ----
+    epochs_no_improve = 0
+
     # ---- training loop ----
     for epoch in range(start_epoch, args.epochs + 1):
         t_epoch = time.time()
@@ -437,6 +502,7 @@ def main() -> None:
             scheduler=scheduler,
             value_weight=args.value_weight,
             scaler=scaler,
+            advantage_weight=getattr(args, "advantage_weight", 0.0),
         )
         val_metrics = run_epoch(
             model, val_loader, None, device, args.log_interval, f"val   e{epoch}",
@@ -449,10 +515,14 @@ def main() -> None:
         is_best = val_loss < best_val_loss
         if is_best:
             best_val_loss = val_loss
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
 
         print(
             f"Epoch {epoch} summary"
-            f"  train_loss={train_metrics.get('loss', float('nan')):.4f}"
+            + ("  [adv-weighted]" if getattr(args, "advantage_weight", 0.0) > 0 else "")
+            + f"  train_loss={train_metrics.get('loss', float('nan')):.4f}"
             f"  train_card_top1={train_metrics.get('card_top1', float('nan')):.3f}"
             f"  train_card_mrr={train_metrics.get('card_mrr', float('nan')):.3f}"
             f"  train_mode_acc={train_metrics.get('mode_acc', float('nan')):.3f}"
@@ -490,6 +560,11 @@ def main() -> None:
         if is_best:
             torch.save(ckpt_payload, best_ckpt_path)
             print(f"Saved best checkpoint: {best_ckpt_path}  (val_loss={val_loss:.4f})")
+
+        # ---- early stopping ----
+        if args.patience > 0 and epochs_no_improve >= args.patience:
+            print(f"\nEarly stopping at epoch {epoch}: no improvement for {epochs_no_improve} epochs.")
+            break
 
     print(f"\nTraining complete. Best val_loss={best_val_loss:.4f} -> {best_ckpt_path}")
 

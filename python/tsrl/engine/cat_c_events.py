@@ -14,8 +14,9 @@ Handler contract:
 """
 from __future__ import annotations
 
-import random
 from typing import Optional
+
+from tsrl.engine.rng import RNG
 
 from tsrl.engine.adjacency import accessible_countries as _base_accessible
 from tsrl.engine.adjacency import load_adjacency
@@ -90,7 +91,7 @@ def _card_played(pub: PublicState, card_id: int, side: Side) -> None:
         pub.discard = pub.discard | {card_id}
 
 
-def _draw_n(gs: GameState, side: Side, rng: random.Random, n: int) -> None:
+def _draw_n(gs: GameState, side: Side, rng: RNG, n: int) -> None:
     """Draw exactly n cards from gs.deck into gs.hands[side], reshuffling if needed."""
     hand_list = list(gs.hands[side])
     drawn = 0
@@ -115,7 +116,7 @@ def _apply_ops_randomly(
     pub: PublicState,
     side: Side,
     ops: int,
-    rng: random.Random,
+    rng: RNG,
     adj: dict,
 ) -> None:
     """Apply ops randomly for self-play: pick a random mode and execute it.
@@ -202,7 +203,7 @@ def _apply_ops_randomly(
 
 
 def _h_five_year_plan(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 5: Five Year Plan. Randomly discard one card from USSR hand.
     If the discarded card is a US-side card, its event fires immediately.
@@ -249,7 +250,7 @@ def _h_five_year_plan(
 
 
 def _h_blockade(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 10: Blockade*. Unless US discards a card with ops >= 3,
     remove all US influence from West Germany.
@@ -283,7 +284,7 @@ def _h_blockade(
 
 
 def _h_cia_created(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 26: CIA Created*. USSR reveals their hand (no public state change needed).
     US gains 1 free influence placement in any accessible country.
@@ -301,7 +302,7 @@ def _h_cia_created(
 
 
 def _h_un_intervention(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 32: UN Intervention. Play one opponent's card from your hand for its ops
     value (without triggering its event). The card is then discarded.
@@ -347,7 +348,7 @@ def _h_un_intervention(
 
 
 def _h_cambridge_five(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 36: The Cambridge Five*. US reveals their hand.
     For each scoring card in the US hand, USSR places 1 influence in a country
@@ -403,7 +404,7 @@ def _h_cambridge_five(
 
 
 def _h_quagmire(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 45: Quagmire*. US player is trapped: each AR US must discard a card worth
     >= 2 ops; trap broken when a valid card is discarded.
@@ -423,7 +424,7 @@ def _h_quagmire(
 
 
 def _h_bear_trap(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 47: Bear Trap*. USSR player is trapped symmetrically to Quagmire.
 
@@ -439,7 +440,7 @@ def _h_bear_trap(
 
 
 def _h_missile_envy(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 52: Missile Envy. Take the highest-ops card from opponent's hand and play
     it immediately for its ops value (event does not fire); opponent then gets it back.
@@ -481,7 +482,7 @@ def _h_missile_envy(
 
 
 def _h_grain_sales(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 68: Grain Sales to Soviets. US takes a random card from USSR hand,
     plays it immediately for its ops value (event does not fire), then returns
@@ -519,7 +520,7 @@ def _h_grain_sales(
 
 
 def _h_ask_not(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 78: Ask Not What Your Country Can Do For You*.
     US may discard up to 4 cards from hand and draw replacements from deck.
@@ -533,9 +534,9 @@ def _h_ask_not(
         cid for cid in hand
         if cid != _CHINA_CARD_ID and cards.get(cid) and not cards[cid].is_scoring
     ]
-    n_discard = rng.randint(0, len(discardable))
+    n_discard = int(rng.integers(0, len(discardable) + 1))
     if n_discard > 0:
-        to_discard = rng.sample(sorted(discardable), n_discard)
+        to_discard = [int(x) for x in rng.choice(sorted(discardable), size=n_discard, replace=False)]
         for cid in to_discard:
             gs.hands[Side.US] = gs.hands[Side.US] - {cid}
             pub.discard = pub.discard | {cid}
@@ -550,7 +551,7 @@ def _h_ask_not(
 
 
 def _h_our_man_in_tehran(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 84: Our Man in Tehran*. US draws top 5 cards from deck; may discard any;
     returns rest to bottom of deck.
@@ -591,7 +592,7 @@ def _h_our_man_in_tehran(
         return pub, *_check_win(pub)
 
     # Randomly decide how many to keep vs discard.
-    n_keep = rng.randint(0, len(drawn))
+    n_keep = int(rng.integers(0, len(drawn) + 1))
     shuffled = drawn[:]
     rng.shuffle(shuffled)
     to_discard = shuffled[:len(drawn) - n_keep]
@@ -613,7 +614,7 @@ def _h_our_man_in_tehran(
 
 
 def _h_star_wars(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 88: Star Wars*. US searches discard pile, retrieves any one event card
     and plays it for its event. (Scoring cards excluded; China Card excluded.)
@@ -655,7 +656,7 @@ def _h_star_wars(
 
 
 def _h_terrorism(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 95: Terrorism. Opponent discards 1 card randomly (2 cards if Iranian
     Hostage Crisis is active and opponent is US).
@@ -671,7 +672,7 @@ def _h_terrorism(
     discardable = [cid for cid in opp_hand if cid != _CHINA_CARD_ID]
     actual_n = min(n, len(discardable))
     if actual_n > 0:
-        to_discard = rng.sample(sorted(discardable), actual_n)
+        to_discard = [int(x) for x in rng.choice(sorted(discardable), size=actual_n, replace=False)]
         for cid in to_discard:
             gs.hands[opp] = gs.hands[opp] - {cid}
             spec = cards.get(cid)
@@ -686,7 +687,7 @@ def _h_terrorism(
 
 
 def _h_aldrich_ames(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 101: Aldrich Ames Remix*. US reveals hand; USSR discards any 1 card from US hand.
     For self-play: USSR discards randomly.
@@ -711,7 +712,7 @@ def _h_aldrich_ames(
 
 
 def _h_defectors(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 108: Defectors.
     - If played by USSR (as an ops play where US event fires): US gains 2 VP.
@@ -738,7 +739,7 @@ def _h_defectors(
 # ---------------------------------------------------------------------------
 
 def _h_salt_negotiations(
-    gs: GameState, side: Side, rng: random.Random
+    gs: GameState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 46: SALT Negotiations*. DEFCON +1; phasing player draws one card from discard to hand.
 
@@ -772,7 +773,7 @@ def _h_salt_negotiations(
 def _h_latin_american_debt_crisis(
     gs: "GameState",
     side: Side,
-    rng: random.Random,
+    rng: RNG,
 ) -> tuple["PublicState", bool, Optional[Side]]:
     """Card 98: Latin American Debt Crisis*. US must discard two cards totalling 4+ ops
     or USSR gains 2 VP.
@@ -847,7 +848,7 @@ def apply_hand_event(
     gs: GameState,
     action: ActionEncoding,
     side: Side,
-    rng: random.Random,
+    rng: RNG,
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Dispatch Cat C event to the appropriate handler.
 

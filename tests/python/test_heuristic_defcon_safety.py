@@ -15,7 +15,6 @@ Key constants from minimal_hybrid.py:
 - _DEFCON2_BATTLEGROUND_SUICIDE_PENALTY = 1_000_000  # Avoid BG coups at DEFCON 2
 """
 
-import random
 from typing import Callable
 
 import pytest

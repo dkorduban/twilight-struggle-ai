@@ -3,8 +3,8 @@ Tests for MCTS implementations (flat_mcts, uct_mcts, collect_self_play_game).
 
 These tests are kept fast by using small n_sim values (2-5).
 """
-import random
 import pytest
+from tsrl.engine.rng import make_rng
 from tsrl.engine.game_state import reset, clone_game_state
 from tsrl.engine.mcts import flat_mcts, uct_mcts, interleaved_uct_mcts, collect_self_play_game, SelfPlayStep
 from tsrl.engine.game_loop import GameResult
@@ -17,7 +17,7 @@ class TestFlatMCTS:
     def test_flat_mcts_returns_action_on_fresh_game(self):
         """flat_mcts should return an ActionEncoding for a fresh game state."""
         gs = reset(seed=42)
-        rng = random.Random(42)
+        rng = make_rng(42)
         action = flat_mcts(gs, n_sim=5, rng=rng)
         assert action is not None
         assert isinstance(action, ActionEncoding)
@@ -25,7 +25,7 @@ class TestFlatMCTS:
     def test_flat_mcts_with_n_sim_one(self):
         """flat_mcts should work with n_sim=1."""
         gs = reset(seed=43)
-        rng = random.Random(43)
+        rng = make_rng(43)
         action = flat_mcts(gs, n_sim=1, rng=rng)
         assert action is not None
         assert isinstance(action, ActionEncoding)
@@ -40,7 +40,7 @@ class TestFlatMCTS:
         initial_defcon = gs.pub.defcon
         initial_influence = dict(gs.pub.influence)
 
-        rng = random.Random(44)
+        rng = make_rng(44)
         _ = flat_mcts(gs, n_sim=3, rng=rng)
 
         # Verify state is unchanged
@@ -56,7 +56,7 @@ class TestFlatMCTS:
         gs.hands[Side.USSR] = frozenset()
         gs.hands[Side.US] = frozenset()
 
-        rng = random.Random(45)
+        rng = make_rng(45)
         action = flat_mcts(gs, n_sim=3, rng=rng)
         # If sample_action handles empty hands gracefully, None is expected
         # If not, this test documents the actual behavior
@@ -69,7 +69,7 @@ class TestUCTMCTS:
     def test_uct_mcts_returns_action_on_fresh_game(self):
         """uct_mcts should return an ActionEncoding for a fresh game state."""
         gs = reset(seed=46)
-        rng = random.Random(46)
+        rng = make_rng(46)
         action = uct_mcts(gs, n_sim=5, rng=rng)
         assert action is not None
         assert isinstance(action, ActionEncoding)
@@ -77,7 +77,7 @@ class TestUCTMCTS:
     def test_uct_mcts_with_n_sim_one(self):
         """uct_mcts should work with n_sim=1."""
         gs = reset(seed=47)
-        rng = random.Random(47)
+        rng = make_rng(47)
         action = uct_mcts(gs, n_sim=1, rng=rng)
         assert action is not None
         assert isinstance(action, ActionEncoding)
@@ -90,7 +90,7 @@ class TestUCTMCTS:
         initial_turn = gs.pub.turn
         initial_influence = dict(gs.pub.influence)
 
-        rng = random.Random(48)
+        rng = make_rng(48)
         _ = uct_mcts(gs, n_sim=3, rng=rng)
 
         # Verify state is unchanged
@@ -104,7 +104,7 @@ class TestUCTMCTS:
         gs.hands[Side.USSR] = frozenset()
         gs.hands[Side.US] = frozenset()
 
-        rng = random.Random(49)
+        rng = make_rng(49)
         action = uct_mcts(gs, n_sim=3, rng=rng)
         # If sample_action handles empty hands gracefully, None is expected
         assert action is None or isinstance(action, ActionEncoding)
@@ -113,7 +113,7 @@ class TestUCTMCTS:
         """value_fn replaces rollout; constant fn should still produce a valid action."""
         from tsrl.engine.game_state import reset, deal_cards
 
-        rng = random.Random(42)
+        rng = make_rng(42)
         gs = reset(seed=42)
         deal_cards(gs, Side.USSR, rng=rng)
         deal_cards(gs, Side.US, rng=rng)
@@ -129,7 +129,7 @@ class TestUCTMCTS:
         from tsrl.engine.game_state import reset, deal_cards
         from unittest.mock import patch
 
-        rng = random.Random(42)
+        rng = make_rng(42)
         gs = reset(seed=42)
         deal_cards(gs, Side.USSR, rng=rng)
         deal_cards(gs, Side.US, rng=rng)
@@ -170,7 +170,7 @@ class TestUCTMCTS:
 
         value_fn = make_value_function(ckpt)
 
-        rng = random.Random(42)
+        rng = make_rng(42)
         gs = reset(seed=42)
         deal_cards(gs, Side.USSR, rng=rng)
         deal_cards(gs, Side.US, rng=rng)
@@ -256,8 +256,8 @@ class TestMCTSIntegration:
         # With very small n_sim, they may occasionally return same action,
         # but with more sims they should often differ due to different algorithms.
         gs = reset(seed=57)
-        rng1 = random.Random(571)
-        rng2 = random.Random(572)
+        rng1 = make_rng(571)
+        rng2 = make_rng(572)
 
         action_flat = flat_mcts(gs, n_sim=5, rng=rng1)
         action_uct = uct_mcts(gs, n_sim=5, rng=rng2)
@@ -271,7 +271,7 @@ class TestMCTSIntegration:
     def test_mcts_action_is_from_hand(self):
         """MCTS-selected action should be playable from the actor's hand."""
         gs = reset(seed=58)
-        rng = random.Random(58)
+        rng = make_rng(58)
         action = flat_mcts(gs, n_sim=3, rng=rng)
 
         assert action is not None
@@ -290,7 +290,7 @@ class TestInterleavedUCTMCTS:
     def test_returns_one_action_per_game_state(self):
         """Should return exactly N actions for N input game states."""
         game_states = [reset(seed=i) for i in range(4)]
-        rng = random.Random(0)
+        rng = make_rng(0)
         results = interleaved_uct_mcts(game_states, n_sim=3, batch_value_fn=self._zero_value_fn, rng=rng)
         assert len(results) == 4
         for r in results:
@@ -299,7 +299,7 @@ class TestInterleavedUCTMCTS:
     def test_returns_legal_action_for_each_state(self):
         """Each returned action must reference a card in the phasing player's hand."""
         game_states = [reset(seed=10 + i) for i in range(3)]
-        rng = random.Random(42)
+        rng = make_rng(42)
         results = interleaved_uct_mcts(game_states, n_sim=5, batch_value_fn=self._zero_value_fn, rng=rng)
         for gs, action in zip(game_states, results):
             assert action is not None
@@ -312,7 +312,7 @@ class TestInterleavedUCTMCTS:
         """interleaved_uct_mcts must not modify the input GameStates."""
         game_states = [reset(seed=20 + i) for i in range(3)]
         snapshots = [(gs.pub.vp, gs.pub.defcon, dict(gs.pub.influence)) for gs in game_states]
-        rng = random.Random(7)
+        rng = make_rng(7)
         interleaved_uct_mcts(game_states, n_sim=4, batch_value_fn=self._zero_value_fn, rng=rng)
         for gs, (vp, defcon, influence) in zip(game_states, snapshots):
             assert gs.pub.vp == vp
@@ -327,7 +327,7 @@ class TestInterleavedUCTMCTS:
             return [0.0] * len(states)
 
         game_states = [reset(seed=30 + i) for i in range(5)]
-        rng = random.Random(99)
+        rng = make_rng(99)
         interleaved_uct_mcts(game_states, n_sim=4, batch_value_fn=counting_value_fn, rng=rng)
         assert len(call_sizes) > 0
         assert all(s > 0 for s in call_sizes)
@@ -340,7 +340,7 @@ class TestInterleavedUCTMCTS:
     def test_single_game_state(self):
         """Should work with N=1 (degenerates to single-tree UCT)."""
         gs = reset(seed=50)
-        rng = random.Random(50)
+        rng = make_rng(50)
         results = interleaved_uct_mcts([gs], n_sim=5, batch_value_fn=self._zero_value_fn, rng=rng)
         assert len(results) == 1
         assert results[0] is not None
@@ -351,7 +351,7 @@ class TestInterleavedUCTMCTS:
         game_states_a = [reset(seed=i) for i in range(3)]
         game_states_b = [reset(seed=i) for i in range(3)]
         r1 = interleaved_uct_mcts(game_states_a, n_sim=4, batch_value_fn=self._zero_value_fn,
-                                   rng=random.Random(77))
+                                   rng=make_rng(77))
         r2 = interleaved_uct_mcts(game_states_b, n_sim=4, batch_value_fn=self._zero_value_fn,
-                                   rng=random.Random(77))
+                                   rng=make_rng(77))
         assert [(a.card_id, int(a.mode)) for a in r1] == [(a.card_id, int(a.mode)) for a in r2]

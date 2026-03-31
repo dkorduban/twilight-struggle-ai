@@ -20,10 +20,13 @@ import datetime
 import logging
 import multiprocessing
 import os
-import random
 import sys
 from copy import copy
 from pathlib import Path
+
+import numpy as np
+
+from tsrl.engine.rng import RNG, make_rng
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,7 +60,7 @@ def _collect_heuristic_game(seed: int) -> tuple[list[dict], dict]:
     from tsrl.selfplay.collector import _step_to_row, _encode_result, _GAME_RESULT_STR
     from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side
 
-    rng = random.Random(seed)
+    rng = make_rng(seed)
     gs = reset(seed=seed)
     steps: list[SelfPlayStep] = []
     pending_step: SelfPlayStep | None = None
@@ -91,7 +94,7 @@ def _collect_heuristic_game(seed: int) -> tuple[list[dict], dict]:
                 )
             if action is None and req.pub.ar == 0 and req.hand:
                 action = ActionEncoding(
-                    card_id=rng.choice(sorted(req.hand)),
+                    card_id=int(rng.choice(sorted(req.hand))),
                     mode=ActionMode.EVENT,
                     targets=(),
                 )

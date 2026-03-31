@@ -24,9 +24,12 @@ Usage::
 """
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass, field
 from typing import Callable, Generator, Optional
+
+import numpy as np
+
+from tsrl.engine.rng import RNG, make_rng
 
 from tsrl.engine.cat_c_events import _CAT_C_CARD_IDS, apply_hand_event
 from tsrl.engine.game_state import (
@@ -64,7 +67,7 @@ def _apply_action_with_hands(
     gs: GameState,
     action: ActionEncoding,
     side: Side,
-    rng: random.Random,
+    rng: RNG,
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Apply an action, routing Cat C EVENT cards through apply_hand_event.
 
@@ -120,7 +123,7 @@ def fire_opponent_event(
     gs: GameState,
     card_id: int,
     opp_side: Side,
-    rng: random.Random,
+    rng: RNG,
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Fire the event on an opponent's card as a side effect of ops play (§5.2).
 
@@ -145,7 +148,7 @@ def fire_opponent_event(
     return new_pub, over, winner
 
 
-def make_random_policy(rng: Optional[random.Random] = None) -> Policy:
+def make_random_policy(rng: Optional[RNG] = None) -> Policy:
     """Return a Policy that uses factorized sampling (O(hand+accessible), not O(combos)).
 
     Each call: pick random card → pick random mode → sample random targets.
@@ -208,7 +211,7 @@ def _ars_for_side(pub: PublicState, side: Side, normal_ars: int) -> int:
 
 def _run_game_gen(
     gs: GameState,
-    rng: random.Random,
+    rng: RNG,
     max_turns: int,
 ) -> Generator[DecisionRequest, Optional[ActionEncoding], GameResult]:
     for turn in range(1, max_turns + 1):
@@ -277,8 +280,8 @@ def run_game_cb(
     seed: Optional[int] = None,
 ) -> GameResult:
     """Drives the generator with callback policies."""
-    rng = random.Random(seed)
-    gs = reset(seed=rng.randint(0, 2**32))
+    rng = make_rng(seed)
+    gs = reset(seed=int(rng.integers(0, 2**32)))
     gen = _run_game_gen(gs, rng, _MAX_TURNS)
     return _drive_policy_gen(gen, ussr_policy, us_policy)
 
@@ -300,7 +303,7 @@ def play_game(
 
 def _run_headline_phase_gen(
     gs: GameState,
-    rng: random.Random,
+    rng: RNG,
 ) -> Generator[DecisionRequest, Optional[ActionEncoding], Optional[GameResult]]:
     """Both players choose headline cards simultaneously; resolve in ops order.
 
@@ -399,7 +402,7 @@ def _run_headline_phase(
     gs: GameState,
     ussr_policy: Policy,
     us_policy: Policy,
-    rng: random.Random,
+    rng: RNG,
 ) -> Optional[GameResult]:
     gen = _run_headline_phase_gen(gs, rng)
     return _drive_policy_gen(gen, ussr_policy, us_policy)
@@ -408,7 +411,7 @@ def _run_headline_phase(
 def _resolve_trap_ar(
     gs: GameState,
     side: Side,
-    rng: random.Random,
+    rng: RNG,
 ) -> Optional[tuple[PublicState, bool, Optional[Side]]]:
     """Handle Bear Trap (USSR) / Quagmire (US) escape attempt for one AR.
 
@@ -456,7 +459,7 @@ def _resolve_trap_ar(
         return new_pub, over, winner
 
     # Pick one card at random to use as escape attempt.
-    chosen = rng.choice(sorted(eligible))
+    chosen = int(rng.choice(sorted(eligible)))
     gs.hands[side] = gs.hands[side] - {chosen}
 
     # Discard the card.
@@ -469,7 +472,7 @@ def _resolve_trap_ar(
         new_pub.discard = new_pub.discard | {chosen}
 
     # Roll d6: 1-4 = escape, 5-6 = remain trapped.
-    roll = rng.randint(1, 6)
+    roll = int(rng.integers(1, 7))
     if roll <= 4:
         # Escape!
         if is_bear_trap:
@@ -490,7 +493,7 @@ def _resolve_trap_ar(
 
 def _run_action_rounds_gen(
     gs: GameState,
-    rng: random.Random,
+    rng: RNG,
     total_ars: int,
     *,
     start_ar: int = 1,
@@ -580,7 +583,7 @@ def _run_action_rounds(
     gs: GameState,
     ussr_policy: Policy,
     us_policy: Policy,
-    rng: random.Random,
+    rng: RNG,
     total_ars: int,
     *,
     start_ar: int = 1,
@@ -599,7 +602,7 @@ def _run_action_rounds(
 def _run_extra_ar_gen(
     gs: GameState,
     side: Side,
-    rng: random.Random,
+    rng: RNG,
 ) -> Generator[DecisionRequest, Optional[ActionEncoding], Optional[GameResult]]:
     """Run one extra AR for the given side (North Sea Oil, Glasnost, etc.).
 
@@ -655,7 +658,7 @@ def _run_extra_ar(
     gs: GameState,
     side: Side,
     policy: Policy,
-    rng: random.Random,
+    rng: RNG,
 ) -> Optional[GameResult]:
     gen = _run_extra_ar_gen(gs, side, rng)
     return _drive_policy_gen(gen, policy, policy)
@@ -663,7 +666,7 @@ def _run_extra_ar(
 
 def _end_of_turn(
     gs: GameState,
-    rng: random.Random,
+    rng: RNG,
     turn: int,
 ) -> Optional[GameResult]:
     """End-of-turn: discard hands, check final scoring on Turn 10, advance DEFCON."""
@@ -763,7 +766,7 @@ def _end_of_turn(
 def _resolve_norad(
     gs: GameState,
     us_policy: Optional[Policy],
-    rng: random.Random,
+    rng: RNG,
 ) -> Optional[tuple]:
     """NORAD trigger: US places 1 free influence in a country already containing US influence.
 
@@ -779,7 +782,7 @@ def _resolve_norad(
     )
     if not eligible:
         return None
-    country_id = rng.choice(eligible)
+    country_id = int(rng.choice(eligible))
     pub = _copy_pub(gs.pub)
     pub.influence[(Side.US, country_id)] = pub.influence.get((Side.US, country_id), 0) + 1
     gs.pub = pub
@@ -839,7 +842,7 @@ def _drive_policy_gen(
 
 def _play_from_state_gen(
     gs: GameState,
-    rng: random.Random,
+    rng: RNG,
 ) -> Generator[DecisionRequest, Optional[ActionEncoding], GameResult]:
     """Continue a game from an existing GameState to completion.
 
@@ -919,9 +922,9 @@ def play_from_state_cb(
     ussr_policy: Policy,
     us_policy: Policy,
     *,
-    rng: Optional[random.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> GameResult:
-    _rng = rng or random.Random()
+    _rng = rng or make_rng()
     gen = _play_from_state_gen(gs, _rng)
     return _drive_policy_gen(gen, ussr_policy, us_policy)
 
@@ -931,13 +934,13 @@ def play_from_state(
     ussr_policy: Policy,
     us_policy: Policy,
     *,
-    rng: Optional[random.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> GameResult:
     return play_from_state_cb(gs, ussr_policy, us_policy, rng=rng)
 
 
 def play_random_game(seed: Optional[int] = None) -> GameResult:
     """Play one complete game with both sides using random policies."""
-    rng = random.Random(seed)
+    rng = make_rng(seed)
     policy = make_random_policy(rng)
     return play_game(policy, policy, seed=seed)

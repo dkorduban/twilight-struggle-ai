@@ -1,5 +1,6 @@
 """Tests for the engine layer: adjacency, legal actions, and step."""
 import pytest
+from tsrl.engine.rng import make_rng
 from tsrl.engine.adjacency import accessible_countries, load_adjacency, neighbors
 from tsrl.engine.game_loop import _apply_action_with_hands
 from tsrl.engine.game_state import GameState
@@ -315,8 +316,7 @@ def test_apply_influence_china_card_passes_to_opponent():
 
 def test_apply_coup_returns_pub():
     """Coup is now implemented (dice); returns a tuple."""
-    import random
-    rng = random.Random(0)
+    rng = make_rng(0)
     pub = PublicState()
     pub.defcon = 5
     pub.influence[(Side.US, 5)] = 1
@@ -571,11 +571,10 @@ _MEXICO = 42
 _NORTH_KOREA = 23
 _FINLAND = 6
 
-import random as _random_module
 
 
-def _seeded_rng(seed: int = 0) -> _random_module.Random:
-    return _random_module.Random(seed)
+def _seeded_rng(seed: int = 0):
+    return make_rng(seed)
 
 
 def test_realign_us_superpower_adjacency_applied_to_cuba():
@@ -826,14 +825,13 @@ def test_nato_requires_prerequisite_illegal_as_event_without_prereq():
 
 
 def test_nato_legal_as_event_after_warsaw_pact():
-    import random
 
     pub = PublicState()
     pub, _, _ = apply_action(
         pub,
         ActionEncoding(card_id=16, mode=ActionMode.EVENT, targets=()),
         Side.USSR,
-        rng=random.Random(0),
+        rng=make_rng(0),
     )
 
     modes = legal_modes(21, pub, Side.US, adj=ADJ)
@@ -846,7 +844,6 @@ def test_nato_can_always_be_played_for_ops():
 
 
 def test_solidarity_no_effect_without_john_paul_ii():
-    import random
 
     poland = 12
     pub = PublicState()
@@ -856,14 +853,13 @@ def test_solidarity_no_effect_without_john_paul_ii():
         pub,
         ActionEncoding(card_id=104, mode=ActionMode.EVENT, targets=()),
         Side.US,
-        rng=random.Random(0),
+        rng=make_rng(0),
     )
 
     assert new_pub.influence.get((Side.US, poland), 0) == 1
 
 
 def test_solidarity_fires_after_john_paul_ii_played():
-    import random
 
     poland = 12
     pub = PublicState()
@@ -872,7 +868,7 @@ def test_solidarity_fires_after_john_paul_ii_played():
         pub,
         ActionEncoding(card_id=69, mode=ActionMode.EVENT, targets=()),
         Side.US,
-        rng=random.Random(0),
+        rng=make_rng(0),
     )
     before = pub.influence.get((Side.US, poland), 0)
 
@@ -880,7 +876,7 @@ def test_solidarity_fires_after_john_paul_ii_played():
         pub,
         ActionEncoding(card_id=104, mode=ActionMode.EVENT, targets=()),
         Side.US,
-        rng=random.Random(0),
+        rng=make_rng(0),
     )
 
     assert pub.influence.get((Side.US, poland), 0) == before + 3
@@ -969,7 +965,7 @@ def test_china_card_coup_outside_asia_uses_4_ops():
         targets=(poland,),
     )
 
-    new_pub, _, _ = apply_action(pub, action, Side.USSR, rng=_seeded_rng(1))
+    new_pub, _, _ = apply_action(pub, action, Side.USSR, rng=_seeded_rng(11))  # PCG64 seed 11: roll=1, coup fails
 
     assert new_pub.influence.get((Side.US, poland), 0) == 1
 
@@ -1012,7 +1008,7 @@ def test_olympic_games_boycott_reduces_defcon():
         pub,
         ActionEncoding(card_id=20, mode=ActionMode.EVENT, targets=()),
         Side.USSR,
-        rng=_seeded_rng(1),
+        rng=_seeded_rng(2),  # PCG64 seed 2: random()=0.26 < 0.5 → boycott path
     )
 
     assert new_pub.defcon == 4
@@ -1029,7 +1025,7 @@ def test_olympic_games_boycott_gives_4_ops_not_vp():
         pub,
         ActionEncoding(card_id=20, mode=ActionMode.EVENT, targets=()),
         Side.USSR,
-        rng=_seeded_rng(1),
+        rng=_seeded_rng(2),  # PCG64 seed 2: random()=0.26 < 0.5 → boycott path
     )
 
     after_influence = sum(

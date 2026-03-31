@@ -1,5 +1,5 @@
 import os
-import random
+from tsrl.engine.rng import make_rng
 
 import pytest
 
@@ -16,7 +16,7 @@ def test_model_candidate_fn_returns_list():
     from tsrl.policies.learned_policy import make_model_candidate_fn
 
     fn = make_model_candidate_fn(ckpt, n_candidates=5)
-    rng = random.Random(42)
+    rng = make_rng(42)
     gs = reset(seed=42)
     deal_cards(gs, Side.USSR, rng=rng)
     deal_cards(gs, Side.US, rng=rng)
@@ -42,7 +42,7 @@ def test_model_candidate_fn_with_uct_mcts():
     from tsrl.policies.learned_policy import make_model_candidate_fn
 
     fn = make_model_candidate_fn(ckpt, n_candidates=10)
-    rng = random.Random(42)
+    rng = make_rng(42)
     gs = reset(seed=42)
     deal_cards(gs, Side.USSR, rng=rng)
     deal_cards(gs, Side.US, rng=rng)
@@ -61,7 +61,7 @@ def test_learned_policy_no_defcon2_coup():
     from tsrl.policies.learned_policy import make_learned_policy
 
     policy = make_learned_policy(ckpt, Side.USSR)
-    rng = random.Random(99)
+    rng = make_rng(99)
 
     for seed in range(20):
         gs = reset(seed=seed)

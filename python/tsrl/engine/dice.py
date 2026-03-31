@@ -2,32 +2,36 @@
 Dice rolls for Twilight Struggle stochastic actions.
 
 All randomness is isolated here so the game loop can inject an RNG for
-deterministic seeds.  Pass a ``random.Random`` instance to each function;
-callers that want the global RNG can pass ``None``.
+deterministic seeds.  Pass a ``np.random.Generator`` (PCG64) instance to each
+function; callers that want the module-level default RNG can pass ``None``.
 """
 from __future__ import annotations
 
-import random as _random_module
 from typing import Optional
 
-_RNG = _random_module.Random()   # module-level default
+import numpy as np
+
+from tsrl.engine.rng import RNG, make_rng
+
+_RNG: RNG = make_rng()   # module-level default (randomly seeded)
 
 
 def set_seed(seed: int) -> None:
-    """Seed the module-level RNG (used when callers pass rng=None)."""
-    _RNG.seed(seed)
+    """Re-seed the module-level RNG (used when callers pass rng=None)."""
+    global _RNG
+    _RNG = make_rng(seed)
 
 
-def roll_d6(rng: Optional[_random_module.Random] = None) -> int:
+def roll_d6(rng: Optional[RNG] = None) -> int:
     """Roll one fair 6-sided die (1–6)."""
     r = rng if rng is not None else _RNG
-    return r.randint(1, 6)
+    return int(r.integers(1, 7))
 
 
-def roll_2d6(rng: Optional[_random_module.Random] = None) -> tuple[int, int]:
+def roll_2d6(rng: Optional[RNG] = None) -> tuple[int, int]:
     """Roll two fair 6-sided dice independently."""
     r = rng if rng is not None else _RNG
-    return r.randint(1, 6), r.randint(1, 6)
+    return int(r.integers(1, 7)), int(r.integers(1, 7))
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +59,7 @@ def coup_result(
     ops: int,
     defender_stability: int,
     *,
-    rng: Optional[_random_module.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> int:
     """Roll for a coup and return the net influence swing.
 
@@ -78,7 +82,7 @@ def realign_result(
     ussr_adj_nations: int,
     us_adj_nations: int,
     *,
-    rng: Optional[_random_module.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> tuple[int, int]:
     """Roll realignment dice and return (ussr_die_total, us_die_total).
 
@@ -96,8 +100,8 @@ def realign_result(
     Returns raw dice only; caller applies influence delta.
     """
     r = rng if rng is not None else _RNG
-    ussr_roll = r.randint(1, 6)
-    us_roll = r.randint(1, 6)
+    ussr_roll = int(r.integers(1, 7))
+    us_roll = int(r.integers(1, 7))
 
     ussr_mod = ussr_adj_nations + (1 if ussr_influence > us_influence else 0)
     us_mod = us_adj_nations + (1 if us_influence > ussr_influence else 0)
@@ -117,7 +121,7 @@ SPACE_ADVANCE_THRESHOLD = [3, 4, 3, 4, 3, 4, 3, 2]  # indices 0-7 (current level
 def space_result(
     current_level: int,
     *,
-    rng: Optional[_random_module.Random] = None,
+    rng: Optional[RNG] = None,
 ) -> bool:
     """Roll for space race advancement from current_level.
 

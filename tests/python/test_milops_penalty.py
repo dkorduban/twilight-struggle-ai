@@ -8,7 +8,7 @@ suffers a VP penalty equal to the shortfall.
 """
 from __future__ import annotations
 
-import random
+from tsrl.engine.rng import make_rng
 
 import pytest
 
@@ -41,7 +41,7 @@ def _make_gs(
 
 
 def _run_eot(gs, *, turn: int = 1):
-    rng = random.Random(0)
+    rng = make_rng(0)
     return _end_of_turn(gs, rng, turn)
 
 

@@ -8,12 +8,12 @@ Helpers
 -------
 - _pub()           : build a minimal PublicState
 - SequentialRNG    : deterministic fake RNG that returns a predefined sequence
-- SeededRNG alias  : random.Random(0)
+- SeededRNG alias  : make_rng(0)
 """
 from __future__ import annotations
 
 import copy
-import random
+from tsrl.engine.rng import RNG, make_rng
 
 import pytest
 
@@ -36,41 +36,55 @@ def _apply_event(
     pub: PublicState,
     card_id: int,
     side: Side = Side.USSR,
-    rng: random.Random | None = None,
+    rng: RNG | None = None,
 ) -> tuple[PublicState, bool, object]:
     action = ActionEncoding(card_id=card_id, mode=ActionMode.EVENT, targets=())
     return apply_action(pub, action, side, rng=rng)
 
 
 class SequentialRNG:
-    """Returns predefined sequence of randint/choice values for deterministic tests."""
+    """Returns predefined sequence of values for deterministic tests.
 
-    def __init__(self, values: list[int]):
+    Implements the numpy.random.Generator interface used by the engine:
+      integers(a, b)              → next int value (b is exclusive)
+      choice(seq)                 → seq[next % len(seq)]
+      choice(seq, size=k, ...)    → [seq[v%len] for v in next k values]
+      random()                    → next float value (pass floats in sequence)
+      shuffle(lst)                → no-op (list unchanged)
+
+    Pass floats in the sequence for calls that consume random(). Example:
+      SequentialRNG([0.9, 6, 1])  # 0.9 for random(), then 6 and 1 for dice
+    """
+
+    def __init__(self, values: list):
         self._values = list(values)
         self._i = 0
 
-    def _next(self) -> int:
+    def _next(self):
         v = self._values[self._i % len(self._values)]
         self._i += 1
         return v
 
-    def randint(self, a: int, b: int) -> int:
-        return self._next()
+    def integers(self, a: int, b: int) -> int:
+        """Return next value cast to int (ignores range; b is exclusive like numpy)."""
+        return int(self._next())
 
-    def choice(self, seq):
-        v = self._next()
-        return seq[v % len(seq)]
+    def choice(self, seq, size=None, replace=True):
+        if size is None:
+            v = int(self._next())
+            return seq[v % len(seq)]
+        return [seq[int(self._next()) % len(seq)] for _ in range(size)]
 
-    def choices(self, population, k: int = 1):
-        return [self.choice(population) for _ in range(k)]
+    def shuffle(self, lst) -> None:
+        pass  # no-op for deterministic tests
 
-    def sample(self, population, k: int) -> list:
-        pop = sorted(population)
-        return pop[:k]
+    def random(self) -> float:
+        """Return next value as float. Pass floats in the sequence for probability branches."""
+        return float(self._next())
 
 
-def _rng0() -> random.Random:
-    return random.Random(0)
+def _rng0() -> RNG:
+    return make_rng(0)
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +96,7 @@ _WE = frozenset({1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18})
 
 def test_socialist_govts_places_ussr_in_western_europe():
     pub = _pub()
-    rng = random.Random(1)
+    rng = make_rng(1)
     new_pub, _, _ = _apply_event(pub, 7, Side.USSR, rng)
     placed = [cid for cid in _WE if new_pub.influence.get((Side.USSR, cid), 0) > 0]
     assert len(placed) <= 3
@@ -1008,13 +1022,13 @@ _SOUTH_KOREA = 25
 
 def test_korean_war_success_gives_ussr_2_vp():
     # Use RNG that gives high roll (6) → coup succeeds (6 + 2 - 2*stab; SK stab=3 → 6+2-6=2 > 0)
-    rng = random.Random(999)
+    rng = make_rng(999)
     pub = _pub()
     pub.defcon = 5
     pub.influence[(Side.US, _SOUTH_KOREA)] = 5
     # Try repeatedly to get a success
     for seed in range(100):
-        rng = random.Random(seed)
+        rng = make_rng(seed)
         pub2 = _pub()
         pub2.defcon = 5
         pub2.influence[(Side.US, _SOUTH_KOREA)] = 5
@@ -1032,7 +1046,7 @@ def test_korean_war_failure_gives_us_1_vp():
     pub.defcon = 5
     # Force low dice: use seed that tends to roll low
     for seed in range(100):
-        rng = random.Random(seed)
+        rng = make_rng(seed)
         pub2 = _pub()
         pub2.defcon = 5
         new_pub, _, _ = _apply_event(pub2, 11, Side.USSR, rng)
@@ -1065,7 +1079,7 @@ _ISRAEL = 30
 
 def test_arab_israeli_war_failure_gives_us_1_vp():
     for seed in range(100):
-        rng = random.Random(seed)
+        rng = make_rng(seed)
         pub = _pub()
         pub.defcon = 5
         new_pub, _, _ = _apply_event(pub, 13, Side.USSR, rng)
@@ -1076,7 +1090,7 @@ def test_arab_israeli_war_failure_gives_us_1_vp():
 
 def test_arab_israeli_war_success_no_extra_vp():
     for seed in range(100):
-        rng = random.Random(seed)
+        rng = make_rng(seed)
         pub = _pub()
         pub.defcon = 5
         pub.influence[(Side.US, _ISRAEL)] = 1
@@ -1112,7 +1126,7 @@ _PAKISTAN = 24
 
 def test_indo_pakistani_war_success_path():
     for seed in range(100):
-        rng = random.Random(seed)
+        rng = make_rng(seed)
         pub = _pub()
         pub.defcon = 5
         pub.vp = 0
@@ -1124,7 +1138,7 @@ def test_indo_pakistani_war_success_path():
 
 def test_indo_pakistani_war_failure_path():
     for seed in range(100):
-        rng = random.Random(seed)
+        rng = make_rng(seed)
         pub = _pub()
         pub.defcon = 5
         pub.vp = 0
@@ -1216,7 +1230,7 @@ def test_brush_war_defcon_drops_if_battleground():
     pub.defcon = 5
     # Try a few seeds to get one that targets a battleground
     for seed in range(200):
-        rng = random.Random(seed)
+        rng = make_rng(seed)
         pub2 = _pub()
         pub2.defcon = 5
         new_pub, _, _ = _apply_event(pub2, 39, Side.USSR, rng)
@@ -1322,7 +1336,7 @@ def test_summit_no_mutation():
 
 
 def test_how_i_learned_sets_defcon_1_to_5():
-    rng = random.Random(0)
+    rng = make_rng(0)
     pub = _pub()
     pub.defcon = 3
     new_pub, _, _ = _apply_event(pub, 49, Side.USSR, rng)
@@ -1720,7 +1734,7 @@ _IRAQ = 29
 
 def test_iran_iraq_war_success_gives_2_vp():
     for seed in range(100):
-        rng = random.Random(seed)
+        rng = make_rng(seed)
         pub = _pub()
         pub.defcon = 5
         pub.vp = 0
@@ -1732,7 +1746,7 @@ def test_iran_iraq_war_success_gives_2_vp():
 
 def test_iran_iraq_war_failure_gives_minus_1_vp():
     for seed in range(100):
-        rng = random.Random(seed)
+        rng = make_rng(seed)
         pub = _pub()
         pub.defcon = 5
         pub.vp = 0

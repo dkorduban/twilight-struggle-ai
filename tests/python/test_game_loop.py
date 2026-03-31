@@ -1,6 +1,6 @@
 """Tests for dice, scoring, game state, and the game loop."""
-import random
 import pytest
+from tsrl.engine.rng import make_rng
 
 from tsrl.engine.dice import coup_net, coup_result, realign_result, space_result
 from tsrl.engine.game_loop import GameResult, play_random_game, play_game, make_random_policy
@@ -20,7 +20,7 @@ from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Region, Side
 
 
 def test_roll_d6_range():
-    rng = random.Random(0)
+    rng = make_rng(0)
     from tsrl.engine.dice import roll_d6
     for _ in range(100):
         r = roll_d6(rng)
@@ -37,7 +37,7 @@ def test_coup_net_negative():
 
 
 def test_coup_result_range():
-    rng = random.Random(0)
+    rng = make_rng(0)
     for _ in range(100):
         net = coup_result(3, 2, rng=rng)
         # net = roll(1-6) + 3 - 4; range: -3 to 5
@@ -47,7 +47,7 @@ def test_coup_result_range():
 def test_space_result_low_roll_succeeds():
     # Threshold at level 0 is 3; roll of 1 (≤ 3) should succeed.
     class FixedRNG:
-        def randint(self, a, b): return 1
+        def integers(self, a, b): return 1
     result = space_result(0, rng=FixedRNG())
     assert result is True
 
@@ -55,13 +55,13 @@ def test_space_result_low_roll_succeeds():
 def test_space_result_high_roll_fails():
     # Threshold at level 0 is 3; roll of 6 (> 3) should fail.
     class FixedRNG:
-        def randint(self, a, b): return 6
+        def integers(self, a, b): return 6
     result = space_result(0, rng=FixedRNG())
     assert result is False
 
 
 def test_space_result_max_level():
-    rng = random.Random(0)
+    rng = make_rng(0)
     assert space_result(8, rng=rng) is False
 
 
@@ -299,7 +299,7 @@ def test_apply_action_influence_returns_tuple():
 
 
 def test_apply_action_coup_with_dice():
-    rng = random.Random(42)
+    rng = make_rng(42)
     pub = PublicState()
     pub.defcon = 5
     pub.influence[(Side.US, 5)] = 2   # East Germany: US has 2
@@ -311,7 +311,7 @@ def test_apply_action_coup_with_dice():
 
 
 def test_apply_action_space_advances_or_stays():
-    rng = random.Random(99)
+    rng = make_rng(99)
     pub = PublicState()
     pub.space[int(Side.USSR)] = 0
     action = ActionEncoding(card_id=7, mode=ActionMode.SPACE, targets=())
@@ -380,7 +380,6 @@ def test_play_random_multiple_games():
 
 def test_headline_higher_ops_resolves_first():
     """USSR plays 1-op card, US plays 4-op card: US headline should resolve first."""
-    import random
     from tsrl.engine.game_loop import _run_headline_phase
     from tsrl.engine.game_state import GameState, GamePhase, reset
     from tsrl.schemas import ActionEncoding, ActionMode, Side
@@ -417,7 +416,7 @@ def test_headline_higher_ops_resolves_first():
 
     _gl._apply_action_with_hands = _recording
     try:
-        _run_headline_phase(gs, _ussr_policy, _us_policy, random.Random(0))
+        _run_headline_phase(gs, _ussr_policy, _us_policy, make_rng(0))
     finally:
         _gl._apply_action_with_hands = orig
 
@@ -428,7 +427,6 @@ def test_headline_higher_ops_resolves_first():
 
 def test_headline_tie_us_resolves_first():
     """Both sides play 0-ops scoring cards: US resolves first (ties go to US)."""
-    import random
     from tsrl.engine.game_loop import _run_headline_phase
     from tsrl.engine.game_state import reset
     from tsrl.schemas import ActionEncoding, ActionMode, Side
@@ -461,7 +459,7 @@ def test_headline_tie_us_resolves_first():
 
     _gl._apply_action_with_hands = _recording
     try:
-        _run_headline_phase(gs, _ussr_policy, _us_policy, random.Random(0))
+        _run_headline_phase(gs, _ussr_policy, _us_policy, make_rng(0))
     finally:
         _gl._apply_action_with_hands = orig
 
@@ -470,7 +468,6 @@ def test_headline_tie_us_resolves_first():
 
 def test_headline_defectors_cancels_ussr_headline():
     """If US headlines Defectors (108), USSR's headline card is discarded without firing."""
-    import random
     from tsrl.engine.game_loop import _run_headline_phase
     from tsrl.engine.game_state import reset
     from tsrl.schemas import ActionEncoding, ActionMode, Side
@@ -495,7 +492,7 @@ def test_headline_defectors_cancels_ussr_headline():
     def _us_policy(pub, hand, holds_china):
         return ActionEncoding(card_id=_DEFECTORS, mode=ActionMode.EVENT, targets=())
 
-    rng = random.Random(0)
+    rng = make_rng(0)
     _run_headline_phase(gs, _ussr_policy, _us_policy, rng)
 
     # Fidel would place USSR inf in Cuba; if cancelled, Cuba should have no USSR inf.
@@ -517,7 +514,6 @@ def test_norad_triggers_at_defcon2_after_ussr_ar():
     has influence; Italy(10) is pre-seeded with US inf and is the only eligible
     target here, so the +1 must land there.
     """
-    import random
     from tsrl.engine.game_loop import _run_action_rounds
     from tsrl.engine.game_state import reset, GamePhase
     from tsrl.schemas import ActionEncoding, ActionMode, Side
@@ -548,7 +544,7 @@ def test_norad_triggers_at_defcon2_after_ussr_ar():
             return None
         return ActionEncoding(card_id=cid, mode=ActionMode.SPACE, targets=())
 
-    _run_action_rounds(gs, _policy, _policy, random.Random(0), total_ars=1)
+    _run_action_rounds(gs, _policy, _policy, make_rng(0), total_ars=1)
 
     italy_after = gs.pub.influence.get((Side.US, _ITALY), 0)
     assert italy_after == italy_before + 1
@@ -556,7 +552,6 @@ def test_norad_triggers_at_defcon2_after_ussr_ar():
 
 def test_norad_does_not_trigger_at_defcon3():
     """NORAD should NOT grant free influence when DEFCON > 2."""
-    import random
     from tsrl.engine.game_loop import _run_action_rounds
     from tsrl.engine.game_state import reset
     from tsrl.schemas import ActionEncoding, ActionMode, Side
@@ -585,7 +580,7 @@ def test_norad_does_not_trigger_at_defcon3():
             return None
         return ActionEncoding(card_id=cid, mode=ActionMode.SPACE, targets=())
 
-    _run_action_rounds(gs, _policy, _policy, random.Random(0), total_ars=1)
+    _run_action_rounds(gs, _policy, _policy, make_rng(0), total_ars=1)
 
     italy_after = gs.pub.influence.get((Side.US, _ITALY), 0)
     assert italy_after == italy_before   # no NORAD trigger at DEFCON 3
@@ -702,7 +697,7 @@ def test_final_scoring_fires_at_turn_10():
     gs.pub.milops = [5, 5]  # no MilOps penalty
 
     vp_before = gs.pub.vp
-    rng = random.Random(0)
+    rng = make_rng(0)
     _end_of_turn(gs, rng, turn=10)
 
     # SA Presence for USSR = base 2 + 1 BG bonus. US has NONE (0).
@@ -740,7 +735,7 @@ def test_final_scoring_all_regions_scored():
 
     vp_before = gs.pub.vp
     _end_of_turn(gs, reset(seed=42).pub.__class__.__new__(reset(seed=42).pub.__class__)
-                 .__class__.__new__ if False else random.Random(0),
+                 .__class__.__new__ if False else make_rng(0),
                  turn=10)
     # USSR Presence in all 6: Europe(1)+Asia(3)+ME(3)+CA(1)+SA(2)+Africa(1) = 11 VP minimum
     assert gs.pub.vp >= vp_before + 10, (
@@ -772,7 +767,7 @@ def test_final_scoring_europe_control_ends_game():
     # Also give USSR a non-BG Europe presence for total-country dominance
     gs.pub.influence[(Side.USSR, 0)] = 1  # Austria (non-BG, stab=4)
 
-    result = _end_of_turn(gs, random.Random(0), turn=10)
+    result = _end_of_turn(gs, make_rng(0), turn=10)
 
     assert result is not None, (
         "Europe Control at Turn 10 final scoring must return a GameResult win"
@@ -795,7 +790,7 @@ def test_final_scoring_se_asia_included_in_asia():
     # USSR controls only Vietnam (SE Asia BG)
     gs.pub.influence[(Side.USSR, 80)] = 1  # stab=1, so influence=1 controls it
 
-    _end_of_turn(gs, random.Random(0), turn=10)
+    _end_of_turn(gs, make_rng(0), turn=10)
 
     # If SE Asia excluded: Asia contribution = 0, total VP from all regions ≈ 0.
     # If SE Asia included: Asia contribution = +3 (Presence) + 1 (BG) = +4.
@@ -817,7 +812,7 @@ def test_final_scoring_china_card_bonus_in_asia():
     # USSR at Asia Presence (Afghanistan, non-BG, stab=2)
     gs.pub.influence[(Side.USSR, 20)] = 2
 
-    _end_of_turn(gs, random.Random(0), turn=10)
+    _end_of_turn(gs, make_rng(0), turn=10)
     vp_with_china = gs.pub.vp
 
     gs2 = _make_turn10_gs(vp=0)
@@ -825,7 +820,7 @@ def test_final_scoring_china_card_bonus_in_asia():
     gs2.pub.china_held_by = Side.US
     gs2.pub.china_playable = True
     gs2.pub.influence[(Side.USSR, 20)] = 2
-    _end_of_turn(gs2, random.Random(0), turn=10)
+    _end_of_turn(gs2, make_rng(0), turn=10)
     vp_us_holds_china = gs2.pub.vp
 
     assert vp_with_china == vp_us_holds_china + 2, (
@@ -842,7 +837,6 @@ def test_north_sea_oil_extra_ar_fires():
     full turn cycle (including the extra AR) but still have one card after the
     regular 1 AR.
     """
-    import random
     from tsrl.engine.game_loop import _run_action_rounds, _run_extra_ar
     from tsrl.engine.game_state import reset, GamePhase
 
@@ -865,13 +859,13 @@ def test_north_sea_oil_extra_ar_fires():
         return ActionEncoding(card_id=cid, mode=ActionMode.SPACE, targets=())
 
     # After 1 regular AR: US plays one card (lower id = _US_CARD_1)
-    _run_action_rounds(gs, _space_policy, _space_policy, random.Random(0), total_ars=1)
+    _run_action_rounds(gs, _space_policy, _space_policy, make_rng(0), total_ars=1)
     assert len(gs.hands[Side.US]) == 1, "US should have 1 card left after regular AR"
 
     # Fire the extra AR (mimicking what play_game does after _run_action_rounds)
     assert gs.pub.north_sea_oil_extra_ar is True  # flag survives regular ARs
     gs.pub.north_sea_oil_extra_ar = False  # caller clears flag before _run_extra_ar
-    _run_extra_ar(gs, Side.US, _space_policy, random.Random(0))
+    _run_extra_ar(gs, Side.US, _space_policy, make_rng(0))
     assert len(gs.hands[Side.US]) == 0, "US should have used both cards after extra AR"
 
 
@@ -886,7 +880,7 @@ def test_formosan_resolution_adds_taiwan_as_battleground():
     pub.influence[(Side.US, _AFGHANISTAN)] = 2
     pub.influence[(Side.US, _TAIWAN)] = 3
 
-    pub, _, _ = apply_event_card(pub, 35, Side.US, random.Random(0))
+    pub, _, _ = apply_event_card(pub, 35, Side.US, make_rng(0))
     result = score_region(Region.ASIA, pub)
 
     # US: Domination(7) + BG_bonus(1 for Taiwan) + adj_bonus(1 for Afghanistan adj USSR) = 9
@@ -913,7 +907,6 @@ def test_formosan_inactive_taiwan_not_counted_as_battleground():
 
 
 def _count_action_round_opportunities(*, ussr_space: int, us_space: int = 0, turn: int = 1):
-    import random
     from tsrl.engine.game_loop import _run_action_rounds
 
     gs = reset(seed=0)
@@ -931,7 +924,7 @@ def _count_action_round_opportunities(*, ussr_space: int, us_space: int = 0, tur
         gs,
         _counting_policy,
         _counting_policy,
-        random.Random(0),
+        make_rng(0),
         total_ars=_ars_for_turn(turn),
     )
     return counts
@@ -957,7 +950,6 @@ def test_space_level_below_8_gives_normal_ars():
 
 
 def test_ussr_event_fires_when_us_plays_ussr_card_for_ops():
-    import random
     from tsrl.engine.game_loop import _apply_action_with_hands
 
     _ROMANIA = 13
@@ -975,7 +967,7 @@ def test_ussr_event_fires_when_us_plays_ussr_card_for_ops():
         targets=(_FRANCE,),
     )
 
-    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, random.Random(0))
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, make_rng(0))
 
     assert not over
     assert winner is None
@@ -985,7 +977,6 @@ def test_ussr_event_fires_when_us_plays_ussr_card_for_ops():
 
 
 def test_us_event_fires_when_ussr_plays_us_card_for_ops():
-    import random
     from tsrl.engine.game_loop import _apply_action_with_hands
 
     _FRANCE = 7
@@ -1002,7 +993,7 @@ def test_us_event_fires_when_ussr_plays_us_card_for_ops():
         targets=(_FRANCE,),
     )
 
-    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.USSR, random.Random(0))
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.USSR, make_rng(0))
 
     assert not over
     assert winner is None
@@ -1011,7 +1002,6 @@ def test_us_event_fires_when_ussr_plays_us_card_for_ops():
 
 
 def test_game_over_propagates_if_opponent_event_ends_game():
-    import random
     from tsrl.engine.game_loop import _apply_action_with_hands
 
     _FRANCE = 7
@@ -1028,7 +1018,7 @@ def test_game_over_propagates_if_opponent_event_ends_game():
         targets=(_FRANCE,),
     )
 
-    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.USSR, random.Random(0))
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.USSR, make_rng(0))
 
     assert over
     assert winner == Side.US
@@ -1037,7 +1027,6 @@ def test_game_over_propagates_if_opponent_event_ends_game():
 
 
 def test_neutral_card_ops_does_not_fire_event():
-    import random
     from tsrl.engine.game_loop import _apply_action_with_hands
 
     _FRANCE = 7
@@ -1058,7 +1047,7 @@ def test_neutral_card_ops_does_not_fire_event():
         base_pub,
         action,
         Side.USSR,
-        rng=random.Random(0),
+        rng=make_rng(0),
     )
 
     gs = reset(seed=0)
@@ -1067,7 +1056,7 @@ def test_neutral_card_ops_does_not_fire_event():
         gs,
         action,
         Side.USSR,
-        random.Random(0),
+        make_rng(0),
     )
 
     assert actual_pub == expected_pub
@@ -1076,7 +1065,6 @@ def test_neutral_card_ops_does_not_fire_event():
 
 
 def test_starred_card_in_removed_not_discard_after_ops_play():
-    import random
     from tsrl.engine.game_loop import _apply_action_with_hands
 
     _ROMANIA = 13
@@ -1094,7 +1082,7 @@ def test_starred_card_in_removed_not_discard_after_ops_play():
         targets=(_FRANCE,),
     )
 
-    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, random.Random(0))
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, make_rng(0))
 
     assert not over
     assert winner is None
@@ -1104,7 +1092,7 @@ def test_starred_card_in_removed_not_discard_after_ops_play():
 
 def test_space_level4_first_tracks_first_side():
     class FixedRNG:
-        def randint(self, a, b):
+        def integers(self, a, b):
             return 1
 
     action = ActionEncoding(card_id=22, mode=ActionMode.SPACE, targets=())
@@ -1138,7 +1126,7 @@ def test_space_level6_discard_when_opponent_spaces():
     gs.hands[Side.US] = frozenset()
 
     action = ActionEncoding(card_id=22, mode=ActionMode.SPACE, targets=())
-    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, random.Random(0))
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, make_rng(0))
 
     assert not over
     assert winner is None
@@ -1158,7 +1146,7 @@ def test_space_level6_cancelled_when_both_reach_6():
     gs.hands[Side.US] = frozenset()
 
     action = ActionEncoding(card_id=22, mode=ActionMode.SPACE, targets=())
-    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, random.Random(0))
+    new_pub, over, winner = _apply_action_with_hands(gs, action, Side.US, make_rng(0))
 
     assert not over
     assert winner is None
@@ -1192,6 +1180,6 @@ def test_space_level4_peek_order():
         pick_order.append(Side.US)
         return ActionEncoding(card_id=_US_CARD, mode=ActionMode.EVENT, targets=())
 
-    _run_headline_phase(gs, _ussr_policy, _us_policy, random.Random(0))
+    _run_headline_phase(gs, _ussr_policy, _us_policy, make_rng(0))
 
     assert pick_order == [Side.US, Side.USSR]

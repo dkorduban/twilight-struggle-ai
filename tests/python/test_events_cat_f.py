@@ -13,7 +13,7 @@ Also tests the Wargames legal restriction in legal_modes().
 """
 from __future__ import annotations
 
-import random
+from tsrl.engine.rng import make_rng
 
 import pytest
 
@@ -37,7 +37,7 @@ def _pub(*, vp: int = 0, defcon: int = 3) -> PublicState:
 
 def _fire(pub: PublicState, card_id: int, side: Side, seed: int = 0):
     """Fire a card event and return (pub, over, winner)."""
-    rng = random.Random(seed)
+    rng = make_rng(seed)
     return apply_event_card(pub, card_id, side, rng)
 
 
@@ -355,7 +355,7 @@ class TestOlympicGames:
         # Boycott: opponent boycotts (rng.random() < 0.5), DEFCON drops by 1,
         # phasing player (USSR) gains 4 free influence ops.
         for seed in range(1000):
-            rng = random.Random(seed)
+            rng = make_rng(seed)
             if rng.random() < 0.5:
                 pub = _pub(defcon=4)
                 ussr_inf_before = sum(v for (s, c), v in pub.influence.items() if s == Side.USSR)
@@ -377,7 +377,7 @@ class TestOlympicGames:
         # Updated for new compete mechanic: ties are rerolled, so DEFCON never drops
         # on the compete path. Find a seed where compete branch fires (random >= 0.5).
         for seed in range(1000):
-            rng = random.Random(seed)
+            rng = make_rng(seed)
             val = rng.random()
             if val >= 0.5:
                 pub = _pub(defcon=4)
@@ -397,11 +397,11 @@ class TestOlympicGames:
     def test_higher_bid_wins_2_vp(self):
         # Find a seed where USSR bid > US bid.
         for seed in range(1000):
-            rng = random.Random(seed)
+            rng = make_rng(seed)
             val = rng.random()
             if val >= 0.2:
-                b1 = rng.randint(1, 3)
-                b2 = rng.randint(1, 3)
+                b1 = int(rng.integers(1, 4))  # 1-3 inclusive
+                b2 = int(rng.integers(1, 4))
                 if b1 > b2:
                     pub = _pub()
                     pub_after, _, _ = _fire(pub, self.CARD, Side.USSR, seed=seed)

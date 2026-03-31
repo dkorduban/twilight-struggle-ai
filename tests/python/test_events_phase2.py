@@ -10,7 +10,7 @@ Coverage:
 """
 from __future__ import annotations
 
-import random
+from tsrl.engine.rng import make_rng
 
 import pytest
 
@@ -40,7 +40,7 @@ def _fresh_pub() -> PublicState:
 
 def _apply(pub: PublicState, card_id: int, side: Side, seed: int = 42) -> PublicState:
     """Apply an event card and return the resulting PublicState."""
-    rng = random.Random(seed)
+    rng = make_rng(seed)
     new_pub, _over, _winner = apply_event_card(pub, card_id, side, rng)
     return new_pub
 
@@ -161,7 +161,7 @@ class TestNuclearSubs:
         # Cuba (36) is a battleground. Give US some accessible influence
         pub.influence[(Side.US, 44)] = 1  # Panama
         action = ActionEncoding(card_id=4, mode=ActionMode.COUP, targets=(36,))
-        rng = random.Random(0)
+        rng = make_rng(0)
         new_pub, _, _ = apply_action(pub, action, Side.US, rng=rng)
         # DEFCON should NOT drop for US coup when nuclear_subs_active
         assert new_pub.defcon == 3
@@ -172,7 +172,7 @@ class TestNuclearSubs:
         pub.defcon = 3
         pub.influence[(Side.USSR, 82)] = 1  # USSR anchor neighbor — Cuba (36) is adjacent
         action = ActionEncoding(card_id=4, mode=ActionMode.COUP, targets=(36,))
-        rng = random.Random(1)
+        rng = make_rng(1)
         new_pub, _, _ = apply_action(pub, action, Side.USSR, rng=rng)
         # DEFCON should still drop for USSR coup even when nuclear_subs_active
         assert new_pub.defcon <= 3  # Either 2 or 3 (might not roll high enough for BG penalty)
@@ -463,10 +463,11 @@ class TestMuslimRevolution:
 
     def test_picks_from_full_pool_if_fewer_than_2_have_us_inf(self):
         pub = _fresh_pub()
-        pub.influence[(Side.US, 28)] = 1   # Only Iran has US inf
-        result = _apply(pub, 59, Side.USSR)
-        # Iran should be cleared (among the 2 chosen)
-        assert result.influence.get((Side.US, 28), 0) == 0
+        pub.influence[(Side.US, 28)] = 1   # Only Iran has US inf → falls back to full pool
+        result = _apply(pub, 59, Side.USSR, seed=11)  # PCG64 seed 11 picks [Egypt=26, Iran=28]
+        # Both chosen countries should have US inf cleared
+        assert result.influence.get((Side.US, 28), 0) == 0   # Iran cleared
+        assert result.influence.get((Side.US, 26), 0) == 0   # Egypt also cleared
 
 
 class TestCulturalRevolution:
@@ -704,7 +705,7 @@ class TestEndOfTurnResets:
         from tsrl.engine.game_state import GameState, reset
         gs = reset(seed=1)
         gs.pub.ops_modifier = [1, -1]  # Set some modifiers
-        rng = random.Random(1)
+        rng = make_rng(1)
         gs.pub.milops = [5, 5]  # Meet MilOps req to avoid vp penalty
         _end_of_turn(gs, rng, 1)
         assert gs.pub.ops_modifier == [0, 0]
@@ -714,7 +715,7 @@ class TestEndOfTurnResets:
         from tsrl.engine.game_state import reset
         gs = reset(seed=1)
         gs.pub.vietnam_revolts_active = True
-        rng = random.Random(1)
+        rng = make_rng(1)
         gs.pub.milops = [5, 5]
         _end_of_turn(gs, rng, 1)
         assert gs.pub.vietnam_revolts_active is False
@@ -733,7 +734,7 @@ class TestSampleActionEffectiveOps:
         pub.ops_modifier[int(Side.US)] = 1
         pub.influence[(Side.US, 81)] = 0  # US starts with anchor
         adj = load_adjacency()
-        rng = random.Random(42)
+        rng = make_rng(42)
 
         # Use a card with ops=1 (e.g. card 19 Truman Doctrine ops=1, but we need EVENT excluded)
         # Use card 26 (CIA Created) with ops=1 for INFLUENCE mode
@@ -750,7 +751,7 @@ class TestSampleActionEffectiveOps:
         pub = _fresh_pub()
         pub.ops_modifier[int(Side.USSR)] = -1
         adj = load_adjacency()
-        rng = random.Random(42)
+        rng = make_rng(42)
         # Card 30 Decolonization: ops=2, USSR. With -1 modifier, effective ops = 1.
         hand = frozenset({30})
         action = sample_action(hand, pub, Side.USSR, adj=adj, rng=rng)

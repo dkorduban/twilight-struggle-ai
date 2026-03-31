@@ -6,8 +6,9 @@ Used by the game loop; NOT the same as the replay-derived state.
 """
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass, field
+
+from tsrl.engine.rng import RNG, make_rng
 from enum import IntEnum, auto
 from typing import Optional
 
@@ -102,7 +103,7 @@ def reset(seed: Optional[int] = None) -> GameState:
     Sets up starting influence per countries.csv, deals initial hands,
     and positions the game at the start of Turn 1 Headline Phase.
     """
-    rng = random.Random(seed)
+    rng = make_rng(seed)
     gs = GameState()
     gs.pub = PublicState()
     gs.pub.turn = 1
@@ -140,7 +141,7 @@ def reset(seed: Optional[int] = None) -> GameState:
     return gs
 
 
-def advance_to_mid_war(gs: GameState, rng: random.Random) -> None:
+def advance_to_mid_war(gs: GameState, rng: RNG) -> None:
     """Reshuffle Early War discard + add Mid War cards before Turn 4."""
     mid_cards = _build_era_deck(era_max=1, exclude=set(gs.pub.removed))
     discard = list(gs.pub.discard)
@@ -150,7 +151,7 @@ def advance_to_mid_war(gs: GameState, rng: random.Random) -> None:
     gs.pub.discard = frozenset()
 
 
-def advance_to_late_war(gs: GameState, rng: random.Random) -> None:
+def advance_to_late_war(gs: GameState, rng: RNG) -> None:
     """Reshuffle Mid War discard + add Late War cards before Turn 8."""
     late_cards = _build_era_deck(era_max=2, exclude=set(gs.pub.removed))
     discard = list(gs.pub.discard)
@@ -186,7 +187,7 @@ def clone_game_state(gs: GameState) -> GameState:
     return new_gs
 
 
-def deal_cards(gs: GameState, side: Side, rng: random.Random) -> None:
+def deal_cards(gs: GameState, side: Side, rng: RNG) -> None:
     """Deal cards to bring side's hand up to the current turn's hand size.
 
     Reshuffles discard into deck if deck runs out mid-deal.
@@ -206,7 +207,7 @@ def deal_cards(gs: GameState, side: Side, rng: random.Random) -> None:
     gs.hands[side] = frozenset(hand_list)
 
 
-def _reshuffle(gs: GameState, rng: random.Random) -> None:
+def _reshuffle(gs: GameState, rng: RNG) -> None:
     """Move discard pile into deck and shuffle."""
     gs.deck = list(gs.pub.discard)
     gs.pub.discard = frozenset()
