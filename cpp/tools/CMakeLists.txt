@@ -32,3 +32,14 @@ target_link_libraries(ts_collect_trace_jsonl
 )
 
 target_compile_features(ts_collect_trace_jsonl PRIVATE cxx_std_23)
+
+add_executable(ts_collect_selfplay_rows_jsonl
+    collect_selfplay_rows_jsonl.cpp
+)
+
+target_link_libraries(ts_collect_selfplay_rows_jsonl
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_collect_selfplay_rows_jsonl PRIVATE cxx_std_23)

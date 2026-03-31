@@ -13,6 +13,13 @@ constexpr int kMidWarTurn = 4;
 constexpr int kLateWarTurn = 8;
 constexpr int kMaxTurns = 10;
 
+struct PendingHeadline {
+    Side side = Side::USSR;
+    bool holds_china = false;
+    CardSet hand_snapshot;
+    ActionEncoding action;
+};
+
 void sync_china(GameState& gs) {
     gs.ussr_holds_china = gs.pub.china_held_by == Side::USSR;
     gs.us_holds_china = gs.pub.china_held_by == Side::US;
@@ -38,10 +45,11 @@ std::optional<GameResult> run_headline_phase(
     gs.phase = GamePhase::Headline;
     gs.pub.ar = 0;
 
-    std::array<std::optional<ActionEncoding>, 2> chosen = {};
+    std::array<std::optional<PendingHeadline>, 2> chosen = {};
     for (const auto side : {Side::USSR, Side::US}) {
         gs.pub.phasing = side;
         const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
+        const auto hand_snapshot = gs.hands[to_index(side)];
         auto headline_pub = gs.pub;
         headline_pub.ar = 0;
         auto action = (side == Side::USSR ? ussr_policy : us_policy)(
@@ -58,29 +66,36 @@ std::optional<GameResult> run_headline_phase(
         if (gs.hands[to_index(side)].test(action->card_id)) {
             gs.hands[to_index(side)].reset(action->card_id);
         }
-        chosen[to_index(side)] = action;
+        chosen[to_index(side)] = PendingHeadline{
+            .side = side,
+            .holds_china = holds_china,
+            .hand_snapshot = hand_snapshot,
+            .action = *action,
+        };
     }
 
-    std::vector<std::pair<Side, ActionEncoding>> ordered;
+    std::vector<PendingHeadline> ordered;
     for (const auto side : {Side::USSR, Side::US}) {
         if (chosen[to_index(side)].has_value()) {
-            ordered.emplace_back(side, *chosen[to_index(side)]);
+            ordered.push_back(*chosen[to_index(side)]);
         }
     }
 
     std::sort(ordered.begin(), ordered.end(), [](const auto& lhs, const auto& rhs) {
-        const auto lhs_ops = card_spec(lhs.second.card_id).ops;
-        const auto rhs_ops = card_spec(rhs.second.card_id).ops;
+        const auto lhs_ops = card_spec(lhs.action.card_id).ops;
+        const auto rhs_ops = card_spec(rhs.action.card_id).ops;
         if (lhs_ops != rhs_ops) {
             return lhs_ops > rhs_ops;
         }
-        return lhs.first == Side::US;
+        return lhs.side == Side::US;
     });
 
-    for (const auto& [side, action] : ordered) {
+    for (const auto& pending : ordered) {
+        const auto side = pending.side;
+        const auto& action = pending.action;
+        const auto pub_snapshot = gs.pub;
         const auto vp_before = gs.pub.vp;
         const auto defcon_before = gs.pub.defcon;
-        const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
         auto [new_pub, over, winner] = apply_action(gs.pub, action, side, rng);
         gs.pub = std::move(new_pub);
         if (trace_steps != nullptr) {
@@ -88,7 +103,9 @@ std::optional<GameResult> run_headline_phase(
                 .turn = gs.pub.turn,
                 .ar = 0,
                 .side = side,
-                .holds_china = holds_china,
+                .holds_china = pending.holds_china,
+                .pub_snapshot = pub_snapshot,
+                .hand_snapshot = pending.hand_snapshot,
                 .action = action,
                 .vp_before = vp_before,
                 .vp_after = gs.pub.vp,
@@ -137,6 +154,8 @@ std::optional<GameResult> run_action_rounds(
             if (!action.has_value()) {
                 continue;
             }
+            const auto pub_snapshot = gs.pub;
+            const auto hand_snapshot = hand;
             if (hand.test(action->card_id)) {
                 hand.reset(action->card_id);
             }
@@ -150,6 +169,8 @@ std::optional<GameResult> run_action_rounds(
                     .ar = ar,
                     .side = side,
                     .holds_china = holds_china,
+                    .pub_snapshot = pub_snapshot,
+                    .hand_snapshot = hand_snapshot,
                     .action = *action,
                     .vp_before = vp_before,
                     .vp_after = gs.pub.vp,
