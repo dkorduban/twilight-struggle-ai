@@ -30,9 +30,31 @@ endif()
 # ---------------------------------------------------------------------------
 
 option(TS_BUILD_PYTHON_BINDINGS "Build pybind11 Python extension module" ON)
+option(TS_BUILD_TORCH_RUNTIME "Build TorchScript/libtorch learned-policy runtime" ON)
 
 if(TS_BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG REQUIRED)
+endif()
+
+if(TS_BUILD_TORCH_RUNTIME)
+    if(NOT DEFINED TS_TORCH_CMAKE_PREFIX)
+        execute_process(
+            COMMAND python3 -c "import torch; print(torch.utils.cmake_prefix_path)"
+            OUTPUT_VARIABLE TS_TORCH_CMAKE_PREFIX
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+    endif()
+    if(TS_TORCH_CMAKE_PREFIX)
+        list(APPEND CMAKE_PREFIX_PATH "${TS_TORCH_CMAKE_PREFIX}")
+    endif()
+    if(EXISTS "/usr/local/cuda/bin/nvcc")
+        set(ENV{CUDACXX} "/usr/local/cuda/bin/nvcc")
+        set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc" CACHE FILEPATH "CUDA compiler for libtorch" FORCE)
+        set(CMAKE_CUDA_STANDARD 17 CACHE STRING "CUDA standard for libtorch probes" FORCE)
+        set(CMAKE_CUDA_STANDARD_REQUIRED ON CACHE BOOL "Require CUDA standard" FORCE)
+    endif()
+    find_package(Torch REQUIRED)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -40,6 +62,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_subdirectory(cpp/tscore)
+add_subdirectory(cpp/tools)
 
 if(TS_BUILD_PYTHON_BINDINGS)
     add_subdirectory(bindings)

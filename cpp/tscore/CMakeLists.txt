@@ -11,6 +11,14 @@ add_library(tscore STATIC
     step.cpp
 )
 
+if(TS_BUILD_TORCH_RUNTIME)
+    target_sources(tscore PRIVATE learned_policy.cpp)
+    target_compile_definitions(tscore PUBLIC TS_BUILD_TORCH_RUNTIME=1)
+    separate_arguments(TORCH_CXX_FLAGS_LIST NATIVE_COMMAND "${TORCH_CXX_FLAGS}")
+    target_compile_options(tscore PRIVATE ${TORCH_CXX_FLAGS_LIST})
+    target_link_libraries(tscore PUBLIC "${TORCH_LIBRARIES}")
+endif()
+
 set_target_properties(tscore PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(tscore
@@ -43,6 +51,7 @@ install(FILES
     game_loop.hpp
     game_state.hpp
     legal_actions.hpp
+    learned_policy.hpp
     policies.hpp
     types.hpp
     public_state.hpp
