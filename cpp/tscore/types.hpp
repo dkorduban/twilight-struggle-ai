@@ -1,79 +1,146 @@
 #pragma once
 
+#include <array>
+#include <bitset>
+#include <cstddef>
 #include <cstdint>
-
-// ---------------------------------------------------------------------------
-// Fundamental enums and type aliases for the Twilight Struggle core engine.
-//
-// Conventions:
-//   - All enums are uint8_t to keep arrays compact.
-//   - Side and Superpower are distinct: Side includes Neutral (used for
-//     countries / scoring), Superpower does not (used for phasing player,
-//     influence arrays, etc.).
-//   - CardId and CountryId are plain uint8_t aliases; zero is not a valid
-//     card or country in the canonical encoding (reserved / sentinel).
-// ---------------------------------------------------------------------------
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace ts {
 
 enum class Side : uint8_t {
-    USSR    = 0,
-    US      = 1,
+    USSR = 0,
+    US = 1,
     Neutral = 2,
 };
 
-// Superpower is used wherever Neutral is not a legal value (phasing player,
-// array indexing, etc.).
-enum class Superpower : uint8_t {
-    USSR = 0,
-    US   = 1,
+enum class ActionMode : uint8_t {
+    Influence = 0,
+    Coup = 1,
+    Realign = 2,
+    Space = 3,
+    Event = 4,
 };
 
 enum class Era : uint8_t {
-    Early = 0,  // turns 1-3
-    Mid   = 1,  // turns 4-6
-    Late  = 2,  // turns 7-10
+    Early = 0,
+    Mid = 1,
+    Late = 2,
 };
 
 enum class Region : uint8_t {
-    Europe          = 0,
-    Asia            = 1,
-    MiddleEast      = 2,
-    CentralAmerica  = 3,
-    SouthAmerica    = 4,
-    Africa          = 5,
-    SoutheastAsia   = 6,
+    Europe = 0,
+    Asia = 1,
+    MiddleEast = 2,
+    CentralAmerica = 3,
+    SouthAmerica = 4,
+    Africa = 5,
+    SoutheastAsia = 6,
 };
 
-// ---------------------------------------------------------------------------
-// Primitive type aliases
-// ---------------------------------------------------------------------------
+enum class GamePhase : uint8_t {
+    Setup = 0,
+    Headline = 1,
+    ActionRound = 2,
+    Cleanup = 3,
+    GameOver = 4,
+};
 
-using CardId    = uint8_t;
+using CardId = uint8_t;
 using CountryId = uint8_t;
-using Ops       = uint8_t;
-using Influence = int8_t;   // signed: negative never occurs on-board but
-                             // arithmetic intermediates may go negative.
 
-// ---------------------------------------------------------------------------
-// Well-known constants
-// ---------------------------------------------------------------------------
+inline constexpr CardId kChinaCardId = 6;
+inline constexpr int kMaxCardId = 111;
+inline constexpr int kCardSlots = kMaxCardId + 1;  // index 0 unused
+inline constexpr int kMaxCountryId = 85;
+inline constexpr int kCountrySlots = kMaxCountryId + 1;  // ids 0..85
+inline constexpr int kHandSizeEarly = 8;
+inline constexpr int kHandSizeLate = 9;
+inline constexpr CountryId kUsaAnchorId = 81;
+inline constexpr CountryId kUssrAnchorId = 82;
+inline constexpr CountryId kTaiwanId = 85;
+inline constexpr CardId CHINA_CARD = kChinaCardId;
+inline constexpr int MAX_CARDS = kCardSlots;
+inline constexpr int MAX_COUNTRIES = kCountrySlots;
+inline constexpr int HAND_SIZE_EARLY = kHandSizeEarly;
+inline constexpr int HAND_SIZE_LATE = kHandSizeLate;
 
-// Placeholder CardId for the China Card. The canonical id will be pinned once
-// cards.csv is finalised; every caller should use this constant, not the
-// literal, so that a single change propagates everywhere.
-static constexpr CardId CHINA_CARD = 6;
+using CardSet = std::bitset<kCardSlots>;
+using InfluenceBlock = std::array<int16_t, kCountrySlots>;
 
-// Maximum number of card slots in any bitset. 110 covers all TS card ids with
-// room for a few reserved values.
-static constexpr int MAX_CARDS     = 110;
+inline constexpr int to_index(Side side) {
+    return static_cast<int>(side);
+}
 
-// Maximum number of country slots.
-static constexpr int MAX_COUNTRIES = 100;
+inline constexpr Side other_side(Side side) {
+    return side == Side::USSR ? Side::US : Side::USSR;
+}
 
-// Hand sizes per the ITS / competitive rules.
-// The China Card does NOT count toward hand size; it is tracked separately.
-static constexpr int HAND_SIZE_EARLY = 8;  // turns 1-3
-static constexpr int HAND_SIZE_LATE  = 9;  // turns 4-10
+inline constexpr bool is_player_side(Side side) {
+    return side == Side::USSR || side == Side::US;
+}
 
-} // namespace ts
+struct ActionEncoding {
+    CardId card_id = 0;
+    ActionMode mode = ActionMode::Influence;
+    std::vector<CountryId> targets;
+
+    [[nodiscard]] bool operator==(const ActionEncoding& other) const = default;
+};
+
+struct CardSpec {
+    CardId card_id = 0;
+    std::string name;
+    Side side = Side::Neutral;
+    int ops = 0;
+    Era era = Era::Early;
+    bool starred = false;
+    bool is_scoring = false;
+    bool must_be_played_by_era_end = false;
+};
+
+struct CountrySpec {
+    CountryId country_id = 0;
+    std::string name;
+    Region region = Region::Europe;
+    int stability = 0;
+    bool is_battleground = false;
+    int us_start = 0;
+    int ussr_start = 0;
+};
+
+struct ScoringResult {
+    int vp_delta = 0;
+    bool game_over = false;
+    std::optional<Side> winner;
+    bool clear_shuttle = false;
+};
+
+struct GameResult {
+    std::optional<Side> winner;
+    int final_vp = 0;
+    int end_turn = 0;
+    std::string end_reason;
+};
+
+struct DecisionRequest {
+    Side side = Side::USSR;
+    bool holds_china = false;
+};
+
+template <typename Container>
+inline std::vector<int> sorted_set_bits(const Container& bits, int start = 0) {
+    std::vector<int> result;
+    for (int i = start; i < static_cast<int>(bits.size()); ++i) {
+        if (bits.test(static_cast<size_t>(i))) {
+            result.push_back(i);
+        }
+    }
+    return result;
+}
+
+}  // namespace ts

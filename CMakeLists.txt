@@ -10,12 +10,14 @@ project(tscore
 # Global settings
 # ---------------------------------------------------------------------------
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Export compile commands for clangd / tooling.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+include(GNUInstallDirs)
 
 # Default build type guard (useful when configuring without -DCMAKE_BUILD_TYPE).
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -27,19 +29,10 @@ endif()
 # Dependencies
 # ---------------------------------------------------------------------------
 
-include(FetchContent)
-
-# pybind11 — used only when building Python bindings.
-# Wrap in an option so pure C++ builds (CI, tests) don't require Python.
 option(TS_BUILD_PYTHON_BINDINGS "Build pybind11 Python extension module" ON)
 
 if(TS_BUILD_PYTHON_BINDINGS)
-    FetchContent_Declare(
-        pybind11
-        GIT_REPOSITORY https://github.com/pybind/pybind11.git
-        GIT_TAG        v2.12.0
-    )
-    FetchContent_MakeAvailable(pybind11)
+    find_package(pybind11 CONFIG REQUIRED)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -59,13 +52,13 @@ endif()
 include(CTest)
 enable_testing()
 
-add_subdirectory(tests/cpp)
+if(BUILD_TESTING)
+    add_subdirectory(tests/cpp)
+endif()
 
 # ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
-
-include(GNUInstallDirs)
 
 install(TARGETS tscore
     EXPORT  tscoreTargets

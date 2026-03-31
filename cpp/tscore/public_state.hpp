@@ -1,76 +1,84 @@
 #pragma once
 
-#include <bitset>
-#include <cstdint>
+#include <array>
+#include <optional>
 
 #include "types.hpp"
-
-// ---------------------------------------------------------------------------
-// PublicState: the fully-observable board state at a single point in time.
-//
-// This struct holds only information that both players can see without any
-// private knowledge.  It is the authoritative input for:
-//   - legality checks
-//   - public-state hashing / deterministic replay regression
-//   - feature extraction for the value / policy network
-//
-// Invariants (enforced by the reducer, not by this struct):
-//   - defcon in [1, 5]
-//   - turn in [1, 10]
-//   - ar in [1, 8]  (headline = AR 0 by convention in the reducer)
-//   - vp in [-20, 20]  (positive = US lead)
-//   - milops[p] in [0, 5]
-//   - space_level[p] in [0, 8]
-//   - deck_remaining, discard, removed are pairwise disjoint (modulo the
-//     China Card, which is tracked via china_held_by / china_playable).
-//
-// No methods are defined here.  All mutation goes through the reducer.
-// ---------------------------------------------------------------------------
 
 namespace ts {
 
 struct PublicState {
-    // ------------------------------------------------------------------
-    // Per-country influence.
-    // Indexed as influence[Superpower][CountryId].
-    // Only non-negative values are legal on the actual board; the int8_t
-    // type is used so that arithmetic in the reducer doesn't silently wrap.
-    // ------------------------------------------------------------------
-    Influence influence[2][MAX_COUNTRIES] = {};
+    int turn = 0;
+    int ar = 0;
+    Side phasing = Side::USSR;
 
-    // ------------------------------------------------------------------
-    // Per-player scalars
-    // ------------------------------------------------------------------
-    Ops  milops[2]      = {};   // military operations this turn; resets each turn
-    uint8_t space_level[2] = {};  // 0..8
+    // Positive = USSR lead, negative = US lead.
+    int vp = 0;
+    int defcon = 5;
+    std::array<int, 2> milops = {0, 0};
+    std::array<int, 2> space = {0, 0};
 
-    // ------------------------------------------------------------------
-    // Global scalars
-    // ------------------------------------------------------------------
-    int8_t  vp     = 0;    // Victory Points: positive = US lead, negative = USSR lead
-    uint8_t defcon = 5;    // 1..5
-    uint8_t turn   = 1;    // 1..10
-    uint8_t ar     = 1;    // Action Round within the turn (headline = 0 by convention)
+    Side china_held_by = Side::USSR;
+    bool china_playable = true;
 
-    Superpower phasing        = Superpower::USSR;  // whose action round it is
-    Superpower china_held_by  = Superpower::USSR;  // who currently holds the China Card
-    bool       china_playable = true;              // face-up (playable) vs. face-down
+    std::array<InfluenceBlock, 2> influence = {};
 
-    // ------------------------------------------------------------------
-    // Card location sets
-    // Bit i is set if card with CardId == i is in that set.
-    // China Card membership is tracked separately above.
-    // ------------------------------------------------------------------
-    std::bitset<MAX_CARDS> deck_remaining;  // cards not yet drawn / in play
-    std::bitset<MAX_CARDS> discard;         // discarded cards
-    std::bitset<MAX_CARDS> removed;         // permanently removed from game
+    CardSet discard;
+    CardSet removed;
 
-    // ------------------------------------------------------------------
-    // Deterministic Zobrist hash of all fields above.
-    // Recomputed by the reducer on every state transition.
-    // Used for golden-log regression and deduplication.
-    // ------------------------------------------------------------------
+    std::array<int, 2> space_attempts = {0, 0};
+    std::optional<Side> space_level4_first;
+    std::optional<Side> space_level6_first;
+
+    bool warsaw_pact_played = false;
+    bool marshall_plan_played = false;
+    bool truman_doctrine_played = false;
+    bool john_paul_ii_played = false;
+    bool nato_active = false;
+    bool de_gaulle_active = false;
+    bool willy_brandt_active = false;
+    bool us_japan_pact_active = false;
+    bool nuclear_subs_active = false;
+    bool norad_active = false;
+    bool shuttle_diplomacy_active = false;
+    bool flower_power_active = false;
+    bool flower_power_cancelled = false;
+    bool salt_active = false;
+    bool opec_cancelled = false;
+    bool awacs_active = false;
+    bool north_sea_oil_extra_ar = false;
+    bool glasnost_extra_ar = false;
+    bool formosan_active = false;
+    bool cuban_missile_crisis_active = false;
+    bool vietnam_revolts_active = false;
+
+    bool bear_trap_active = false;
+    bool quagmire_active = false;
+    bool iran_hostage_crisis_active = false;
+
+    int handicap_ussr = 0;
+    int handicap_us = 0;
+    std::array<int, 2> ops_modifier = {0, 0};
+    std::optional<Region> chernobyl_blocked_region;
+    std::optional<Side> latam_coup_bonus;
+
     uint32_t state_hash = 0;
+
+    [[nodiscard]] int influence_of(Side side, CountryId country_id) const {
+        return influence[to_index(side)][country_id];
+    }
+
+    void set_influence(Side side, CountryId country_id, int value) {
+        influence[to_index(side)][country_id] = static_cast<int16_t>(value);
+    }
+
+    [[nodiscard]] bool has_discard(CardId card_id) const {
+        return discard.test(card_id);
+    }
+
+    [[nodiscard]] bool has_removed(CardId card_id) const {
+        return removed.test(card_id);
+    }
 };
 
-} // namespace ts
+}  // namespace ts
