@@ -446,30 +446,67 @@ Candidate best_influence_action(const DecisionContext& context, CardId card_id, 
     }
 
     const auto ops = effective_ops(card_id, context.pub, context.side);
-    ActionEncoding current{.card_id = card_id, .mode = ActionMode::Influence, .targets = {}};
+    const auto side = context.side;
+    const auto opponent = other_side(side);
+    const auto country_count = accessible.size();
+    std::vector<std::vector<double>> alloc_score(country_count, std::vector<double>(static_cast<size_t>(ops + 1), 0.0));
 
-    auto dfs = [&](auto&& self, size_t index, int remaining) -> void {
-        if (index == accessible.size()) {
-            Candidate candidate{.action = current, .score = score_action(context, current)};
-            if (better_candidate(candidate, best)) {
-                best = std::move(candidate);
+    for (size_t index = 0; index < country_count; ++index) {
+        const auto cid = accessible[index];
+        const auto own = context.pub.influence_of(side, cid);
+        const auto opp = context.pub.influence_of(opponent, cid);
+        const auto threshold = opp + country_spec(cid).stability;
+        double total = 0.0;
+        for (int allocation = 1; allocation <= ops; ++allocation) {
+            total += country_value(context, cid) / static_cast<double>(allocation);
+            if (own == 0) {
+                total += context.params.access_bonus;
             }
-            return;
+            if (own < threshold && own + allocation >= threshold && own + allocation - 1 < threshold) {
+                total += context.params.control_break_bonus;
+            }
+            alloc_score[index][static_cast<size_t>(allocation)] = total;
         }
+    }
 
-        const auto country_id = accessible[index];
-        const auto max_allocation = (index + 1 == accessible.size()) ? remaining : remaining;
-        const auto min_allocation = (index + 1 == accessible.size()) ? remaining : 0;
-        for (int allocation = min_allocation; allocation <= max_allocation; ++allocation) {
-            current.targets.insert(current.targets.end(), allocation, country_id);
-            self(self, index + 1, remaining - allocation);
-            if (allocation > 0) {
-                current.targets.resize(current.targets.size() - static_cast<size_t>(allocation));
+    const auto neg_inf = -std::numeric_limits<double>::infinity();
+    std::vector<std::vector<double>> dp(country_count + 1, std::vector<double>(static_cast<size_t>(ops + 1), neg_inf));
+    std::vector<std::vector<int>> choice(country_count + 1, std::vector<int>(static_cast<size_t>(ops + 1), 0));
+    dp[0][0] = 0.0;
+
+    for (size_t index = 0; index < country_count; ++index) {
+        for (int used = 0; used <= ops; ++used) {
+            if (!std::isfinite(dp[index][static_cast<size_t>(used)])) {
+                continue;
+            }
+            for (int allocation = 0; allocation <= ops - used; ++allocation) {
+                const auto candidate_score = dp[index][static_cast<size_t>(used)] + alloc_score[index][static_cast<size_t>(allocation)];
+                auto& slot = dp[index + 1][static_cast<size_t>(used + allocation)];
+                if (candidate_score > slot + 1e-12) {
+                    slot = candidate_score;
+                    choice[index + 1][static_cast<size_t>(used + allocation)] = allocation;
+                }
             }
         }
-    };
+    }
 
-    dfs(dfs, 0, ops);
+    std::vector<int> allocations(country_count, 0);
+    int remaining = ops;
+    for (size_t index = country_count; index > 0; --index) {
+        const auto allocation = choice[index][static_cast<size_t>(remaining)];
+        allocations[index - 1] = allocation;
+        remaining -= allocation;
+    }
+
+    ActionEncoding action{.card_id = card_id, .mode = ActionMode::Influence, .targets = {}};
+    for (size_t index = 0; index < country_count; ++index) {
+        action.targets.insert(action.targets.end(), allocations[index], accessible[index]);
+    }
+    const auto action_score = score_action(context, action);
+    Candidate candidate{.action = std::move(action), .score = action_score};
+    if (better_candidate(candidate, best)) {
+        best = std::move(candidate);
+    }
     return best;
 }
 
