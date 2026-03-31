@@ -15,14 +15,30 @@ constexpr std::array<CountryId, 12> kWesternEuropeIds = {1, 2, 4, 7, 8, 10, 11, 
 constexpr CountryId kIndiaId = 21;
 constexpr CountryId kJapanId = 22;
 constexpr CountryId kPakistanId = 24;
+constexpr CountryId kEgyptId = 26;
 constexpr CountryId kSouthKoreaId = 25;
 constexpr CountryId kIranId = 28;
 constexpr CountryId kIraqId = 29;
 constexpr CountryId kIsraelId = 30;
+constexpr CountryId kJordanId = 31;
+constexpr CountryId kLebanonId = 32;
+constexpr CountryId kLibyaId = 33;
+constexpr CountryId kSaudiArabiaId = 34;
+constexpr CountryId kCubaId = 36;
+constexpr CountryId kChileId = 49;
+constexpr CountryId kVenezuelaId = 55;
+constexpr CountryId kAngolaId = 57;
+constexpr CountryId kBotswanaId = 58;
+constexpr CountryId kMozambiqueId = 66;
+constexpr CountryId kSouthAfricaId = 71;
+constexpr CountryId kZimbabweId = 74;
 constexpr CountryId kFranceId = 7;
 constexpr CountryId kUkId = 17;
 constexpr CountryId kWestGermanyId = 18;
+constexpr CountryId kPolandId = 12;
+constexpr CountryId kRomaniaId = 13;
 constexpr CountryId kVietnamId = 80;
+constexpr std::array<CountryId, 7> kOpecIds = {kEgyptId, kIranId, kLibyaId, kSaudiArabiaId, kIraqId, 27, kVenezuelaId};
 
 bool contains(std::span<const CardId> values, CardId value) {
     return std::find(values.begin(), values.end(), value) != values.end();
@@ -154,6 +170,24 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
         }
 
+        case 7: {
+            std::vector<CountryId> pool;
+            for (const auto cid : kWesternEuropeIds) {
+                if (!controls_country(Side::US, cid, next) && next.influence_of(Side::USSR, cid) < 2) {
+                    pool.push_back(cid);
+                }
+            }
+            for (const auto cid : sample_up_to(pool, 3, rng)) {
+                add_influence(next, Side::USSR, cid, 1);
+            }
+            break;
+        }
+
+        case 8:
+            remove_all_influence(next, Side::US, kCubaId);
+            gain_control(next, Side::USSR, kCubaId);
+            break;
+
         case 11: {
             const auto net = apply_free_coup(next, Side::USSR, kSouthKoreaId, 2, rng, true);
             if (net > 0) {
@@ -164,11 +198,57 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
         }
 
+        case 12:
+            remove_all_influence(next, Side::US, kRomaniaId);
+            gain_control(next, Side::USSR, kRomaniaId);
+            break;
+
         case 13: {
             const auto net = apply_free_coup(next, Side::USSR, kIsraelId, 2, rng, true);
             if (net <= 0) {
                 next.vp -= 1;
             }
+            break;
+        }
+
+        case 14: {
+            std::vector<CountryId> pool;
+            for (const auto cid : kEasternBlocIds) {
+                if (!controls_country(Side::US, cid, next)) {
+                    pool.push_back(cid);
+                }
+            }
+            for (const auto cid : sample_up_to(pool, 4, rng)) {
+                add_influence(next, Side::USSR, cid, 1);
+            }
+            break;
+        }
+
+        case 15: {
+            add_influence(next, Side::USSR, kEgyptId, 2);
+            const auto remove = (next.influence_of(Side::US, kEgyptId) + 1) / 2;
+            add_influence(next, Side::US, kEgyptId, -remove);
+            break;
+        }
+
+        case 16: {
+            std::bernoulli_distribution branch(0.5);
+            if (branch(rng)) {
+                std::vector<CountryId> pool;
+                for (const auto cid : kEasternBlocIds) {
+                    if (next.influence_of(Side::US, cid) > 0) {
+                        pool.push_back(cid);
+                    }
+                }
+                for (const auto cid : sample_up_to(pool, 4, rng)) {
+                    remove_all_influence(next, Side::US, cid);
+                }
+            } else {
+                for (const auto cid : sample_up_to(kEasternBlocIds, 5, rng)) {
+                    add_influence(next, Side::USSR, cid, 1);
+                }
+            }
+            next.warsaw_pact_played = true;
             break;
         }
 
@@ -197,6 +277,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
 
         case 21:
             next.nato_active = true;
+            break;
+
+        case 22:
+            for (const auto cid : {CountryId{19}, CountryId{13}, CountryId{83}, CountryId{9}, CountryId{3}}) {
+                add_influence(next, Side::US, cid, 1);
+            }
             break;
 
         case 23: {
@@ -256,6 +342,32 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             gain_control(next, Side::US, kJapanId);
             break;
 
+        case 28:
+            for (const auto cid : sample_up_to(std::array<CountryId, 3>{kFranceId, kUkId, kIsraelId}, 2, rng)) {
+                add_influence(next, Side::US, cid, -2);
+            }
+            break;
+
+        case 29:
+            for (const auto cid : sample_up_to(kEasternBlocIds, 3, rng)) {
+                add_influence(next, Side::US, cid, 1);
+            }
+            break;
+
+        case 30: {
+            std::vector<CountryId> pool;
+            for (const auto cid : all_country_ids()) {
+                const auto region = country_spec(cid).region;
+                if (region == Region::Africa || region == Region::SoutheastAsia) {
+                    pool.push_back(cid);
+                }
+            }
+            for (const auto cid : sample_up_to(pool, 4, rng)) {
+                add_influence(next, Side::USSR, cid, 1);
+            }
+            break;
+        }
+
         case 31:
             next.ops_modifier[to_index(other_side(side))] -= 1;
             break;
@@ -267,6 +379,15 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         case 38:
             next.norad_active = true;
             break;
+
+        case 42: {
+            const auto own = next.milops[to_index(side)];
+            const auto opp = next.milops[to_index(other_side(side))];
+            if (own > opp) {
+                apply_vp_delta(next, side, own >= next.defcon ? 3 : 1);
+            }
+            break;
+        }
 
         case 43:
             next.defcon = 2;
@@ -282,6 +403,25 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             next.salt_active = true;
             break;
 
+        case 48: {
+            auto ussr_roll = roll_d6(rng);
+            auto us_roll = roll_d6(rng);
+            const auto winner =
+                side == Side::USSR ? (ussr_roll >= us_roll ? Side::USSR : Side::US)
+                                   : (us_roll >= ussr_roll ? Side::US : Side::USSR);
+            std::bernoulli_distribution inc(0.5);
+            next.defcon = std::clamp(next.defcon + (inc(rng) ? 1 : -1), 1, 5);
+            apply_vp_delta(next, winner, 2);
+            break;
+        }
+
+        case 49: {
+            std::uniform_int_distribution<int> dist(1, 5);
+            next.defcon = dist(rng);
+            next.milops[to_index(side)] = 5;
+            break;
+        }
+
         case 53:
             next.defcon = std::max(1, next.defcon - 1);
             next.vp += 3;
@@ -291,11 +431,45 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             next.ops_modifier[to_index(Side::USSR)] += 1;
             break;
 
+        case 55:
+            add_influence(next, Side::USSR, kAngolaId, 2);
+            add_influence(next, Side::USSR, kMozambiqueId, 2);
+            break;
+
+        case 56:
+            add_influence(next, Side::USSR, kSouthAfricaId, 2);
+            add_influence(
+                next,
+                Side::USSR,
+                sample_one<CountryId>(std::array<CountryId, 3>{kBotswanaId, 69, kZimbabweId}, rng),
+                2
+            );
+            break;
+
+        case 57:
+            add_influence(next, Side::USSR, kChileId, 2);
+            break;
+
         case 58:
             next.vp += 1;
             add_influence(next, Side::USSR, kWestGermanyId, 1);
             next.willy_brandt_active = true;
             break;
+
+        case 60: {
+            next.defcon = std::min(5, next.defcon + 1);
+            apply_vp_delta(next, side, 1);
+            std::vector<CountryId> eligible;
+            for (const auto cid : all_country_ids()) {
+                if (next.influence_of(side, cid) > 0) {
+                    eligible.push_back(cid);
+                }
+            }
+            for (int i = 0; i < 2 && !eligible.empty(); ++i) {
+                add_influence(next, side, sample_one<CountryId>(eligible, rng), 1);
+            }
+            break;
+        }
 
         case 61:
             if (next.china_held_by == Side::US) {
@@ -310,13 +484,159 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             next.flower_power_active = true;
             break;
 
+        case 63:
+            next.vp += 1;
+            break;
+
+        case 64: {
+            if (!next.opec_cancelled) {
+                int count = 0;
+                for (const auto cid : kOpecIds) {
+                    if (cid == kSaudiArabiaId && next.awacs_active) {
+                        continue;
+                    }
+                    if (next.influence_of(Side::USSR, cid) > 0) {
+                        ++count;
+                    }
+                }
+                next.vp += count;
+            }
+            break;
+        }
+
+        case 65:
+            next.defcon = std::min(5, next.defcon + 1);
+            next.vp -= 1;
+            break;
+
         case 70:
             next.latam_coup_bonus = side;
             break;
 
+        case 66:
+            apply_vp_delta(next, Side::US, 1);
+            add_influence(next, Side::US, kIsraelId, 1);
+            add_influence(next, Side::US, kEgyptId, 1);
+            add_influence(next, Side::US, kJordanId, 1);
+            break;
+
+        case 69:
+            add_influence(next, Side::USSR, kPolandId, -2);
+            add_influence(next, Side::US, kPolandId, 1);
+            next.john_paul_ii_played = true;
+            break;
+
+        case 71: {
+            std::vector<CountryId> pool;
+            for (const auto cid : all_country_ids()) {
+                const auto region = country_spec(cid).region;
+                if (region == Region::CentralAmerica || region == Region::SouthAmerica) {
+                    pool.push_back(cid);
+                }
+            }
+            for (int i = 0; i < 2 && !pool.empty(); ++i) {
+                add_influence(next, Side::US, sample_one<CountryId>(pool, rng), 1);
+            }
+            break;
+        }
+
+        case 73:
+            remove_all_influence(next, Side::USSR, kEgyptId);
+            add_influence(next, Side::US, kEgyptId, 1);
+            break;
+
+        case 75: {
+            std::vector<CountryId> pool;
+            for (const auto cid : all_country_ids()) {
+                if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
+                    continue;
+                }
+                if (country_spec(cid).region == Region::Europe) {
+                    continue;
+                }
+                if (next.influence_of(Side::USSR, cid) >= 1) {
+                    pool.push_back(cid);
+                }
+            }
+            for (const auto cid : sample_up_to(pool, 4, rng)) {
+                add_influence(next, Side::USSR, cid, -1);
+            }
+            break;
+        }
+
+        case 76: {
+            std::vector<CountryId> pool;
+            for (const auto cid : all_country_ids()) {
+                if (country_spec(cid).region == Region::CentralAmerica && next.influence_of(Side::USSR, cid) < 2) {
+                    pool.push_back(cid);
+                }
+            }
+            for (const auto cid : sample_up_to(pool, 3, rng)) {
+                add_influence(next, Side::USSR, cid, 1);
+            }
+            break;
+        }
+
+        case 79: {
+            int count = 0;
+            for (const auto cid : all_country_ids()) {
+                const auto region = country_spec(cid).region;
+                if (
+                    (region == Region::CentralAmerica || region == Region::SouthAmerica) &&
+                    country_spec(cid).is_battleground &&
+                    controls_country(Side::US, cid, next)
+                ) {
+                    ++count;
+                }
+            }
+            next.vp -= count;
+            break;
+        }
+
         case 89:
             next.opec_cancelled = true;
             next.north_sea_oil_extra_ar = true;
+            break;
+
+        case 90: {
+            std::vector<CountryId> pool;
+            for (const auto cid : all_country_ids()) {
+                if (country_spec(cid).region == Region::Europe && !controls_country(Side::US, cid, next)) {
+                    pool.push_back(cid);
+                }
+            }
+            for (const auto cid : sample_up_to(pool, 4, rng)) {
+                add_influence(next, Side::USSR, cid, 1);
+            }
+            next.defcon = std::min(5, next.defcon + 1);
+            break;
+        }
+
+        case 91: {
+            remove_all_influence(next, Side::US, kLebanonId);
+            std::vector<CountryId> pool;
+            for (const auto cid : all_country_ids()) {
+                if (country_spec(cid).region != Region::MiddleEast || cid == kLebanonId) {
+                    continue;
+                }
+                if (next.influence_of(Side::US, cid) >= 1) {
+                    pool.push_back(cid);
+                }
+            }
+            for (const auto cid : sample_up_to(pool, 2, rng)) {
+                add_influence(next, Side::US, cid, -1);
+            }
+            break;
+        }
+
+        case 86:
+            next.vp -= 1;
+            remove_all_influence(next, Side::USSR, kUkId);
+            next.opec_cancelled = true;
+            break;
+
+        case 87:
+            next.vp -= next.influence_of(Side::USSR, kLibyaId);
             break;
 
         case 92:
@@ -325,6 +645,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             if (next.china_held_by == Side::USSR) {
                 next.china_held_by = Side::US;
                 next.china_playable = true;
+            }
+            break;
+
+        case 93:
+            next.vp += 2;
+            next.defcon = std::min(5, next.defcon + 1);
+            if (next.salt_active) {
+                next.glasnost_extra_ar = true;
             }
             break;
 
@@ -351,6 +679,20 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             next.flower_power_active = false;
             break;
 
+        case 102: {
+            next.vp += 1;
+            std::vector<CountryId> pool;
+            for (const auto cid : kWesternEuropeIds) {
+                if (next.influence_of(Side::US, cid) >= 1) {
+                    pool.push_back(cid);
+                }
+            }
+            for (const auto cid : sample_up_to(pool, 3, rng)) {
+                add_influence(next, Side::US, cid, -1);
+            }
+            break;
+        }
+
         case 105: {
             static constexpr std::array<CountryId, 2> kTargets = {kIranId, kIraqId};
             const auto target = sample_one<CountryId>(kTargets, rng);
@@ -358,6 +700,15 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             apply_vp_delta(next, side, net > 0 ? 2 : -1);
             break;
         }
+
+        case 106:
+            next.vp += next.space_attempts[to_index(Side::US)];
+            break;
+
+        case 107:
+            add_influence(next, Side::US, kSaudiArabiaId, 2);
+            next.awacs_active = true;
+            break;
 
         case kChinaCardId:
             if (side == Side::USSR) {

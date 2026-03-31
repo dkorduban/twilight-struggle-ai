@@ -51,6 +51,14 @@ void test_duck_and_cover() {
     require(next.discard.test(4), "Duck and Cover should be discarded");
 }
 
+void test_fidel() {
+    PublicState pub;
+    pub.set_influence(Side::US, 36, 3);
+    const auto next = apply_event(pub, 8, Side::USSR, 14U);
+    require(next.influence_of(Side::US, 36) == 0, "Fidel should remove all US influence from Cuba");
+    require(ts::controls_country(Side::USSR, 36, next), "Fidel should give USSR control of Cuba");
+}
+
 void test_we_will_bury_you() {
     PublicState pub;
     pub.defcon = 4;
@@ -112,12 +120,63 @@ void test_truman_doctrine() {
     require(next.truman_doctrine_played, "Truman Doctrine should set the NATO prerequisite flag");
 }
 
+void test_warsaw_pact() {
+    PublicState pub;
+    pub.set_influence(Side::US, 13, 2);
+    const auto next = apply_event(pub, 16, Side::USSR, 15U);
+    require(next.warsaw_pact_played, "Warsaw Pact should set the NATO prerequisite flag");
+    const bool removed_us = next.influence_of(Side::US, 13) == 0;
+    const bool added_ussr = next.influence_of(Side::USSR, 13) >= 1;
+    require(removed_us || added_ussr, "Warsaw Pact should either remove US influence or add USSR influence in Eastern Bloc");
+}
+
 void test_us_japan_pact() {
     PublicState pub;
     pub.set_influence(Side::USSR, 22, 2);
     const auto next = apply_event(pub, 27, Side::US, 12U);
     require(next.us_japan_pact_active, "US/Japan Pact should set its ongoing protection flag");
     require(ts::controls_country(Side::US, 22, next), "US/Japan Pact should give the US control of Japan");
+}
+
+void test_camp_david_accords() {
+    PublicState pub;
+    const auto next = apply_event(pub, 66, Side::US, 16U);
+    require(next.vp == -1, "Camp David Accords should award 1 VP to US");
+    require(next.influence_of(Side::US, 30) == 1, "Camp David Accords should add 1 US influence to Israel");
+    require(next.influence_of(Side::US, 26) == 1, "Camp David Accords should add 1 US influence to Egypt");
+    require(next.influence_of(Side::US, 31) == 1, "Camp David Accords should add 1 US influence to Jordan");
+}
+
+void test_opec_and_awacs() {
+    PublicState pub;
+    pub.set_influence(Side::USSR, 26, 1);
+    pub.set_influence(Side::USSR, 34, 1);
+    pub.set_influence(Side::USSR, 55, 1);
+    auto next = apply_event(pub, 64, Side::USSR, 17U);
+    require(next.vp == 3, "OPEC should score one VP per eligible USSR-held OPEC country");
+
+    pub.awacs_active = true;
+    next = apply_event(pub, 64, Side::USSR, 18U);
+    require(next.vp == 2, "AWACS should exclude Saudi Arabia from OPEC scoring");
+
+    pub = PublicState{};
+    next = apply_event(pub, 107, Side::US, 19U);
+    require(next.influence_of(Side::US, 34) == 2, "AWACS Sale should add 2 US influence to Saudi Arabia");
+    require(next.awacs_active, "AWACS Sale should set the AWACS flag");
+}
+
+void test_iron_lady_and_yuri() {
+    PublicState pub;
+    pub.set_influence(Side::USSR, 17, 3);
+    auto next = apply_event(pub, 86, Side::US, 20U);
+    require(next.vp == -1, "Iron Lady should award 1 VP to US");
+    require(next.influence_of(Side::USSR, 17) == 0, "Iron Lady should remove all USSR influence from UK");
+    require(next.opec_cancelled, "Iron Lady should cancel OPEC");
+
+    pub = PublicState{};
+    pub.space_attempts[ts::to_index(Side::US)] = 2;
+    next = apply_event(pub, 106, Side::USSR, 21U);
+    require(next.vp == 2, "Yuri and Samantha should award USSR VP equal to US space attempts");
 }
 
 void test_flower_power_cancel() {
@@ -182,12 +241,17 @@ void test_iran_iraq_war() {
 
 int main() {
     test_duck_and_cover();
+    test_fidel();
     test_we_will_bury_you();
     test_kal_007();
     test_cuban_missile_crisis();
     test_ops_and_flags_batch();
     test_truman_doctrine();
+    test_warsaw_pact();
     test_us_japan_pact();
+    test_camp_david_accords();
+    test_opec_and_awacs();
+    test_iron_lady_and_yuri();
     test_flower_power_cancel();
     test_korean_war();
     test_olympic_games();
