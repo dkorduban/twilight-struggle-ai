@@ -74,6 +74,8 @@ def parse_args() -> argparse.Namespace:
                    help="Use OneCycleLR schedule (linear warmup + cosine decay)")
     p.add_argument("--compile", action="store_true",
                    help="torch.compile the model for faster training (PyTorch 2+)")
+    p.add_argument("--amp", action="store_true",
+                   help="Use automatic mixed precision (float16) for faster GPU training")
     p.add_argument("--resume", action="store_true",
                    help="Resume from latest checkpoint in --out-dir")
     p.add_argument("--seed", type=int, default=42)
@@ -164,6 +166,7 @@ def run_epoch(
     label_smoothing: float = 0.0,
     scheduler=None,
     value_weight: float = 1.0,
+    scaler: "torch.cuda.amp.GradScaler | None" = None,
 ) -> dict[str, float]:
     """Run one full pass over ``loader``.
 
@@ -185,6 +188,9 @@ def run_epoch(
     total_country_loss = 0.0
     total_value_loss = 0.0
     total_card_acc = 0.0
+    total_card_mrr = 0.0
+    total_card_nll = 0.0
+    total_card_conf = 0.0
     total_mode_acc = 0.0
     total_country_ce = 0.0
     total_country_top1 = 0.0
@@ -193,6 +199,7 @@ def run_epoch(
 
     t0 = time.time()
 
+    use_amp = scaler is not None and device.type == "cuda"
     ctx = torch.no_grad() if not is_train else torch.enable_grad()
     with ctx:
         for batch_idx, batch in enumerate(loader):
@@ -204,47 +211,63 @@ def run_epoch(
             country_ops_target = batch["country_ops_target"].to(device)
             value_target = batch["value_target"].to(device)
 
-            outputs = model(influence, cards, scalars)
-            card_logits = outputs["card_logits"]
-            mode_logits = outputs["mode_logits"]
-            country_logits = outputs["country_logits"]
-            country_strategy_logits = outputs["country_strategy_logits"]
-            strategy_logits = outputs["strategy_logits"]
-            value_pred = outputs["value"]
+            with torch.autocast(device_type=device.type, enabled=use_amp):
+                outputs = model(influence, cards, scalars)
+                card_logits = outputs["card_logits"]
+                mode_logits = outputs["mode_logits"]
+                country_logits = outputs["country_logits"]
+                country_strategy_logits = outputs["country_strategy_logits"]
+                strategy_logits = outputs["strategy_logits"]
+                value_pred = outputs["value"]
 
-            card_loss = ce_loss_fn(card_logits, card_target)
-            mode_loss = mode_ce_loss_fn(mode_logits, mode_target)
-            value_loss = mse_loss_fn(value_pred, value_target)
+                card_loss = ce_loss_fn(card_logits, card_target)
+                mode_loss = mode_ce_loss_fn(mode_logits, mode_target)
+                value_loss = mse_loss_fn(value_pred, value_target)
 
-            # Country loss: only on rows with at least one country op target.
-            country_ops_mask = country_ops_target.sum(dim=1) > 0
-            country_top1 = 0.0
-            if country_ops_mask.any():
-                ops_t = country_ops_target[country_ops_mask]
-                ops_prob = ops_t / ops_t.sum(dim=1, keepdim=True)
-                mixing = torch.softmax(strategy_logits[country_ops_mask], dim=1)
-                strategy_probs = torch.softmax(
-                    country_strategy_logits[country_ops_mask], dim=2
-                )
-                mixture_probs = (mixing.unsqueeze(2) * strategy_probs).sum(dim=1)
-                country_loss = -(
-                    ops_prob * torch.log(mixture_probs + 1e-8)
-                ).sum(dim=1).mean()
-                country_top1 = (
-                    country_logits[country_ops_mask].argmax(dim=1)
-                    == country_ops_target[country_ops_mask].argmax(dim=1)
-                ).float().mean().item()
-            else:
-                country_loss = torch.tensor(0.0, device=device)
+                # Country loss: only on rows with at least one country op target.
+                country_ops_mask = country_ops_target.sum(dim=1) > 0
+                country_top1 = 0.0
+                if country_ops_mask.any():
+                    ops_t = country_ops_target[country_ops_mask]
+                    ops_prob = ops_t / ops_t.sum(dim=1, keepdim=True)
+                    mixing = torch.softmax(strategy_logits[country_ops_mask], dim=1)
+                    strategy_probs = torch.softmax(
+                        country_strategy_logits[country_ops_mask], dim=2
+                    )
+                    mixture_probs = (mixing.unsqueeze(2) * strategy_probs).sum(dim=1)
+                    country_loss = -(
+                        ops_prob * torch.log(mixture_probs + 1e-8)
+                    ).sum(dim=1).mean()
+                    country_top1 = (
+                        country_logits[country_ops_mask].argmax(dim=1)
+                        == country_ops_target[country_ops_mask].argmax(dim=1)
+                    ).float().mean().item()
+                else:
+                    country_loss = torch.tensor(0.0, device=device)
 
-            loss = card_loss + mode_loss + country_loss + value_weight * value_loss
+                loss = card_loss + mode_loss + country_loss + value_weight * value_loss
 
             if is_train:
                 optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                if scaler is not None:
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    optimizer.step()
                 if scheduler is not None:
                     scheduler.step()
+
+            # --- card MRR, NLL, confidence ---
+            with torch.no_grad():
+                sorted_idx = card_logits.argsort(dim=1, descending=True)  # (B, 112)
+                ct = card_target.unsqueeze(1)                              # (B, 1)
+                ranks = (sorted_idx == ct).int().argmax(dim=1) + 1        # (B,) 1-indexed
+                card_mrr_val  = (1.0 / ranks.float()).mean().item()
+                probs = torch.softmax(card_logits, dim=1)
+                card_nll_val  = torch.nn.functional.cross_entropy(card_logits, card_target, reduction='mean').item()
+                card_conf_val = probs.max(dim=1).values.mean().item()
 
             # --- accumulate metrics ---
             total_loss += loss.item()
@@ -253,6 +276,9 @@ def run_epoch(
             total_country_loss += country_loss.item()
             total_value_loss += value_loss.item()
             total_card_acc += accuracy(card_logits, card_target)
+            total_card_mrr  += card_mrr_val
+            total_card_nll  += card_nll_val
+            total_card_conf += card_conf_val
             total_mode_acc += accuracy(mode_logits, mode_target, ignore_index=-1)
             total_country_ce += country_loss.item()
             total_country_top1 += country_top1
@@ -284,7 +310,10 @@ def run_epoch(
         "mode_loss": total_mode_loss / n_batches,
         "country_loss": total_country_loss / n_batches,
         "value_loss": total_value_loss / n_batches,
-        "card_top1": total_card_acc / n_batches,
+        "card_top1": total_card_acc  / n_batches,
+        "card_mrr":  total_card_mrr  / n_batches,
+        "card_nll":  total_card_nll  / n_batches,
+        "card_conf": total_card_conf / n_batches,
         "mode_acc": total_mode_acc / n_batches,
         "country_ce": total_country_ce / n_batches,
         "country_top1": total_country_top1 / n_batches,
@@ -392,6 +421,11 @@ def main() -> None:
         else:
             print("--resume specified but no checkpoints found; starting fresh")
 
+    # ---- AMP scaler ----
+    scaler = torch.cuda.amp.GradScaler() if (getattr(args, "amp", False) and device.type == "cuda") else None
+    if scaler is not None:
+        print("AMP enabled (float16 autocast + GradScaler)")
+
     # ---- training loop ----
     for epoch in range(start_epoch, args.epochs + 1):
         t_epoch = time.time()
@@ -402,6 +436,7 @@ def main() -> None:
             label_smoothing=args.label_smoothing,
             scheduler=scheduler,
             value_weight=args.value_weight,
+            scaler=scaler,
         )
         val_metrics = run_epoch(
             model, val_loader, None, device, args.log_interval, f"val   e{epoch}",
@@ -419,10 +454,14 @@ def main() -> None:
             f"Epoch {epoch} summary"
             f"  train_loss={train_metrics.get('loss', float('nan')):.4f}"
             f"  train_card_top1={train_metrics.get('card_top1', float('nan')):.3f}"
+            f"  train_card_mrr={train_metrics.get('card_mrr', float('nan')):.3f}"
             f"  train_mode_acc={train_metrics.get('mode_acc', float('nan')):.3f}"
             f"  train_country_ce={train_metrics.get('country_ce', float('nan')):.4f}"
             f"  val_loss={val_loss:.4f}"
             f"  val_card_top1={val_metrics.get('card_top1', float('nan')):.3f}"
+            f"  val_card_mrr={val_metrics.get('card_mrr', float('nan')):.3f}"
+            f"  val_card_nll={val_metrics.get('card_nll', float('nan')):.4f}"
+            f"  val_card_conf={val_metrics.get('card_conf', float('nan')):.3f}"
             f"  val_mode_acc={val_metrics.get('mode_acc', float('nan')):.3f}"
             f"  val_country_ce={val_metrics.get('country_ce', float('nan')):.4f}"
             f"  country_top1={val_metrics.get('country_top1', float('nan')):.3f}"
