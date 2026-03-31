@@ -628,7 +628,41 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
 
     auto [new_pub, over, winner] = apply_action(gs.pub, action, side, rng);
     gs.pub = new_pub;
+    if (!over && action.mode == ActionMode::Space) {
+        const auto opponent = other_side(side);
+        const auto l6_holder = gs.pub.space_level6_first;
+        if (
+            l6_holder.has_value() &&
+            *l6_holder == opponent &&
+            gs.pub.space[to_index(opponent)] >= 6 &&
+            gs.pub.space[to_index(side)] < 6
+        ) {
+            const auto opp_hand = hand_to_vector(gs.hands[to_index(opponent)]);
+            if (!opp_hand.empty()) {
+                const auto discard_card = opp_hand.front();
+                gs.hands[to_index(opponent)].reset(discard_card);
+                gs.pub.discard.set(discard_card);
+                new_pub = gs.pub;
+            }
+        }
+    }
     return {new_pub, over, winner};
+}
+
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(GameState& gs, std::mt19937& rng) {
+    std::vector<CountryId> eligible;
+    for (const auto cid : all_country_ids()) {
+        if (gs.pub.influence_of(Side::US, cid) > 0) {
+            eligible.push_back(cid);
+        }
+    }
+    if (eligible.empty()) {
+        return std::nullopt;
+    }
+    const auto target = eligible[std::uniform_int_distribution<size_t>(0, eligible.size() - 1)(rng)];
+    gs.pub.set_influence(Side::US, target, gs.pub.influence_of(Side::US, target) + 1);
+    const auto [over, winner] = check_vp_win(gs.pub);
+    return std::tuple{gs.pub, over, winner};
 }
 
 std::string end_reason(const PublicState& pub, std::optional<Side> winner) {
@@ -821,6 +855,103 @@ std::optional<GameResult> run_action_rounds(
                     .end_reason = end_reason(gs.pub, winner),
                 };
             }
+            if (side == Side::USSR && gs.pub.norad_active && gs.pub.defcon == 2) {
+                if (auto norad = resolve_norad(gs, rng); norad.has_value()) {
+                    auto& [norad_pub, norad_over, norad_winner] = *norad;
+                    (void)norad_pub;
+                    if (norad_over) {
+                        return GameResult{
+                            .winner = norad_winner,
+                            .final_vp = gs.pub.vp,
+                            .end_turn = gs.pub.turn,
+                            .end_reason = end_reason(gs.pub, norad_winner),
+                        };
+                    }
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<GameResult> run_extra_action_round(
+    GameState& gs,
+    Side side,
+    const PolicyFn& policy,
+    std::mt19937& rng,
+    std::vector<StepTrace>* trace_steps
+) {
+    gs.pub.ar = std::max(gs.pub.ar, ars_for_turn(gs.pub.turn)) + 1;
+    gs.pub.phasing = side;
+    const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
+    auto& hand = gs.hands[to_index(side)];
+    if (hand.none()) {
+        return std::nullopt;
+    }
+    if (auto trap_result = resolve_trap_ar(gs, side, rng); trap_result.has_value()) {
+        auto& [new_pub, over, winner] = *trap_result;
+        (void)new_pub;
+        if (over) {
+            return GameResult{
+                .winner = winner,
+                .final_vp = gs.pub.vp,
+                .end_turn = gs.pub.turn,
+                .end_reason = end_reason(gs.pub, winner),
+            };
+        }
+        return std::nullopt;
+    }
+    if (!has_legal_action(hand, gs.pub, side, holds_china)) {
+        return std::nullopt;
+    }
+    auto action = policy(gs.pub, hand, holds_china, rng);
+    if (!action.has_value()) {
+        return std::nullopt;
+    }
+    const auto pub_snapshot = gs.pub;
+    const auto hand_snapshot = hand;
+    if (hand.test(action->card_id)) {
+        hand.reset(action->card_id);
+    }
+    const auto vp_before = gs.pub.vp;
+    const auto defcon_before = gs.pub.defcon;
+    auto [new_pub, over, winner] = apply_action_with_hands(gs, *action, side, rng);
+    if (trace_steps != nullptr) {
+        trace_steps->push_back(StepTrace{
+            .turn = gs.pub.turn,
+            .ar = gs.pub.ar,
+            .side = side,
+            .holds_china = holds_china,
+            .pub_snapshot = pub_snapshot,
+            .hand_snapshot = hand_snapshot,
+            .action = *action,
+            .vp_before = vp_before,
+            .vp_after = gs.pub.vp,
+            .defcon_before = defcon_before,
+            .defcon_after = gs.pub.defcon,
+        });
+    }
+    sync_china(gs);
+    if (over) {
+        return GameResult{
+            .winner = winner,
+            .final_vp = gs.pub.vp,
+            .end_turn = gs.pub.turn,
+            .end_reason = end_reason(gs.pub, winner),
+        };
+    }
+    if (side == Side::USSR && gs.pub.norad_active && gs.pub.defcon == 2) {
+        if (auto norad = resolve_norad(gs, rng); norad.has_value()) {
+            auto& [norad_pub, norad_over, norad_winner] = *norad;
+            (void)norad_pub;
+            if (norad_over) {
+                return GameResult{
+                    .winner = norad_winner,
+                    .final_vp = gs.pub.vp,
+                    .end_turn = gs.pub.turn,
+                    .end_reason = end_reason(gs.pub, norad_winner),
+                };
+            }
         }
     }
     return std::nullopt;
@@ -923,6 +1054,31 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     return apply_action_with_hands(gs, action, side, rng);
 }
 
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(
+    GameState& gs,
+    Side side,
+    std::mt19937& rng
+) {
+    return resolve_trap_ar(gs, side, rng);
+}
+
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad_live(
+    GameState& gs,
+    std::mt19937& rng
+) {
+    return resolve_norad(gs, rng);
+}
+
+std::optional<GameResult> run_extra_action_round_live(
+    GameState& gs,
+    Side side,
+    const PolicyFn& policy,
+    std::mt19937& rng,
+    std::vector<StepTrace>* trace_steps
+) {
+    return run_extra_action_round(gs, side, policy, rng, trace_steps);
+}
+
 GameResult play_game_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
     return play_game_traced_fn(ussr_policy, us_policy, seed).result;
 }
@@ -950,6 +1106,20 @@ TracedGame play_game_traced_fn(const PolicyFn& ussr_policy, const PolicyFn& us_p
         if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), &traced.steps); result.has_value()) {
             traced.result = *result;
             return traced;
+        }
+        if (gs.pub.north_sea_oil_extra_ar) {
+            gs.pub.north_sea_oil_extra_ar = false;
+            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, &traced.steps); result.has_value()) {
+                traced.result = *result;
+                return traced;
+            }
+        }
+        if (gs.pub.glasnost_extra_ar) {
+            gs.pub.glasnost_extra_ar = false;
+            if (auto result = run_extra_action_round(gs, Side::USSR, ussr_policy, rng, &traced.steps); result.has_value()) {
+                traced.result = *result;
+                return traced;
+            }
         }
         if (auto result = end_of_turn(gs, turn); result.has_value()) {
             traced.result = *result;

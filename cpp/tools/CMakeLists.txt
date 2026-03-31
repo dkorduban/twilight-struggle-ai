@@ -65,3 +65,14 @@ target_link_libraries(ts_cat_c_smoke
 )
 
 target_compile_features(ts_cat_c_smoke PRIVATE cxx_std_23)
+
+add_executable(ts_loop_mechanics_smoke
+    loop_mechanics_smoke.cpp
+)
+
+target_link_libraries(ts_loop_mechanics_smoke
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_loop_mechanics_smoke PRIVATE cxx_std_23)

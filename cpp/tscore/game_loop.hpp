@@ -42,6 +42,25 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     std::mt19937& rng
 );
 
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(
+    GameState& gs,
+    Side side,
+    std::mt19937& rng
+);
+
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad_live(
+    GameState& gs,
+    std::mt19937& rng
+);
+
+std::optional<GameResult> run_extra_action_round_live(
+    GameState& gs,
+    Side side,
+    const PolicyFn& policy,
+    std::mt19937& rng,
+    std::vector<StepTrace>* trace_steps = nullptr
+);
+
 GameResult play_game_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
