@@ -9,6 +9,7 @@
 #   --threshold PCT Win-rate threshold to proceed to vs-heuristic collection (default: 35)
 #   --games-vsh N   Games to collect for vs-heuristic (default: 2000)
 #   --seed-base S   Base seed; heuristic seed = S + N*1000, vs-heu seed = S + N*1000 + 500 (default: 20000)
+#   --max-gens G    Rolling window: keep only the last G generations of parquet data (default: 6, 0=keep all)
 #
 # combined_vN must already exist (symlinks to parquet files).
 # The script trains, benchmarks, conditionally collects, then launches run_vN_pipeline.sh N+1.
@@ -18,6 +19,7 @@ N=${1:?Usage: $0 <version_number>}
 THRESHOLD=0   # 0 = always collect; raise to 35+ once model can consistently beat heuristic
 GAMES_VSH=2000
 SEED_BASE=20000
+MAX_GENS=6    # Rolling window: keep only last N generations of parquet data (0 = keep all)
 
 shift
 while [[ $# -gt 0 ]]; do
@@ -25,6 +27,7 @@ while [[ $# -gt 0 ]]; do
         --threshold) THRESHOLD=$2; shift 2 ;;
         --games-vsh) GAMES_VSH=$2; shift 2 ;;
         --seed-base) SEED_BASE=$2; shift 2 ;;
+        --max-gens)  MAX_GENS=$2;  shift 2 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
@@ -61,13 +64,14 @@ trap "kill $MONITOR_PID 2>/dev/null || true" EXIT
 # ── Train ─────────────────────────────────────────────────────────────────────
 if [ ! -f "$CKPT" ]; then
     uv run python scripts/resource_monitor.py --tag "train" --out "$MONITOR_LOG"
-    echo "[$(date)] Training v${N} (hidden_dim=256, 60 epochs)..."
+    echo "[$(date)] Training v${N} (hidden_dim=256, up to 60 epochs, patience=8)..."
     nice -n 10 uv run python scripts/train_baseline.py \
         --data-dir "$COMBINED" \
         --out-dir "$CKPT_DIR" \
-        --epochs 60 --batch-size 2048 --lr 1.2e-3 \
+        --epochs 60 --batch-size 8192 --lr 2.4e-3 \
         --weight-decay 1e-4 --dropout 0.1 --label-smoothing 0.05 \
         --value-target final_vp --num-workers 0 --amp --one-cycle \
+        --patience 8 --advantage-weight 0.5 \
         2>&1 | tee /tmp/train_v${N}.log
     echo "[$(date)] v${N} training done."
 else
@@ -86,7 +90,7 @@ else
     echo "[$(date)] Benchmarking v${N}..."
     nice -n 10 uv run python scripts/benchmark_vf_mcts.py \
         --checkpoint "$CKPT" \
-        --n-games 200 --n-sim 0 --n-candidates 8 --seed 9999 --pool-size 30 \
+        --n-games 500 --n-sim 0 --n-candidates 8 --seed 9999 --pool-size 30 \
         2>&1 | tee "$BENCH_LOG"
     echo "[$(date)] v${N} benchmark done."
 fi
@@ -108,6 +112,7 @@ if [ ! -f "$VSH_OUT" ]; then
         nice -n 10 uv run python scripts/collect_learned_vs_heuristic.py \
             --checkpoint "$CKPT" --n-games "$GAMES_VSH" --workers 16 \
             --seed "$VSH_SEED" --out "$VSH_OUT" \
+            --value-guided --value-guided-k 4 \
             2>&1 | tee /tmp/collect_v${N}_vs_heuristic.log
         echo "[$(date)] v${N}-vs-heuristic collection done."
 
@@ -146,18 +151,36 @@ print(f'{defcon1/total*100:.1f}')
         COMBINED_NP1=data/combined_v${NP1}
         mkdir -p "$COMBINED_NP1"
         rm -f "$COMBINED_NP1"/*.parquet
-        # Carry forward all files from combined_vN plus the filtered new batch
+
+        # Rolling window: carry forward files from combined_vN, skipping those
+        # whose embedded version number is older than (N+1 - MAX_GENS).
+        # Files with no parseable version are always kept (seed/baseline data).
+        # MAX_GENS=0 means keep everything.
+        MIN_GEN=0
+        if [ "$MAX_GENS" -gt 0 ]; then
+            MIN_GEN=$(( NP1 - MAX_GENS ))
+        fi
+        DROPPED=0
         for f in "$COMBINED"/*.parquet; do
-            ln -sf "$(readlink -f "$f")" "$COMBINED_NP1/$(basename "$f")"
+            fname=$(basename "$f")
+            # Extract first _vNN_ or _vNN. version number from filename
+            file_gen=$(echo "$fname" | grep -oP '(?<=_v)\d+' | head -1 || true)
+            if [ -n "$file_gen" ] && [ "$MAX_GENS" -gt 0 ] && [ "$file_gen" -lt "$MIN_GEN" ]; then
+                DROPPED=$(( DROPPED + 1 ))
+                echo "[$(date)] Rolling window: dropping old gen v${file_gen} file: $fname"
+            else
+                ln -sf "$(readlink -f "$f")" "$COMBINED_NP1/$fname"
+            fi
         done
         ln -sf "$(readlink -f "$VSH_FILTERED")" \
             "$COMBINED_NP1/learned_v${N}_vs_heuristic_filtered.parquet"
         NP1_COUNT=$(ls "$COMBINED_NP1"/*.parquet | wc -l)
-        echo "[$(date)] combined_v${NP1} assembled: $NP1_COUNT files"
+        echo "[$(date)] combined_v${NP1} assembled: $NP1_COUNT files (dropped $DROPPED old, min_gen=v${MIN_GEN})"
 
         echo "[$(date)] Launching v${NP1} pipeline..."
         bash scripts/run_vN_pipeline.sh "$NP1" \
-            --threshold "$THRESHOLD" --games-vsh "$GAMES_VSH" --seed-base "$SEED_BASE"
+            --threshold "$THRESHOLD" --games-vsh "$GAMES_VSH" --seed-base "$SEED_BASE" \
+            --max-gens "$MAX_GENS"
     else
         echo "[$(date)] SKIP: v${N} scored ${PCT:-?}% (< ${THRESHOLD}%). Stopping chain."
         echo "[$(date)] Consider: collect more heuristic data or tune architecture before continuing."
