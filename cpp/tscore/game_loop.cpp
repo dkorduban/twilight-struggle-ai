@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "dice.hpp"
 #include "game_data.hpp"
 #include "scoring.hpp"
 #include "step.hpp"
@@ -59,6 +60,166 @@ void discard_from_hand(GameState& gs, Side side, CardId card_id, PublicState& pu
     }
 }
 
+std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
+    GameState& gs,
+    CardId card_id,
+    Side event_side,
+    std::mt19937& rng
+);
+
+std::optional<CardId> draw_one(GameState& gs, std::mt19937& rng) {
+    if (gs.deck.empty()) {
+        std::vector<CardId> reshuffled;
+        for (int raw = 1; raw <= kMaxCardId; ++raw) {
+            const auto candidate = static_cast<CardId>(raw);
+            if (gs.pub.discard.test(candidate) && !gs.pub.removed.test(candidate)) {
+                reshuffled.push_back(candidate);
+            }
+        }
+        if (reshuffled.empty()) {
+            return std::nullopt;
+        }
+        std::shuffle(reshuffled.begin(), reshuffled.end(), rng);
+        gs.deck = std::move(reshuffled);
+        gs.pub.discard.reset();
+    }
+    if (gs.deck.empty()) {
+        return std::nullopt;
+    }
+    const auto card = gs.deck.back();
+    gs.deck.pop_back();
+    return card;
+}
+
+void apply_ops_randomly(PublicState& pub, Side side, int ops, std::mt19937& rng) {
+    auto accessible = accessible_countries(side, pub, ActionMode::Influence);
+    if (accessible.empty()) {
+        return;
+    }
+    const std::array<ActionMode, 4> modes = {
+        ActionMode::Influence,
+        ActionMode::Influence,
+        ActionMode::Coup,
+        ActionMode::Realign,
+    };
+    const auto mode = modes[std::uniform_int_distribution<size_t>(0, modes.size() - 1)(rng)];
+    const auto opponent = other_side(side);
+
+    if (mode == ActionMode::Influence) {
+        for (int i = 0; i < ops; ++i) {
+            const auto target = accessible[std::uniform_int_distribution<size_t>(0, accessible.size() - 1)(rng)];
+            pub.set_influence(side, target, pub.influence_of(side, target) + 1);
+        }
+        return;
+    }
+
+    if (mode == ActionMode::Coup) {
+        auto targets = accessible;
+        if (pub.defcon <= 2) {
+            targets.erase(
+                std::remove_if(
+                    targets.begin(),
+                    targets.end(),
+                    [](CountryId cid) { return country_spec(cid).is_battleground; }
+                ),
+                targets.end()
+            );
+            if (targets.empty()) {
+                targets = accessible;
+            }
+        }
+        const auto target = targets[std::uniform_int_distribution<size_t>(0, targets.size() - 1)(rng)];
+        const auto net = coup_result(ops, country_spec(target).stability, rng);
+        if (net > 0) {
+            const auto removed = std::min(net, pub.influence_of(opponent, target));
+            pub.set_influence(opponent, target, pub.influence_of(opponent, target) - removed);
+            if (const auto excess = net - removed; excess > 0) {
+                pub.set_influence(side, target, pub.influence_of(side, target) + excess);
+            }
+        }
+        if (country_spec(target).is_battleground && !(side == Side::US && pub.nuclear_subs_active)) {
+            pub.defcon = std::max(1, pub.defcon - 1);
+        }
+        pub.milops[to_index(side)] = std::max(pub.milops[to_index(side)], ops);
+        return;
+    }
+
+    for (int i = 0; i < std::min(ops, static_cast<int>(accessible.size())); ++i) {
+        const auto target = accessible[std::uniform_int_distribution<size_t>(0, accessible.size() - 1)(rng)];
+        const auto ussr_inf = pub.influence_of(Side::USSR, target);
+        const auto us_inf = pub.influence_of(Side::US, target);
+        auto count_adj = [&](Side player) {
+            int total = 0;
+            for (const auto neighbor : adjacency()[target]) {
+                if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
+                    continue;
+                }
+                if (controls_country(player, neighbor, pub)) {
+                    ++total;
+                }
+            }
+            return total;
+        };
+        const auto [ussr_total, us_total] = realign_result(ussr_inf, us_inf, count_adj(Side::USSR), count_adj(Side::US), rng);
+        if (ussr_total > us_total) {
+            pub.set_influence(Side::US, target, std::max(0, pub.influence_of(Side::US, target) - 1));
+        } else if (us_total > ussr_total) {
+            pub.set_influence(Side::USSR, target, std::max(0, pub.influence_of(Side::USSR, target) - 1));
+        }
+    }
+}
+
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar(
+    GameState& gs,
+    Side side,
+    std::mt19937& rng
+) {
+    bool trapped = false;
+    bool bear_trap = false;
+    if (side == Side::USSR && gs.pub.bear_trap_active) {
+        trapped = true;
+        bear_trap = true;
+    } else if (side == Side::US && gs.pub.quagmire_active) {
+        trapped = true;
+    }
+    if (!trapped) {
+        return std::nullopt;
+    }
+
+    std::vector<CardId> eligible;
+    for (int raw = 1; raw <= kMaxCardId; ++raw) {
+        const auto candidate = static_cast<CardId>(raw);
+        if (
+            gs.hands[to_index(side)].test(candidate) &&
+            candidate != kChinaCardId &&
+            !card_spec(candidate).is_scoring &&
+            card_spec(candidate).ops >= 2
+        ) {
+            eligible.push_back(candidate);
+        }
+    }
+
+    auto pub = gs.pub;
+    if (eligible.empty()) {
+        const auto [over, winner] = check_vp_win(pub);
+        gs.pub = pub;
+        return std::tuple{pub, over, winner};
+    }
+
+    const auto chosen = eligible[std::uniform_int_distribution<size_t>(0, eligible.size() - 1)(rng)];
+    discard_from_hand(gs, side, chosen, pub);
+    if (roll_d6(rng) <= 4) {
+        if (bear_trap) {
+            pub.bear_trap_active = false;
+        } else {
+            pub.quagmire_active = false;
+        }
+    }
+    gs.pub = pub;
+    const auto [over, winner] = check_vp_win(pub);
+    return std::tuple{pub, over, winner};
+}
+
 std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     GameState& gs,
     CardId card_id,
@@ -68,6 +229,41 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     auto pub = gs.pub;
 
     switch (card_id) {
+        case 5: {
+            auto hand = hand_to_vector(gs.hands[to_index(Side::USSR)]);
+            if (!hand.empty()) {
+                const auto target = hand[std::uniform_int_distribution<size_t>(0, hand.size() - 1)(rng)];
+                gs.hands[to_index(Side::USSR)].reset(target);
+                if (card_spec(target).starred) {
+                    pub.removed.set(target);
+                } else {
+                    pub.discard.set(target);
+                }
+                gs.pub = pub;
+                if (card_spec(target).is_scoring) {
+                    auto result = apply_scoring_card(target, pub);
+                    pub.vp += result.vp_delta;
+                    if (result.clear_shuttle) {
+                        pub.shuttle_diplomacy_active = false;
+                    }
+                    if (result.game_over) {
+                        card_played(pub, 5, side);
+                        gs.pub = pub;
+                        return {pub, true, result.winner};
+                    }
+                } else if (card_spec(target).side == Side::US) {
+                    auto [event_pub, over, winner] = fire_event_with_state(gs, target, Side::US, rng);
+                    pub = event_pub;
+                    if (over) {
+                        card_played(pub, 5, side);
+                        gs.pub = pub;
+                        return std::tuple{pub, true, winner};
+                    }
+                }
+            }
+            break;
+        }
+
         case 10: {
             std::vector<CardId> eligible;
             for (int raw = 1; raw <= kMaxCardId; ++raw) {
@@ -93,6 +289,29 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             if (!accessible.empty()) {
                 const auto target = accessible[std::uniform_int_distribution<size_t>(0, accessible.size() - 1)(rng)];
                 pub.set_influence(Side::US, target, pub.influence_of(Side::US, target) + 1);
+            }
+            break;
+        }
+
+        case 32: {
+            const auto opponent = other_side(side);
+            std::vector<CardId> eligible;
+            for (int raw = 1; raw <= kMaxCardId; ++raw) {
+                const auto candidate = static_cast<CardId>(raw);
+                if (
+                    gs.hands[to_index(side)].test(candidate) &&
+                    candidate != kChinaCardId &&
+                    card_spec(candidate).side == opponent &&
+                    !card_spec(candidate).is_scoring
+                ) {
+                    eligible.push_back(candidate);
+                }
+            }
+            if (!eligible.empty()) {
+                const auto chosen = eligible[std::uniform_int_distribution<size_t>(0, eligible.size() - 1)(rng)];
+                const auto ops = effective_ops(chosen, pub, side);
+                discard_from_hand(gs, side, chosen, pub);
+                apply_ops_randomly(pub, side, ops, rng);
             }
             break;
         }
@@ -128,6 +347,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             break;
         }
 
+        case 45:
+            pub.quagmire_active = true;
+            break;
+
         case 46: {
             pub.defcon = std::min(5, pub.defcon + 1);
             pub.salt_active = true;
@@ -136,6 +359,39 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 const auto chosen = discarded[std::uniform_int_distribution<size_t>(0, discarded.size() - 1)(rng)];
                 pub.discard.reset(chosen);
                 gs.hands[to_index(side)].set(chosen);
+            }
+            break;
+        }
+
+        case 47:
+            pub.bear_trap_active = true;
+            break;
+
+        case 52: {
+            const auto opponent = other_side(side);
+            std::vector<CardId> candidates;
+            int max_ops = -1;
+            for (int raw = 1; raw <= kMaxCardId; ++raw) {
+                const auto candidate = static_cast<CardId>(raw);
+                if (
+                    gs.hands[to_index(opponent)].test(candidate) &&
+                    candidate != kChinaCardId &&
+                    !card_spec(candidate).is_scoring
+                ) {
+                    const auto ops = effective_ops(candidate, pub, opponent);
+                    if (ops > max_ops) {
+                        max_ops = ops;
+                        candidates = {candidate};
+                    } else if (ops == max_ops) {
+                        candidates.push_back(candidate);
+                    }
+                }
+            }
+            if (!candidates.empty()) {
+                const auto chosen = candidates[std::uniform_int_distribution<size_t>(0, candidates.size() - 1)(rng)];
+                gs.hands[to_index(opponent)].reset(chosen);
+                apply_ops_randomly(pub, side, effective_ops(chosen, pub, side), rng);
+                gs.hands[to_index(opponent)].set(chosen);
             }
             break;
         }
@@ -154,6 +410,116 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             candidates.resize(std::min(discard_count, static_cast<int>(candidates.size())));
             for (const auto chosen : candidates) {
                 discard_from_hand(gs, opponent, chosen, pub);
+            }
+            break;
+        }
+
+        case 68: {
+            std::vector<CardId> candidates;
+            for (int raw = 1; raw <= kMaxCardId; ++raw) {
+                const auto candidate = static_cast<CardId>(raw);
+                if (
+                    gs.hands[to_index(Side::USSR)].test(candidate) &&
+                    candidate != kChinaCardId &&
+                    !card_spec(candidate).is_scoring
+                ) {
+                    candidates.push_back(candidate);
+                }
+            }
+            if (!candidates.empty()) {
+                const auto chosen = candidates[std::uniform_int_distribution<size_t>(0, candidates.size() - 1)(rng)];
+                gs.hands[to_index(Side::USSR)].reset(chosen);
+                apply_ops_randomly(pub, Side::US, effective_ops(chosen, pub, Side::US), rng);
+                gs.hands[to_index(Side::USSR)].set(chosen);
+            }
+            break;
+        }
+
+        case 78: {
+            std::vector<CardId> discardable;
+            for (int raw = 1; raw <= kMaxCardId; ++raw) {
+                const auto candidate = static_cast<CardId>(raw);
+                if (
+                    gs.hands[to_index(Side::US)].test(candidate) &&
+                    candidate != kChinaCardId &&
+                    !card_spec(candidate).is_scoring
+                ) {
+                    discardable.push_back(candidate);
+                }
+            }
+            const auto discard_count = discardable.empty() ? 0 : std::uniform_int_distribution<int>(0, static_cast<int>(discardable.size()))(rng);
+            std::shuffle(discardable.begin(), discardable.end(), rng);
+            discardable.resize(static_cast<size_t>(discard_count));
+            for (const auto chosen : discardable) {
+                discard_from_hand(gs, Side::US, chosen, pub);
+            }
+            gs.pub = pub;
+            for (int i = 0; i < discard_count; ++i) {
+                if (const auto drawn = draw_one(gs, rng); drawn.has_value()) {
+                    gs.hands[to_index(Side::US)].set(*drawn);
+                }
+            }
+            pub = gs.pub;
+            break;
+        }
+
+        case 84: {
+            bool us_controls_me = false;
+            for (const auto cid : all_country_ids()) {
+                if (country_spec(cid).region == Region::MiddleEast && controls_country(Side::US, cid, pub)) {
+                    us_controls_me = true;
+                    break;
+                }
+            }
+            if (us_controls_me) {
+                std::vector<CardId> drawn;
+                for (int i = 0; i < 5; ++i) {
+                    if (const auto drawn_card = draw_one(gs, rng); drawn_card.has_value()) {
+                        drawn.push_back(*drawn_card);
+                    } else {
+                        break;
+                    }
+                }
+                if (!drawn.empty()) {
+                    const auto keep_count = std::uniform_int_distribution<int>(0, static_cast<int>(drawn.size()))(rng);
+                    std::shuffle(drawn.begin(), drawn.end(), rng);
+                    const auto discard_split = static_cast<size_t>(drawn.size() - keep_count);
+                    for (size_t i = 0; i < discard_split; ++i) {
+                        if (card_spec(drawn[i]).starred) {
+                            pub.removed.set(drawn[i]);
+                        } else {
+                            pub.discard.set(drawn[i]);
+                        }
+                    }
+                    gs.deck.insert(gs.deck.begin(), drawn.begin() + static_cast<std::ptrdiff_t>(discard_split), drawn.end());
+                }
+            }
+            break;
+        }
+
+        case 88: {
+            if (pub.space[to_index(Side::US)] > pub.space[to_index(Side::USSR)]) {
+                auto discarded = hand_to_vector(pub.discard);
+                discarded.erase(
+                    std::remove_if(
+                        discarded.begin(),
+                        discarded.end(),
+                        [](CardId candidate) { return candidate == kChinaCardId || card_spec(candidate).is_scoring; }
+                    ),
+                    discarded.end()
+                );
+                if (!discarded.empty()) {
+                    const auto chosen = discarded[std::uniform_int_distribution<size_t>(0, discarded.size() - 1)(rng)];
+                    pub.discard.reset(chosen);
+                    gs.pub = pub;
+                    auto [event_pub, over, winner] = fire_event_with_state(gs, chosen, side, rng);
+                    pub = event_pub;
+                    if (over) {
+                        card_played(pub, 88, side);
+                        gs.pub = pub;
+                        return std::tuple{pub, true, winner};
+                    }
+                }
             }
             break;
         }
@@ -398,6 +764,19 @@ std::optional<GameResult> run_action_rounds(
             gs.pub.phasing = side;
             const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
             auto& hand = gs.hands[to_index(side)];
+            if (auto trap_result = resolve_trap_ar(gs, side, rng); trap_result.has_value()) {
+                auto& [new_pub, over, winner] = *trap_result;
+                (void)new_pub;
+                if (over) {
+                    return GameResult{
+                        .winner = winner,
+                        .final_vp = gs.pub.vp,
+                        .end_turn = gs.pub.turn,
+                        .end_reason = end_reason(gs.pub, winner),
+                    };
+                }
+                continue;
+            }
             if (!has_legal_action(hand, gs.pub, side, holds_china)) {
                 continue;
             }
