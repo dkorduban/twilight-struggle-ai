@@ -40,6 +40,7 @@ COMBINED=data/combined_v${N}
 CKPT_DIR=data/checkpoints/retrain_v${N}
 CKPT=${CKPT_DIR}/baseline_best.pt
 BENCH_LOG=/tmp/benchmark_v${N}.log
+MONITOR_LOG=/tmp/monitor_v${N}.log
 VSH_SEED=$(( SEED_BASE + N * 1000 + 500 ))
 VSH_OUT=data/selfplay/learned_v${N}_vs_heuristic_${GAMES_VSH}g_seed${VSH_SEED}.parquet
 
@@ -51,15 +52,22 @@ if [ "$FILE_COUNT" -eq 0 ]; then
 fi
 echo "[$(date)] combined_v${N}: $FILE_COUNT files"
 
+# ── Start resource monitor (background) ──────────────────────────────────────
+uv run python scripts/resource_monitor.py --out "$MONITOR_LOG" --interval 5 &
+MONITOR_PID=$!
+echo "[$(date)] Resource monitor started (PID=$MONITOR_PID) -> $MONITOR_LOG"
+trap "kill $MONITOR_PID 2>/dev/null || true" EXIT
+
 # ── Train ─────────────────────────────────────────────────────────────────────
 if [ ! -f "$CKPT" ]; then
+    uv run python scripts/resource_monitor.py --tag "train" --out "$MONITOR_LOG"
     echo "[$(date)] Training v${N} (hidden_dim=256, 60 epochs)..."
     nice -n 10 uv run python scripts/train_baseline.py \
         --data-dir "$COMBINED" \
         --out-dir "$CKPT_DIR" \
-        --epochs 60 --batch-size 1024 --lr 1.2e-3 \
+        --epochs 60 --batch-size 2048 --lr 1.2e-3 \
         --weight-decay 1e-4 --dropout 0.1 --label-smoothing 0.05 \
-        --value-target final_vp --num-workers 0 --one-cycle \
+        --value-target final_vp --num-workers 0 --amp --one-cycle \
         2>&1 | tee /tmp/train_v${N}.log
     echo "[$(date)] v${N} training done."
 else
@@ -67,15 +75,18 @@ else
 fi
 
 # ── Benchmark ─────────────────────────────────────────────────────────────────
+# MCTS matchups skipped until learned vs heuristic win rate > 25% (too slow, ~0% anyway).
+# Re-enable by adding --n-sim 50 --n-candidates 8 --pool-size 30 below.
 # Skip if benchmark already completed (summary line present) — allows restart after failure.
-if grep -q "vf_mcts50 vs heuristic" "$BENCH_LOG" 2>/dev/null && \
-   grep -q "^\s*vf_mcts50" "$BENCH_LOG" 2>/dev/null; then
+if grep -q "learned vs heuristic" "$BENCH_LOG" 2>/dev/null && \
+   grep -q "^\s*learned vs heuristic" "$BENCH_LOG" 2>/dev/null; then
     echo "[$(date)] Benchmark log exists with complete results, skipping re-run."
 else
+    uv run python scripts/resource_monitor.py --tag "benchmark" --out "$MONITOR_LOG"
     echo "[$(date)] Benchmarking v${N}..."
     nice -n 10 uv run python scripts/benchmark_vf_mcts.py \
         --checkpoint "$CKPT" \
-        --n-games 60 --n-sim 50 --n-candidates 8 --seed 9999 --pool-size 30 \
+        --n-games 200 --n-sim 0 --n-candidates 8 --seed 9999 --pool-size 30 \
         2>&1 | tee "$BENCH_LOG"
     echo "[$(date)] v${N} benchmark done."
 fi
@@ -92,9 +103,10 @@ echo "[$(date)] v${N} vs heuristic: ${PCT:-unknown}%"
 if [ ! -f "$VSH_OUT" ]; then
     PCT_INT=${PCT%.*}
     if [ "${PCT_INT:-0}" -ge "$THRESHOLD" ]; then
+        uv run python scripts/resource_monitor.py --tag "collect" --out "$MONITOR_LOG"
         echo "[$(date)] Collecting v${N}-vs-heuristic (${PCT}% >= ${THRESHOLD}%, seed=${VSH_SEED})..."
         nice -n 10 uv run python scripts/collect_learned_vs_heuristic.py \
-            --checkpoint "$CKPT" --n-games "$GAMES_VSH" --workers 8 \
+            --checkpoint "$CKPT" --n-games "$GAMES_VSH" --workers 16 \
             --seed "$VSH_SEED" --out "$VSH_OUT" \
             2>&1 | tee /tmp/collect_v${N}_vs_heuristic.log
         echo "[$(date)] v${N}-vs-heuristic collection done."
