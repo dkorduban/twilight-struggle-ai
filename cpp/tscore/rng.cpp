@@ -17,6 +17,17 @@ uint64_t rotr64(uint64_t value, uint64_t rot) {
     return std::rotr(value, static_cast<int>(rot & 63U));
 }
 
+uint64_t gen_mask(uint64_t max_val) {
+    uint64_t mask = max_val;
+    mask |= mask >> 1;
+    mask |= mask >> 2;
+    mask |= mask >> 4;
+    mask |= mask >> 8;
+    mask |= mask >> 16;
+    mask |= mask >> 32;
+    return mask;
+}
+
 Uint128 seeded_state(Uint128 initstate, Uint128 inc) {
     Uint128 state = 0;
     state = state * kMultiplier + inc;
@@ -89,6 +100,28 @@ uint64_t Pcg64Rng::bounded_u64(uint64_t bound_exclusive) {
             return value % bound_exclusive;
         }
     }
+}
+
+uint64_t Pcg64Rng::bounded_interval_inclusive(uint64_t max_inclusive) {
+    if (max_inclusive == 0) {
+        return 0;
+    }
+    const auto mask = gen_mask(max_inclusive);
+    if (max_inclusive <= std::numeric_limits<uint32_t>::max()) {
+        const auto max32 = static_cast<uint32_t>(max_inclusive);
+        const auto mask32 = static_cast<uint32_t>(mask);
+        auto value = static_cast<uint32_t>(next_u32() & mask32);
+        while (value > max32) {
+            value = static_cast<uint32_t>(next_u32() & mask32);
+        }
+        return value;
+    }
+
+    auto value = next_u64() & mask;
+    while (value > max_inclusive) {
+        value = next_u64() & mask;
+    }
+    return value;
 }
 
 int Pcg64Rng::uniform_int(int low_inclusive, int high_inclusive) {

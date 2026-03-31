@@ -278,7 +278,7 @@ std::optional<ActionEncoding> sample_action(
     const PublicState& pub,
     Side side,
     bool holds_china,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     auto playable = legal_cards(hand, pub, side, holds_china);
     std::shuffle(playable.begin(), playable.end(), rng);

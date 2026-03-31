@@ -7,6 +7,74 @@
 
 namespace py = pybind11;
 
+namespace {
+
+py::list bitset_to_list(const ts::CardSet& cards) {
+    py::list out;
+    for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
+        if (cards.test(static_cast<size_t>(card_id))) {
+            out.append(card_id);
+        }
+    }
+    return out;
+}
+
+py::list influence_to_list(const ts::InfluenceBlock& influence) {
+    py::list out;
+    for (int country_id = 0; country_id <= ts::kMaxCountryId; ++country_id) {
+        out.append(influence[static_cast<size_t>(country_id)]);
+    }
+    return out;
+}
+
+py::dict public_state_to_dict(const ts::PublicState& pub) {
+    py::dict out;
+    out["turn"] = pub.turn;
+    out["ar"] = pub.ar;
+    out["phasing"] = static_cast<int>(pub.phasing);
+    out["vp"] = pub.vp;
+    out["defcon"] = pub.defcon;
+    out["milops"] = py::make_tuple(pub.milops[0], pub.milops[1]);
+    out["space"] = py::make_tuple(pub.space[0], pub.space[1]);
+    out["china_held_by"] = static_cast<int>(pub.china_held_by);
+    out["china_playable"] = pub.china_playable;
+    out["ussr_influence"] = influence_to_list(pub.influence[ts::to_index(ts::Side::USSR)]);
+    out["us_influence"] = influence_to_list(pub.influence[ts::to_index(ts::Side::US)]);
+    out["discard"] = bitset_to_list(pub.discard);
+    out["removed"] = bitset_to_list(pub.removed);
+    out["warsaw_pact_played"] = pub.warsaw_pact_played;
+    out["marshall_plan_played"] = pub.marshall_plan_played;
+    out["truman_doctrine_played"] = pub.truman_doctrine_played;
+    out["john_paul_ii_played"] = pub.john_paul_ii_played;
+    out["nato_active"] = pub.nato_active;
+    out["de_gaulle_active"] = pub.de_gaulle_active;
+    out["willy_brandt_active"] = pub.willy_brandt_active;
+    out["us_japan_pact_active"] = pub.us_japan_pact_active;
+    out["nuclear_subs_active"] = pub.nuclear_subs_active;
+    out["norad_active"] = pub.norad_active;
+    out["shuttle_diplomacy_active"] = pub.shuttle_diplomacy_active;
+    out["flower_power_active"] = pub.flower_power_active;
+    out["flower_power_cancelled"] = pub.flower_power_cancelled;
+    out["salt_active"] = pub.salt_active;
+    out["opec_cancelled"] = pub.opec_cancelled;
+    out["awacs_active"] = pub.awacs_active;
+    out["north_sea_oil_extra_ar"] = pub.north_sea_oil_extra_ar;
+    out["glasnost_extra_ar"] = pub.glasnost_extra_ar;
+    out["formosan_active"] = pub.formosan_active;
+    out["cuban_missile_crisis_active"] = pub.cuban_missile_crisis_active;
+    out["vietnam_revolts_active"] = pub.vietnam_revolts_active;
+    out["bear_trap_active"] = pub.bear_trap_active;
+    out["quagmire_active"] = pub.quagmire_active;
+    out["iran_hostage_crisis_active"] = pub.iran_hostage_crisis_active;
+    out["handicap_ussr"] = pub.handicap_ussr;
+    out["handicap_us"] = pub.handicap_us;
+    out["ops_modifier"] = py::make_tuple(pub.ops_modifier[0], pub.ops_modifier[1]);
+    out["state_hash"] = pub.state_hash;
+    return out;
+}
+
+}  // namespace
+
 PYBIND11_MODULE(tscore, m) {
     m.doc() = "Twilight Struggle exact game engine (C++ core)";
 
@@ -54,6 +122,12 @@ PYBIND11_MODULE(tscore, m) {
         .def_readonly("ar", &ts::StepTrace::ar)
         .def_readonly("side", &ts::StepTrace::side)
         .def_readonly("holds_china", &ts::StepTrace::holds_china)
+        .def_property_readonly("pub_snapshot", [](const ts::StepTrace& step) {
+            return public_state_to_dict(step.pub_snapshot);
+        })
+        .def_property_readonly("hand_snapshot", [](const ts::StepTrace& step) {
+            return bitset_to_list(step.hand_snapshot);
+        })
         .def_readonly("action", &ts::StepTrace::action)
         .def_readonly("vp_before", &ts::StepTrace::vp_before)
         .def_readonly("vp_after", &ts::StepTrace::vp_after)
@@ -72,16 +146,36 @@ PYBIND11_MODULE(tscore, m) {
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
             }
-            const ts::PolicyFn ussr_fn = [ussr_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+            const ts::PolicyFn ussr_fn = [ussr_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
                 return ts::choose_action(ussr_policy, pub, hand, holds_china, rng);
             };
-            const ts::PolicyFn us_fn = [us_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+            const ts::PolicyFn us_fn = [us_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
                 return ts::choose_action(us_policy, pub, hand, holds_china, rng);
             };
             return ts::play_game_traced_fn(ussr_fn, us_fn, seed);
         },
         py::arg("ussr_policy"),
         py::arg("us_policy"),
+        py::arg("seed") = py::none()
+    );
+    m.def(
+        "play_traced_game_from_seed_words",
+        [](ts::PolicyKind ussr_policy, ts::PolicyKind us_policy, const std::array<uint64_t, 4>& words, py::object seed_obj) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            const ts::PolicyFn ussr_fn = [ussr_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
+                return ts::choose_action(ussr_policy, pub, hand, holds_china, rng);
+            };
+            const ts::PolicyFn us_fn = [us_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
+                return ts::choose_action(us_policy, pub, hand, holds_china, rng);
+            };
+            return ts::play_game_traced_from_seed_words_fn(words, ussr_fn, us_fn, seed);
+        },
+        py::arg("ussr_policy"),
+        py::arg("us_policy"),
+        py::arg("words"),
         py::arg("seed") = py::none()
     );
     m.def("play_random_game", &ts::play_random_game, py::arg("seed") = py::none());
@@ -103,10 +197,10 @@ PYBIND11_MODULE(tscore, m) {
                 seed = seed_obj.cast<uint32_t>();
             }
             ts::TorchScriptPolicy learned(model_path);
-            const ts::PolicyFn learned_fn = [&learned](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+            const ts::PolicyFn learned_fn = [&learned](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
                 return learned.choose_action(pub, hand, holds_china, rng);
             };
-            const ts::PolicyFn opponent_fn = [opponent_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+            const ts::PolicyFn opponent_fn = [opponent_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
                 return ts::choose_action(opponent_policy, pub, hand, holds_china, rng);
             };
             return learned_side == ts::Side::USSR

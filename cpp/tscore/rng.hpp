@@ -26,6 +26,8 @@ using Uint128 = unsigned __int128;
 
 class Pcg64Rng {
 public:
+    using result_type = uint64_t;
+
     Pcg64Rng();
     explicit Pcg64Rng(uint64_t seed);
     Pcg64Rng(Uint128 state, Uint128 inc);
@@ -40,6 +42,7 @@ public:
     [[nodiscard]] uint64_t next_u64();
     [[nodiscard]] uint32_t next_u32();
     [[nodiscard]] uint64_t bounded_u64(uint64_t bound_exclusive);
+    [[nodiscard]] uint64_t bounded_interval_inclusive(uint64_t max_inclusive);
     [[nodiscard]] int uniform_int(int low_inclusive, int high_inclusive);
 
     static Pcg64Rng from_numpy_state(Uint128 state, Uint128 inc);
@@ -66,8 +69,26 @@ void shuffle_with_rng(std::span<T> values, Pcg64Rng& rng) {
 }
 
 template <typename T>
+void shuffle_with_numpy_rng(std::span<T> values, Pcg64Rng& rng) {
+    if (values.size() < 2) {
+        return;
+    }
+    for (size_t i = values.size(); i > 1; --i) {
+        const auto j = static_cast<size_t>(rng.bounded_interval_inclusive(i - 1));
+        if (j != i - 1) {
+            std::swap(values[i - 1], values[j]);
+        }
+    }
+}
+
+template <typename T>
 void shuffle_with_rng(std::vector<T>& values, Pcg64Rng& rng) {
     shuffle_with_rng(std::span<T>(values), rng);
+}
+
+template <typename T>
+void shuffle_with_numpy_rng(std::vector<T>& values, Pcg64Rng& rng) {
+    shuffle_with_numpy_rng(std::span<T>(values), rng);
 }
 
 [[nodiscard]] std::array<uint64_t, 2> split_u128(Uint128 value);

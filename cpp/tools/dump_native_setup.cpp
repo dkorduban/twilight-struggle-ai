@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <optional>
-#include <dlfcn.h>
 #include <iostream>
 #include <string>
 
@@ -9,33 +8,6 @@
 #include "rng.hpp"
 
 namespace {
-
-struct NumpyBitgen {
-    void* state;
-    uint64_t (*next_uint64)(void* st);
-    uint32_t (*next_uint32)(void* st);
-    double (*next_double)(void* st);
-    uint64_t (*next_raw)(void* st);
-};
-
-using RandomIntervalFn = uint64_t (*)(NumpyBitgen*, uint64_t);
-
-uint64_t bitgen_next_uint64(void* st) {
-    return static_cast<ts::Pcg64Rng*>(st)->next_u64();
-}
-
-uint32_t bitgen_next_uint32(void* st) {
-    return static_cast<ts::Pcg64Rng*>(st)->next_u32();
-}
-
-double bitgen_next_double(void* st) {
-    constexpr double scale = 1.0 / static_cast<double>(uint64_t{1} << 53);
-    return static_cast<double>(static_cast<ts::Pcg64Rng*>(st)->next_u64() >> 11) * scale;
-}
-
-uint64_t bitgen_next_raw(void* st) {
-    return static_cast<ts::Pcg64Rng*>(st)->next_u64();
-}
 
 std::vector<ts::CardId> build_early_deck() {
     std::vector<ts::CardId> deck;
@@ -49,22 +21,6 @@ std::vector<ts::CardId> build_early_deck() {
         }
     }
     return deck;
-}
-
-void shuffle_with_numpy_interval(std::vector<ts::CardId>& deck, ts::Pcg64Rng& rng, RandomIntervalFn random_interval) {
-    NumpyBitgen bitgen{
-        .state = &rng,
-        .next_uint64 = bitgen_next_uint64,
-        .next_uint32 = bitgen_next_uint32,
-        .next_double = bitgen_next_double,
-        .next_raw = bitgen_next_raw,
-    };
-    for (size_t i = deck.size(); i > 1; --i) {
-        const auto j = static_cast<size_t>(random_interval(&bitgen, i - 1));
-        if (j != i - 1) {
-            std::swap(deck[i - 1], deck[j]);
-        }
-    }
 }
 
 ts::GameState reset_game_with_pcg64_words(std::array<uint64_t, 4> words, std::optional<std::string> numpy_generator_so) {
@@ -86,21 +42,8 @@ ts::GameState reset_game_with_pcg64_words(std::array<uint64_t, 4> words, std::op
     }
 
     gs.deck = build_early_deck();
-    if (numpy_generator_so.has_value()) {
-        void* handle = dlopen(numpy_generator_so->c_str(), RTLD_NOW | RTLD_GLOBAL);
-        if (handle == nullptr) {
-            throw std::runtime_error(std::string("failed to dlopen numpy generator: ") + dlerror());
-        }
-        auto* random_interval = reinterpret_cast<RandomIntervalFn>(dlsym(handle, "random_interval"));
-        if (random_interval == nullptr) {
-            dlclose(handle);
-            throw std::runtime_error("failed to resolve random_interval");
-        }
-        shuffle_with_numpy_interval(gs.deck, rng, random_interval);
-        dlclose(handle);
-    } else {
-        ts::shuffle_with_rng(gs.deck, rng);
-    }
+    (void)numpy_generator_so;
+    ts::shuffle_with_numpy_rng(gs.deck, rng);
 
     const auto hand_size = ts::hand_size_for_turn(1);
     for (const auto side : {ts::Side::USSR, ts::Side::US}) {
@@ -182,12 +125,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (python_lib.has_value()) {
-        void* py = dlopen(python_lib->c_str(), RTLD_NOW | RTLD_GLOBAL);
-        if (py == nullptr) {
-            throw std::runtime_error(std::string("failed to dlopen libpython: ") + dlerror());
-        }
-    }
+    (void)python_lib;
 
     const auto gs = words.has_value() ? reset_game_with_pcg64_words(*words, numpy_generator_so) : ts::reset_game(seed);
     std::cout << "{";

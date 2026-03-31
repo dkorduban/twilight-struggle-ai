@@ -46,7 +46,7 @@ bool contains(std::span<const CardId> values, CardId value) {
 }
 
 template <typename T>
-const T& sample_one(std::span<const T> values, std::mt19937& rng) {
+const T& sample_one(std::span<const T> values, Pcg64Rng& rng) {
     std::uniform_int_distribution<size_t> dist(0, values.size() - 1);
     return values[dist(rng)];
 }
@@ -80,7 +80,7 @@ int apply_free_coup(
     Side side,
     CountryId country_id,
     int ops,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     bool defcon_immune
 ) {
     const auto opponent = other_side(side);
@@ -99,7 +99,7 @@ int apply_free_coup(
     return net;
 }
 
-std::vector<CountryId> sample_up_to(std::span<const CountryId> pool, int count, std::mt19937& rng) {
+std::vector<CountryId> sample_up_to(std::span<const CountryId> pool, int count, Pcg64Rng& rng) {
     std::vector<CountryId> chosen(pool.begin(), pool.end());
     std::shuffle(chosen.begin(), chosen.end(), rng);
     if (static_cast<int>(chosen.size()) > count) {
@@ -148,7 +148,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
     const PublicState& pub,
     const ActionEncoding& action,
     Side side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     auto next = pub;
     bool force_game_over = false;
@@ -1033,7 +1033,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
     const PublicState& pub,
     const ActionEncoding& action,
     Side side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     auto next = pub;
 

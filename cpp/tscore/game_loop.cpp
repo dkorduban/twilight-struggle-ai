@@ -64,10 +64,10 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
     GameState& gs,
     CardId card_id,
     Side event_side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 );
 
-std::optional<CardId> draw_one(GameState& gs, std::mt19937& rng) {
+std::optional<CardId> draw_one(GameState& gs, Pcg64Rng& rng) {
     if (gs.deck.empty()) {
         std::vector<CardId> reshuffled;
         for (int raw = 1; raw <= kMaxCardId; ++raw) {
@@ -91,7 +91,7 @@ std::optional<CardId> draw_one(GameState& gs, std::mt19937& rng) {
     return card;
 }
 
-void apply_ops_randomly(PublicState& pub, Side side, int ops, std::mt19937& rng) {
+void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
     auto accessible = accessible_countries(side, pub, ActionMode::Influence);
     if (accessible.empty()) {
         return;
@@ -172,7 +172,7 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, std::mt19937& rng)
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar(
     GameState& gs,
     Side side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     bool trapped = false;
     bool bear_trap = false;
@@ -224,7 +224,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     GameState& gs,
     CardId card_id,
     Side side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     auto pub = gs.pub;
 
@@ -591,7 +591,7 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
     GameState& gs,
     CardId card_id,
     Side event_side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     if (is_cat_c_card(card_id)) {
         return apply_hand_event(gs, card_id, event_side, rng);
@@ -610,7 +610,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     GameState& gs,
     const ActionEncoding& action,
     Side side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     if (action.mode != ActionMode::Event) {
         const auto owner = card_spec(action.card_id).side;
@@ -649,7 +649,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     return {new_pub, over, winner};
 }
 
-std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(GameState& gs, std::mt19937& rng) {
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(GameState& gs, Pcg64Rng& rng) {
     std::vector<CountryId> eligible;
     for (const auto cid : all_country_ids()) {
         if (gs.pub.influence_of(Side::US, cid) > 0) {
@@ -679,7 +679,7 @@ std::optional<GameResult> run_headline_phase(
     GameState& gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps
 ) {
     gs.phase = GamePhase::Headline;
@@ -784,7 +784,7 @@ std::optional<GameResult> run_action_rounds(
     GameState& gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     int total_ars,
     std::vector<StepTrace>* trace_steps
 ) {
@@ -878,7 +878,7 @@ std::optional<GameResult> run_extra_action_round(
     GameState& gs,
     Side side,
     const PolicyFn& policy,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps
 ) {
     gs.pub.ar = std::max(gs.pub.ar, ars_for_turn(gs.pub.turn)) + 1;
@@ -1049,7 +1049,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     GameState& gs,
     const ActionEncoding& action,
     Side side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     return apply_action_with_hands(gs, action, side, rng);
 }
@@ -1057,14 +1057,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(
     GameState& gs,
     Side side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     return resolve_trap_ar(gs, side, rng);
 }
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad_live(
     GameState& gs,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     return resolve_norad(gs, rng);
 }
@@ -1073,7 +1073,7 @@ std::optional<GameResult> run_extra_action_round_live(
     GameState& gs,
     Side side,
     const PolicyFn& policy,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps
 ) {
     return run_extra_action_round(gs, side, policy, rng, trace_steps);
@@ -1083,7 +1083,7 @@ std::optional<GameResult> run_headline_phase_live(
     GameState& gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps
 ) {
     return run_headline_phase(gs, ussr_policy, us_policy, rng, trace_steps);
@@ -1093,20 +1093,19 @@ std::optional<GameResult> run_action_rounds_live(
     GameState& gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     int total_ars,
     std::vector<StepTrace>* trace_steps
 ) {
     return run_action_rounds(gs, ussr_policy, us_policy, rng, total_ars, trace_steps);
 }
 
-GameResult play_game_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
-    return play_game_traced_fn(ussr_policy, us_policy, seed).result;
-}
-
-TracedGame play_game_traced_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
-    std::mt19937 rng(seed.value_or(std::random_device{}()));
-    auto gs = reset_game(static_cast<uint32_t>(rng()));
+TracedGame play_game_traced_from_state_with_rng(
+    GameState gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    Pcg64Rng& rng
+) {
     TracedGame traced;
 
     for (int turn = 1; turn <= kMaxTurns; ++turn) {
@@ -1160,11 +1159,52 @@ TracedGame play_game_traced_fn(const PolicyFn& ussr_policy, const PolicyFn& us_p
     return traced;
 }
 
+GameResult play_game_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
+    return play_game_traced_fn(ussr_policy, us_policy, seed).result;
+}
+
+GameResult play_game_from_state_fn(
+    GameState gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed
+) {
+    return play_game_traced_from_state_fn(std::move(gs), ussr_policy, us_policy, seed).result;
+}
+
+TracedGame play_game_traced_from_state_fn(
+    GameState gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed
+) {
+    Pcg64Rng rng(seed.value_or(std::random_device{}()));
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng);
+}
+
+TracedGame play_game_traced_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
+    Pcg64Rng rng(seed.value_or(std::random_device{}()));
+    auto gs = reset_game_from_rng(rng);
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng);
+}
+
+TracedGame play_game_traced_from_seed_words_fn(
+    std::array<uint64_t, 4> words,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed
+) {
+    (void)seed;
+    auto rng = Pcg64Rng::from_seed_sequence_words(words);
+    auto gs = reset_game_from_rng(rng);
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng);
+}
+
 GameResult play_game(PolicyKind ussr_policy, PolicyKind us_policy, std::optional<uint32_t> seed) {
-    const PolicyFn ussr_fn = [ussr_policy](const PublicState& pub, const CardSet& hand, bool holds_china, std::mt19937& rng) {
+    const PolicyFn ussr_fn = [ussr_policy](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng) {
         return choose_action(ussr_policy, pub, hand, holds_china, rng);
     };
-    const PolicyFn us_fn = [us_policy](const PublicState& pub, const CardSet& hand, bool holds_china, std::mt19937& rng) {
+    const PolicyFn us_fn = [us_policy](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng) {
         return choose_action(us_policy, pub, hand, holds_china, rng);
     };
     return play_game_fn(ussr_fn, us_fn, seed);
@@ -1180,10 +1220,10 @@ std::vector<GameResult> play_matchup(
     int game_count,
     std::optional<uint32_t> seed
 ) {
-    const PolicyFn ussr_fn = [ussr_policy](const PublicState& pub, const CardSet& hand, bool holds_china, std::mt19937& rng) {
+    const PolicyFn ussr_fn = [ussr_policy](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng) {
         return choose_action(ussr_policy, pub, hand, holds_china, rng);
     };
-    const PolicyFn us_fn = [us_policy](const PublicState& pub, const CardSet& hand, bool holds_china, std::mt19937& rng) {
+    const PolicyFn us_fn = [us_policy](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng) {
         return choose_action(us_policy, pub, hand, holds_china, rng);
     };
     return play_matchup_fn(ussr_fn, us_fn, game_count, seed);

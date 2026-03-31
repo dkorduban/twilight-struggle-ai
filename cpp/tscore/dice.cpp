@@ -4,12 +4,11 @@
 
 namespace ts {
 
-int roll_d6(std::mt19937& rng) {
-    std::uniform_int_distribution<int> dist(1, 6);
-    return dist(rng);
+int roll_d6(Pcg64Rng& rng) {
+    return 1 + static_cast<int>(rng.bounded_interval_inclusive(5));
 }
 
-std::pair<int, int> roll_2d6(std::mt19937& rng) {
+std::pair<int, int> roll_2d6(Pcg64Rng& rng) {
     return {roll_d6(rng), roll_d6(rng)};
 }
 
@@ -17,7 +16,7 @@ int coup_net(int attacker_roll, int ops, int defender_stability) {
     return attacker_roll + ops - 2 * defender_stability;
 }
 
-int coup_result(int ops, int defender_stability, std::mt19937& rng) {
+int coup_result(int ops, int defender_stability, Pcg64Rng& rng) {
     return coup_net(roll_d6(rng), ops, defender_stability);
 }
 
@@ -26,7 +25,7 @@ std::pair<int, int> realign_result(
     int us_influence,
     int ussr_adj_nations,
     int us_adj_nations,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     const auto ussr_roll = roll_d6(rng);
     const auto us_roll = roll_d6(rng);
@@ -35,7 +34,7 @@ std::pair<int, int> realign_result(
     return {ussr_roll + ussr_mod, us_roll + us_mod};
 }
 
-bool space_result(int current_level, std::mt19937& rng) {
+bool space_result(int current_level, Pcg64Rng& rng) {
     static constexpr std::array<int, 8> kSpaceAdvanceThreshold = {3, 4, 3, 4, 3, 4, 3, 2};
     if (current_level >= static_cast<int>(kSpaceAdvanceThreshold.size())) {
         return false;

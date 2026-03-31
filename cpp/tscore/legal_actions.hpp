@@ -1,10 +1,10 @@
 #pragma once
 
-#include <random>
 #include <vector>
 
 #include "adjacency.hpp"
 #include "game_state.hpp"
+#include "rng.hpp"
 
 namespace ts {
 
@@ -24,7 +24,7 @@ std::optional<ActionEncoding> sample_action(
     const PublicState& pub,
     Side side,
     bool holds_china,
-    std::mt19937& rng
+    Pcg64Rng& rng
 );
 bool has_legal_action(const CardSet& hand, const PublicState& pub, Side side, bool holds_china);
 

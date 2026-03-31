@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -13,7 +14,7 @@ using PolicyFn = std::function<std::optional<ActionEncoding>(
     const PublicState&,
     const CardSet&,
     bool,
-    std::mt19937&
+    Pcg64Rng&
 )>;
 
 struct StepTrace {
@@ -39,25 +40,25 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     GameState& gs,
     const ActionEncoding& action,
     Side side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 );
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(
     GameState& gs,
     Side side,
-    std::mt19937& rng
+    Pcg64Rng& rng
 );
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad_live(
     GameState& gs,
-    std::mt19937& rng
+    Pcg64Rng& rng
 );
 
 std::optional<GameResult> run_extra_action_round_live(
     GameState& gs,
     Side side,
     const PolicyFn& policy,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps = nullptr
 );
 
@@ -65,7 +66,7 @@ std::optional<GameResult> run_headline_phase_live(
     GameState& gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps = nullptr
 );
 
@@ -73,7 +74,7 @@ std::optional<GameResult> run_action_rounds_live(
     GameState& gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::mt19937& rng,
+    Pcg64Rng& rng,
     int total_ars,
     std::vector<StepTrace>* trace_steps = nullptr
 );
@@ -84,7 +85,28 @@ GameResult play_game_fn(
     std::optional<uint32_t> seed = std::nullopt
 );
 
+GameResult play_game_from_state_fn(
+    GameState gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed = std::nullopt
+);
+
 TracedGame play_game_traced_fn(
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed = std::nullopt
+);
+
+TracedGame play_game_traced_from_state_fn(
+    GameState gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed = std::nullopt
+);
+
+TracedGame play_game_traced_from_seed_words_fn(
+    std::array<uint64_t, 4> words,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     std::optional<uint32_t> seed = std::nullopt

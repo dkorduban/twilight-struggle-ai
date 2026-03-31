@@ -1,11 +1,11 @@
 #pragma once
 
 #include <optional>
-#include <random>
 #include <string>
 #include <vector>
 
 #include "legal_actions.hpp"
+#include "rng.hpp"
 
 #if defined(TS_BUILD_TORCH_RUNTIME)
 #include <torch/script.h>
@@ -25,7 +25,7 @@ public:
         const PublicState& pub,
         const CardSet& hand,
         bool holds_china,
-        std::mt19937& rng
+        Pcg64Rng& rng
     );
 
 private:

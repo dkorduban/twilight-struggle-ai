@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 import tscore
+from numpy.random import SeedSequence
 from tsrl.engine.game_loop import _run_game_gen
 from tsrl.engine.game_state import reset
 from tsrl.engine.rng import make_rng
@@ -98,12 +99,21 @@ def collect_python_trace(ussr_policy_name: str, us_policy_name: str, seed: int) 
     )
 
 
-def collect_native_trace(ussr_policy_name: str, us_policy_name: str, seed: int) -> TraceResult:
-    traced = tscore.play_traced_game(
-        native_policy_kind(ussr_policy_name),
-        native_policy_kind(us_policy_name),
-        seed,
-    )
+def collect_native_trace(ussr_policy_name: str, us_policy_name: str, seed: int, *, exact_setup: bool) -> TraceResult:
+    if exact_setup:
+        words = [int(v) for v in SeedSequence(seed).generate_state(4, dtype="uint64").tolist()]
+        traced = tscore.play_traced_game_from_seed_words(
+            native_policy_kind(ussr_policy_name),
+            native_policy_kind(us_policy_name),
+            words,
+            seed,
+        )
+    else:
+        traced = tscore.play_traced_game(
+            native_policy_kind(ussr_policy_name),
+            native_policy_kind(us_policy_name),
+            seed,
+        )
     return TraceResult(
         winner=None if traced.result.winner is None else int(traced.result.winner),
         final_vp=int(traced.result.final_vp),
@@ -138,6 +148,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--ussr-policy", default="minimal_hybrid")
     parser.add_argument("--us-policy", default="random")
+    parser.add_argument("--exact-setup", action="store_true")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -146,6 +157,7 @@ def main() -> None:
         "base_seed": args.seed,
         "ussr_policy": args.ussr_policy,
         "us_policy": args.us_policy,
+        "exact_setup": args.exact_setup,
         "result_matches": 0,
         "exact_trace_matches": 0,
         "comparisons": [],
@@ -153,7 +165,7 @@ def main() -> None:
 
     for offset in range(args.games):
         seed = args.seed + offset
-        native = collect_native_trace(args.ussr_policy, args.us_policy, seed)
+        native = collect_native_trace(args.ussr_policy, args.us_policy, seed, exact_setup=args.exact_setup)
         python = collect_python_trace(args.ussr_policy, args.us_policy, seed)
         prefix = prefix_match_length(native.steps, python.steps)
 

@@ -25,11 +25,11 @@ std::vector<CardId> build_era_deck(Era era_max, const CardSet& removed) {
     return out;
 }
 
-void shuffle_vector(std::vector<CardId>& deck, std::mt19937& rng) {
+void shuffle_vector(std::vector<CardId>& deck, Pcg64Rng& rng) {
     std::shuffle(deck.begin(), deck.end(), rng);
 }
 
-void reshuffle(GameState& gs, std::mt19937& rng) {
+void reshuffle(GameState& gs, Pcg64Rng& rng) {
     gs.deck.clear();
     for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
         if (gs.pub.discard.test(card_id)) {
@@ -40,18 +40,7 @@ void reshuffle(GameState& gs, std::mt19937& rng) {
     shuffle_vector(gs.deck, rng);
 }
 
-}  // namespace
-
-int ars_for_turn(int turn) {
-    return turn <= 3 ? 6 : 7;
-}
-
-int hand_size_for_turn(int turn) {
-    return turn <= 3 ? kHandSizeEarly : kHandSizeLate;
-}
-
-GameState reset_game(std::optional<uint32_t> seed) {
-    std::mt19937 rng(seed.value_or(std::random_device{}()));
+GameState reset_game_impl(std::span<const CardId> shuffled_deck) {
     GameState gs;
     gs.pub.turn = 1;
     gs.pub.ar = 0;
@@ -68,9 +57,7 @@ GameState reset_game(std::optional<uint32_t> seed) {
         gs.pub.set_influence(Side::USSR, cid, spec.ussr_start);
     }
 
-    gs.deck = build_era_deck(Era::Early, gs.pub.removed);
-    shuffle_vector(gs.deck, rng);
-
+    gs.deck.assign(shuffled_deck.begin(), shuffled_deck.end());
     const auto hand_size = hand_size_for_turn(1);
     for (const auto side : {Side::USSR, Side::US}) {
         for (int i = 0; i < hand_size && !gs.deck.empty(); ++i) {
@@ -88,11 +75,37 @@ GameState reset_game(std::optional<uint32_t> seed) {
     return gs;
 }
 
+}  // namespace
+
+int ars_for_turn(int turn) {
+    return turn <= 3 ? 6 : 7;
+}
+
+int hand_size_for_turn(int turn) {
+    return turn <= 3 ? kHandSizeEarly : kHandSizeLate;
+}
+
+GameState reset_game(std::optional<uint32_t> seed) {
+    Pcg64Rng rng(seed.value_or(std::random_device{}()));
+    return reset_game_from_rng(rng);
+}
+
+GameState reset_game_from_rng(Pcg64Rng& rng) {
+    auto deck = build_era_deck(Era::Early, CardSet{});
+    shuffle_with_numpy_rng(deck, rng);
+    return reset_game_impl(deck);
+}
+
+GameState reset_game_from_seed_words(std::array<uint64_t, 4> words) {
+    auto rng = Pcg64Rng::from_seed_sequence_words(words);
+    return reset_game_from_rng(rng);
+}
+
 GameState clone_game_state(const GameState& gs) {
     return gs;
 }
 
-void deal_cards(GameState& gs, Side side, std::mt19937& rng) {
+void deal_cards(GameState& gs, Side side, Pcg64Rng& rng) {
     const auto target = hand_size_for_turn(gs.pub.turn);
     auto current = static_cast<int>(gs.hands[to_index(side)].count());
     while (current < target) {
@@ -109,7 +122,7 @@ void deal_cards(GameState& gs, Side side, std::mt19937& rng) {
     }
 }
 
-void advance_to_mid_war(GameState& gs, std::mt19937& rng) {
+void advance_to_mid_war(GameState& gs, Pcg64Rng& rng) {
     auto deck = build_era_deck(Era::Mid, gs.pub.removed);
     for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
         if (gs.pub.discard.test(card_id)) {
@@ -121,7 +134,7 @@ void advance_to_mid_war(GameState& gs, std::mt19937& rng) {
     shuffle_vector(gs.deck, rng);
 }
 
-void advance_to_late_war(GameState& gs, std::mt19937& rng) {
+void advance_to_late_war(GameState& gs, Pcg64Rng& rng) {
     auto deck = build_era_deck(Era::Late, gs.pub.removed);
     for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
         if (gs.pub.discard.test(card_id)) {

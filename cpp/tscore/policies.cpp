@@ -33,6 +33,10 @@ constexpr int kMaxInfluenceTargets = 86;
 constexpr std::array<CardId, 7> kDefconLoweringCards = {4, 11, 13, 24, 53, 92, 105};
 constexpr std::array<CardId, 1> kDefconProbLoweringCards = {20};
 constexpr std::array<CardId, 2> kDefconRandomCoupCards = {39, 83};
+constexpr double kDefconLoweringDefcon3Penalty = 20.0;
+constexpr double kDefconProbDefcon3Penalty = 50.0;
+constexpr double kDefconRandomCoupDefcon3Penalty = 100.0;
+constexpr double kDefconRandomCoupDefcon3OpsPenalty = 500.0;
 
 constexpr std::array<std::string_view, 4> kEuropeCore = {
     "France",
@@ -203,14 +207,35 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
     }
 
     if (action.mode == ActionMode::Event) {
-        if (contains(kDefconLoweringCards, action.card_id) && pub.defcon <= 2) {
-            return -kDefcon2BattlegroundSuicidePenalty;
+        if (contains(kDefconLoweringCards, action.card_id)) {
+            if (pub.defcon <= 2) {
+                return -kDefcon2BattlegroundSuicidePenalty;
+            }
+            if (pub.defcon == 3) {
+                if (card.side != side && card.side != Side::Neutral) {
+                    return 50.0;
+                }
+                return -kDefconLoweringDefcon3Penalty;
+            }
+            if (pub.defcon >= 4 && card.side != side && card.side != Side::Neutral) {
+                return pub.defcon >= 5 ? 200.0 : 100.0;
+            }
         }
-        if (contains(kDefconProbLoweringCards, action.card_id) && pub.defcon <= 2) {
-            return -kDefcon2BattlegroundSuicidePenalty;
+        if (contains(kDefconProbLoweringCards, action.card_id)) {
+            if (pub.defcon <= 2) {
+                return -kDefcon2BattlegroundSuicidePenalty;
+            }
+            if (pub.defcon == 3) {
+                return -kDefconProbDefcon3Penalty;
+            }
         }
-        if (contains(kDefconRandomCoupCards, action.card_id) && pub.defcon <= 2) {
-            return -kDefcon2BattlegroundSuicidePenalty;
+        if (contains(kDefconRandomCoupCards, action.card_id)) {
+            if (pub.defcon <= 2) {
+                return -kDefcon2BattlegroundSuicidePenalty;
+            }
+            if (pub.defcon == 3) {
+                return -kDefconRandomCoupDefcon3Penalty;
+            }
         }
     }
 
@@ -219,10 +244,27 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
         card.side != Side::Neutral &&
         (contains(kDefconLoweringCards, action.card_id) ||
          contains(kDefconProbLoweringCards, action.card_id) ||
-         contains(kDefconRandomCoupCards, action.card_id)) &&
-        pub.defcon <= 2
+         contains(kDefconRandomCoupCards, action.card_id))
     ) {
-        return -kDefcon2BattlegroundSuicidePenalty;
+        if (pub.defcon <= 2) {
+            return -kDefcon2BattlegroundSuicidePenalty;
+        }
+        if (contains(kDefconLoweringCards, action.card_id)) {
+            if (pub.defcon == 3) {
+                return -200.0;
+            }
+            if (pub.defcon >= 4) {
+                return -150.0;
+            }
+        }
+        if (contains(kDefconProbLoweringCards, action.card_id) && pub.defcon == 3) {
+            return -kDefconProbDefcon3Penalty;
+        }
+        if (contains(kDefconRandomCoupCards, action.card_id)) {
+            if (pub.defcon == 3) {
+                return -kDefconRandomCoupDefcon3OpsPenalty;
+            }
+        }
     }
 
     return 0.0;
@@ -236,6 +278,26 @@ double card_bias(const DecisionContext& context, const ActionEncoding& action) {
 
     if (action.mode == ActionMode::Event) {
         score += card.side == side || card.side == Side::Neutral ? 1.0 : -3.0;
+        if (card.side != side && card.side != Side::Neutral) {
+            if (contains(kDefconLoweringCards, action.card_id)) {
+                if (pub.defcon >= 5) {
+                    score += 150.0;
+                } else if (pub.defcon == 4) {
+                    score += 80.0;
+                } else if (pub.defcon == 3) {
+                    score += 40.0;
+                }
+            }
+            if (contains(kDefconRandomCoupCards, action.card_id)) {
+                if (pub.defcon >= 5) {
+                    score += 80.0;
+                } else if (pub.defcon == 4) {
+                    score += 120.0;
+                } else if (pub.defcon == 3) {
+                    score += 300.0;
+                }
+            }
+        }
     }
 
     if (action.mode == ActionMode::Space) {
@@ -257,6 +319,14 @@ double card_bias(const DecisionContext& context, const ActionEncoding& action) {
         !card.is_scoring
     ) {
         score -= kOffsideOpsPenaltyBase + (kOffsideOpsPenaltyPerOp * static_cast<double>(card.ops));
+    }
+
+    if (pub.defcon == 3 && card.side != side && card.side != Side::Neutral) {
+        if (contains(kDefconLoweringCards, action.card_id)) {
+            score += 50.0;
+        } else if (contains(kDefconRandomCoupCards, action.card_id)) {
+            score += 30.0;
+        }
     }
 
     if (action.card_id == kChinaCardId) {
@@ -436,78 +506,70 @@ double score_action(const DecisionContext& context, const ActionEncoding& action
 }
 
 Candidate best_influence_action(const DecisionContext& context, CardId card_id, std::span<const CountryId> accessible) {
-    Candidate best{
-        .action = ActionEncoding{.card_id = card_id, .mode = ActionMode::Influence, .targets = {}},
-        .score = -std::numeric_limits<double>::infinity(),
-    };
+    const auto base_action = ActionEncoding{.card_id = card_id, .mode = ActionMode::Influence, .targets = {}};
     if (accessible.empty()) {
-        best.score = score_action(context, best.action);
-        return best;
+        return Candidate{
+            .action = base_action,
+            .score = score_action(context, base_action),
+        };
     }
 
     const auto ops = effective_ops(card_id, context.pub, context.side);
-    const auto side = context.side;
-    const auto opponent = other_side(side);
-    const auto country_count = accessible.size();
-    std::vector<std::vector<double>> alloc_score(country_count, std::vector<double>(static_cast<size_t>(ops + 1), 0.0));
+    using Cell = std::optional<Candidate>;
+    std::vector<std::vector<std::array<Cell, 2>>> dp(
+        accessible.size() + 1,
+        std::vector<std::array<Cell, 2>>(static_cast<size_t>(ops + 1))
+    );
+    dp[0][0][0] = Candidate{
+        .action = base_action,
+        .score = score_action(context, base_action),
+    };
 
-    for (size_t index = 0; index < country_count; ++index) {
-        const auto cid = accessible[index];
-        const auto own = context.pub.influence_of(side, cid);
-        const auto opp = context.pub.influence_of(opponent, cid);
-        const auto threshold = opp + country_spec(cid).stability;
-        double total = 0.0;
-        for (int allocation = 1; allocation <= ops; ++allocation) {
-            total += country_value(context, cid) / static_cast<double>(allocation);
-            if (own == 0) {
-                total += context.params.access_bonus;
-            }
-            if (own < threshold && own + allocation >= threshold && own + allocation - 1 < threshold) {
-                total += context.params.control_break_bonus;
-            }
-            alloc_score[index][static_cast<size_t>(allocation)] = total;
-        }
-    }
+    for (size_t index = 0; index < accessible.size(); ++index) {
+        const auto country_id = accessible[index];
+        const auto country_is_asia = is_asia_or_sea(country_id);
+        for (int used_ops = 0; used_ops <= ops; ++used_ops) {
+            for (int has_asia = 0; has_asia <= 1; ++has_asia) {
+                const auto& previous = dp[index][static_cast<size_t>(used_ops)][static_cast<size_t>(has_asia)];
+                if (!previous.has_value()) {
+                    continue;
+                }
 
-    const auto neg_inf = -std::numeric_limits<double>::infinity();
-    std::vector<std::vector<double>> dp(country_count + 1, std::vector<double>(static_cast<size_t>(ops + 1), neg_inf));
-    std::vector<std::vector<int>> choice(country_count + 1, std::vector<int>(static_cast<size_t>(ops + 1), 0));
-    dp[0][0] = 0.0;
-
-    for (size_t index = 0; index < country_count; ++index) {
-        for (int used = 0; used <= ops; ++used) {
-            if (!std::isfinite(dp[index][static_cast<size_t>(used)])) {
-                continue;
-            }
-            for (int allocation = 0; allocation <= ops - used; ++allocation) {
-                const auto candidate_score = dp[index][static_cast<size_t>(used)] + alloc_score[index][static_cast<size_t>(allocation)];
-                auto& slot = dp[index + 1][static_cast<size_t>(used + allocation)];
-                if (candidate_score > slot + 1e-12) {
-                    slot = candidate_score;
-                    choice[index + 1][static_cast<size_t>(used + allocation)] = allocation;
+                for (int allocation = 0; allocation <= ops - used_ops; ++allocation) {
+                    auto next_targets = previous->action.targets;
+                    next_targets.insert(next_targets.end(), allocation, country_id);
+                    ActionEncoding next_action{
+                        .card_id = card_id,
+                        .mode = ActionMode::Influence,
+                        .targets = std::move(next_targets),
+                    };
+                    const auto next_has_asia = has_asia || (country_is_asia && allocation > 0 ? 1 : 0);
+                    const auto next_score = score_action(context, next_action);
+                    Candidate candidate{
+                        .action = std::move(next_action),
+                        .score = next_score,
+                    };
+                    auto& slot = dp[index + 1][static_cast<size_t>(used_ops + allocation)][static_cast<size_t>(next_has_asia)];
+                    if (!slot.has_value() || better_candidate(candidate, *slot)) {
+                        slot = std::move(candidate);
+                    }
                 }
             }
         }
     }
 
-    std::vector<int> allocations(country_count, 0);
-    int remaining = ops;
-    for (size_t index = country_count; index > 0; --index) {
-        const auto allocation = choice[index][static_cast<size_t>(remaining)];
-        allocations[index - 1] = allocation;
-        remaining -= allocation;
+    auto best = dp[accessible.size()][static_cast<size_t>(ops)][0];
+    auto with_asia = dp[accessible.size()][static_cast<size_t>(ops)][1];
+    if (with_asia.has_value() && (!best.has_value() || better_candidate(*with_asia, *best))) {
+        best = std::move(with_asia);
     }
-
-    ActionEncoding action{.card_id = card_id, .mode = ActionMode::Influence, .targets = {}};
-    for (size_t index = 0; index < country_count; ++index) {
-        action.targets.insert(action.targets.end(), allocations[index], accessible[index]);
+    if (!best.has_value()) {
+        return Candidate{
+            .action = base_action,
+            .score = score_action(context, base_action),
+        };
     }
-    const auto action_score = score_action(context, action);
-    Candidate candidate{.action = std::move(action), .score = action_score};
-    if (better_candidate(candidate, best)) {
-        best = std::move(candidate);
-    }
-    return best;
+    return *best;
 }
 
 std::vector<ActionEncoding> headline_actions(const CardSet& hand, const PublicState& pub, Side side, bool holds_china) {
@@ -531,7 +593,7 @@ std::optional<ActionEncoding> choose_random_action(
     const PublicState& pub,
     const CardSet& hand,
     bool holds_china,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     return sample_action(hand, pub, pub.phasing, holds_china, rng);
 }
@@ -542,97 +604,89 @@ std::optional<ActionEncoding> choose_minimal_hybrid(
     bool holds_china,
     const MinimalHybridParams& params
 ) {
+    auto ranked = rank_minimal_hybrid_actions(pub, hand, holds_china, params);
+    if (ranked.empty()) {
+        return std::nullopt;
+    }
+    return ranked.front().action;
+}
+
+std::vector<ScoredAction> rank_minimal_hybrid_actions(
+    const PublicState& pub,
+    const CardSet& hand,
+    bool holds_china,
+    const MinimalHybridParams& params
+) {
     const auto side = pub.phasing;
     const auto context = make_context(pub, side, params);
+    std::vector<ScoredAction> ranked;
 
     if (pub.ar == 0) {
         auto actions = headline_actions(hand, pub, side, holds_china);
-        if (actions.empty()) {
-            return std::nullopt;
-        }
-        Candidate best{.action = actions.front(), .score = -std::numeric_limits<double>::infinity()};
+        ranked.reserve(actions.size());
         for (const auto& action : actions) {
-            Candidate candidate{.action = action, .score = score_action(context, action)};
-            if (better_candidate(candidate, best)) {
-                best = candidate;
-            }
+            ranked.push_back(ScoredAction{
+                .action = action,
+                .score = score_action(context, action),
+            });
         }
-        return best.action;
-    }
-
-    auto playable = legal_cards(hand, pub, side, holds_china);
-    if (playable.empty()) {
-        return std::nullopt;
-    }
-
-    Candidate best{
-        .action = ActionEncoding{.card_id = playable.front(), .mode = ActionMode::Event, .targets = {}},
-        .score = -std::numeric_limits<double>::infinity(),
-    };
-
-    for (const auto card_id : playable) {
-        auto modes = legal_modes(card_id, pub, side);
-        for (const auto mode : modes) {
-            if (mode == ActionMode::Event || mode == ActionMode::Space) {
-                Candidate candidate{
-                    .action = ActionEncoding{.card_id = card_id, .mode = mode, .targets = {}},
-                    .score = score_action(context, ActionEncoding{.card_id = card_id, .mode = mode, .targets = {}}),
-                };
-                if (better_candidate(candidate, best)) {
-                    best = std::move(candidate);
+    } else {
+        auto playable = legal_cards(hand, pub, side, holds_china);
+        for (const auto card_id : playable) {
+            auto modes = legal_modes(card_id, pub, side);
+            for (const auto mode : modes) {
+                if (mode == ActionMode::Event || mode == ActionMode::Space) {
+                    ActionEncoding action{.card_id = card_id, .mode = mode, .targets = {}};
+                    ranked.push_back(ScoredAction{
+                        .action = action,
+                        .score = score_action(context, action),
+                    });
+                    continue;
                 }
-                continue;
-            }
 
             auto accessible = legal_countries(card_id, mode, pub, side);
             if (accessible.empty()) {
                 continue;
             }
+            std::sort(accessible.begin(), accessible.end());
             if (static_cast<int>(accessible.size()) > kMaxInfluenceTargets) {
                 accessible.resize(kMaxInfluenceTargets);
             }
 
-            if (mode == ActionMode::Coup) {
-                for (const auto country_id : accessible) {
-                    ActionEncoding action{
-                        .card_id = card_id,
-                        .mode = mode,
-                        .targets = {country_id},
-                    };
-                    Candidate candidate{.action = action, .score = score_action(context, action)};
-                    if (better_candidate(candidate, best)) {
-                        best = std::move(candidate);
+                if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
+                    for (const auto country_id : accessible) {
+                        ActionEncoding action{
+                            .card_id = card_id,
+                            .mode = mode,
+                            .targets = {country_id},
+                        };
+                        ranked.push_back(ScoredAction{
+                            .action = action,
+                            .score = score_action(context, action),
+                        });
                     }
+                    continue;
                 }
-                continue;
-            }
 
-            if (mode == ActionMode::Realign) {
-                for (const auto country_id : accessible) {
-                    ActionEncoding action{
-                        .card_id = card_id,
-                        .mode = mode,
-                        .targets = {country_id},
-                    };
-                    Candidate candidate{.action = action, .score = score_action(context, action)};
-                    if (better_candidate(candidate, best)) {
-                        best = std::move(candidate);
-                    }
-                }
-                continue;
-            }
-
-            auto candidate = best_influence_action(context, card_id, accessible);
-            if (better_candidate(candidate, best)) {
-                best = std::move(candidate);
+                auto candidate = best_influence_action(context, card_id, accessible);
+                ranked.push_back(ScoredAction{
+                    .action = std::move(candidate.action),
+                    .score = candidate.score,
+                });
             }
         }
     }
 
-    if (!std::isfinite(best.score)) {
-        return std::nullopt;
+    std::sort(ranked.begin(), ranked.end(), [](const ScoredAction& lhs, const ScoredAction& rhs) {
+        return better_candidate(
+            Candidate{.action = lhs.action, .score = lhs.score},
+            Candidate{.action = rhs.action, .score = rhs.score}
+        );
+    });
+    if (!ranked.empty() && !std::isfinite(ranked.front().score)) {
+        ranked.clear();
     }
-    return best.action;
+    return ranked;
 }
 
 std::optional<ActionEncoding> choose_action(
@@ -640,7 +694,7 @@ std::optional<ActionEncoding> choose_action(
     const PublicState& pub,
     const CardSet& hand,
     bool holds_china,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     switch (kind) {
         case PolicyKind::Random:

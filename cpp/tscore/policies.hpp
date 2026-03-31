@@ -1,10 +1,10 @@
 #pragma once
 
 #include <optional>
-#include <random>
 #include <vector>
 
 #include "legal_actions.hpp"
+#include "rng.hpp"
 
 namespace ts {
 
@@ -47,14 +47,26 @@ struct MinimalHybridParams {
     double country_mid_war_entry_bonus = 2.0;
 };
 
+struct ScoredAction {
+    ActionEncoding action;
+    double score = 0.0;
+};
+
 std::optional<ActionEncoding> choose_random_action(
     const PublicState& pub,
     const CardSet& hand,
     bool holds_china,
-    std::mt19937& rng
+    Pcg64Rng& rng
 );
 
 std::optional<ActionEncoding> choose_minimal_hybrid(
+    const PublicState& pub,
+    const CardSet& hand,
+    bool holds_china,
+    const MinimalHybridParams& params = {}
+);
+
+std::vector<ScoredAction> rank_minimal_hybrid_actions(
     const PublicState& pub,
     const CardSet& hand,
     bool holds_china,
@@ -66,7 +78,7 @@ std::optional<ActionEncoding> choose_action(
     const PublicState& pub,
     const CardSet& hand,
     bool holds_china,
-    std::mt19937& rng
+    Pcg64Rng& rng
 );
 
 }  // namespace ts

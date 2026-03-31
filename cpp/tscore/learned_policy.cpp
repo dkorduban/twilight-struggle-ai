@@ -175,7 +175,7 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
     const PublicState& pub,
     const CardSet& hand,
     bool holds_china,
-    std::mt19937& rng
+    Pcg64Rng& rng
 ) {
     const auto side = pub.phasing;
     auto playable = legal_cards(hand, pub, side, holds_china);
