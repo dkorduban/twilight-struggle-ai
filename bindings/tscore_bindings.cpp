@@ -44,7 +44,46 @@ PYBIND11_MODULE(tscore, m) {
         .def_readonly("avg_turn", &ts::MatchSummary::avg_turn)
         .def_readonly("avg_final_vp", &ts::MatchSummary::avg_final_vp);
 
+    py::class_<ts::ActionEncoding>(m, "ActionEncoding")
+        .def_readonly("card_id", &ts::ActionEncoding::card_id)
+        .def_readonly("mode", &ts::ActionEncoding::mode)
+        .def_readonly("targets", &ts::ActionEncoding::targets);
+
+    py::class_<ts::StepTrace>(m, "StepTrace")
+        .def_readonly("turn", &ts::StepTrace::turn)
+        .def_readonly("ar", &ts::StepTrace::ar)
+        .def_readonly("side", &ts::StepTrace::side)
+        .def_readonly("holds_china", &ts::StepTrace::holds_china)
+        .def_readonly("action", &ts::StepTrace::action)
+        .def_readonly("vp_before", &ts::StepTrace::vp_before)
+        .def_readonly("vp_after", &ts::StepTrace::vp_after)
+        .def_readonly("defcon_before", &ts::StepTrace::defcon_before)
+        .def_readonly("defcon_after", &ts::StepTrace::defcon_after);
+
+    py::class_<ts::TracedGame>(m, "TracedGame")
+        .def_readonly("steps", &ts::TracedGame::steps)
+        .def_readonly("result", &ts::TracedGame::result);
+
     m.def("play_game", &ts::play_game, py::arg("ussr_policy"), py::arg("us_policy"), py::arg("seed") = py::none());
+    m.def(
+        "play_traced_game",
+        [](ts::PolicyKind ussr_policy, ts::PolicyKind us_policy, py::object seed_obj) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            const ts::PolicyFn ussr_fn = [ussr_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+                return ts::choose_action(ussr_policy, pub, hand, holds_china, rng);
+            };
+            const ts::PolicyFn us_fn = [us_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+                return ts::choose_action(us_policy, pub, hand, holds_china, rng);
+            };
+            return ts::play_game_traced_fn(ussr_fn, us_fn, seed);
+        },
+        py::arg("ussr_policy"),
+        py::arg("us_policy"),
+        py::arg("seed") = py::none()
+    );
     m.def("play_random_game", &ts::play_random_game, py::arg("seed") = py::none());
     m.def("play_matchup", &ts::play_matchup, py::arg("ussr_policy"), py::arg("us_policy"), py::arg("game_count"), py::arg("seed") = py::none());
     m.def(
