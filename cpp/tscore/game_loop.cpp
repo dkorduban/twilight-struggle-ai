@@ -1079,6 +1079,27 @@ std::optional<GameResult> run_extra_action_round_live(
     return run_extra_action_round(gs, side, policy, rng, trace_steps);
 }
 
+std::optional<GameResult> run_headline_phase_live(
+    GameState& gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::mt19937& rng,
+    std::vector<StepTrace>* trace_steps
+) {
+    return run_headline_phase(gs, ussr_policy, us_policy, rng, trace_steps);
+}
+
+std::optional<GameResult> run_action_rounds_live(
+    GameState& gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::mt19937& rng,
+    int total_ars,
+    std::vector<StepTrace>* trace_steps
+) {
+    return run_action_rounds(gs, ussr_policy, us_policy, rng, total_ars, trace_steps);
+}
+
 GameResult play_game_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
     return play_game_traced_fn(ussr_policy, us_policy, seed).result;
 }

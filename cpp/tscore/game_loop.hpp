@@ -61,6 +61,23 @@ std::optional<GameResult> run_extra_action_round_live(
     std::vector<StepTrace>* trace_steps = nullptr
 );
 
+std::optional<GameResult> run_headline_phase_live(
+    GameState& gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::mt19937& rng,
+    std::vector<StepTrace>* trace_steps = nullptr
+);
+
+std::optional<GameResult> run_action_rounds_live(
+    GameState& gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::mt19937& rng,
+    int total_ars,
+    std::vector<StepTrace>* trace_steps = nullptr
+);
+
 GameResult play_game_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,

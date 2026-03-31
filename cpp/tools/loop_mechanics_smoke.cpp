@@ -53,6 +53,21 @@ void test_norad_resolution() {
     require(gs.pub.influence_of(Side::US, 22) >= 2, "NORAD must target an already-US-influenced country");
 }
 
+PolicyFn min_space_policy() {
+    return [](const PublicState&, const ts::CardSet& hand, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+        for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
+            if (hand.test(card_id)) {
+                return ActionEncoding{
+                    .card_id = static_cast<ts::CardId>(card_id),
+                    .mode = ActionMode::Space,
+                    .targets = {},
+                };
+            }
+        }
+        return std::nullopt;
+    };
+}
+
 void test_trap_resolution() {
     GameState gs;
     gs.pub.bear_trap_active = true;
@@ -78,6 +93,56 @@ void test_trap_resolution() {
     require(saw_fail, "Trap resolution should sometimes leave Bear Trap active");
 }
 
+void test_headline_order_and_defectors() {
+    GameState gs = ts::reset_game(0U);
+    gs.pub.turn = 1;
+    gs.pub.defcon = 5;
+    gs.hands[ts::to_index(Side::USSR)].reset();
+    gs.hands[ts::to_index(Side::US)].reset();
+    gs.hands[ts::to_index(Side::USSR)].set(12);
+    gs.hands[ts::to_index(Side::US)].set(21);
+    gs.ussr_holds_china = false;
+    gs.us_holds_china = false;
+
+    const PolicyFn ussr_policy = [](const PublicState&, const ts::CardSet&, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+        return ActionEncoding{.card_id = 12, .mode = ActionMode::Event, .targets = {}};
+    };
+    const PolicyFn us_policy = [](const PublicState&, const ts::CardSet&, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+        return ActionEncoding{.card_id = 21, .mode = ActionMode::Event, .targets = {}};
+    };
+
+    std::vector<StepTrace> trace_steps;
+    std::mt19937 rng(1U);
+    auto result = ts::run_headline_phase_live(gs, ussr_policy, us_policy, rng, &trace_steps);
+    require(!result.has_value(), "Simple headline ordering smoke should not end the game");
+    require(trace_steps.size() == 2, "Headline phase should trace both headline actions");
+    require(trace_steps.front().side == Side::US, "Higher-op US headline should resolve before lower-op USSR headline");
+
+    gs = ts::reset_game(0U);
+    gs.pub.turn = 1;
+    gs.pub.defcon = 5;
+    gs.hands[ts::to_index(Side::USSR)].reset();
+    gs.hands[ts::to_index(Side::US)].reset();
+    gs.hands[ts::to_index(Side::USSR)].set(8);
+    gs.hands[ts::to_index(Side::US)].set(108);
+    gs.ussr_holds_china = false;
+    gs.us_holds_china = false;
+
+    const PolicyFn fidel_policy = [](const PublicState&, const ts::CardSet&, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+        return ActionEncoding{.card_id = 8, .mode = ActionMode::Event, .targets = {}};
+    };
+    const PolicyFn defectors_policy = [](const PublicState&, const ts::CardSet&, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+        return ActionEncoding{.card_id = 108, .mode = ActionMode::Event, .targets = {}};
+    };
+
+    trace_steps.clear();
+    std::mt19937 rng2(2U);
+    result = ts::run_headline_phase_live(gs, fidel_policy, defectors_policy, rng2, &trace_steps);
+    require(!result.has_value(), "Defectors headline smoke should not end the game");
+    require(gs.pub.influence_of(Side::USSR, 36) == 0, "Defectors headline should cancel the USSR headline event effect");
+    require(gs.pub.discard.test(8), "Cancelled USSR headline card should still be discarded");
+}
+
 void test_space_level6_discard() {
     GameState gs;
     gs.pub.space[ts::to_index(Side::US)] = 6;
@@ -100,6 +165,51 @@ void test_space_level6_discard() {
     (void)result;
     require(ts::hand_count(gs.hands[ts::to_index(Side::US)]) == 1, "Level-6 advantage holder should discard one card when the opponent spaces while still below level 6");
     require(gs.pub.discard.test(7) || gs.pub.discard.test(8), "Space level-6 discard should move an advantage-holder card to discard");
+}
+
+void test_norad_action_round_gate() {
+    GameState gs = ts::reset_game(0U);
+    gs.pub.turn = 1;
+    gs.pub.defcon = 2;
+    gs.pub.norad_active = true;
+    for (ts::CountryId cid = 0; cid < ts::kCountrySlots; ++cid) {
+        gs.pub.set_influence(Side::US, cid, 0);
+    }
+    gs.pub.set_influence(Side::US, 10, 2);
+    gs.hands[ts::to_index(Side::USSR)].reset();
+    gs.hands[ts::to_index(Side::US)].reset();
+    gs.hands[ts::to_index(Side::USSR)].set(12);
+    gs.hands[ts::to_index(Side::US)].set(22);
+    gs.ussr_holds_china = false;
+    gs.us_holds_china = false;
+
+    auto policy = min_space_policy();
+    const auto italy_before = gs.pub.influence_of(Side::US, 10);
+    std::mt19937 rng(3U);
+    auto result = ts::run_action_rounds_live(gs, policy, policy, rng, 1, nullptr);
+    require(!result.has_value(), "NORAD gate smoke should not end the game");
+    require(gs.pub.influence_of(Side::US, 10) == italy_before + 1, "NORAD should add one US influence after a USSR AR at DEFCON 2");
+
+    gs = ts::reset_game(0U);
+    gs.pub.turn = 1;
+    gs.pub.defcon = 3;
+    gs.pub.norad_active = true;
+    for (ts::CountryId cid = 0; cid < ts::kCountrySlots; ++cid) {
+        gs.pub.set_influence(Side::US, cid, 0);
+    }
+    gs.pub.set_influence(Side::US, 10, 2);
+    gs.hands[ts::to_index(Side::USSR)].reset();
+    gs.hands[ts::to_index(Side::US)].reset();
+    gs.hands[ts::to_index(Side::USSR)].set(12);
+    gs.hands[ts::to_index(Side::US)].set(22);
+    gs.ussr_holds_china = false;
+    gs.us_holds_china = false;
+
+    const auto italy_before_defcon3 = gs.pub.influence_of(Side::US, 10);
+    std::mt19937 rng_defcon3(4U);
+    result = ts::run_action_rounds_live(gs, policy, policy, rng_defcon3, 1, nullptr);
+    require(!result.has_value(), "NORAD DEFCON 3 smoke should not end the game");
+    require(gs.pub.influence_of(Side::US, 10) == italy_before_defcon3, "NORAD should not trigger above DEFCON 2");
 }
 
 void test_extra_action_round_trace() {
@@ -127,13 +237,43 @@ void test_extra_action_round_trace() {
     require(trace_steps.front().ar == ts::ars_for_turn(gs.pub.turn) + 1, "Extra action round should advance the trace AR beyond the normal round count");
 }
 
+void test_north_sea_oil_extra_ar_flow() {
+    GameState gs = ts::reset_game(0U);
+    gs.pub.turn = 1;
+    gs.pub.defcon = 3;
+    gs.pub.north_sea_oil_extra_ar = true;
+    gs.hands[ts::to_index(Side::USSR)].reset();
+    gs.hands[ts::to_index(Side::US)].reset();
+    gs.hands[ts::to_index(Side::USSR)].set(12);
+    gs.hands[ts::to_index(Side::US)].set(22);
+    gs.hands[ts::to_index(Side::US)].set(28);
+    gs.ussr_holds_china = false;
+    gs.us_holds_china = false;
+
+    auto policy = min_space_policy();
+    std::mt19937 rng(6U);
+    auto result = ts::run_action_rounds_live(gs, policy, policy, rng, 1, nullptr);
+    require(!result.has_value(), "Regular action round before North Sea Oil extra AR should not end the game");
+    require(ts::hand_count(gs.hands[ts::to_index(Side::US)]) == 1, "US should have one card left after the regular AR");
+    require(gs.pub.north_sea_oil_extra_ar, "North Sea Oil flag should survive the regular AR loop");
+
+    gs.pub.north_sea_oil_extra_ar = false;
+    std::mt19937 extra_rng(7U);
+    result = ts::run_extra_action_round_live(gs, Side::US, policy, extra_rng, nullptr);
+    require(!result.has_value(), "North Sea Oil extra AR should not end the game in the smoke setup");
+    require(ts::hand_count(gs.hands[ts::to_index(Side::US)]) == 0, "North Sea Oil extra AR should consume the remaining US card");
+}
+
 }  // namespace
 
 int main() {
     test_norad_resolution();
     test_trap_resolution();
+    test_headline_order_and_defectors();
     test_space_level6_discard();
+    test_norad_action_round_gate();
     test_extra_action_round_trace();
+    test_north_sea_oil_extra_ar_flow();
     std::cout << "loop mechanics smoke ok\n";
     return 0;
 }
