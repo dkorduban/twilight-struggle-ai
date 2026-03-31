@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include "game_loop.hpp"
+#include "learned_policy.hpp"
 
 namespace {
 
@@ -43,7 +44,8 @@ void usage(const char* argv0) {
     std::cerr
         << "usage: " << argv0
         << " --out trace.jsonl [--games N] [--seed N]"
-        << " [--ussr-policy random|minimal_hybrid] [--us-policy random|minimal_hybrid]\n";
+        << " [--ussr-policy random|minimal_hybrid] [--us-policy random|minimal_hybrid]"
+        << " [--learned-model scripted.pt --learned-side ussr|us]\n";
 }
 
 }  // namespace
@@ -54,6 +56,8 @@ int main(int argc, char** argv) {
     std::optional<uint32_t> seed = 12345U;
     auto ussr_policy_kind = ts::PolicyKind::MinimalHybrid;
     auto us_policy_kind = ts::PolicyKind::Random;
+    std::optional<std::string> learned_model;
+    auto learned_side = ts::Side::USSR;
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
@@ -74,6 +78,11 @@ int main(int argc, char** argv) {
             ussr_policy_kind = parse_policy(require_value("--ussr-policy"));
         } else if (arg == "--us-policy") {
             us_policy_kind = parse_policy(require_value("--us-policy"));
+        } else if (arg == "--learned-model") {
+            learned_model = std::string(require_value("--learned-model"));
+        } else if (arg == "--learned-side") {
+            const auto side = require_value("--learned-side");
+            learned_side = side == "us" ? ts::Side::US : ts::Side::USSR;
         } else if (arg == "--help" || arg == "-h") {
             usage(argv[0]);
             return 0;
@@ -88,10 +97,21 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    const ts::PolicyFn ussr_policy = [ussr_policy_kind](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+    std::optional<ts::TorchScriptPolicy> learned_policy;
+    if (learned_model.has_value()) {
+        learned_policy.emplace(*learned_model);
+    }
+
+    const ts::PolicyFn ussr_policy = [ussr_policy_kind, &learned_policy, learned_side](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+        if (learned_policy.has_value() && learned_side == ts::Side::USSR) {
+            return learned_policy->choose_action(pub, hand, holds_china, rng);
+        }
         return ts::choose_action(ussr_policy_kind, pub, hand, holds_china, rng);
     };
-    const ts::PolicyFn us_policy = [us_policy_kind](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+    const ts::PolicyFn us_policy = [us_policy_kind, &learned_policy, learned_side](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+        if (learned_policy.has_value() && learned_side == ts::Side::US) {
+            return learned_policy->choose_action(pub, hand, holds_china, rng);
+        }
         return ts::choose_action(us_policy_kind, pub, hand, holds_china, rng);
     };
 
