@@ -70,7 +70,7 @@ if [ ! -f "$CKPT" ]; then
         --out-dir "$CKPT_DIR" \
         --epochs 120 --batch-size 8192 --lr 2.4e-3 \
         --weight-decay 1e-4 --dropout 0.1 --label-smoothing 0.05 \
-        --value-target final_vp --num-workers 0 --amp --one-cycle \
+        --value-target final_vp --num-workers 0 --pin-memory --amp --one-cycle \
         --patience 12 --advantage-weight 0.5 \
         2>&1 | tee /tmp/train_v${N}.log
     echo "[$(date)] v${N} training done."

@@ -241,13 +241,13 @@ def run_epoch(
     ctx = torch.no_grad() if not is_train else torch.enable_grad()
     with ctx:
         for batch_idx, batch in enumerate(loader):
-            influence = batch["influence"].to(device)
-            cards = batch["cards"].to(device)
-            scalars = batch["scalars"].to(device)
-            card_target = batch["card_target"].to(device)
-            mode_target = batch["mode_target"].to(device)
-            country_ops_target = batch["country_ops_target"].to(device)
-            value_target = batch["value_target"].to(device)
+            influence = batch["influence"].to(device, non_blocking=True)
+            cards = batch["cards"].to(device, non_blocking=True).float()
+            scalars = batch["scalars"].to(device, non_blocking=True)
+            card_target = batch["card_target"].to(device, non_blocking=True)
+            mode_target = batch["mode_target"].to(device, non_blocking=True)
+            country_ops_target = batch["country_ops_target"].to(device, non_blocking=True)
+            value_target = batch["value_target"].to(device, non_blocking=True)
 
             with torch.autocast(device_type=device.type, enabled=use_amp):
                 outputs = model(influence, cards, scalars)
@@ -415,6 +415,9 @@ def main() -> None:
     # after fork. Polars uses internal Rayon/BLAS thread pools that deadlock in
     # forked child processes. 'forkserver' spawns a clean server process instead.
     mp_ctx = "forkserver" if args.num_workers > 0 else None
+    # TS_SelfPlayDataset implements __getitems__ for vectorised batch indexing.
+    # The dataset returns a pre-batched dict, so collate_fn must be a pass-through.
+    _passthrough_collate = TS_SelfPlayDataset.passthrough_collate
     train_loader = DataLoader(
         train_ds,
         batch_size=args.batch_size,
@@ -425,6 +428,7 @@ def main() -> None:
         persistent_workers=(args.num_workers > 0),
         pin_memory=args.pin_memory,
         multiprocessing_context=mp_ctx,
+        collate_fn=_passthrough_collate,
     )
     val_loader = DataLoader(
         val_ds,
@@ -435,6 +439,7 @@ def main() -> None:
         persistent_workers=(args.num_workers > 0),
         pin_memory=args.pin_memory,
         multiprocessing_context=mp_ctx,
+        collate_fn=_passthrough_collate,
     )
 
     # ---- model ----

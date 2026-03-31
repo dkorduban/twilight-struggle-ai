@@ -259,7 +259,8 @@ def test_dataset_all_card_targets_in_range(tiny_selfplay_dir) -> None:
     from torch.utils.data import DataLoader
 
     ds = TS_SelfPlayDataset(str(tiny_selfplay_dir))
-    loader = DataLoader(ds, batch_size=256, shuffle=False)
+    loader = DataLoader(ds, batch_size=256, shuffle=False,
+                        collate_fn=TS_SelfPlayDataset.passthrough_collate)
 
     for batch in loader:
         card_targets = batch["card_target"]
