@@ -124,11 +124,24 @@ if [ ! -f "$VSH_OUT" ]; then
     if [ "${PCT_INT:-0}" -ge "$THRESHOLD" ]; then
         uv run python scripts/resource_monitor.py --tag "collect" --out "$MONITOR_LOG"
         echo "[$(date)] Collecting v${N}-vs-heuristic (${PCT}% >= ${THRESHOLD}%, seed=${VSH_SEED})..."
-        nice -n 10 uv run python scripts/collect_learned_vs_heuristic.py \
-            --checkpoint "$CKPT" --n-games "$GAMES_VSH" --workers 16 \
-            --seed "$VSH_SEED" --out "$VSH_OUT" \
-            --value-guided --value-guided-k 4 \
-            2>&1 | tee logs/collect_v${N}_vs_heuristic.log
+        # Use C++ collection (single thread ~9 games/sec, avoids 16-process Python overhead).
+        # Falls back to Python if the C++ binary or export script is missing.
+        if [ -f "build-ninja/cpp/tools/ts_collect_selfplay_rows_jsonl" ]; then
+            bash scripts/collect_cpp.sh \
+                --checkpoint "$CKPT" \
+                --learned-side ussr \
+                --games "$GAMES_VSH" \
+                --seed "$VSH_SEED" \
+                --out "$VSH_OUT" \
+                2>&1 | tee logs/collect_v${N}_vs_heuristic.log
+        else
+            echo "[$(date)] WARNING: C++ binary missing — falling back to Python collector"
+            nice -n 10 uv run python scripts/collect_learned_vs_heuristic.py \
+                --checkpoint "$CKPT" --n-games "$GAMES_VSH" --workers 16 \
+                --seed "$VSH_SEED" --out "$VSH_OUT" \
+                --value-guided --value-guided-k 4 \
+                2>&1 | tee logs/collect_v${N}_vs_heuristic.log
+        fi
         echo "[$(date)] v${N}-vs-heuristic collection done."
 
         # ── Validate DEFCON-1 rate in collected data ──────────────────────────
