@@ -18,6 +18,7 @@ from tsrl.engine.legal_actions import (
     load_adjacency,
 )
 from tsrl.etl.dataset import _card_mask, _influence_array
+from tsrl.etl.game_data import load_cards
 from tsrl.policies.minimal_hybrid import _DEFCON_LOWERING_CARDS
 from tsrl.policies.model import TSBaselineModel
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side
@@ -195,7 +196,23 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
                 country_strategy_logits = country_strategy_logits[0]
 
         # --- pick card ---
-        legal_card_ids = sorted(playable)
+        # DEFCON safety at card-selection level: opponent-owned danger cards cannot be
+        # played safely because their event fires for any ops mode, dropping DEFCON.
+        _card_specs = load_cards()
+        safe_card_ids = []
+        for c in sorted(playable):
+            if c in _DEFCON_LOWERING_CARDS:
+                spec = _card_specs.get(c)
+                is_opp = spec is not None and spec.side != side and spec.side != Side.NEUTRAL
+                is_neutral = spec is not None and spec.side == Side.NEUTRAL
+                if is_opp and pub.defcon <= 2:
+                    continue  # mask out: event fires for any mode, DEFCON 2→1
+                if is_opp and pub.defcon == 3 and pub.ar == 0:
+                    continue  # mask out: opponent headline may fire first → DEFCON 2
+                if is_neutral and pub.ar == 0 and pub.defcon <= 3:
+                    continue  # mask out: neutral headline event at DEFCON ≤3 risky
+            safe_card_ids.append(c)
+        legal_card_ids = safe_card_ids if safe_card_ids else sorted(playable)
         masked_card = torch.full_like(card_logits, float("-inf"))
         legal_indices = torch.tensor([c - 1 for c in legal_card_ids], dtype=torch.long)
         masked_card[legal_indices] = card_logits[legal_indices]

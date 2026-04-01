@@ -68,6 +68,13 @@ _DEFCON_LOWERING_CARDS: frozenset[int] = frozenset({
     11,  # Korean War (USSR) — coup South Korea (BG, stab 3)
     13,  # Arab-Israeli War (USSR) — coup Israel (BG, stab 4)
     24,  # Indo-Pakistani War (USSR) — coup Pakistan or India (both BG, stab 2)
+    # Additional cards confirmed to trigger DEFCON-1 from DEFCON 2 via coup/war effects:
+    39,  # Brush War (USSR) — free coup in any non-BG country (lowers DEFCON)
+    49,  # How I Learned to Stop Worrying (USSR) — free coup in any country
+    83,  # Che (USSR) — free coup attempt in LA or Africa
+    48,  # Summit — can lower DEFCON as side effect at DEFCON 2
+    20,  # Olympic Games (Neutral) — boycott path drops DEFCON
+    50,  # Junta (Neutral) — free coup in Central/South America
 })
 _DEFCON_LOWERING_SUICIDE_PENALTY = 1_000_000.0
 _DEFCON_LOWERING_DEFCON3_PENALTY = 20.0  # softer: brings DEFCON to 2, not instant death
