@@ -82,6 +82,8 @@ def run_chunk(
     us_policy: str,
     learned_model: Path | None,
     learned_side: str,
+    ussr_model: Path | None = None,
+    us_model: Path | None = None,
 ) -> None:
     cmd = [
         str(rows_tool),
@@ -96,8 +98,14 @@ def run_chunk(
         "--us-policy",
         us_policy,
     ]
-    if learned_model is not None:
-        cmd.extend(["--learned-model", str(learned_model), "--learned-side", learned_side])
+    if ussr_model is not None:
+        cmd.extend(["--ussr-model", str(ussr_model)])
+    elif learned_model is not None and learned_side == "ussr":
+        cmd.extend(["--learned-model", str(learned_model), "--learned-side", "ussr"])
+    if us_model is not None:
+        cmd.extend(["--us-model", str(us_model)])
+    elif learned_model is not None and learned_side == "us":
+        cmd.extend(["--learned-model", str(learned_model), "--learned-side", "us"])
     subprocess.run(cmd, check=True)
 
 
@@ -116,6 +124,8 @@ def main() -> None:
     parser.add_argument("--us-policy", default="random")
     parser.add_argument("--learned-model", type=Path, default=None)
     parser.add_argument("--learned-side", choices=("ussr", "us"), default="ussr")
+    parser.add_argument("--ussr-model", type=Path, default=None, help="TorchScript model for USSR (two-model mode)")
+    parser.add_argument("--us-model", type=Path, default=None, help="TorchScript model for US (two-model mode)")
     parser.add_argument("--min-available-mb", type=int, default=4096)
     parser.add_argument("--max-used-mb", type=int, default=25000)
     parser.add_argument("--max-swap-used-mb", type=int, default=2048)
@@ -133,6 +143,8 @@ def main() -> None:
         "us_policy": args.us_policy,
         "learned_model": str(args.learned_model) if args.learned_model is not None else None,
         "learned_side": args.learned_side if args.learned_model is not None else None,
+        "ussr_model": str(args.ussr_model) if args.ussr_model is not None else None,
+        "us_model": str(args.us_model) if args.us_model is not None else None,
         "chunks": [],
     }
 
@@ -164,6 +176,8 @@ def main() -> None:
             args.us_policy,
             args.learned_model,
             args.learned_side,
+            ussr_model=args.ussr_model,
+            us_model=args.us_model,
         )
 
         manifest["chunks"].append(

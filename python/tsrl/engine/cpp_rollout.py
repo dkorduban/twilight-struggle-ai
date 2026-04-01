@@ -24,37 +24,6 @@ _tscore = None
 _import_warned = False
 
 
-def _preload_torch_global() -> None:
-    """If torch is loaded from a venv, preload its core libs with RTLD_GLOBAL.
-
-    tscore.so is built against libtorch and has a RUNPATH pointing to the torch
-    installation used at build time.  If the Python process also has torch loaded
-    from a *different* installation (e.g., a venv vs. system Python), the two
-    libtorch copies conflict and tscore fails to import with an 'undefined symbol'
-    error.
-
-    Loading the *currently active* torch's core libs with RTLD_GLOBAL before
-    importing tscore forces the dynamic linker to resolve libtorch symbols from
-    the active torch, avoiding the conflict.
-    """
-    import ctypes
-    import sys
-
-    torch_mod = sys.modules.get("torch")
-    if torch_mod is None:
-        return  # torch not yet loaded; tscore will load its own libtorch via RPATH
-
-    try:
-        import os
-        torch_lib_dir = os.path.join(os.path.dirname(torch_mod.__file__), "lib")
-        for lib in ("libc10.so", "libtorch_cpu.so", "libtorch.so"):
-            lib_path = os.path.join(torch_lib_dir, lib)
-            if os.path.exists(lib_path):
-                ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
-    except Exception:
-        pass  # Non-fatal; tscore import will either succeed or fail below
-
-
 def _get_tscore():
     global _tscore, _import_warned
     if _tscore is not None:
@@ -66,10 +35,6 @@ def _get_tscore():
         _build_so = Path(__file__).resolve().parents[3] / "build-ninja" / "bindings"
         if str(_build_so) not in sys.path:
             sys.path.insert(0, str(_build_so))
-
-        # Preload active torch libs globally so tscore.so resolves libtorch
-        # symbols from the correct installation (handles venv vs. system conflict).
-        _preload_torch_global()
 
         import tscore as _mod
 

@@ -18,16 +18,18 @@ set -euo pipefail
 N=${1:?Usage: $0 <version_number>}
 THRESHOLD=0   # 0 = always collect; raise to 35+ once model can consistently beat heuristic
 GAMES_VSH=2000
+GAMES_VSL=1000  # Games to collect for learned-vs-learned self-play (0 = skip)
 SEED_BASE=20000
 MAX_GENS=6    # Rolling window: keep only last N generations of parquet data (0 = keep all)
 
 shift
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --threshold) THRESHOLD=$2; shift 2 ;;
-        --games-vsh) GAMES_VSH=$2; shift 2 ;;
-        --seed-base) SEED_BASE=$2; shift 2 ;;
-        --max-gens)  MAX_GENS=$2;  shift 2 ;;
+        --threshold)  THRESHOLD=$2;  shift 2 ;;
+        --games-vsh)  GAMES_VSH=$2;  shift 2 ;;
+        --games-vsl)  GAMES_VSL=$2;  shift 2 ;;
+        --seed-base)  SEED_BASE=$2;  shift 2 ;;
+        --max-gens)   MAX_GENS=$2;   shift 2 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
@@ -144,6 +146,37 @@ if [ ! -f "$VSH_OUT" ]; then
         fi
         echo "[$(date)] v${N}-vs-heuristic collection done."
 
+        # ── Collect learned-vs-learned self-play (vN vs vN-1) ────────────────
+        # Uses vN as USSR, vN-1 as US. Skipped on gen 1 (no prior checkpoint).
+        # Provides diverse value signal (wins and losses against a near-peer)
+        # to supplement vs-heuristic BC data and break the BC ceiling.
+        NM1=$(( N - 1 ))
+        VSL_SEED=$(( SEED_BASE + N * 1000 + 750 ))
+        VSL_OUT=data/selfplay/learned_v${N}_vs_v${NM1}_${GAMES_VSL}g_seed${VSL_SEED}.parquet
+        PREV_CKPT="data/checkpoints/retrain_v${NM1}/baseline_best.pt"
+        PREV_TS="data/checkpoints/retrain_v${NM1}/baseline_best_scripted.pt"
+        CURR_TS="data/checkpoints/retrain_v${N}/baseline_best_scripted.pt"
+
+        if [ "$GAMES_VSL" -gt 0 ] && [ -f "$PREV_CKPT" ] && [ ! -f "$VSL_OUT" ]; then
+            # Export previous checkpoint to TorchScript if needed
+            if [ ! -f "$PREV_TS" ]; then
+                echo "[$(date)] Exporting v${NM1} TorchScript: $PREV_CKPT -> $PREV_TS"
+                nice -n 10 uv run python cpp/tools/export_baseline_to_torchscript.py \
+                    --checkpoint "$PREV_CKPT" --out "$PREV_TS" 2>&1
+            fi
+            echo "[$(date)] Collecting v${N}-vs-v${NM1} self-play (${GAMES_VSL} games, seed=${VSL_SEED})..."
+            bash scripts/collect_cpp.sh \
+                --ussr-model "$CURR_TS" \
+                --us-model "$PREV_TS" \
+                --games "$GAMES_VSL" \
+                --seed "$VSL_SEED" \
+                --out "$VSL_OUT" \
+                2>&1 | tee logs/collect_v${N}_vs_v${NM1}.log
+            echo "[$(date)] v${N}-vs-v${NM1} self-play collection done."
+        else
+            echo "[$(date)] Skipping learned-vs-learned: GAMES_VSL=${GAMES_VSL} prev_ckpt=${PREV_CKPT}"
+        fi
+
         # ── Validate DEFCON-1 rate in collected data ──────────────────────────
         DEFCON1_RATE=$(uv run python -c "
 import pyarrow.parquet as pq
@@ -202,13 +235,21 @@ print(f'{defcon1/total*100:.1f}')
         done
         ln -sf "$(readlink -f "$VSH_FILTERED")" \
             "$COMBINED_NP1/learned_v${N}_vs_heuristic_filtered.parquet"
+
+        # Include learned-vs-learned data if it was collected this generation
+        if [ -f "$VSL_OUT" ]; then
+            ln -sf "$(readlink -f "$VSL_OUT")" \
+                "$COMBINED_NP1/learned_v${N}_vs_v${NM1}_selfplay.parquet"
+            echo "[$(date)] Added self-play v${N}-vs-v${NM1} to combined_v${NP1}"
+        fi
+
         NP1_COUNT=$(ls "$COMBINED_NP1"/*.parquet | wc -l)
         echo "[$(date)] combined_v${NP1} assembled: $NP1_COUNT files (dropped $DROPPED old, min_gen=v${MIN_GEN})"
 
         echo "[$(date)] Launching v${NP1} pipeline..."
         bash scripts/run_vN_pipeline.sh "$NP1" \
-            --threshold "$THRESHOLD" --games-vsh "$GAMES_VSH" --seed-base "$SEED_BASE" \
-            --max-gens "$MAX_GENS"
+            --threshold "$THRESHOLD" --games-vsh "$GAMES_VSH" --games-vsl "$GAMES_VSL" \
+            --seed-base "$SEED_BASE" --max-gens "$MAX_GENS"
     else
         echo "[$(date)] SKIP: v${N} scored ${PCT:-?}% (< ${THRESHOLD}%). Stopping chain."
         echo "[$(date)] Consider: collect more heuristic data or tune architecture before continuing."

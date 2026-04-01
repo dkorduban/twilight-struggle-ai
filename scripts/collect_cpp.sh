@@ -18,6 +18,13 @@
 #       --learned-side ussr \
 #       --out data/selfplay/learned_v53_vs_heuristic_2000g.parquet
 #
+# For learned-vs-learned (two models; provide pre-exported TorchScript files):
+#   bash scripts/collect_cpp.sh \
+#       --games 1000 --seed 42 \
+#       --ussr-model data/checkpoints/retrain_v57/baseline_best_scripted.pt \
+#       --us-model   data/checkpoints/retrain_v56/baseline_best_scripted.pt \
+#       --out data/selfplay/learned_v57_vs_v56_1000g.parquet
+#
 # The TorchScript export step runs automatically if needed.
 # Intermediate JSONL chunks are written to --chunk-dir (default: /tmp/cpp_chunks_$$)
 # and cleaned up on success.
@@ -42,6 +49,8 @@ USSR_POLICY="minimal_hybrid"
 US_POLICY="minimal_hybrid"
 CHECKPOINT=""
 LEARNED_SIDE="ussr"
+USSR_MODEL=""
+US_MODEL=""
 OUT=""
 CHUNK_DIR=""
 ROWS_TOOL="build-ninja/cpp/tools/ts_collect_selfplay_rows_jsonl"
@@ -58,6 +67,8 @@ while [[ $# -gt 0 ]]; do
         --us-policy)    US_POLICY=$2;     shift 2 ;;
         --checkpoint)   CHECKPOINT=$2;    shift 2 ;;
         --learned-side) LEARNED_SIDE=$2;  shift 2 ;;
+        --ussr-model)   USSR_MODEL=$2;    shift 2 ;;
+        --us-model)     US_MODEL=$2;      shift 2 ;;
         --out)          OUT=$2;           shift 2 ;;
         --chunk-dir)    CHUNK_DIR=$2;     shift 2 ;;
         --rows-tool)    ROWS_TOOL=$2;     shift 2 ;;
@@ -79,12 +90,15 @@ if [ -z "$OUT" ]; then
 fi
 
 # ── TorchScript export (only if a checkpoint was provided) ────────────────────
+# In two-model mode (--ussr-model / --us-model), the caller provides pre-exported
+# TorchScript files directly; no export step is needed.
 LEARNED_MODEL_ARG=""
-if [ -n "$CHECKPOINT" ]; then
-    # Derive TorchScript path from checkpoint path.
+if [ -n "$USSR_MODEL" ] || [ -n "$US_MODEL" ]; then
+    : # Two-model mode: use --ussr-model / --us-model args directly
+elif [ -n "$CHECKPOINT" ]; then
+    # Single-model mode: export checkpoint to TorchScript.
     CKPT_STEM="${CHECKPOINT%.pt}"
     TS_PATH="${CKPT_STEM}_scripted.pt"
-
     if [ ! -f "$TS_PATH" ]; then
         echo "[collect_cpp] Exporting TorchScript: $CHECKPOINT -> $TS_PATH"
         nice -n 10 uv run python "$EXPORT_SCRIPT" \
@@ -104,6 +118,12 @@ mkdir -p "$CHUNK_DIR"
 
 echo "[collect_cpp] Collecting $GAMES games  seed=$SEED  out=$OUT"
 echo "[collect_cpp] Policies: ussr=$USSR_POLICY  us=$US_POLICY"
+if [ -n "$USSR_MODEL" ]; then
+    echo "[collect_cpp] USSR model: $USSR_MODEL"
+fi
+if [ -n "$US_MODEL" ]; then
+    echo "[collect_cpp] US model: $US_MODEL"
+fi
 if [ -n "$LEARNED_MODEL_ARG" ]; then
     echo "[collect_cpp] Learned model: $LEARNED_MODEL_ARG  side=$LEARNED_SIDE"
 fi
@@ -120,6 +140,12 @@ NATIVE_ARGS=(
     --ussr-policy "$USSR_POLICY"
     --us-policy "$US_POLICY"
 )
+if [ -n "$USSR_MODEL" ]; then
+    NATIVE_ARGS+=(--ussr-model "$USSR_MODEL")
+fi
+if [ -n "$US_MODEL" ]; then
+    NATIVE_ARGS+=(--us-model "$US_MODEL")
+fi
 if [ -n "$LEARNED_MODEL_ARG" ]; then
     NATIVE_ARGS+=(
         --learned-model "$LEARNED_MODEL_ARG"
