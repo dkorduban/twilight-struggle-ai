@@ -38,7 +38,21 @@ from tsrl.policies.learned_policy import (
     _extract_features,
     make_learned_policy,
 )
-from tsrl.policies.model import TSBaselineModel
+from tsrl.policies.model import (
+    TSBaselineModel,
+    TSCardEmbedModel,
+    TSCountryEmbedModel,
+    TSFullEmbedModel,
+    TSCountryAttnModel,
+)
+
+_BENCH_MODEL_REGISTRY = {
+    "baseline": TSBaselineModel,
+    "card_embed": TSCardEmbedModel,
+    "country_embed": TSCountryEmbedModel,
+    "full_embed": TSFullEmbedModel,
+    "country_attn": TSCountryAttnModel,
+}
 from tsrl.policies.minimal_hybrid import _DEFCON_LOWERING_CARDS, make_minimal_hybrid_policy
 from tsrl.schemas import ActionEncoding, ActionMode, Side
 
@@ -90,9 +104,14 @@ def _load_model(checkpoint_path: str):
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     ckpt_args = checkpoint.get("args", {})
     hidden_dim = ckpt_args.get("hidden_dim", 256)
-    model = TSBaselineModel(hidden_dim=hidden_dim)
+    model_type = ckpt_args.get("model_type", "baseline")
+    model_cls = _BENCH_MODEL_REGISTRY.get(model_type, TSBaselineModel)
+    model = model_cls(hidden_dim=hidden_dim)
     model.load_state_dict(state_dict, strict=False)
-    expected_influence_dim = model.influence_encoder.in_features
+    # Resolve influence encoder input dim: flat encoders use .in_features;
+    # embedding encoders expose it differently.
+    inf_enc = getattr(model, "influence_encoder", None) or getattr(model, "influence_encoder_flat", None)
+    expected_influence_dim = inf_enc.in_features if inf_enc is not None else 172
     has_strategy_heads = all(
         key in state_dict
         for key in (
