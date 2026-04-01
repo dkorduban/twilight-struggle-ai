@@ -1,7 +1,5 @@
 #include "game_loop.hpp"
 
-#include <algorithm>
-
 #include "dice.hpp"
 #include "game_data.hpp"
 #include "scoring.hpp"
@@ -79,7 +77,7 @@ std::optional<CardId> draw_one(GameState& gs, Pcg64Rng& rng) {
         if (reshuffled.empty()) {
             return std::nullopt;
         }
-        std::shuffle(reshuffled.begin(), reshuffled.end(), rng);
+        shuffle_with_numpy_rng(reshuffled, rng);
         gs.deck = std::move(reshuffled);
         gs.pub.discard.reset();
     }
@@ -102,12 +100,12 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
         ActionMode::Coup,
         ActionMode::Realign,
     };
-    const auto mode = modes[std::uniform_int_distribution<size_t>(0, modes.size() - 1)(rng)];
+    const auto mode = modes[rng.choice_index(modes.size())];
     const auto opponent = other_side(side);
 
     if (mode == ActionMode::Influence) {
         for (int i = 0; i < ops; ++i) {
-            const auto target = accessible[std::uniform_int_distribution<size_t>(0, accessible.size() - 1)(rng)];
+            const auto target = accessible[rng.choice_index(accessible.size())];
             pub.set_influence(side, target, pub.influence_of(side, target) + 1);
         }
         return;
@@ -128,7 +126,7 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
                 targets = accessible;
             }
         }
-        const auto target = targets[std::uniform_int_distribution<size_t>(0, targets.size() - 1)(rng)];
+        const auto target = targets[rng.choice_index(targets.size())];
         const auto net = coup_result(ops, country_spec(target).stability, rng);
         if (net > 0) {
             const auto removed = std::min(net, pub.influence_of(opponent, target));
@@ -145,7 +143,7 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
     }
 
     for (int i = 0; i < std::min(ops, static_cast<int>(accessible.size())); ++i) {
-        const auto target = accessible[std::uniform_int_distribution<size_t>(0, accessible.size() - 1)(rng)];
+        const auto target = accessible[rng.choice_index(accessible.size())];
         const auto ussr_inf = pub.influence_of(Side::USSR, target);
         const auto us_inf = pub.influence_of(Side::US, target);
         auto count_adj = [&](Side player) {
@@ -206,7 +204,7 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_a
         return std::tuple{pub, over, winner};
     }
 
-    const auto chosen = eligible[std::uniform_int_distribution<size_t>(0, eligible.size() - 1)(rng)];
+    const auto chosen = eligible[rng.choice_index(eligible.size())];
     discard_from_hand(gs, side, chosen, pub);
     if (roll_d6(rng) <= 4) {
         if (bear_trap) {
@@ -232,7 +230,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
         case 5: {
             auto hand = hand_to_vector(gs.hands[to_index(Side::USSR)]);
             if (!hand.empty()) {
-                const auto target = hand[std::uniform_int_distribution<size_t>(0, hand.size() - 1)(rng)];
+                const auto target = hand[rng.choice_index(hand.size())];
                 gs.hands[to_index(Side::USSR)].reset(target);
                 if (card_spec(target).starred) {
                     pub.removed.set(target);
@@ -277,7 +275,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!eligible.empty()) {
-                discard_from_hand(gs, Side::US, eligible[std::uniform_int_distribution<size_t>(0, eligible.size() - 1)(rng)], pub);
+                discard_from_hand(gs, Side::US, eligible[rng.choice_index(eligible.size())], pub);
             } else {
                 pub.set_influence(Side::US, kWestGermanyId, 0);
             }
@@ -287,7 +285,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
         case 26: {
             const auto accessible = accessible_countries(Side::US, pub, ActionMode::Influence);
             if (!accessible.empty()) {
-                const auto target = accessible[std::uniform_int_distribution<size_t>(0, accessible.size() - 1)(rng)];
+                const auto target = accessible[rng.choice_index(accessible.size())];
                 pub.set_influence(Side::US, target, pub.influence_of(Side::US, target) + 1);
             }
             break;
@@ -308,7 +306,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!eligible.empty()) {
-                const auto chosen = eligible[std::uniform_int_distribution<size_t>(0, eligible.size() - 1)(rng)];
+                const auto chosen = eligible[rng.choice_index(eligible.size())];
                 const auto ops = effective_ops(chosen, pub, side);
                 discard_from_hand(gs, side, chosen, pub);
                 apply_ops_randomly(pub, side, ops, rng);
@@ -340,7 +338,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     }
                 }
                 if (!pool.empty()) {
-                    const auto target = pool[std::uniform_int_distribution<size_t>(0, pool.size() - 1)(rng)];
+                    const auto target = pool[rng.choice_index(pool.size())];
                     pub.set_influence(Side::USSR, target, pub.influence_of(Side::USSR, target) + 1);
                 }
             }
@@ -356,7 +354,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             pub.salt_active = true;
             auto discarded = hand_to_vector(pub.discard);
             if (!discarded.empty()) {
-                const auto chosen = discarded[std::uniform_int_distribution<size_t>(0, discarded.size() - 1)(rng)];
+                const auto chosen = discarded[rng.choice_index(discarded.size())];
                 pub.discard.reset(chosen);
                 gs.hands[to_index(side)].set(chosen);
             }
@@ -388,7 +386,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = candidates[std::uniform_int_distribution<size_t>(0, candidates.size() - 1)(rng)];
+                const auto chosen = candidates[rng.choice_index(candidates.size())];
                 gs.hands[to_index(opponent)].reset(chosen);
                 apply_ops_randomly(pub, side, effective_ops(chosen, pub, side), rng);
                 gs.hands[to_index(opponent)].set(chosen);
@@ -406,7 +404,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     candidates.push_back(candidate);
                 }
             }
-            std::shuffle(candidates.begin(), candidates.end(), rng);
+            shuffle_with_numpy_rng(candidates, rng);
             candidates.resize(std::min(discard_count, static_cast<int>(candidates.size())));
             for (const auto chosen : candidates) {
                 discard_from_hand(gs, opponent, chosen, pub);
@@ -427,7 +425,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = candidates[std::uniform_int_distribution<size_t>(0, candidates.size() - 1)(rng)];
+                const auto chosen = candidates[rng.choice_index(candidates.size())];
                 gs.hands[to_index(Side::USSR)].reset(chosen);
                 apply_ops_randomly(pub, Side::US, effective_ops(chosen, pub, Side::US), rng);
                 gs.hands[to_index(Side::USSR)].set(chosen);
@@ -447,8 +445,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     discardable.push_back(candidate);
                 }
             }
-            const auto discard_count = discardable.empty() ? 0 : std::uniform_int_distribution<int>(0, static_cast<int>(discardable.size()))(rng);
-            std::shuffle(discardable.begin(), discardable.end(), rng);
+            const auto discard_count = discardable.empty() ? 0 : rng.uniform_int(0, static_cast<int>(discardable.size()));
+            shuffle_with_numpy_rng(discardable, rng);
             discardable.resize(static_cast<size_t>(discard_count));
             for (const auto chosen : discardable) {
                 discard_from_hand(gs, Side::US, chosen, pub);
@@ -481,8 +479,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     }
                 }
                 if (!drawn.empty()) {
-                    const auto keep_count = std::uniform_int_distribution<int>(0, static_cast<int>(drawn.size()))(rng);
-                    std::shuffle(drawn.begin(), drawn.end(), rng);
+                    const auto keep_count = rng.uniform_int(0, static_cast<int>(drawn.size()));
+                    shuffle_with_numpy_rng(drawn, rng);
                     const auto discard_split = static_cast<size_t>(drawn.size() - keep_count);
                     for (size_t i = 0; i < discard_split; ++i) {
                         if (card_spec(drawn[i]).starred) {
@@ -509,7 +507,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     discarded.end()
                 );
                 if (!discarded.empty()) {
-                    const auto chosen = discarded[std::uniform_int_distribution<size_t>(0, discarded.size() - 1)(rng)];
+                    const auto chosen = discarded[rng.choice_index(discarded.size())];
                     pub.discard.reset(chosen);
                     gs.pub = pub;
                     auto [event_pub, over, winner] = fire_event_with_state(gs, chosen, side, rng);
@@ -565,7 +563,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = candidates[std::uniform_int_distribution<size_t>(0, candidates.size() - 1)(rng)];
+                const auto chosen = candidates[rng.choice_index(candidates.size())];
                 discard_from_hand(gs, Side::US, chosen, pub);
             }
             break;
@@ -659,7 +657,7 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(
     if (eligible.empty()) {
         return std::nullopt;
     }
-    const auto target = eligible[std::uniform_int_distribution<size_t>(0, eligible.size() - 1)(rng)];
+    const auto target = eligible[rng.choice_index(eligible.size())];
     gs.pub.set_influence(Side::US, target, gs.pub.influence_of(Side::US, target) + 1);
     const auto [over, winner] = check_vp_win(gs.pub);
     return std::tuple{gs.pub, over, winner};
@@ -741,7 +739,7 @@ std::optional<GameResult> run_headline_phase(
         if (lhs_ops != rhs_ops) {
             return lhs_ops > rhs_ops;
         }
-        return lhs.side == Side::US;
+        return static_cast<int>(lhs.side) > static_cast<int>(rhs.side);
     });
 
     for (const auto& pending : ordered) {
@@ -1183,9 +1181,9 @@ TracedGame play_game_traced_from_state_fn(
 }
 
 TracedGame play_game_traced_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
-    Pcg64Rng rng(seed.value_or(std::random_device{}()));
-    auto gs = reset_game_from_rng(rng);
-    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng);
+    auto gs = reset_game(seed);
+    Pcg64Rng runtime_rng(seed.value_or(std::random_device{}()));
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng);
 }
 
 TracedGame play_game_traced_from_seed_words_fn(
@@ -1194,10 +1192,9 @@ TracedGame play_game_traced_from_seed_words_fn(
     const PolicyFn& us_policy,
     std::optional<uint32_t> seed
 ) {
-    (void)seed;
-    auto rng = Pcg64Rng::from_seed_sequence_words(words);
-    auto gs = reset_game_from_rng(rng);
-    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng);
+    auto gs = reset_game_from_seed_words(words);
+    Pcg64Rng runtime_rng(seed.value_or(std::random_device{}()));
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng);
 }
 
 GameResult play_game(PolicyKind ussr_policy, PolicyKind us_policy, std::optional<uint32_t> seed) {

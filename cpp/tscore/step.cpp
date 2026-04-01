@@ -47,8 +47,7 @@ bool contains(std::span<const CardId> values, CardId value) {
 
 template <typename T>
 const T& sample_one(std::span<const T> values, Pcg64Rng& rng) {
-    std::uniform_int_distribution<size_t> dist(0, values.size() - 1);
-    return values[dist(rng)];
+    return values[rng.choice_index(values.size())];
 }
 
 void apply_vp_delta(PublicState& pub, Side side, int delta) {
@@ -100,13 +99,7 @@ int apply_free_coup(
 }
 
 std::vector<CountryId> sample_up_to(std::span<const CountryId> pool, int count, Pcg64Rng& rng) {
-    std::vector<CountryId> chosen(pool.begin(), pool.end());
-    std::shuffle(chosen.begin(), chosen.end(), rng);
-    if (static_cast<int>(chosen.size()) > count) {
-        chosen.resize(count);
-    }
-    std::sort(chosen.begin(), chosen.end());
-    return chosen;
+    return sample_without_replacement(pool, static_cast<size_t>(std::max(count, 0)), rng);
 }
 
 void advance_space_track(PublicState& pub, Side side, int steps) {
@@ -253,8 +246,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 16: {
-            std::bernoulli_distribution branch(0.5);
-            if (branch(rng)) {
+            if (rng.choice_index(2) == 0) {
                 std::vector<CountryId> pool;
                 for (const auto cid : kEasternBlocIds) {
                     if (next.influence_of(Side::US, cid) > 0) {
@@ -274,8 +266,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 20: {
-            std::bernoulli_distribution boycott(0.5);
-            if (boycott(rng)) {
+            if (rng.bernoulli(0.5)) {
                 next.defcon = std::max(1, next.defcon - 1);
                 const auto accessible = accessible_countries(side, next, ActionMode::Influence);
                 if (!accessible.empty()) {
@@ -515,15 +506,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             const auto winner =
                 side == Side::USSR ? (ussr_roll >= us_roll ? Side::USSR : Side::US)
                                    : (us_roll >= ussr_roll ? Side::US : Side::USSR);
-            std::bernoulli_distribution inc(0.5);
-            next.defcon = std::clamp(next.defcon + (inc(rng) ? 1 : -1), 1, 5);
+            const auto defcon_delta = rng.choice_index(2) == 0 ? -1 : 1;
+            next.defcon = std::clamp(next.defcon + defcon_delta, 1, 5);
             apply_vp_delta(next, winner, 2);
             break;
         }
 
         case 49: {
-            std::uniform_int_distribution<int> dist(1, 5);
-            next.defcon = dist(rng);
+            next.defcon = rng.uniform_int(1, 5);
             next.milops[to_index(side)] = 5;
             break;
         }

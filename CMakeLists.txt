@@ -32,9 +32,24 @@ endif()
 option(TS_BUILD_PYTHON_BINDINGS "Build pybind11 Python extension module" ON)
 option(TS_BUILD_TORCH_RUNTIME "Build TorchScript/libtorch learned-policy runtime" ON)
 
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+
 if(TS_BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG REQUIRED)
 endif()
+
+execute_process(
+    COMMAND python3 -c "import numpy.random._generator as g; print(g.__file__)"
+    OUTPUT_VARIABLE TS_NUMPY_GENERATOR_SO
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+execute_process(
+    COMMAND python3 -c "import sysconfig; from pathlib import Path; print(Path(sysconfig.get_config_var('LIBDIR')) / sysconfig.get_config_var('LDLIBRARY'))"
+    OUTPUT_VARIABLE TS_PYTHON_SHARED_LIB
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
 
 if(TS_BUILD_TORCH_RUNTIME)
     if(NOT DEFINED TS_TORCH_CMAKE_PREFIX)

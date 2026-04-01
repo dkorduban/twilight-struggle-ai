@@ -31,6 +31,39 @@ target_link_libraries(ts_pcg64_smoke
 
 target_compile_features(ts_pcg64_smoke PRIVATE cxx_std_23)
 
+add_executable(ts_initial_headline_choice
+    initial_headline_choice.cpp
+)
+
+target_link_libraries(ts_initial_headline_choice
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_initial_headline_choice PRIVATE cxx_std_23)
+
+add_executable(ts_numpy_bounded_probe
+    numpy_bounded_probe.cpp
+)
+
+target_link_libraries(ts_numpy_bounded_probe
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_numpy_bounded_probe PRIVATE cxx_std_23)
+
+add_executable(ts_shuffle_stream_probe
+    shuffle_stream_probe.cpp
+)
+
+target_link_libraries(ts_shuffle_stream_probe
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_shuffle_stream_probe PRIVATE cxx_std_23)
+
 if(TS_BUILD_TORCH_RUNTIME)
     add_executable(ts_learned_matchup
         learned_matchup.cpp

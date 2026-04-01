@@ -1,7 +1,5 @@
 #include "game_state.hpp"
 
-#include <algorithm>
-
 #include "game_data.hpp"
 
 namespace ts {
@@ -26,7 +24,7 @@ std::vector<CardId> build_era_deck(Era era_max, const CardSet& removed) {
 }
 
 void shuffle_vector(std::vector<CardId>& deck, Pcg64Rng& rng) {
-    std::shuffle(deck.begin(), deck.end(), rng);
+    shuffle_with_numpy_rng(deck, rng);
 }
 
 void reshuffle(GameState& gs, Pcg64Rng& rng) {

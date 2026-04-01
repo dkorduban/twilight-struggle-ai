@@ -281,7 +281,7 @@ std::optional<ActionEncoding> sample_action(
     Pcg64Rng& rng
 ) {
     auto playable = legal_cards(hand, pub, side, holds_china);
-    std::shuffle(playable.begin(), playable.end(), rng);
+    shuffle_with_numpy_rng(playable, rng);
 
     for (const auto card_id : playable) {
         auto modes = legal_modes(card_id, pub, side);
@@ -291,8 +291,7 @@ std::optional<ActionEncoding> sample_action(
         if (modes.empty()) {
             continue;
         }
-        std::uniform_int_distribution<size_t> mode_dist(0, modes.size() - 1);
-        const auto mode = modes[mode_dist(rng)];
+        const auto mode = modes[rng.choice_index(modes.size())];
         if (mode == ActionMode::Space || mode == ActionMode::Event) {
             return ActionEncoding{
                 .card_id = card_id,
@@ -305,12 +304,11 @@ std::optional<ActionEncoding> sample_action(
         if (accessible.empty()) {
             continue;
         }
-        std::uniform_int_distribution<size_t> country_dist(0, accessible.size() - 1);
         if (mode == ActionMode::Coup) {
             return ActionEncoding{
                 .card_id = card_id,
                 .mode = mode,
-                .targets = {accessible[country_dist(rng)]},
+                .targets = {accessible[rng.choice_index(accessible.size())]},
             };
         }
 
@@ -322,22 +320,20 @@ std::optional<ActionEncoding> sample_action(
                 return country_spec(cid).region == Region::Asia;
             });
             if (!asia_pool.empty()) {
-                std::bernoulli_distribution fifty_fifty(0.5);
-                if (fifty_fifty(rng)) {
+                if (rng.bernoulli(0.5)) {
                     pool = std::move(asia_pool);
                     ++ops;
                 }
             }
         }
 
-        std::uniform_int_distribution<size_t> target_dist(0, pool.size() - 1);
         ActionEncoding action{
             .card_id = card_id,
             .mode = mode,
             .targets = {},
         };
         for (int i = 0; i < ops; ++i) {
-            action.targets.push_back(pool[target_dist(rng)]);
+            action.targets.push_back(pool[rng.choice_index(pool.size())]);
         }
         return action;
     }

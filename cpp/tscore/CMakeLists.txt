@@ -26,9 +26,20 @@ target_include_directories(tscore
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:include/tscore>
+    PRIVATE
+        ${Python3_INCLUDE_DIRS}
 )
 
 target_compile_features(tscore PUBLIC cxx_std_23)
+
+if(TS_NUMPY_GENERATOR_SO)
+    target_compile_definitions(tscore PUBLIC TS_NUMPY_GENERATOR_SO="${TS_NUMPY_GENERATOR_SO}")
+endif()
+if(TS_PYTHON_SHARED_LIB)
+    target_compile_definitions(tscore PUBLIC TS_PYTHON_SHARED_LIB="${TS_PYTHON_SHARED_LIB}")
+endif()
+
+target_link_libraries(tscore PUBLIC Python3::Python)
 
 # Strict warnings — treated as errors to keep the codebase clean.
 target_compile_options(tscore PRIVATE

@@ -5,7 +5,7 @@
 namespace ts {
 
 int roll_d6(Pcg64Rng& rng) {
-    return 1 + static_cast<int>(rng.bounded_interval_inclusive(5));
+    return static_cast<int>(rng.numpy_bounded_uint64(1, 5));
 }
 
 std::pair<int, int> roll_2d6(Pcg64Rng& rng) {

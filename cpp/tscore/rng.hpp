@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -43,7 +44,12 @@ public:
     [[nodiscard]] uint32_t next_u32();
     [[nodiscard]] uint64_t bounded_u64(uint64_t bound_exclusive);
     [[nodiscard]] uint64_t bounded_interval_inclusive(uint64_t max_inclusive);
+    [[nodiscard]] uint64_t numpy_interval(uint64_t max_inclusive);
+    [[nodiscard]] uint64_t numpy_bounded_uint64(uint64_t off, uint64_t range);
     [[nodiscard]] int uniform_int(int low_inclusive, int high_inclusive);
+    [[nodiscard]] size_t choice_index(size_t size);
+    [[nodiscard]] double random_double();
+    [[nodiscard]] bool bernoulli(double p);
 
     static Pcg64Rng from_numpy_state(Uint128 state, Uint128 inc);
     static Pcg64Rng from_seed_sequence_words(std::array<uint64_t, 4> words);
@@ -74,7 +80,7 @@ void shuffle_with_numpy_rng(std::span<T> values, Pcg64Rng& rng) {
         return;
     }
     for (size_t i = values.size(); i > 1; --i) {
-        const auto j = static_cast<size_t>(rng.bounded_interval_inclusive(i - 1));
+        const auto j = static_cast<size_t>(rng.numpy_interval(i - 1));
         if (j != i - 1) {
             std::swap(values[i - 1], values[j]);
         }
@@ -89,6 +95,19 @@ void shuffle_with_rng(std::vector<T>& values, Pcg64Rng& rng) {
 template <typename T>
 void shuffle_with_numpy_rng(std::vector<T>& values, Pcg64Rng& rng) {
     shuffle_with_numpy_rng(std::span<T>(values), rng);
+}
+
+template <typename T>
+std::vector<T> sample_without_replacement(std::span<const T> values, size_t count, Pcg64Rng& rng) {
+    std::vector<T> pool(values.begin(), values.end());
+    if (pool.empty() || count == 0) {
+        return {};
+    }
+    std::sort(pool.begin(), pool.end());
+    const auto take = std::min(count, pool.size());
+    shuffle_with_numpy_rng(pool, rng);
+    pool.resize(take);
+    return pool;
 }
 
 [[nodiscard]] std::array<uint64_t, 2> split_u128(Uint128 value);
