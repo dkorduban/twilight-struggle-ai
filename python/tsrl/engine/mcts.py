@@ -42,6 +42,11 @@ from tsrl.engine.legal_actions import sample_action
 from tsrl.engine.step import apply_action
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side
 
+# Lazy import so that the C++ extension is optional.
+def _cpp_rollout_value(gs: "GameState", rng_seed: int | None = None) -> float:
+    from tsrl.engine.cpp_rollout import cpp_rollout_value
+    return cpp_rollout_value(gs, rng_seed)
+
 # ---------------------------------------------------------------------------
 # Value helpers
 # ---------------------------------------------------------------------------
@@ -160,6 +165,7 @@ def uct_mcts(
     candidate_fn=None,
     value_fn: Optional[Callable[[GameState], float]] = None,
     batch_value_fn: Optional[Callable[[list[GameState]], list[float]]] = None,
+    use_cpp_rollout: bool = False,
     rng: Optional[RNG] = None,
 ) -> Optional[ActionEncoding]:
     """Run UCT (Upper Confidence Trees) and return the most-visited root action.
@@ -249,6 +255,13 @@ def uct_mcts(
                 raise ValueError("batch_value_fn returned wrong number of values")
         elif value_fn is not None:
             leaf_values = [value_fn(sim) for sim in pending_leaf_states]
+        elif use_cpp_rollout:
+            # Use C++ MinimalHybrid heuristic rollouts for leaf evaluation (~24x faster).
+            rng_seed = int(_rng.integers(0, 2**32))
+            leaf_values = [
+                _cpp_rollout_value(sim, rng_seed + i)
+                for i, sim in enumerate(pending_leaf_states)
+            ]
         else:
             leaf_values = [
                 _result_value(play_from_state(sim, _rollout, _rollout, rng=_rng))

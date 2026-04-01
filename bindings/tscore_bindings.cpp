@@ -1,7 +1,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <algorithm>
+#include <cmath>
+
 #include "game_loop.hpp"
+#include "game_state.hpp"
 #include "learned_policy.hpp"
 #include "policies.hpp"
 
@@ -73,6 +77,125 @@ py::dict public_state_to_dict(const ts::PublicState& pub) {
     return out;
 }
 
+// Deserialize a Python dict (produced by cpp_rollout.py serialize_game_state)
+// into a C++ GameState for mid-game rollout.
+ts::GameState game_state_from_dict(const py::dict& d) {
+    ts::GameState gs;
+
+    // --- PublicState ---
+    ts::PublicState& pub = gs.pub;
+    pub.turn    = d["turn"].cast<int>();
+    pub.ar      = d["ar"].cast<int>();
+    pub.phasing = static_cast<ts::Side>(d["phasing"].cast<int>());
+    pub.vp      = d["vp"].cast<int>();
+    pub.defcon  = d["defcon"].cast<int>();
+
+    auto milops = d["milops"].cast<std::vector<int>>();
+    pub.milops[0] = milops[0];
+    pub.milops[1] = milops[1];
+
+    auto space = d["space"].cast<std::vector<int>>();
+    pub.space[0] = space[0];
+    pub.space[1] = space[1];
+
+    pub.china_held_by  = static_cast<ts::Side>(d["china_held_by"].cast<int>());
+    pub.china_playable = d["china_playable"].cast<bool>();
+
+    // Influence: flat list[int] length 86 (indices 0..85)
+    auto ussr_inf = d["ussr_influence"].cast<std::vector<int>>();
+    auto us_inf   = d["us_influence"].cast<std::vector<int>>();
+    for (int i = 0; i < static_cast<int>(ussr_inf.size()) && i <= ts::kMaxCountryId; ++i) {
+        pub.influence[ts::to_index(ts::Side::USSR)][i] = static_cast<int16_t>(ussr_inf[i]);
+        pub.influence[ts::to_index(ts::Side::US)][i]   = static_cast<int16_t>(us_inf[i]);
+    }
+
+    // Discard / removed as list[int] of card ids
+    for (int cid : d["discard"].cast<std::vector<int>>()) {
+        pub.discard.set(static_cast<size_t>(cid));
+    }
+    for (int cid : d["removed"].cast<std::vector<int>>()) {
+        pub.removed.set(static_cast<size_t>(cid));
+    }
+
+    // Bool effect flags
+    pub.warsaw_pact_played          = d["warsaw_pact_played"].cast<bool>();
+    pub.marshall_plan_played        = d["marshall_plan_played"].cast<bool>();
+    pub.truman_doctrine_played      = d["truman_doctrine_played"].cast<bool>();
+    pub.john_paul_ii_played         = d["john_paul_ii_played"].cast<bool>();
+    pub.nato_active                 = d["nato_active"].cast<bool>();
+    pub.de_gaulle_active            = d["de_gaulle_active"].cast<bool>();
+    pub.willy_brandt_active         = d["willy_brandt_active"].cast<bool>();
+    pub.us_japan_pact_active        = d["us_japan_pact_active"].cast<bool>();
+    pub.nuclear_subs_active         = d["nuclear_subs_active"].cast<bool>();
+    pub.norad_active                = d["norad_active"].cast<bool>();
+    pub.shuttle_diplomacy_active    = d["shuttle_diplomacy_active"].cast<bool>();
+    pub.flower_power_active         = d["flower_power_active"].cast<bool>();
+    pub.flower_power_cancelled      = d["flower_power_cancelled"].cast<bool>();
+    pub.salt_active                 = d["salt_active"].cast<bool>();
+    pub.opec_cancelled              = d["opec_cancelled"].cast<bool>();
+    pub.awacs_active                = d["awacs_active"].cast<bool>();
+    pub.north_sea_oil_extra_ar      = d["north_sea_oil_extra_ar"].cast<bool>();
+    pub.glasnost_extra_ar           = d["glasnost_extra_ar"].cast<bool>();
+    pub.formosan_active             = d["formosan_active"].cast<bool>();
+    pub.cuban_missile_crisis_active = d["cuban_missile_crisis_active"].cast<bool>();
+    pub.vietnam_revolts_active      = d["vietnam_revolts_active"].cast<bool>();
+    pub.bear_trap_active            = d["bear_trap_active"].cast<bool>();
+    pub.quagmire_active             = d["quagmire_active"].cast<bool>();
+    pub.iran_hostage_crisis_active  = d["iran_hostage_crisis_active"].cast<bool>();
+    pub.handicap_ussr               = d["handicap_ussr"].cast<int>();
+    pub.handicap_us                 = d["handicap_us"].cast<int>();
+
+    auto ops_mod = d["ops_modifier"].cast<std::vector<int>>();
+    pub.ops_modifier[0] = ops_mod[0];
+    pub.ops_modifier[1] = ops_mod[1];
+
+    // --- Hands ---
+    for (int cid : d["ussr_hand"].cast<std::vector<int>>()) {
+        gs.hands[ts::to_index(ts::Side::USSR)].set(static_cast<size_t>(cid));
+    }
+    for (int cid : d["us_hand"].cast<std::vector<int>>()) {
+        gs.hands[ts::to_index(ts::Side::US)].set(static_cast<size_t>(cid));
+    }
+
+    // --- Deck ---
+    gs.deck = d["deck"].cast<std::vector<ts::CardId>>();
+
+    // --- China Card ownership ---
+    gs.ussr_holds_china = d["ussr_holds_china"].cast<bool>();
+    gs.us_holds_china   = d["us_holds_china"].cast<bool>();
+
+    // Game phase: assume Headline at start of turn
+    gs.phase        = ts::GamePhase::Headline;
+    gs.current_side = pub.phasing;
+    gs.ar_index     = 1;
+    gs.ars_taken    = {0, 0};
+
+    return gs;
+}
+
+// Run a heuristic (MinimalHybrid vs MinimalHybrid) game from a serialized
+// mid-game state dict.  Returns final_vp / 20.0 clamped to [-1, 1] from
+// USSR perspective.  Positive = USSR ahead.
+double play_from_public_state(const py::dict& state_dict, py::object seed_obj) {
+    ts::GameState gs = game_state_from_dict(state_dict);
+
+    std::optional<uint32_t> seed;
+    if (!seed_obj.is_none()) {
+        seed = seed_obj.cast<uint32_t>();
+    }
+
+    const ts::PolicyFn ussr_fn = [](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
+        return ts::choose_action(ts::PolicyKind::MinimalHybrid, pub, hand, holds_china, rng);
+    };
+    const ts::PolicyFn us_fn = [](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
+        return ts::choose_action(ts::PolicyKind::MinimalHybrid, pub, hand, holds_china, rng);
+    };
+
+    const ts::GameResult result = ts::play_game_from_mid_state_fn(std::move(gs), ussr_fn, us_fn, seed);
+    const double raw = static_cast<double>(result.final_vp) / 20.0;
+    return std::clamp(raw, -1.0, 1.0);
+}
+
 }  // namespace
 
 PYBIND11_MODULE(tscore, m) {
@@ -139,6 +262,16 @@ PYBIND11_MODULE(tscore, m) {
         .def_readonly("result", &ts::TracedGame::result);
 
     m.def("play_game", &ts::play_game, py::arg("ussr_policy"), py::arg("us_policy"), py::arg("seed") = py::none());
+    m.def(
+        "play_from_public_state",
+        [](const py::dict& state_dict, py::object seed_obj) {
+            return play_from_public_state(state_dict, seed_obj);
+        },
+        py::arg("state_dict"),
+        py::arg("seed") = py::none(),
+        "Run a MinimalHybrid vs MinimalHybrid heuristic game from a mid-game state dict.\n"
+        "Returns final_vp / 20.0 clamped to [-1, 1] (USSR perspective)."
+    );
     m.def(
         "play_traced_game",
         [](ts::PolicyKind ussr_policy, ts::PolicyKind us_policy, py::object seed_obj) {

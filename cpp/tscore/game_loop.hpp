@@ -98,6 +98,15 @@ GameResult play_game_from_state_fn(
     std::optional<uint32_t> seed = std::nullopt
 );
 
+// Like play_game_from_state_fn but continues from gs.pub.turn rather than
+// replaying from turn 1.  Used for mid-game rollouts (e.g. MCTS leaf eval).
+GameResult play_game_from_mid_state_fn(
+    GameState gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed = std::nullopt
+);
+
 TracedGame play_game_traced_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,

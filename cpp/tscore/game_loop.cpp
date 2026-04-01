@@ -1186,6 +1186,72 @@ TracedGame play_game_traced_from_state_fn(
     return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng);
 }
 
+GameResult play_game_from_mid_state_fn(
+    GameState gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed
+) {
+    Pcg64Rng rng(seed.value_or(std::random_device{}()));
+    const int start_turn = std::max(1, gs.pub.turn);
+
+    // For the first turn we are continuing mid-turn: skip era advancement and
+    // card dealing (the caller has already set up hands and deck).  For all
+    // subsequent turns we run the normal turn sequence including dealing.
+    for (int turn = start_turn; turn <= kMaxTurns; ++turn) {
+        gs.pub.turn = turn;
+
+        if (turn == start_turn) {
+            // Continuing mid-game: skip era advancement and card dealing.
+            // We run the headline phase and action rounds from whatever the
+            // current phase is.  Simplest: always run headline then action
+            // rounds; the caller should set gs.phase = Headline or ActionRound
+            // appropriately.  If mid-action-round, we still re-run the full
+            // round count; this is a slight over-estimate but acceptable for
+            // rollouts.
+        } else {
+            // Normal turn setup.
+            if (turn == kMidWarTurn) {
+                advance_to_mid_war(gs, rng);
+            } else if (turn == kLateWarTurn) {
+                advance_to_late_war(gs, rng);
+            }
+            deal_cards(gs, Side::USSR, rng);
+            deal_cards(gs, Side::US, rng);
+        }
+
+        if (auto result = run_headline_phase(gs, ussr_policy, us_policy, rng, nullptr); result.has_value()) {
+            return *result;
+        }
+        if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), nullptr); result.has_value()) {
+            return *result;
+        }
+        if (gs.pub.north_sea_oil_extra_ar) {
+            gs.pub.north_sea_oil_extra_ar = false;
+            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, nullptr); result.has_value()) {
+                return *result;
+            }
+        }
+        if (gs.pub.glasnost_extra_ar) {
+            gs.pub.glasnost_extra_ar = false;
+            if (auto result = run_extra_action_round(gs, Side::USSR, ussr_policy, rng, nullptr); result.has_value()) {
+                return *result;
+            }
+        }
+        if (auto result = end_of_turn(gs, turn); result.has_value()) {
+            return *result;
+        }
+    }
+
+    if (gs.pub.vp > 0) {
+        return GameResult{.winner = Side::USSR, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
+    }
+    if (gs.pub.vp < 0) {
+        return GameResult{.winner = Side::US, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
+    }
+    return GameResult{.winner = std::nullopt, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
+}
+
 TracedGame play_game_traced_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
     auto gs = reset_game(seed);
     Pcg64Rng runtime_rng(seed.value_or(std::random_device{}()));
