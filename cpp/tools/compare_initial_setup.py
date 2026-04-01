@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Compare Python and native initial setup state for a fixed seed."""
+"""Compare Python and native initial setup state for a fixed seed.
+
+This is the first parity gate for the native runtime: if setup diverges, later
+loop differences are not actionable.
+"""
 
 from __future__ import annotations
 

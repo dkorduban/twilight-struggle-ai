@@ -1,3 +1,6 @@
+// Public, online-safe board state shared across legality, policies, scoring,
+// and live loop control.
+
 #pragma once
 
 #include <array>

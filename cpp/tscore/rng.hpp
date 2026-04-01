@@ -1,3 +1,6 @@
+// Native PCG64 wrapper plus NumPy-compatible helpers used by seeded parity
+// work against Python's `default_rng`.
+
 #pragma once
 
 #include <algorithm>

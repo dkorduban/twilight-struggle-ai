@@ -1,3 +1,5 @@
+// Reproduce the native opening headline decision from an exact setup seed.
+
 #include <cstdint>
 #include <iostream>
 #include <optional>

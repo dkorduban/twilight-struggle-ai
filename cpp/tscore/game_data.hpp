@@ -1,3 +1,5 @@
+// Access to canonical card and country spec tables loaded from `data/spec`.
+
 #pragma once
 
 #include <array>
@@ -16,6 +18,7 @@ struct SpecTables {
     std::vector<CountryId> all_country_ids;
 };
 
+// Shared read-only spec accessors used throughout the native runtime.
 const SpecTables& specs();
 const CardSpec& card_spec(CardId card_id);
 bool has_card_spec(CardId card_id);

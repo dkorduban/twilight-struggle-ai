@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Compare Python and native opening headline choices on exact-matched setup."""
+"""Compare Python and native opening headline choices on exact-matched setup.
+
+This is a narrow parity tool: it assumes setup already matches and checks only
+the first headline decision for a fixed seed.
+"""
 
 from __future__ import annotations
 

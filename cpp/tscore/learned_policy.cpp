@@ -1,3 +1,6 @@
+// TorchScript model loading and native action selection for learned-policy
+// matchups and collection.
+
 #include "learned_policy.hpp"
 
 #if defined(TS_BUILD_TORCH_RUNTIME)
@@ -14,6 +17,8 @@
 namespace ts {
 namespace {
 
+// These feature shapes intentionally mirror the current Python baseline model
+// interface so exported TorchScript modules can be consumed natively.
 constexpr int kScalarDim = 11;
 constexpr int kCardMaskLen = kCardSlots;
 constexpr int kCountryMaskLen = kCountrySlots;

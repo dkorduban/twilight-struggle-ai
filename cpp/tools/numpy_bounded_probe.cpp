@@ -1,3 +1,6 @@
+// Probe NumPy's bounded-integer helpers directly against the native PCG64
+// wrapper to isolate RNG-compatibility bugs.
+
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -10,6 +13,8 @@
 
 namespace {
 
+// Mirror NumPy's bitgen callback shape so the probe can call its exported C
+// helpers without routing through Python-level Generator objects.
 struct NumpyBitgen {
     void* state;
     uint64_t (*next_uint64)(void* st);

@@ -1,3 +1,5 @@
+// Single-action application for the native engine, including event dispatch.
+
 #pragma once
 
 #include "legal_actions.hpp"

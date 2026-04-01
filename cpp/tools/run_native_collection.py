@@ -4,7 +4,8 @@
 Runs the native JSONL collector in bounded chunks so long jobs checkpoint to
 disk frequently instead of accumulating state in memory. The runner also checks
 basic host memory/swap pressure before each chunk and backs off by shrinking the
-next chunk when the machine is under stress.
+next chunk when the machine is under stress. It is intentionally conservative
+because the target environment is often WSL with limited effective headroom.
 """
 
 from __future__ import annotations

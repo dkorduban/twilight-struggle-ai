@@ -1,3 +1,5 @@
+// Native legality enumeration and factorized random sampling.
+
 #include "legal_actions.hpp"
 
 #include <algorithm>
@@ -8,6 +10,7 @@
 namespace ts {
 namespace {
 
+// DEFCON thresholds by region for coup/realignment restrictions.
 constexpr std::array<int, 7> kDefconRegionThreshold = {4, 3, 2, 1, 1, 1, 3};
 constexpr std::array<int, 8> kSpaceOpsMinimum = {2, 2, 2, 2, 3, 3, 3, 4};
 constexpr std::array<CountryId, 12> kNatoWe = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};

@@ -1,3 +1,6 @@
+# Core native Twilight Struggle library target. This is the hot-path runtime
+# that tools and bindings link against.
+
 add_library(tscore STATIC
     adjacency.cpp
     dice.cpp

@@ -1,3 +1,6 @@
+// Native whole-game loop implementation, including headline handling, extra
+// ARs, trap/NORAD hooks, and traced execution for parity work.
+
 #include "game_loop.hpp"
 
 #include "dice.hpp"
@@ -22,6 +25,7 @@ struct PendingHeadline {
     ActionEncoding action;
 };
 
+// Keep China-card ownership booleans synchronized with the public-state owner.
 void sync_china(GameState& gs) {
     gs.ussr_holds_china = gs.pub.china_held_by == Side::USSR;
     gs.us_holds_china = gs.pub.china_held_by == Side::US;
@@ -31,6 +35,8 @@ bool is_cat_c_card(CardId card_id) {
     return std::find(kCatCCardIds.begin(), kCatCCardIds.end(), card_id) != kCatCCardIds.end();
 }
 
+// Mirror Python card-lifecycle handling for cards that leave a hand due to a
+// live game effect rather than replay reduction.
 void card_played(PublicState& pub, CardId card_id, Side side) {
     if (pub.discard.test(card_id) || pub.removed.test(card_id)) {
         return;

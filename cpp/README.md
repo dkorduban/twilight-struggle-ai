@@ -12,6 +12,15 @@ Python live-play stack that can eventually replace Python in the hot path for:
 
 ETL is intentionally out of scope for this port.
 
+This README is the entrypoint for contributors working in `cpp/`. The detailed
+source files now carry top-level comments describing their local role, but this
+document is still the canonical summary of:
+
+- what the native port is trying to replace
+- which pieces are already fast-path ready
+- which parity gaps are still open
+- which tools are meant for throughput versus parity debugging
+
 ## Current Scope
 
 Implemented in C++ today:
@@ -111,6 +120,13 @@ Current intent:
 
 - Python remains the model-authoring / export side
 - C++ executes the model for hot-path play and collection
+
+When touching `cpp/`, the safest workflow is:
+
+1. reproduce behavior with one of the small parity or smoke tools
+2. make the smallest local engine or policy change
+3. rerun the narrowest relevant tool
+4. only then rerun broader native matchup or collection commands
 
 ## Validation / Smoke Tooling
 

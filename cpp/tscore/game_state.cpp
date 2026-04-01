@@ -1,3 +1,6 @@
+// Native mutable game-state construction, dealing, reshuffling, and era-deck
+// transitions.
+
 #include "game_state.hpp"
 
 #include "game_data.hpp"
@@ -5,6 +8,8 @@
 namespace ts {
 namespace {
 
+// Build the draw deck for all cards up to an era, excluding scoring cards and
+// anything already removed from the live game.
 std::vector<CardId> build_era_deck(Era era_max, const CardSet& removed) {
     std::vector<CardId> out;
     for (const auto card_id : all_card_ids()) {
@@ -27,6 +32,7 @@ void shuffle_vector(std::vector<CardId>& deck, Pcg64Rng& rng) {
     shuffle_with_numpy_rng(deck, rng);
 }
 
+// Reshuffle exactly from the public discard pile back into the hidden deck.
 void reshuffle(GameState& gs, Pcg64Rng& rng) {
     gs.deck.clear();
     for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {

@@ -1,3 +1,6 @@
+// Native policy entrypoints, including random sampling and the current
+// `minimal_hybrid` heuristic clone.
+
 #pragma once
 
 #include <optional>
@@ -13,6 +16,7 @@ enum class PolicyKind : uint8_t {
     MinimalHybrid = 1,
 };
 
+// Tunable weights for the current native heuristic policy.
 struct MinimalHybridParams {
     std::array<double, 7> early_region_weights = {0.85, 1.35, 1.10, 0.60, 0.55, 0.65, 1.25};
     std::array<double, 7> mid_region_weights = {0.95, 1.00, 1.00, 0.95, 1.20, 1.20, 0.90};

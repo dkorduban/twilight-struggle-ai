@@ -1,3 +1,5 @@
+// Parsing and caching of canonical card/country specification tables.
+
 #include "game_data.hpp"
 
 #include <algorithm>
@@ -11,6 +13,8 @@
 namespace ts {
 namespace {
 
+// Spec CSVs are simple enough that a tiny splitter is easier to audit than
+// pulling in a full CSV dependency.
 std::string trim(std::string value) {
     auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
     value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));

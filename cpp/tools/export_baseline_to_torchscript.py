@@ -3,7 +3,8 @@
 
 This stays under `cpp/tools` on purpose: the C++ runtime owns the deployment
 artifact contract even if the source checkpoint still comes from Python
-training.
+training. The exported module is the handoff point between Python training and
+native hot-path inference.
 """
 
 from __future__ import annotations

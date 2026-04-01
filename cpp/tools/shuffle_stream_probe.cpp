@@ -1,3 +1,6 @@
+// Compare post-shuffle RNG stream consumption for a few native shuffle
+// strategies against NumPy's behavior.
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -9,6 +12,8 @@
 
 namespace {
 
+// Trial variant that uses NumPy-style bounded integers but a hand-written
+// Fisher-Yates loop.
 void shuffle_with_bounded64(std::vector<int>& values, ts::Pcg64Rng& rng) {
     if (values.size() < 2) {
         return;
@@ -21,6 +26,7 @@ void shuffle_with_bounded64(std::vector<int>& values, ts::Pcg64Rng& rng) {
     }
 }
 
+// Trial variant that uses the older native bounded helper.
 void shuffle_with_native_bounded(std::vector<int>& values, ts::Pcg64Rng& rng) {
     if (values.size() < 2) {
         return;

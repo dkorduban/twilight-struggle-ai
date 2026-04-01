@@ -1,3 +1,5 @@
+// Mutable hidden-information game state used by the native live engine.
+
 #pragma once
 
 #include <array>
@@ -25,6 +27,8 @@ struct GameState {
     std::optional<Side> winner;
 };
 
+// Turn-specific constants and reset helpers used by normal play plus parity
+// tools that need exact setup control.
 int ars_for_turn(int turn);
 int hand_size_for_turn(int turn);
 GameState reset_game(std::optional<uint32_t> seed = std::nullopt);

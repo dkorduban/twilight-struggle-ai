@@ -1,3 +1,6 @@
+// Native implementations of the stochastic resolution helpers declared in
+// `dice.hpp`.
+
 #include "dice.hpp"
 
 #include <array>

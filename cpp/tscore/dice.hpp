@@ -1,3 +1,5 @@
+// Random resolution helpers for coups, realignments, wars, and space attempts.
+
 #pragma once
 
 #include <utility>

@@ -1,3 +1,5 @@
+// Run native learned-policy vs opponent-policy games from a TorchScript model.
+
 #include <chrono>
 #include <cstdint>
 #include <iostream>

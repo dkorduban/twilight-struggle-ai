@@ -1,3 +1,6 @@
+// Region scoring, final scoring, and board-control helpers for the native
+// engine.
+
 #include "scoring.hpp"
 
 #include <algorithm>
@@ -8,6 +11,7 @@
 namespace ts {
 namespace {
 
+// Europe control is modelled as a sentinel game-winning swing.
 constexpr int kGameWinEurope = 9999;
 
 struct RegionVp {

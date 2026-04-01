@@ -1,3 +1,6 @@
+// Emit native self-play rows in the JSONL shape used by downstream validation
+// and collection experiments.
+
 #include <cstdint>
 #include <fstream>
 #include <iostream>

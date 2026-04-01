@@ -1,3 +1,6 @@
+// Native whole-game orchestration: headline resolution, action rounds, extra
+// rounds, end-of-turn handling, and traced play helpers.
+
 #pragma once
 
 #include <array>
@@ -17,6 +20,7 @@ using PolicyFn = std::function<std::optional<ActionEncoding>(
     Pcg64Rng&
 )>;
 
+// One traced decision point plus the pre-action public state that produced it.
 struct StepTrace {
     int turn = 0;
     int ar = 0;
@@ -36,6 +40,8 @@ struct TracedGame {
     GameResult result;
 };
 
+// Public wrappers used by tools and bindings so they can drive the native loop
+// without duplicating phase logic.
 std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     GameState& gs,
     const ActionEncoding& action,

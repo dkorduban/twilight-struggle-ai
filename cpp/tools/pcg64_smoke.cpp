@@ -1,3 +1,5 @@
+// Small executable that sanity-checks the native PCG64 wrapper.
+
 #include <cstdlib>
 #include <iostream>
 #include <string>

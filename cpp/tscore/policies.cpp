@@ -1,3 +1,6 @@
+// Native heuristic-policy implementation. This file is intentionally verbose:
+// parity/debuggability matters more than minimizing helper count here.
+
 #include "policies.hpp"
 
 #include <algorithm>
@@ -12,6 +15,7 @@
 namespace ts {
 namespace {
 
+// Turn buckets roughly matching the Python heuristic's early/mid/late staging.
 constexpr int kEarlyLastTurn = 3;
 constexpr int kMidLastTurn = 7;
 constexpr CountryId kThailandId = 79;

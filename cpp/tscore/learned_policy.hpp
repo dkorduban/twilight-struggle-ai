@@ -1,3 +1,5 @@
+// TorchScript-backed policy wrapper for native learned-policy inference.
+
 #pragma once
 
 #include <optional>

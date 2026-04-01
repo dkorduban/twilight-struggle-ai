@@ -1,3 +1,5 @@
+// Single-action application and event dispatch for the native engine.
+
 #include "step.hpp"
 
 #include <algorithm>
@@ -9,6 +11,7 @@
 namespace ts {
 namespace {
 
+// Card-group constants used by event implementations below.
 constexpr std::array<CardId, 5> kWarCardIds = {11, 13, 24, 39, 105};
 constexpr std::array<CountryId, 7> kEasternBlocIds = {3, 5, 9, 12, 13, 19, 83};
 constexpr std::array<CountryId, 12> kWesternEuropeIds = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};

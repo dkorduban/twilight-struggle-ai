@@ -25,6 +25,10 @@
 // IMPORTANT: Never store or derive fields from OfflineSmoothedLabels here.
 // This struct is the online inference state; leaking offline-smoothed labels
 // would invalidate correctness guarantees during self-play and evaluation.
+//
+// This header is currently shared documentation plus the storage type. The
+// live C++ engine does not fully use it yet, but the contract is kept here so
+// future hidden-information work does not drift from the Python semantics.
 // ---------------------------------------------------------------------------
 
 namespace ts {

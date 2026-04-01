@@ -1,3 +1,5 @@
+// Loading and caching of the canonical country adjacency graph.
+
 #include "adjacency.hpp"
 
 #include <algorithm>
@@ -11,6 +13,7 @@
 namespace ts {
 namespace {
 
+// Read the spec adjacency CSV once and normalize each neighbor list.
 AdjacencyMap load_adjacency() {
     AdjacencyMap map;
     std::ifstream input(spec_dir() / "adjacency.csv");

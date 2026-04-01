@@ -1,3 +1,5 @@
+// Targeted smoke coverage for Cat C hand/deck-manipulation events.
+
 #include <cstdlib>
 #include <iostream>
 #include <optional>

@@ -1,3 +1,6 @@
+// Collect whole-game native traces as JSONL for parity debugging and offline
+// inspection.
+
 #include <cstdint>
 #include <fstream>
 #include <iostream>

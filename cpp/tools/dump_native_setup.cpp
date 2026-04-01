@@ -1,6 +1,9 @@
+// Dump the native opening setup for a given seed so it can be compared against
+// Python setup state.
+
 #include <cstdint>
-#include <optional>
 #include <iostream>
+#include <optional>
 #include <string>
 
 #include "game_data.hpp"
@@ -9,6 +12,7 @@
 
 namespace {
 
+// Rebuild the early-war draw deck in spec order before any shuffle is applied.
 std::vector<ts::CardId> build_early_deck() {
     std::vector<ts::CardId> deck;
     for (const auto card_id : ts::all_card_ids()) {

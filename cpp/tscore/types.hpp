@@ -1,3 +1,5 @@
+// Shared native engine enums, aliases, and fixed-size container definitions.
+
 #pragma once
 
 #include <array>

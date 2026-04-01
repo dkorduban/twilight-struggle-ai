@@ -1,3 +1,5 @@
+// Region scoring and final-scoring helpers for the native engine.
+
 #pragma once
 
 #include "public_state.hpp"

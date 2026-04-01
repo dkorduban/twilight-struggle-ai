@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """Compare native C++ and Python game-loop outcomes on fixed seeds/policies.
 
-This is a validation/reporting tool, not an exact-proof harness. It reports how
-often the native trace prefix matches the Python trace and where the first
-divergence appears, so native parity work can be driven by concrete seeds.
+This is a parity triage tool rather than a formal proof harness. It answers the
+practical question "how far does the native trace stay aligned before drifting?"
+and writes the first mismatch in a compact machine-readable form so the next C++
+fix can be driven by a concrete seed and action prefix.
+
+Two execution modes matter:
+
+- normal mode exercises the default native reset/play path
+- ``--exact-setup`` forces native traced play to start from NumPy-compatible
+  seed words so setup and opening headline drift can be separated from later
+  runtime RNG or event-semantics drift
 """
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+// Native PCG64 implementation plus NumPy/Python interop used for exact seeded
+// parity with the Python runtime.
+
 #include "rng.hpp"
 
 #include <Python.h>
@@ -11,6 +14,7 @@
 namespace ts {
 namespace {
 
+// NumPy's PCG64 is a 128-bit LCG with XSL-RR output.
 constexpr Uint128 kMask64 = (static_cast<Uint128>(1) << 64) - 1;
 constexpr Uint128 kMask128 = ~static_cast<Uint128>(0);
 constexpr Uint128 kMultiplier = (static_cast<Uint128>(0x2360ed051fc65da4ULL) << 64) | 0x4385df649fccf645ULL;
@@ -70,6 +74,9 @@ struct NumpyRandomApi {
     bool loaded = false;
 };
 
+// Lazily resolve NumPy's exported bounded-integer helpers so the native runtime
+// can match Python sampling behavior without requiring a Python Generator in the
+// hot path.
 NumpyRandomApi& numpy_random_api() {
     static NumpyRandomApi api;
     static std::once_flag once;

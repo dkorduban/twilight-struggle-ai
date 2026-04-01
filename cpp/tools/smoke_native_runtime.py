@@ -2,7 +2,8 @@
 """Small-scale smoke validation for the native C++ runtime.
 
 This deliberately lives under cpp/tools so validation logic can evolve with the
-native runtime without depending on the Python research loop.
+native runtime without depending on the Python research loop. It exercises the
+native bindings and collection tooling end-to-end on small seeds.
 """
 
 from __future__ import annotations

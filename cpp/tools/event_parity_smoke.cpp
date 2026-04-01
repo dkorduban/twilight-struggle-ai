@@ -1,3 +1,5 @@
+// Focused event-level regression checks for the native step/event layer.
+
 #include <cstdlib>
 #include <iostream>
 #include <optional>

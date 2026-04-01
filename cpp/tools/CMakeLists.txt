@@ -1,3 +1,8 @@
+# Native helper binaries used for benchmarking, collection, and parity work.
+# These intentionally stay small and single-purpose so they can be composed in
+# shell/Python workflows without pulling the full Python engine into the hot
+# path.
+
 add_executable(ts_benchmark_matchup
     benchmark_matchup.cpp
 )

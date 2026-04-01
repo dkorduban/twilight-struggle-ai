@@ -1,3 +1,6 @@
+// Smoke coverage for higher-level loop mechanics such as headline ordering,
+// extra AR handling, NORAD, and trap resolution.
+
 #include <cstdlib>
 #include <iostream>
 #include <optional>

@@ -1,5 +1,7 @@
+// Placeholder implementation unit for PublicState helpers and future hashing
+// utilities.
+
 #include "public_state.hpp"
 
-// Implementation of PublicState utilities lives here.
-// The struct itself is a plain-data aggregate; this file is a stub that will
-// grow as the reducer and hashing logic are added.
+// The struct itself is still mostly a plain-data aggregate, so this file stays
+// intentionally small until more shared utilities migrate out of headers.

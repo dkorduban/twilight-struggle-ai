@@ -1,3 +1,5 @@
+// Benchmark native policy-vs-policy matchups without involving the Python loop.
+
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -9,6 +11,7 @@
 
 namespace {
 
+// Keep CLI parsing minimal: these tools are for local iteration, not a public API.
 ts::PolicyKind parse_policy(std::string_view name) {
     if (name == "random") {
         return ts::PolicyKind::Random;
