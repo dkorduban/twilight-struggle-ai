@@ -1,4 +1,4 @@
-"""Parse /tmp/pipeline_vN.log files and plot all training metrics + benchmarks.
+"""Parse logs/pipeline_vN.log files and plot all training metrics + benchmarks.
 
 Usage
 -----
@@ -44,7 +44,7 @@ def parse_log(path: str) -> dict[int, dict[str, float]]:
 def load_versions(versions: list[int]) -> dict[int, dict[int, dict[str, float]]]:
     data: dict[int, dict[int, dict[str, float]]] = {}
     for v in versions:
-        path = f"/tmp/pipeline_v{v}.log"
+        path = f"logs/pipeline_v{v}.log"
         if not Path(path).exists():
             continue
         parsed = parse_log(path)
@@ -101,10 +101,10 @@ def load_benchmarks(versions: list[int]) -> dict[int, dict[str, float]]:
             continue  # already loaded from durable history
         # Prefer largest standalone benchmark log (500g > 200g > pipeline)
         candidates = [
-            f"/tmp/benchmark_v{v}_500g.log",
-            f"/tmp/benchmark_v{v}_200g.log",
-            f"/tmp/benchmark_v{v}.log",
-            f"/tmp/pipeline_v{v}.log",
+            f"logs/benchmark_v{v}_500g.log",
+            f"logs/benchmark_v{v}_200g.log",
+            f"logs/benchmark_v{v}.log",
+            f"logs/pipeline_v{v}.log",
         ]
         for path in candidates:
             if not Path(path).exists():
@@ -268,7 +268,7 @@ def main() -> None:
     else:
         seen = set()
         # Primary: /tmp pipeline logs (have epoch-level training metrics)
-        for p in glob.glob("/tmp/pipeline_v*.log"):
+        for p in glob.glob("logs/pipeline_v*.log"):
             m = re.search(r"v(\d+)", p)
             if m and "launch" not in p:
                 seen.add(int(m.group(1)))

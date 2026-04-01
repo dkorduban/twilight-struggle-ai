@@ -32,18 +32,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-LOG=/tmp/pipeline_v${N}.log
-exec >> "$LOG" 2>&1
-
 cd /home/dkord/code/twilight-struggle-ai
+
+LOG=logs/pipeline_v${N}.log
+mkdir -p logs
+exec >> "$LOG" 2>&1
 
 echo "=== v${N} pipeline started at $(date) ==="
 
 COMBINED=data/combined_v${N}
 CKPT_DIR=data/checkpoints/retrain_v${N}
 CKPT=${CKPT_DIR}/baseline_best.pt
-BENCH_LOG=/tmp/benchmark_v${N}.log
-MONITOR_LOG=/tmp/monitor_v${N}.log
+BENCH_LOG=logs/benchmark_v${N}.log
+MONITOR_LOG=logs/monitor_v${N}.log
 VSH_SEED=$(( SEED_BASE + N * 1000 + 500 ))
 VSH_OUT=data/selfplay/learned_v${N}_vs_heuristic_${GAMES_VSH}g_seed${VSH_SEED}.parquet
 
@@ -72,7 +73,7 @@ if [ ! -f "$CKPT" ]; then
         --weight-decay 1e-4 --dropout 0.1 --label-smoothing 0.05 \
         --value-target final_vp --num-workers 0 --pin-memory --amp --one-cycle \
         --patience 12 --advantage-weight 0.5 \
-        2>&1 | tee /tmp/train_v${N}.log
+        2>&1 | tee logs/train_v${N}.log
     echo "[$(date)] v${N} training done."
 else
     echo "[$(date)] Checkpoint already exists, skipping training."
@@ -127,7 +128,7 @@ if [ ! -f "$VSH_OUT" ]; then
             --checkpoint "$CKPT" --n-games "$GAMES_VSH" --workers 16 \
             --seed "$VSH_SEED" --out "$VSH_OUT" \
             --value-guided --value-guided-k 4 \
-            2>&1 | tee /tmp/collect_v${N}_vs_heuristic.log
+            2>&1 | tee logs/collect_v${N}_vs_heuristic.log
         echo "[$(date)] v${N}-vs-heuristic collection done."
 
         # ── Validate DEFCON-1 rate in collected data ──────────────────────────
@@ -157,7 +158,7 @@ print(f'{defcon1/total*100:.1f}')
             --input "$VSH_OUT" \
             --output "$VSH_FILTERED" \
             --max-defcon1-pct 15 \
-            2>&1 | tee /tmp/filter_v${N}.log
+            2>&1 | tee logs/filter_v${N}.log
         echo "[$(date)] Filter done."
 
         # ── Build combined_v(N+1) and launch next generation ─────────────────
