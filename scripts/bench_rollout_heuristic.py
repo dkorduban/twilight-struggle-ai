@@ -217,8 +217,15 @@ def play_game_with_rollout_mcts(
     opponent_policy: Policy,
     candidate_fn=None,
     c: float = 1.41,
+    use_cpp_rollout: bool = False,
 ) -> GameResult:
-    """Play one game with heuristic-rollout UCT on mcts_side."""
+    """Play one game with heuristic-rollout UCT on mcts_side.
+
+    Args:
+        use_cpp_rollout: If True, use C++ MinimalHybrid rollouts (~10x faster than
+            Python heuristic). Requires tscore C++ extension.  Falls back to
+            rollout_policy if tscore is unavailable.
+    """
     from tsrl.engine.game_loop import (
         _MID_WAR_TURN,
         _LATE_WAR_TURN,
@@ -247,11 +254,11 @@ def play_game_with_rollout_mcts(
 
         gs_snap = clone_game_state(gs)
         gs_snap.hands[side] = hand
-        # Key: pass rollout_policy, omit value_fn and batch_value_fn
         action = uct_mcts(
             gs_snap, n_sim,
             c=c,
-            rollout_policy=rollout_policy,
+            rollout_policy=None if use_cpp_rollout else rollout_policy,
+            use_cpp_rollout=use_cpp_rollout,
             candidate_fn=candidate_fn,
             rng=rng,
         )
@@ -374,6 +381,14 @@ def main():
     parser.add_argument("--n-candidates", type=int, default=8, help="Max root children")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--c", type=float, default=1.41, help="UCB1 exploration constant")
+    parser.add_argument(
+        "--use-cpp-rollout", action="store_true", default=True,
+        help="Use C++ MinimalHybrid rollouts (~10x faster; default: on)",
+    )
+    parser.add_argument(
+        "--no-cpp-rollout", dest="use_cpp_rollout", action="store_false",
+        help="Disable C++ rollouts, use Python heuristic (slow)",
+    )
     args = parser.parse_args()
 
     checkpoint_path = _find_checkpoint(args.checkpoint)
@@ -394,7 +409,8 @@ def main():
         has_strategy_heads=has_strategy_heads,
     )
 
-    print(f"\n=== Experiment: heuristic-rollout MCTS (n_sim={args.n_sim}) vs heuristic ===")
+    rollout_mode = "cpp" if args.use_cpp_rollout else "python_heuristic"
+    print(f"\n=== Experiment: heuristic-rollout MCTS (n_sim={args.n_sim}, rollout={rollout_mode}) vs heuristic ===")
     print(f"  n_games={args.n_games}  n_candidates={args.n_candidates}  c={args.c}  seed={args.seed}")
     print()
 
@@ -410,6 +426,7 @@ def main():
             opponent_policy=heuristic_pol,
             candidate_fn=candidate_fn,
             c=args.c,
+            use_cpp_rollout=args.use_cpp_rollout,
         )
 
     result_mcts = run_matchup(
@@ -424,11 +441,10 @@ def main():
 
     def _learned_game(seed, mcts_side):
         # Use play_game directly; learned plays mcts_side, heuristic plays the other
-        rng = make_rng(seed)
         if mcts_side == Side.USSR:
-            return play_game(learned_pol_ussr, heuristic_pol, rng=rng)
+            return play_game(learned_pol_ussr, heuristic_pol, seed=seed)
         else:
-            return play_game(heuristic_pol, learned_pol_us, rng=rng)
+            return play_game(heuristic_pol, learned_pol_us, seed=seed)
 
     result_learned = run_matchup(
         "learned(n=0) vs heuristic",
