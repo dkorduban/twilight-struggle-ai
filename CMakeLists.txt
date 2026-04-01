@@ -21,9 +21,24 @@ include(GNUInstallDirs)
 
 # Default build type guard (useful when configuring without -DCMAKE_BUILD_TYPE).
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    message(STATUS "No build type specified; defaulting to RelWithDebInfo")
-    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+    message(STATUS "No build type specified; defaulting to Release")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
+
+# ---------------------------------------------------------------------------
+# Optimization flags — applied to the hot-path tscore library and all tools.
+# -O3          : full optimization (vs -O2 in RelWithDebInfo)
+# -march=native: tune for the build machine's exact ISA (enables AVX2/AVX-512
+#                where available — confirmed RTX 3050 host has AVX2)
+# -fno-math-errno: safe fast-math subset; lets compiler fold sqrt/log without
+#                  errno checks. Avoids -ffast-math which breaks IEEE NaN/Inf
+#                  handling that PCG64 and TS scoring rely on.
+# ---------------------------------------------------------------------------
+add_compile_options(
+    $<$<COMPILE_LANGUAGE:CXX>:-O3>
+    $<$<COMPILE_LANGUAGE:CXX>:-march=native>
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-math-errno>
+)
 
 # ---------------------------------------------------------------------------
 # Dependencies
