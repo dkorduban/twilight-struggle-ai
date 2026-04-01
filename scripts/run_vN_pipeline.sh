@@ -68,6 +68,7 @@ if [ ! -f "$CKPT" ]; then
     nice -n 10 uv run python scripts/train_baseline.py \
         --data-dir "$COMBINED" \
         --out-dir "$CKPT_DIR" \
+        --model-type full_embed \
         --epochs 120 --batch-size 8192 --lr 2.4e-3 \
         --weight-decay 1e-4 --dropout 0.1 --label-smoothing 0.05 \
         --value-target final_vp --num-workers 0 --pin-memory --amp --one-cycle \
