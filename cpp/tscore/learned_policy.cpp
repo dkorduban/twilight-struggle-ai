@@ -13,6 +13,7 @@
 #include <torch/torch.h>
 
 #include "game_data.hpp"
+#include "policies.hpp"
 
 namespace ts {
 namespace {
@@ -201,10 +202,81 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
     const auto strategy_logits_raw = get_tensor(outputs, "strategy_logits", false);
     const auto country_strategy_logits_raw = get_tensor(outputs, "country_strategy_logits", false);
 
+    // Cards whose event drops DEFCON or triggers a coup as part of the effect.
+    // Must be kept in sync with the mode guard below.
+    static constexpr std::array<int, 13> kDefconLoweringCards = {
+        4,   // Duck and Cover (US): lowers DEFCON
+        11,  // Korean War (USSR): coup in Korea
+        13,  // Arab-Israeli War (USSR): coup in Israel
+        20,  // Olympic Games (Neutral): DEFCON drops on boycott
+        24,  // Indo-Pakistani War (USSR): coup
+        39,  // Brush War (USSR): free coup in non-BG
+        48,  // Summit (Neutral): can lower DEFCON
+        49,  // How I Learned to Stop Worrying (USSR): free coup
+        50,  // Junta (Neutral): free coup in Central/South America
+        53,  // We Will Bury You (USSR): lowers DEFCON
+        83,  // Che (USSR): free coup in Latin America / Africa
+        92,  // SALT Negotiations (Neutral): affects DEFCON
+        105, // Iran-Iraq War (USSR): war / coup
+    };
+
     auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
     for (const auto card_id : playable) {
+        // DEFCON safety at card-selection level: opponent-owned danger cards cannot be
+        // played safely because their event fires automatically (regardless of selected
+        // mode), dropping DEFCON by 1.
+        //
+        // At DEFCON 2: any ops mode or Event with an opponent danger card = instant loss.
+        //
+        // At DEFCON 3 during headline (ar=0): the opponent's headline may fire first
+        // and drop DEFCON to 2; if our headline then fires a DEFCON-lowering event, it
+        // drops to 1 = nuclear war.  Block opponent danger cards in headline at DEFCON 3.
+        const bool in_danger_list = std::find(
+            kDefconLoweringCards.begin(), kDefconLoweringCards.end(),
+            static_cast<int>(card_id)
+        ) != kDefconLoweringCards.end();
+        if (in_danger_list) {
+            const auto& card_info = card_spec(card_id);
+            const bool is_opponent_card = (card_info.side != side && card_info.side != Side::Neutral);
+            const bool is_neutral_card = (card_info.side == Side::Neutral);
+            if (is_opponent_card) {
+                // Opponent danger card: event fires for any ops mode → always unsafe at DEFCON 2.
+                if (pub.defcon <= 2) {
+                    continue;  // leave as -inf
+                }
+                // Headline at DEFCON 3: opponent headline may fire first → DEFCON 2
+                // → our event fires at DEFCON 2 → DEFCON-1.
+                if (pub.defcon == 3 && pub.ar == 0) {
+                    continue;  // leave as -inf
+                }
+            }
+            if (is_neutral_card && pub.ar == 0) {
+                // Neutral danger card played as headline Event at DEFCON 2 can lower
+                // DEFCON to 1.  Also block at DEFCON 3 headline since the opponent's
+                // headline may fire first and drop DEFCON to 2.
+                if (pub.defcon <= 3) {
+                    continue;  // leave as -inf
+                }
+            }
+        }
         const auto index = static_cast<int64_t>(card_id - 1);
         masked_card.index_put_({index}, tensor_at(card_logits, index));
+    }
+    // If all cards were masked (e.g. full hand is opponent danger cards at DEFCON 2),
+    // delegate to MinimalHybrid which has its own DEFCON safety logic.
+    // Do NOT restore opponent danger cards — that would allow DEFCON-lowering events.
+    {
+        auto all_masked = true;
+        for (const auto card_id : playable) {
+            const auto index = static_cast<int64_t>(card_id - 1);
+            if (tensor_at(masked_card, index).item<float>() > -std::numeric_limits<float>::infinity()) {
+                all_masked = false;
+                break;
+            }
+        }
+        if (all_masked) {
+            return ts::choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng);
+        }
     }
     auto sampled_card_id = static_cast<CardId>(masked_card.argmax(/*dim=*/0).item<int64_t>() + 1);
 
@@ -219,6 +291,7 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
     }
     auto mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
 
+    // DEFCON safety: never coup at DEFCON 2 (drops to 1 = instant loss).
     if (mode == ActionMode::Coup && pub.defcon <= 2) {
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
         if (modes.empty()) {
@@ -230,6 +303,61 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
             masked_mode.index_put_({index}, tensor_at(mode_logits, index));
         }
         mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+    }
+
+    // DEFCON safety: never fire an event that lowers DEFCON or triggers a coup
+    // when DEFCON is already at 2 — that would drop to 1 and trigger nuclear war.
+    // kDefconLoweringCards is defined above in the card-selection block.
+    const bool is_defcon_lowering = pub.defcon <= 2 &&
+        mode == ActionMode::Event &&
+        std::find(kDefconLoweringCards.begin(), kDefconLoweringCards.end(), static_cast<int>(sampled_card_id))
+            != kDefconLoweringCards.end();
+    if (is_defcon_lowering) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
+        if (modes.empty()) {
+            return std::nullopt;
+        }
+        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        for (const auto legal_mode : modes) {
+            const auto index = static_cast<int64_t>(static_cast<int>(legal_mode));
+            masked_mode.index_put_({index}, tensor_at(mode_logits, index));
+        }
+        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+    }
+
+    // Re-apply coup guard: the event guard above may have changed mode to Coup.
+    // Any coup at DEFCON 2 drops DEFCON to 1 (instant loss for phasing player).
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
+        if (modes.empty()) {
+            return std::nullopt;
+        }
+        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        for (const auto legal_mode : modes) {
+            const auto index = static_cast<int64_t>(static_cast<int>(legal_mode));
+            masked_mode.index_put_({index}, tensor_at(mode_logits, index));
+        }
+        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+    }
+
+    // Belt-and-suspenders DEFCON safety gate (covers all modes).
+    // Playing an opponent-owned danger card via ops (Influence/Coup/Realign/Space)
+    // fires the event automatically, potentially dropping DEFCON.
+    if (pub.defcon <= 2) {
+        const bool in_danger = std::find(
+            kDefconLoweringCards.begin(), kDefconLoweringCards.end(),
+            static_cast<int>(sampled_card_id)
+        ) != kDefconLoweringCards.end();
+        if (in_danger) {
+            const auto& ci = card_spec(sampled_card_id);
+            const bool event_fires_for_any_mode = (ci.side != side && ci.side != Side::Neutral);
+            const bool event_fires_for_event_space =
+                (mode == ActionMode::Event) ||
+                (mode == ActionMode::Space && event_fires_for_any_mode);
+            if (event_fires_for_any_mode || event_fires_for_event_space) {
+                return ts::choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng);
+            }
+        }
     }
 
     if (mode == ActionMode::Event || mode == ActionMode::Space) {
@@ -254,7 +382,29 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
         }
     }
 
-    return sample_action(hand, pub, side, holds_china, rng);
+    // Fallback: no country head or it returned no targets. Sample countries
+    // randomly for the already DEFCON-safe (sampled_card_id, mode) pair instead
+    // of calling sample_action(), which would pick an entirely new action and
+    // could violate the DEFCON guards applied above.
+    {
+        const auto accessible = accessible_countries_filtered(pub, side, sampled_card_id, mode);
+        if (!accessible.empty()) {
+            if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
+                const auto target = accessible[rng.choice_index(accessible.size())];
+                return ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {target}};
+            }
+            // Influence: distribute ops uniformly at random.
+            const auto ops = effective_ops(sampled_card_id, pub, side);
+            ActionEncoding action{.card_id = sampled_card_id, .mode = mode, .targets = {}};
+            for (int i = 0; i < ops; ++i) {
+                action.targets.push_back(accessible[rng.choice_index(accessible.size())]);
+            }
+            return action;
+        }
+    }
+    // Ultimate fallback: model produced no valid target countries for the chosen card+mode.
+    // Use the heuristic (DEFCON-safe) instead of pure random, which could violate DEFCON safety.
+    return ts::choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng);
 }
 
 }  // namespace ts

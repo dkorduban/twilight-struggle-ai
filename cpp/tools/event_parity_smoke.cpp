@@ -28,7 +28,7 @@ void require(bool condition, const std::string& message) {
 }
 
 PublicState apply_event(PublicState pub, ts::CardId card_id, Side side, uint32_t seed) {
-    std::mt19937 rng(seed);
+    ts::Pcg64Rng rng(seed);
     const auto [next, over, winner] = ts::apply_action(
         pub,
         ActionEncoding{
@@ -45,7 +45,7 @@ PublicState apply_event(PublicState pub, ts::CardId card_id, Side side, uint32_t
 }
 
 std::tuple<PublicState, bool, std::optional<Side>> apply_event_result(PublicState pub, ts::CardId card_id, Side side, uint32_t seed) {
-    std::mt19937 rng(seed);
+    ts::Pcg64Rng rng(seed);
     return ts::apply_action(
         pub,
         ActionEncoding{

@@ -196,6 +196,19 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
     const auto& card = card_spec(action.card_id);
 
     if (action.mode == ActionMode::Space) {
+        // Space Race with opponent's card: the opponent's event fires automatically.
+        // At DEFCON 2, a dangerous event drops DEFCON to 1 = instant loss.
+        if (pub.defcon <= 2 && card.side != side && card.side != Side::Neutral) {
+            if (contains(kDefconLoweringCards, action.card_id) ||
+                contains(kDefconRandomCoupCards, action.card_id)) {
+                return -kDefcon2BattlegroundSuicidePenalty;
+            }
+        }
+        // At DEFCON 3, Che (double-coup risk) via Space is also dangerous.
+        if (pub.defcon == 3 && card.side != side && card.side != Side::Neutral &&
+            static_cast<int>(action.card_id) == 83) {
+            return -kDefcon2BattlegroundSuicidePenalty;
+        }
         return 0.0;
     }
 
@@ -238,6 +251,12 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
                 return -kDefcon2BattlegroundSuicidePenalty;
             }
             if (pub.defcon == 3) {
+                // Che (83) fires TWO sequential coups: DEFCON 3→2 (first coup) then 2→1 if
+                // the first succeeds (second coup) = instant nuclear war chain.
+                // Hard-block Event mode for Che at DEFCON 3.
+                if (static_cast<int>(action.card_id) == 83) {
+                    return -kDefcon2BattlegroundSuicidePenalty;
+                }
                 return -kDefconRandomCoupDefcon3Penalty;
             }
         }
@@ -408,7 +427,9 @@ double score_coup(const DecisionContext& context, CountryId country_id, int ops)
         if (pub.defcon == 3) {
             score += kDefcon3NonBgSafeCoupBonus;
         } else if (pub.defcon == 2) {
-            score += kDefcon2NonBgSafeCoupBonus;
+            // Any coup at DEFCON 2 drops DEFCON to 1 = instant loss for phasing player.
+            // Non-BG coups are NOT safer than BG coups here — apply the same hard penalty.
+            score -= kDefcon2BattlegroundSuicidePenalty;
         }
     }
 

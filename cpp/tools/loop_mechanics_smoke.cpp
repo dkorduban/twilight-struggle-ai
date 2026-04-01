@@ -48,7 +48,7 @@ void test_norad_resolution() {
     gs.pub.set_influence(Side::US, 22, 2);
     const auto before_total = total_us_influence(gs.pub);
 
-    std::mt19937 rng(11U);
+    ts::Pcg64Rng rng(11U);
     auto result = ts::resolve_norad_live(gs, rng);
     require(result.has_value(), "NORAD should resolve when the US has eligible influence");
     require(total_us_influence(gs.pub) == before_total + 1, "NORAD should add exactly one US influence");
@@ -57,7 +57,7 @@ void test_norad_resolution() {
 }
 
 PolicyFn min_space_policy() {
-    return [](const PublicState&, const ts::CardSet& hand, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+    return [](const PublicState&, const ts::CardSet& hand, bool, ts::Pcg64Rng&) -> std::optional<ActionEncoding> {
         for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
             if (hand.test(card_id)) {
                 return ActionEncoding{
@@ -81,7 +81,7 @@ void test_trap_resolution() {
     bool saw_fail = false;
     for (uint32_t seed = 1; seed <= 64 && (!saw_escape || !saw_fail); ++seed) {
         auto probe = gs;
-        std::mt19937 rng(seed);
+        ts::Pcg64Rng rng(seed);
         auto result = ts::resolve_trap_ar_live(probe, Side::USSR, rng);
         require(result.has_value(), "Bear Trap should consume an AR when active");
         require(ts::hand_count(probe.hands[ts::to_index(Side::USSR)]) == 1, "Trap resolution should discard exactly one eligible card");
@@ -107,15 +107,15 @@ void test_headline_order_and_defectors() {
     gs.ussr_holds_china = false;
     gs.us_holds_china = false;
 
-    const PolicyFn ussr_policy = [](const PublicState&, const ts::CardSet&, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+    const PolicyFn ussr_policy = [](const PublicState&, const ts::CardSet&, bool, ts::Pcg64Rng&) -> std::optional<ActionEncoding> {
         return ActionEncoding{.card_id = 12, .mode = ActionMode::Event, .targets = {}};
     };
-    const PolicyFn us_policy = [](const PublicState&, const ts::CardSet&, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+    const PolicyFn us_policy = [](const PublicState&, const ts::CardSet&, bool, ts::Pcg64Rng&) -> std::optional<ActionEncoding> {
         return ActionEncoding{.card_id = 21, .mode = ActionMode::Event, .targets = {}};
     };
 
     std::vector<StepTrace> trace_steps;
-    std::mt19937 rng(1U);
+    ts::Pcg64Rng rng(1U);
     auto result = ts::run_headline_phase_live(gs, ussr_policy, us_policy, rng, &trace_steps);
     require(!result.has_value(), "Simple headline ordering smoke should not end the game");
     require(trace_steps.size() == 2, "Headline phase should trace both headline actions");
@@ -131,15 +131,15 @@ void test_headline_order_and_defectors() {
     gs.ussr_holds_china = false;
     gs.us_holds_china = false;
 
-    const PolicyFn fidel_policy = [](const PublicState&, const ts::CardSet&, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+    const PolicyFn fidel_policy = [](const PublicState&, const ts::CardSet&, bool, ts::Pcg64Rng&) -> std::optional<ActionEncoding> {
         return ActionEncoding{.card_id = 8, .mode = ActionMode::Event, .targets = {}};
     };
-    const PolicyFn defectors_policy = [](const PublicState&, const ts::CardSet&, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+    const PolicyFn defectors_policy = [](const PublicState&, const ts::CardSet&, bool, ts::Pcg64Rng&) -> std::optional<ActionEncoding> {
         return ActionEncoding{.card_id = 108, .mode = ActionMode::Event, .targets = {}};
     };
 
     trace_steps.clear();
-    std::mt19937 rng2(2U);
+    ts::Pcg64Rng rng2(2U);
     result = ts::run_headline_phase_live(gs, fidel_policy, defectors_policy, rng2, &trace_steps);
     require(!result.has_value(), "Defectors headline smoke should not end the game");
     require(gs.pub.influence_of(Side::USSR, 36) == 0, "Defectors headline should cancel the USSR headline event effect");
@@ -154,7 +154,7 @@ void test_space_level6_discard() {
     gs.hands[ts::to_index(Side::US)].set(7);
     gs.hands[ts::to_index(Side::US)].set(8);
 
-    std::mt19937 rng(7U);
+    ts::Pcg64Rng rng(7U);
     auto result = ts::apply_action_live(
         gs,
         ActionEncoding{
@@ -188,7 +188,7 @@ void test_norad_action_round_gate() {
 
     auto policy = min_space_policy();
     const auto italy_before = gs.pub.influence_of(Side::US, 10);
-    std::mt19937 rng(3U);
+    ts::Pcg64Rng rng(3U);
     auto result = ts::run_action_rounds_live(gs, policy, policy, rng, 1, nullptr);
     require(!result.has_value(), "NORAD gate smoke should not end the game");
     require(gs.pub.influence_of(Side::US, 10) == italy_before + 1, "NORAD should add one US influence after a USSR AR at DEFCON 2");
@@ -209,7 +209,7 @@ void test_norad_action_round_gate() {
     gs.us_holds_china = false;
 
     const auto italy_before_defcon3 = gs.pub.influence_of(Side::US, 10);
-    std::mt19937 rng_defcon3(4U);
+    ts::Pcg64Rng rng_defcon3(4U);
     result = ts::run_action_rounds_live(gs, policy, policy, rng_defcon3, 1, nullptr);
     require(!result.has_value(), "NORAD DEFCON 3 smoke should not end the game");
     require(gs.pub.influence_of(Side::US, 10) == italy_before_defcon3, "NORAD should not trigger above DEFCON 2");
@@ -223,7 +223,7 @@ void test_extra_action_round_trace() {
     gs.hands[ts::to_index(Side::US)].set(4);
     gs.hands[ts::to_index(Side::US)].set(18);
 
-    const PolicyFn policy = [](const PublicState&, const ts::CardSet&, bool, std::mt19937&) -> std::optional<ActionEncoding> {
+    const PolicyFn policy = [](const PublicState&, const ts::CardSet&, bool, ts::Pcg64Rng&) -> std::optional<ActionEncoding> {
         return ActionEncoding{
             .card_id = 18,
             .mode = ActionMode::Space,
@@ -232,7 +232,7 @@ void test_extra_action_round_trace() {
     };
 
     std::vector<StepTrace> trace_steps;
-    std::mt19937 rng(5U);
+    ts::Pcg64Rng rng(5U);
     const auto result = ts::run_extra_action_round_live(gs, Side::US, policy, rng, &trace_steps);
     require(!result.has_value(), "A simple extra action round smoke should not end the game");
     require(trace_steps.size() == 1, "Extra action round should emit exactly one trace step");
@@ -254,14 +254,14 @@ void test_north_sea_oil_extra_ar_flow() {
     gs.us_holds_china = false;
 
     auto policy = min_space_policy();
-    std::mt19937 rng(6U);
+    ts::Pcg64Rng rng(6U);
     auto result = ts::run_action_rounds_live(gs, policy, policy, rng, 1, nullptr);
     require(!result.has_value(), "Regular action round before North Sea Oil extra AR should not end the game");
     require(ts::hand_count(gs.hands[ts::to_index(Side::US)]) == 1, "US should have one card left after the regular AR");
     require(gs.pub.north_sea_oil_extra_ar, "North Sea Oil flag should survive the regular AR loop");
 
     gs.pub.north_sea_oil_extra_ar = false;
-    std::mt19937 extra_rng(7U);
+    ts::Pcg64Rng extra_rng(7U);
     result = ts::run_extra_action_round_live(gs, Side::US, policy, extra_rng, nullptr);
     require(!result.has_value(), "North Sea Oil extra AR should not end the game in the smoke setup");
     require(ts::hand_count(gs.hands[ts::to_index(Side::US)]) == 0, "North Sea Oil extra AR should consume the remaining US card");

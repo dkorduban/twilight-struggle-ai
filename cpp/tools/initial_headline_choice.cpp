@@ -106,7 +106,7 @@ int main(int argc, char** argv) {
     (void)python_lib;
 
     auto gs = reset_game_with_pcg64_words(words, numpy_generator_so);
-    std::mt19937 fallback_rng(0U);
+    ts::Pcg64Rng fallback_rng(0U);
     auto pub = gs.pub;
     pub.phasing = ts::Side::USSR;
     auto ussr_action = ts::choose_action(

@@ -28,7 +28,7 @@ void require(bool condition, const std::string& message) {
 }
 
 std::tuple<PublicState, bool, std::optional<Side>> apply_live(GameState& gs, ts::CardId card_id, ActionMode mode, Side side) {
-    std::mt19937 rng(123U);
+    ts::Pcg64Rng rng(123U);
     return ts::apply_action_live(
         gs,
         ActionEncoding{
@@ -78,7 +78,7 @@ void test_ladc_and_terrorism() {
     gs.hands[ts::to_index(Side::US)].set(7);
     gs.hands[ts::to_index(Side::US)].set(8);
     gs.hands[ts::to_index(Side::US)].set(9);
-    std::mt19937 rng(456U);
+    ts::Pcg64Rng rng(456U);
     auto result = ts::apply_action_live(
         gs,
         ActionEncoding{.card_id = 95, .mode = ActionMode::Event, .targets = {}},
@@ -99,7 +99,7 @@ void test_defectors_and_ops_trigger() {
     gs = GameState{};
     gs.hands[ts::to_index(Side::USSR)].set(4);
     gs.pub.defcon = 3;
-    std::mt19937 rng(789U);
+    ts::Pcg64Rng rng(789U);
     auto live = ts::apply_action_live(
         gs,
         ActionEncoding{.card_id = 4, .mode = ActionMode::Influence, .targets = {21}},

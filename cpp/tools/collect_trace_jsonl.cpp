@@ -105,13 +105,13 @@ int main(int argc, char** argv) {
         learned_policy.emplace(*learned_model);
     }
 
-    const ts::PolicyFn ussr_policy = [ussr_policy_kind, &learned_policy, learned_side](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+    const ts::PolicyFn ussr_policy = [ussr_policy_kind, &learned_policy, learned_side](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
         if (learned_policy.has_value() && learned_side == ts::Side::USSR) {
             return learned_policy->choose_action(pub, hand, holds_china, rng);
         }
         return ts::choose_action(ussr_policy_kind, pub, hand, holds_china, rng);
     };
-    const ts::PolicyFn us_policy = [us_policy_kind, &learned_policy, learned_side](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+    const ts::PolicyFn us_policy = [us_policy_kind, &learned_policy, learned_side](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
         if (learned_policy.has_value() && learned_side == ts::Side::US) {
             return learned_policy->choose_action(pub, hand, holds_china, rng);
         }

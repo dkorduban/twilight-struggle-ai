@@ -73,10 +73,10 @@ int main(int argc, char** argv) {
     }
 
     ts::TorchScriptPolicy learned(*model_path);
-    const ts::PolicyFn learned_fn = [&learned](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+    const ts::PolicyFn learned_fn = [&learned](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
         return learned.choose_action(pub, hand, holds_china, rng);
     };
-    const ts::PolicyFn opponent_fn = [opponent_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, std::mt19937& rng) {
+    const ts::PolicyFn opponent_fn = [opponent_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
         return ts::choose_action(opponent_policy, pub, hand, holds_china, rng);
     };
 
