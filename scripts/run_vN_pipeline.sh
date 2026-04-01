@@ -93,6 +93,20 @@ else
         --n-games 500 --n-sim 0 --n-candidates 8 --seed 9999 --pool-size 30 \
         2>&1 | tee "$BENCH_LOG"
     echo "[$(date)] v${N} benchmark done."
+
+    # ── Persist benchmark result to durable JSON (survives /tmp wipe) ─────────
+    mkdir -p results
+    uv run python -c "
+import json, pathlib, re
+log = pathlib.Path('$BENCH_LOG').read_text()
+m = re.search(r'learned vs heuristic\s+learned\s+\d+/\d+\s+\(\s*([0-9.]+)%\)', log)
+pct = float(m.group(1)) if m else None
+hist_path = pathlib.Path('results/benchmark_history.json')
+hist = json.loads(hist_path.read_text()) if hist_path.exists() else {}
+hist['v${N}'] = {'learned_vs_heuristic': pct}
+hist_path.write_text(json.dumps(hist, indent=2, sort_keys=True))
+print(f'  Saved v${N} win%={pct} to results/benchmark_history.json')
+" 2>/dev/null || true
 fi
 
 # ── Collect vs-heuristic if above threshold ───────────────────────────────────

@@ -83,13 +83,36 @@ def parse_benchmarks(path: str) -> dict[str, float]:
 
 def load_benchmarks(versions: list[int]) -> dict[int, dict[str, float]]:
     benchmarks: dict[int, dict[str, float]] = {}
+
+    # Seed from durable history first (survives /tmp wipe)
+    hist_path = Path("results/benchmark_history.json")
+    if hist_path.exists():
+        import json
+        hist = json.loads(hist_path.read_text())
+        for key, val in hist.items():
+            try:
+                v = int(key.lstrip("v"))
+                benchmarks[v] = {k: w for k, w in val.items() if w is not None}
+            except (ValueError, AttributeError):
+                pass
+
     for v in versions:
-        path = f"/tmp/pipeline_v{v}.log"
-        if not Path(path).exists():
-            continue
-        b = parse_benchmarks(path)
-        if b:
-            benchmarks[v] = b
+        if v in benchmarks:
+            continue  # already loaded from durable history
+        # Prefer largest standalone benchmark log (500g > 200g > pipeline)
+        candidates = [
+            f"/tmp/benchmark_v{v}_500g.log",
+            f"/tmp/benchmark_v{v}_200g.log",
+            f"/tmp/benchmark_v{v}.log",
+            f"/tmp/pipeline_v{v}.log",
+        ]
+        for path in candidates:
+            if not Path(path).exists():
+                continue
+            b = parse_benchmarks(path)
+            if b:
+                benchmarks[v] = b
+                break
     return benchmarks
 
 
@@ -97,26 +120,21 @@ def load_benchmarks(versions: list[int]) -> dict[int, dict[str, float]]:
 # Plotting
 # ---------------------------------------------------------------------------
 
+# Each entry: (title, [(metric_key, prefix, invert)])
+# invert=True → plot 1-value (error rate), making log scale useful for near-1 metrics
 TRAIN_PANELS = [
-    ("Loss",            [("loss",       "val",   "val_"),
-                         ("loss",       "train", "train_")]),
-    ("Card top-1",      [("card_top1",  "val",   "val_"),
-                         ("card_top1",  "train", "train_")]),
-    ("Card MRR",        [("card_mrr",   "val",   "val_"),
-                         ("card_mrr",   "train", "train_")]),
-    ("Card NLL",        [("card_nll",   "val",   "val_")]),
-    ("Card confidence", [("card_conf",  "val",   "val_")]),
-    ("Value MSE",       [("value_mse",  "val",   "val_")]),
-    ("Mode accuracy",   [("mode_acc",   "val",   "val_"),
-                         ("mode_acc",   "train", "train_")]),
-    ("Country top-1",   [("country_top1","val",  "")]),
+    ("Val loss",             [("loss",        "val_",   False)]),
+    ("Card error (1-top1)",  [("card_top1",   "val_",   True)]),
+    ("Card MRR error",       [("card_mrr",    "val_",   True)]),
+    ("Card NLL",             [("card_nll",    "val_",   False)]),
+    ("Card conf error",      [("card_conf",   "val_",   True)]),
+    ("Value MSE",            [("value_mse",   "val_",   False)]),
+    ("Mode error (1-acc)",   [("mode_acc",    "val_",   True)]),
+    ("Country error",        [("country_top1","",       True)]),
 ]
 
 BENCH_MATCHUPS = [
     ("learned_vs_heuristic", "Learned vs Heuristic"),
-    ("vf_mcts50_vs_heuristic", "VF-MCTS50 vs Heuristic"),
-    ("vf_mcts50_vs_random", "VF-MCTS50 vs Random"),
-    ("learned_vs_random", "Learned vs Random"),
 ]
 
 COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
@@ -130,31 +148,26 @@ def _plot_training(axes, data, versions, color_map):
         ax = axes[ax_idx]
         ax.set_title(title, fontsize=10, fontweight="bold")
         ax.set_xlabel("Epoch", fontsize=8)
-        ax.grid(True, alpha=0.3)
+        ax.set_yscale("log")
+        ax.grid(True, alpha=0.3, which="both")
 
         plotted = False
         for v in versions:
             if v not in data:
                 continue
             color = color_map[v]
-            for metric_key, split_label, prefix in series:
+            for metric_key, prefix, invert in series:
                 full_key = prefix + metric_key
                 xs, ys = [], []
                 for ep in sorted(data[v]):
                     row = data[v][ep]
                     if full_key in row:
+                        val = row[full_key]
                         xs.append(ep)
-                        ys.append(row[full_key])
+                        ys.append(max(1e-6, 1.0 - val) if invert else val)
                 if not xs:
                     continue
-                is_train = split_label == "train"
-                label = f"v{v} {split_label}" if len(series) > 1 else f"v{v}"
-                ax.plot(xs, ys,
-                        color=color,
-                        alpha=TRAIN_ALPHA if is_train else 1.0,
-                        linestyle="--" if is_train else "-",
-                        linewidth=1.2 if is_train else 1.8,
-                        label=label)
+                ax.plot(xs, ys, color=color, linewidth=1.8, label=f"v{v}")
                 plotted = True
 
         if not plotted:
@@ -228,8 +241,7 @@ def plot(data, benchmarks, versions, out: str) -> None:
     ]
     _plot_benchmarks(bench_axes, benchmarks, versions, color_map)
     for i in range(n_bench, bench_rows * ncols):
-        ax = fig.add_subplot(total_rows, ncols, bench_start + n_bench + i + 1)
-        ax.set_visible(False)
+        fig.add_subplot(total_rows, ncols, bench_start + i + 1).set_visible(False)
 
     fig.suptitle("Twilight Struggle AI — Training & Benchmark history", fontsize=14,
                  fontweight="bold", y=1.02)
@@ -246,18 +258,36 @@ def plot(data, benchmarks, versions, out: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--versions", nargs="+", type=int, default=None)
+    ap.add_argument("--min-version", type=int, default=21,
+                    help="Skip versions older than this (default: 21)")
     ap.add_argument("--out", default="results/training_curves.png")
     args = ap.parse_args()
 
     if args.versions:
         versions = args.versions
     else:
-        versions = sorted(
-            int(re.search(r"v(\d+)", p).group(1))
-            for p in glob.glob("/tmp/pipeline_v*.log")
-            if re.search(r"v(\d+)", p) and "launch" not in p
-        )
-        print(f"Found versions: {versions}")
+        seen = set()
+        # Primary: /tmp pipeline logs (have epoch-level training metrics)
+        for p in glob.glob("/tmp/pipeline_v*.log"):
+            m = re.search(r"v(\d+)", p)
+            if m and "launch" not in p:
+                seen.add(int(m.group(1)))
+        # Fallback: checkpoint dirs (survive /tmp wipe, but no training metrics)
+        for p in glob.glob("data/checkpoints/retrain_v*/baseline_best.pt"):
+            m = re.search(r"retrain_v(\d+)/", p)
+            if m and "_" not in p.split("retrain_v")[1].split("/")[0]:
+                seen.add(int(m.group(1)))
+        # Fallback: durable benchmark history
+        hist_path = Path("results/benchmark_history.json")
+        if hist_path.exists():
+            import json
+            for key in json.loads(hist_path.read_text()):
+                try:
+                    seen.add(int(key.lstrip("v")))
+                except ValueError:
+                    pass
+        versions = sorted(v for v in seen if v >= args.min_version)
+        print(f"Found versions (>= v{args.min_version}): {versions}")
 
     print("Loading training data...")
     data = load_versions(versions)
