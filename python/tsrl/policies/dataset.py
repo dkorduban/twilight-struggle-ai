@@ -82,7 +82,12 @@ class TS_SelfPlayDataset(Dataset):
             raise FileNotFoundError(f"No *.parquet files found in {data_dir!r}")
 
         t0 = time.time()
-        df = pl.concat([pl.read_parquet(p) for p in paths])
+        frames = [pl.read_parquet(p) for p in paths]
+        # Normalise column order before concat — C++ and Python collectors
+        # emit identical column sets but potentially different orderings.
+        canonical = frames[0].columns
+        frames = [f.select(canonical) for f in frames]
+        df = pl.concat(frames)
         N = len(df)
 
         # --- influence (172,) ---
