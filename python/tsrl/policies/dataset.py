@@ -87,6 +87,25 @@ class TS_SelfPlayDataset(Dataset):
         # emit identical column sets but potentially different orderings.
         canonical = frames[0].columns
         frames = [f.select(canonical) for f in frames]
+
+        # Normalise list/array column schemas: C++ JSONL→Parquet emits
+        # Array(Int32, N) while Python collectors emit List(Int64).
+        # Cast everything to List(Int32) so pl.concat doesn't fail.
+        _LIST_COLS = [
+            "ussr_influence", "us_influence",
+            "discard_mask", "removed_mask",
+            "actor_known_in", "actor_known_not_in", "actor_possible",
+            "opp_known_in", "opp_known_not_in", "opp_possible",
+            "lbl_actor_hand", "lbl_card_quality", "lbl_opponent_possible",
+        ]
+        def _normalize_frame(f: pl.DataFrame) -> pl.DataFrame:
+            casts = []
+            for col in _LIST_COLS:
+                if col in f.columns:
+                    casts.append(pl.col(col).cast(pl.List(pl.Int32)).alias(col))
+            return f.with_columns(casts) if casts else f
+        frames = [_normalize_frame(f) for f in frames]
+
         df = pl.concat(frames)
         N = len(df)
 
