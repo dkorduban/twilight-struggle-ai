@@ -8,7 +8,7 @@ Newest entries at top.
 ## 2026-04-02: Combined bid2 training (60 epochs)
 
 **Tag:** `combined_bid2_15k_60ep`
-**Status:** Training in progress (epoch ~25/60)
+**Status:** Complete
 
 **Data:**
 | Source | Rows | Config |
@@ -26,6 +26,12 @@ was made from an earlier truncated conversion (1,100,000 rows). Accepted as-is.
 - value_target: final_vp, value_weight: 1.0
 - advantage_weight: 0.0 (pure BC), model_type: baseline
 - bench-after-train: 500 games
+
+**Results:**
+- Val card_top1: 71.9%, card_top3: 84.1%, mode_acc: 95.3%, best val_loss: 2.4306 (epoch 58)
+- Learned as USSR vs greedy heuristic: **36.4%** WR (177/500, 14 draws)
+- Marginal gain over T=1 baseline (+1.3 pp), still below heuristic_repro_v1 (40.3%)
+- No overfitting detected (train_loss ~ val_loss at convergence)
 
 **Checkpoint dir:** `data/checkpoints/combined_bid2_15k_60ep/`
 **W&B:** auto-logged
