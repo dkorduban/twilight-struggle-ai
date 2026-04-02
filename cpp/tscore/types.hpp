@@ -65,6 +65,14 @@ inline constexpr int kHandSizeLate = 9;
 inline constexpr CountryId kUsaAnchorId = 81;
 inline constexpr CountryId kUssrAnchorId = 82;
 inline constexpr CountryId kTaiwanId = 85;
+
+// Setup-phase influence totals (TS Deluxe §3.0).
+inline constexpr int kUSSRSetupInfluence = 6;
+inline constexpr int kUSSetupInfluence = 7;
+
+// Valid target regions for setup-phase placement (Eastern/Western Europe).
+inline constexpr std::array<CountryId, 7> kSetupEasternBlocIds = {3, 5, 9, 12, 13, 19, 83};
+inline constexpr std::array<CountryId, 12> kSetupWesternEuropeIds = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};
 inline constexpr CardId CHINA_CARD = kChinaCardId;
 inline constexpr int MAX_CARDS = kCardSlots;
 inline constexpr int MAX_COUNTRIES = kCountrySlots;

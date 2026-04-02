@@ -73,9 +73,10 @@ GameState reset_game_impl(std::span<const CardId> shuffled_deck) {
         }
     }
 
-    gs.phase = GamePhase::Headline;
+    gs.phase = GamePhase::Setup;
     gs.current_side = Side::USSR;
     gs.ar_index = 1;
+    gs.setup_influence_remaining = {kUSSRSetupInfluence, kUSSetupInfluence};
     return gs;
 }
 

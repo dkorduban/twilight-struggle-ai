@@ -3,6 +3,8 @@
 
 #include "game_loop.hpp"
 
+#include <algorithm>
+
 #include "dice.hpp"
 #include "game_data.hpp"
 #include "scoring.hpp"
@@ -33,6 +35,53 @@ void sync_china(GameState& gs) {
 
 bool is_cat_c_card(CardId card_id) {
     return std::find(kCatCCardIds.begin(), kCatCCardIds.end(), card_id) != kCatCCardIds.end();
+}
+
+float normalized_exploration_rate(const GameLoopConfig& config) {
+    return std::clamp(config.exploration_rate, 0.0f, 1.0f);
+}
+
+std::optional<ActionEncoding> choose_headline_action_with_config(
+    const PolicyFn& policy,
+    const PublicState& pub,
+    const CardSet& hand,
+    Side side,
+    bool holds_china,
+    Pcg64Rng& rng,
+    const GameLoopConfig& config
+) {
+    const auto exploration_rate = normalized_exploration_rate(config);
+    if (exploration_rate > 0.0f && rng.bernoulli(static_cast<double>(exploration_rate))) {
+        const auto cards = legal_cards(hand, pub, side, holds_china);
+        if (cards.empty()) {
+            return std::nullopt;
+        }
+        return ActionEncoding{
+            .card_id = cards[rng.choice_index(cards.size())],
+            .mode = ActionMode::Event,
+            .targets = {},
+        };
+    }
+    return policy(pub, hand, holds_china, rng);
+}
+
+std::optional<ActionEncoding> choose_action_with_config(
+    const PolicyFn& policy,
+    const PublicState& pub,
+    const CardSet& hand,
+    Side side,
+    bool holds_china,
+    Pcg64Rng& rng,
+    const GameLoopConfig& config
+) {
+    const auto exploration_rate = normalized_exploration_rate(config);
+    if (exploration_rate > 0.0f && rng.bernoulli(static_cast<double>(exploration_rate))) {
+        auto actions = enumerate_actions(hand, pub, side, holds_china);
+        if (!actions.empty()) {
+            return actions[rng.choice_index(actions.size())];
+        }
+    }
+    return policy(pub, hand, holds_china, rng);
 }
 
 // Mirror Python card-lifecycle handling for cards that leave a hand due to a
@@ -684,7 +733,8 @@ std::optional<GameResult> run_headline_phase(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
-    std::vector<StepTrace>* trace_steps
+    std::vector<StepTrace>* trace_steps,
+    const GameLoopConfig& config
 ) {
     gs.phase = GamePhase::Headline;
     gs.pub.ar = 0;
@@ -696,11 +746,14 @@ std::optional<GameResult> run_headline_phase(
         const auto hand_snapshot = gs.hands[to_index(side)];
         auto headline_pub = gs.pub;
         headline_pub.ar = 0;
-        auto action = (side == Side::USSR ? ussr_policy : us_policy)(
+        auto action = choose_headline_action_with_config(
+            side == Side::USSR ? ussr_policy : us_policy,
             headline_pub,
             gs.hands[to_index(side)],
+            side,
             holds_china,
-            rng
+            rng,
+            config
         );
         if (!action.has_value()) {
             continue;
@@ -752,6 +805,13 @@ std::optional<GameResult> run_headline_phase(
         const auto side = pending.side;
         const auto& action = pending.action;
         const auto pub_snapshot = gs.pub;
+        const auto deck_snapshot = gs.deck;
+        const auto ussr_holds_china_snap = gs.ussr_holds_china;
+        const auto us_holds_china_snap = gs.us_holds_china;
+        const auto opp = side == Side::USSR ? Side::US : Side::USSR;
+        const CardSet opp_hand_snap = chosen[to_index(opp)].has_value()
+            ? chosen[to_index(opp)]->hand_snapshot
+            : gs.hands[to_index(opp)];
         const auto vp_before = gs.pub.vp;
         const auto defcon_before = gs.pub.defcon;
         auto [new_pub, over, winner] = apply_action_with_hands(gs, action, side, rng);
@@ -768,6 +828,10 @@ std::optional<GameResult> run_headline_phase(
                 .vp_after = gs.pub.vp,
                 .defcon_before = defcon_before,
                 .defcon_after = gs.pub.defcon,
+                .opp_hand_snapshot = opp_hand_snap,
+                .deck_snapshot = deck_snapshot,
+                .ussr_holds_china_snapshot = ussr_holds_china_snap,
+                .us_holds_china_snapshot = us_holds_china_snap,
             });
         }
         sync_china(gs);
@@ -790,7 +854,8 @@ std::optional<GameResult> run_action_rounds(
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
     int total_ars,
-    std::vector<StepTrace>* trace_steps
+    std::vector<StepTrace>* trace_steps,
+    const GameLoopConfig& config
 ) {
     gs.phase = GamePhase::ActionRound;
     for (int ar = 1; ar <= kSpaceShuttleArs; ++ar) {
@@ -818,17 +883,25 @@ std::optional<GameResult> run_action_rounds(
             if (!has_legal_action(hand, gs.pub, side, holds_china)) {
                 continue;
             }
-            auto action = (side == Side::USSR ? ussr_policy : us_policy)(
+            auto action = choose_action_with_config(
+                side == Side::USSR ? ussr_policy : us_policy,
                 gs.pub,
                 hand,
+                side,
                 holds_china,
-                rng
+                rng,
+                config
             );
             if (!action.has_value()) {
                 continue;
             }
             const auto pub_snapshot = gs.pub;
             const auto hand_snapshot = hand;
+            const auto deck_snapshot_ar = gs.deck;
+            const auto ussr_holds_china_snap_ar = gs.ussr_holds_china;
+            const auto us_holds_china_snap_ar = gs.us_holds_china;
+            const auto opp_ar = side == Side::USSR ? Side::US : Side::USSR;
+            const CardSet opp_hand_snap_ar = gs.hands[to_index(opp_ar)];
             if (hand.test(action->card_id)) {
                 hand.reset(action->card_id);
             }
@@ -848,6 +921,10 @@ std::optional<GameResult> run_action_rounds(
                     .vp_after = gs.pub.vp,
                     .defcon_before = defcon_before,
                     .defcon_after = gs.pub.defcon,
+                    .opp_hand_snapshot = opp_hand_snap_ar,
+                    .deck_snapshot = deck_snapshot_ar,
+                    .ussr_holds_china_snapshot = ussr_holds_china_snap_ar,
+                    .us_holds_china_snapshot = us_holds_china_snap_ar,
                 });
             }
             sync_china(gs);
@@ -883,7 +960,8 @@ std::optional<GameResult> run_extra_action_round(
     Side side,
     const PolicyFn& policy,
     Pcg64Rng& rng,
-    std::vector<StepTrace>* trace_steps
+    std::vector<StepTrace>* trace_steps,
+    const GameLoopConfig& config
 ) {
     gs.pub.ar = std::max(gs.pub.ar, ars_for_turn(gs.pub.turn)) + 1;
     gs.pub.phasing = side;
@@ -908,12 +986,17 @@ std::optional<GameResult> run_extra_action_round(
     if (!has_legal_action(hand, gs.pub, side, holds_china)) {
         return std::nullopt;
     }
-    auto action = policy(gs.pub, hand, holds_china, rng);
+    auto action = choose_action_with_config(policy, gs.pub, hand, side, holds_china, rng, config);
     if (!action.has_value()) {
         return std::nullopt;
     }
     const auto pub_snapshot = gs.pub;
     const auto hand_snapshot = hand;
+    const auto deck_snapshot_extra = gs.deck;
+    const auto ussr_holds_china_snap_extra = gs.ussr_holds_china;
+    const auto us_holds_china_snap_extra = gs.us_holds_china;
+    const auto opp_extra = side == Side::USSR ? Side::US : Side::USSR;
+    const CardSet opp_hand_snap_extra = gs.hands[to_index(opp_extra)];
     if (hand.test(action->card_id)) {
         hand.reset(action->card_id);
     }
@@ -933,6 +1016,10 @@ std::optional<GameResult> run_extra_action_round(
             .vp_after = gs.pub.vp,
             .defcon_before = defcon_before,
             .defcon_after = gs.pub.defcon,
+            .opp_hand_snapshot = opp_hand_snap_extra,
+            .deck_snapshot = deck_snapshot_extra,
+            .ussr_holds_china_snapshot = ussr_holds_china_snap_extra,
+            .us_holds_china_snapshot = us_holds_china_snap_extra,
         });
     }
     sync_china(gs);
@@ -1078,9 +1165,10 @@ std::optional<GameResult> run_extra_action_round_live(
     Side side,
     const PolicyFn& policy,
     Pcg64Rng& rng,
-    std::vector<StepTrace>* trace_steps
+    std::vector<StepTrace>* trace_steps,
+    const GameLoopConfig& config
 ) {
-    return run_extra_action_round(gs, side, policy, rng, trace_steps);
+    return run_extra_action_round(gs, side, policy, rng, trace_steps, config);
 }
 
 std::optional<GameResult> run_headline_phase_live(
@@ -1088,9 +1176,10 @@ std::optional<GameResult> run_headline_phase_live(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
-    std::vector<StepTrace>* trace_steps
+    std::vector<StepTrace>* trace_steps,
+    const GameLoopConfig& config
 ) {
-    return run_headline_phase(gs, ussr_policy, us_policy, rng, trace_steps);
+    return run_headline_phase(gs, ussr_policy, us_policy, rng, trace_steps, config);
 }
 
 std::optional<GameResult> run_action_rounds_live(
@@ -1099,18 +1188,144 @@ std::optional<GameResult> run_action_rounds_live(
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
     int total_ars,
-    std::vector<StepTrace>* trace_steps
+    std::vector<StepTrace>* trace_steps,
+    const GameLoopConfig& config
 ) {
-    return run_action_rounds(gs, ussr_policy, us_policy, rng, total_ars, trace_steps);
+    return run_action_rounds(gs, ussr_policy, us_policy, rng, total_ars, trace_steps, config);
+}
+
+// --- Setup influence placement phase (TS Deluxe §3.0) ---
+// USSR places 6 in Eastern Europe, then US places 7 in Western Europe.
+// Both players have seen their opening hands before placing.
+void run_setup_phase(
+    GameState& gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    Pcg64Rng& rng,
+    std::vector<StepTrace>* trace_steps,
+    const GameLoopConfig& config
+) {
+    gs.phase = GamePhase::Setup;
+
+    // Heuristic default placements with slight variation.
+    // USSR standard: Poland=4, EastGermany=1, Yugoslavia=1  (or Romania/Czech variants)
+    // US standard: WestGermany=4, Italy=2, France=1  (or Italy=3/Turkey=1 variants)
+    // 20% chance of an alternative setup for diversity.
+    struct SetupPlan { CountryId country; int amount; };
+
+    // USSR variants
+    const std::array<std::vector<SetupPlan>, 3> ussr_plans = {{
+        {{SetupPlan{12, 4}, {5, 1}, {19, 1}}},   // Poland 4, EG+1, Yugoslavia 1
+        {{SetupPlan{12, 3}, {3, 3}}},              // Poland 3, Czechoslovakia 3
+        {{SetupPlan{12, 4}, {13, 1}, {19, 1}}},   // Poland 4, Romania 1, Yugoslavia 1
+    }};
+    // US variants
+    const std::array<std::vector<SetupPlan>, 3> us_plans = {{
+        {{SetupPlan{18, 4}, {10, 2}, {7, 1}}},    // WG 4, Italy 2, France 1
+        {{SetupPlan{18, 3}, {10, 3}, {7, 1}}},    // WG 3, Italy 3, France 1
+        {{SetupPlan{18, 4}, {10, 2}, {16, 1}}},   // WG 4, Italy 2, Turkey 1
+    }};
+
+    for (const auto side : {Side::USSR, Side::US}) {
+        gs.pub.phasing = side;
+        const int side_idx = to_index(side);
+        const auto valid_targets = [&]() -> std::vector<CountryId> {
+            if (side == Side::USSR) {
+                return {kSetupEasternBlocIds.begin(), kSetupEasternBlocIds.end()};
+            } else {
+                return {kSetupWesternEuropeIds.begin(), kSetupWesternEuropeIds.end()};
+            }
+        }();
+
+        // Choose a heuristic plan (used as fallback when policy doesn't provide valid targets)
+        const auto& plans = (side == Side::USSR) ? ussr_plans : us_plans;
+        const auto plan_idx = (rng.random_double() < 0.8) ? 0 : (1 + rng.choice_index(plans.size() - 1));
+        std::vector<CountryId> heuristic_sequence;
+        for (const auto& step : plans[plan_idx]) {
+            for (int i = 0; i < step.amount; ++i) {
+                heuristic_sequence.push_back(step.country);
+            }
+        }
+
+        int heuristic_idx = 0;
+        while (gs.setup_influence_remaining[side_idx] > 0) {
+            const bool holds_china = (side == Side::USSR) ? gs.ussr_holds_china : gs.us_holds_china;
+            const auto pub_snapshot = gs.pub;
+            const auto hand_snapshot = gs.hands[side_idx];
+
+            // Ask policy for placement (learned model will return meaningful targets)
+            auto action_opt = (side == Side::USSR ? ussr_policy : us_policy)(
+                gs.pub, gs.hands[side_idx], holds_china, rng
+            );
+
+            // Check if policy returned a valid setup target
+            CountryId target = 0;
+            bool valid_from_policy = false;
+            if (action_opt.has_value() && !action_opt->targets.empty()) {
+                const auto t = static_cast<CountryId>(action_opt->targets[0]);
+                if (std::find(valid_targets.begin(), valid_targets.end(), t) != valid_targets.end()) {
+                    target = t;
+                    valid_from_policy = true;
+                }
+            }
+
+            // Fallback: use heuristic plan
+            if (!valid_from_policy) {
+                if (heuristic_idx < static_cast<int>(heuristic_sequence.size())) {
+                    target = heuristic_sequence[heuristic_idx++];
+                } else {
+                    target = valid_targets[rng.choice_index(valid_targets.size())];
+                }
+            }
+
+            // Place 1 influence
+            gs.pub.set_influence(side, target, gs.pub.influence_of(side, target) + 1);
+            gs.setup_influence_remaining[side_idx] -= 1;
+
+            // Record trace step for training data
+            if (trace_steps) {
+                ActionEncoding setup_action;
+                setup_action.card_id = 0;  // no card during setup
+                setup_action.mode = ActionMode::Influence;
+                setup_action.targets = {target};
+                trace_steps->push_back(StepTrace{
+                    .turn = 0,
+                    .ar = 0,
+                    .side = side,
+                    .holds_china = holds_china,
+                    .pub_snapshot = pub_snapshot,
+                    .hand_snapshot = hand_snapshot,
+                    .action = setup_action,
+                    .vp_before = gs.pub.vp,
+                    .vp_after = gs.pub.vp,
+                    .defcon_before = gs.pub.defcon,
+                    .defcon_after = gs.pub.defcon,
+                    .opp_hand_snapshot = {},
+                    .deck_snapshot = {},
+                    .ussr_holds_china_snapshot = false,
+                    .us_holds_china_snapshot = false,
+                });
+            }
+        }
+    }
+
+    // Transition to headline phase
+    gs.phase = GamePhase::Headline;
 }
 
 TracedGame play_game_traced_from_state_with_rng(
     GameState gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const GameLoopConfig& config
 ) {
     TracedGame traced;
+
+    // Run setup phase if game hasn't started yet (fresh game state)
+    if (gs.phase == GamePhase::Setup && gs.setup_influence_remaining[0] > 0) {
+        run_setup_phase(gs, ussr_policy, us_policy, rng, &traced.steps, config);
+    }
 
     for (int turn = 1; turn <= kMaxTurns; ++turn) {
         gs.pub.turn = turn;
@@ -1123,24 +1338,24 @@ TracedGame play_game_traced_from_state_with_rng(
         deal_cards(gs, Side::USSR, rng);
         deal_cards(gs, Side::US, rng);
 
-        if (auto result = run_headline_phase(gs, ussr_policy, us_policy, rng, &traced.steps); result.has_value()) {
+        if (auto result = run_headline_phase(gs, ussr_policy, us_policy, rng, &traced.steps, config); result.has_value()) {
             traced.result = *result;
             return traced;
         }
-        if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), &traced.steps); result.has_value()) {
+        if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), &traced.steps, config); result.has_value()) {
             traced.result = *result;
             return traced;
         }
         if (gs.pub.north_sea_oil_extra_ar) {
             gs.pub.north_sea_oil_extra_ar = false;
-            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, &traced.steps); result.has_value()) {
+            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, &traced.steps, config); result.has_value()) {
                 traced.result = *result;
                 return traced;
             }
         }
         if (gs.pub.glasnost_extra_ar) {
             gs.pub.glasnost_extra_ar = false;
-            if (auto result = run_extra_action_round(gs, Side::USSR, ussr_policy, rng, &traced.steps); result.has_value()) {
+            if (auto result = run_extra_action_round(gs, Side::USSR, ussr_policy, rng, &traced.steps, config); result.has_value()) {
                 traced.result = *result;
                 return traced;
             }
@@ -1163,34 +1378,42 @@ TracedGame play_game_traced_from_state_with_rng(
     return traced;
 }
 
-GameResult play_game_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
-    return play_game_traced_fn(ussr_policy, us_policy, seed).result;
+GameResult play_game_fn(
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed,
+    const GameLoopConfig& config
+) {
+    return play_game_traced_fn(ussr_policy, us_policy, seed, config).result;
 }
 
 GameResult play_game_from_state_fn(
     GameState gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed
+    std::optional<uint32_t> seed,
+    const GameLoopConfig& config
 ) {
-    return play_game_traced_from_state_fn(std::move(gs), ussr_policy, us_policy, seed).result;
+    return play_game_traced_from_state_fn(std::move(gs), ussr_policy, us_policy, seed, config).result;
 }
 
 TracedGame play_game_traced_from_state_fn(
     GameState gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed
+    std::optional<uint32_t> seed,
+    const GameLoopConfig& config
 ) {
     Pcg64Rng rng(seed.value_or(std::random_device{}()));
-    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng);
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng, config);
 }
 
 GameResult play_game_from_mid_state_fn(
     GameState gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed
+    std::optional<uint32_t> seed,
+    const GameLoopConfig& config
 ) {
     Pcg64Rng rng(seed.value_or(std::random_device{}()));
     const int start_turn = std::max(1, gs.pub.turn);
@@ -1220,21 +1443,21 @@ GameResult play_game_from_mid_state_fn(
             deal_cards(gs, Side::US, rng);
         }
 
-        if (auto result = run_headline_phase(gs, ussr_policy, us_policy, rng, nullptr); result.has_value()) {
+        if (auto result = run_headline_phase(gs, ussr_policy, us_policy, rng, nullptr, config); result.has_value()) {
             return *result;
         }
-        if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), nullptr); result.has_value()) {
+        if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), nullptr, config); result.has_value()) {
             return *result;
         }
         if (gs.pub.north_sea_oil_extra_ar) {
             gs.pub.north_sea_oil_extra_ar = false;
-            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, nullptr); result.has_value()) {
+            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, nullptr, config); result.has_value()) {
                 return *result;
             }
         }
         if (gs.pub.glasnost_extra_ar) {
             gs.pub.glasnost_extra_ar = false;
-            if (auto result = run_extra_action_round(gs, Side::USSR, ussr_policy, rng, nullptr); result.has_value()) {
+            if (auto result = run_extra_action_round(gs, Side::USSR, ussr_policy, rng, nullptr, config); result.has_value()) {
                 return *result;
             }
         }
@@ -1252,42 +1475,54 @@ GameResult play_game_from_mid_state_fn(
     return GameResult{.winner = std::nullopt, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
 }
 
-TracedGame play_game_traced_fn(const PolicyFn& ussr_policy, const PolicyFn& us_policy, std::optional<uint32_t> seed) {
+TracedGame play_game_traced_fn(
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    std::optional<uint32_t> seed,
+    const GameLoopConfig& config
+) {
     auto gs = reset_game(seed);
     Pcg64Rng runtime_rng(seed.value_or(std::random_device{}()));
-    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng);
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng, config);
 }
 
 TracedGame play_game_traced_from_seed_words_fn(
     std::array<uint64_t, 4> words,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed
+    std::optional<uint32_t> seed,
+    const GameLoopConfig& config
 ) {
     auto gs = reset_game_from_seed_words(words);
     Pcg64Rng runtime_rng(seed.value_or(std::random_device{}()));
-    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng);
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng, config);
 }
 
-GameResult play_game(PolicyKind ussr_policy, PolicyKind us_policy, std::optional<uint32_t> seed) {
+GameResult play_game(
+    PolicyKind ussr_policy,
+    PolicyKind us_policy,
+    std::optional<uint32_t> seed,
+    const GameLoopConfig& config
+) {
     const PolicyFn ussr_fn = [ussr_policy](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng) {
         return choose_action(ussr_policy, pub, hand, holds_china, rng);
     };
     const PolicyFn us_fn = [us_policy](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng) {
         return choose_action(us_policy, pub, hand, holds_china, rng);
     };
-    return play_game_fn(ussr_fn, us_fn, seed);
+    return play_game_fn(ussr_fn, us_fn, seed, config);
 }
 
-GameResult play_random_game(std::optional<uint32_t> seed) {
-    return play_game(PolicyKind::Random, PolicyKind::Random, seed);
+GameResult play_random_game(std::optional<uint32_t> seed, const GameLoopConfig& config) {
+    return play_game(PolicyKind::Random, PolicyKind::Random, seed, config);
 }
 
 std::vector<GameResult> play_matchup(
     PolicyKind ussr_policy,
     PolicyKind us_policy,
     int game_count,
-    std::optional<uint32_t> seed
+    std::optional<uint32_t> seed,
+    const GameLoopConfig& config
 ) {
     const PolicyFn ussr_fn = [ussr_policy](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng) {
         return choose_action(ussr_policy, pub, hand, holds_china, rng);
@@ -1295,20 +1530,21 @@ std::vector<GameResult> play_matchup(
     const PolicyFn us_fn = [us_policy](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng) {
         return choose_action(us_policy, pub, hand, holds_china, rng);
     };
-    return play_matchup_fn(ussr_fn, us_fn, game_count, seed);
+    return play_matchup_fn(ussr_fn, us_fn, game_count, seed, config);
 }
 
 std::vector<GameResult> play_matchup_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     int game_count,
-    std::optional<uint32_t> seed
+    std::optional<uint32_t> seed,
+    const GameLoopConfig& config
 ) {
     std::vector<GameResult> results;
     results.reserve(static_cast<size_t>(std::max(0, game_count)));
     const auto base_seed = seed.value_or(std::random_device{}());
     for (int game_index = 0; game_index < game_count; ++game_index) {
-        results.push_back(play_game_fn(ussr_policy, us_policy, base_seed + static_cast<uint32_t>(game_index)));
+        results.push_back(play_game_fn(ussr_policy, us_policy, base_seed + static_cast<uint32_t>(game_index), config));
     }
     return results;
 }

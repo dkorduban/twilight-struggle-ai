@@ -33,11 +33,20 @@ struct StepTrace {
     int vp_after = 0;
     int defcon_before = 0;
     int defcon_after = 0;
+    // Full hidden state snapshot at decision time (for teacher search).
+    CardSet opp_hand_snapshot;
+    std::vector<CardId> deck_snapshot;
+    bool ussr_holds_china_snapshot = false;
+    bool us_holds_china_snapshot = false;
 };
 
 struct TracedGame {
     std::vector<StepTrace> steps;
     GameResult result;
+};
+
+struct GameLoopConfig {
+    float exploration_rate = 0.0f;
 };
 
 // Public wrappers used by tools and bindings so they can drive the native loop
@@ -65,7 +74,8 @@ std::optional<GameResult> run_extra_action_round_live(
     Side side,
     const PolicyFn& policy,
     Pcg64Rng& rng,
-    std::vector<StepTrace>* trace_steps = nullptr
+    std::vector<StepTrace>* trace_steps = nullptr,
+    const GameLoopConfig& config = {}
 );
 
 std::optional<GameResult> run_headline_phase_live(
@@ -73,7 +83,8 @@ std::optional<GameResult> run_headline_phase_live(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
-    std::vector<StepTrace>* trace_steps = nullptr
+    std::vector<StepTrace>* trace_steps = nullptr,
+    const GameLoopConfig& config = {}
 );
 
 std::optional<GameResult> run_action_rounds_live(
@@ -82,20 +93,23 @@ std::optional<GameResult> run_action_rounds_live(
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
     int total_ars,
-    std::vector<StepTrace>* trace_steps = nullptr
+    std::vector<StepTrace>* trace_steps = nullptr,
+    const GameLoopConfig& config = {}
 );
 
 GameResult play_game_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed = std::nullopt
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
 );
 
 GameResult play_game_from_state_fn(
     GameState gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed = std::nullopt
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
 );
 
 // Like play_game_from_state_fn but continues from gs.pub.turn rather than
@@ -104,49 +118,59 @@ GameResult play_game_from_mid_state_fn(
     GameState gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed = std::nullopt
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
 );
 
 TracedGame play_game_traced_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed = std::nullopt
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
 );
 
 TracedGame play_game_traced_from_state_fn(
     GameState gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed = std::nullopt
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
 );
 
 TracedGame play_game_traced_from_seed_words_fn(
     std::array<uint64_t, 4> words,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
-    std::optional<uint32_t> seed = std::nullopt
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
 );
 
 GameResult play_game(
     PolicyKind ussr_policy,
     PolicyKind us_policy,
-    std::optional<uint32_t> seed = std::nullopt
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
 );
 
-GameResult play_random_game(std::optional<uint32_t> seed = std::nullopt);
+GameResult play_random_game(
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
+);
 
 std::vector<GameResult> play_matchup(
     PolicyKind ussr_policy,
     PolicyKind us_policy,
     int game_count,
-    std::optional<uint32_t> seed = std::nullopt
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
 );
 
 std::vector<GameResult> play_matchup_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     int game_count,
-    std::optional<uint32_t> seed = std::nullopt
+    std::optional<uint32_t> seed = std::nullopt,
+    const GameLoopConfig& config = {}
 );
 
 MatchSummary summarize_results(std::span<const GameResult> results);

@@ -25,6 +25,9 @@ struct GameState {
     std::array<CardId, 2> headline_card = {0, 0};
     bool game_over = false;
     std::optional<Side> winner;
+    // Remaining setup-phase influence placements: index 0 = USSR, index 1 = US.
+    // Non-zero only while phase == GamePhase::Setup.
+    std::array<int, 2> setup_influence_remaining = {kUSSRSetupInfluence, kUSSetupInfluence};
 };
 
 // Turn-specific constants and reset helpers used by normal play plus parity
