@@ -56,23 +56,37 @@ CHUNK_DIR=""
 ROWS_TOOL="build-ninja/cpp/tools/ts_collect_selfplay_rows_jsonl"
 EXPORT_SCRIPT="cpp/tools/export_baseline_to_torchscript.py"
 KEEP_CHUNKS=0
+TEMPERATURE=""
+EPSILON=""
+EXPLORATION_RATE=""
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --games)        GAMES=$2;         shift 2 ;;
-        --seed)         SEED=$2;          shift 2 ;;
-        --chunk-size)   CHUNK_SIZE=$2;    shift 2 ;;
-        --ussr-policy)  USSR_POLICY=$2;   shift 2 ;;
-        --us-policy)    US_POLICY=$2;     shift 2 ;;
-        --checkpoint)   CHECKPOINT=$2;    shift 2 ;;
-        --learned-side) LEARNED_SIDE=$2;  shift 2 ;;
-        --ussr-model)   USSR_MODEL=$2;    shift 2 ;;
-        --us-model)     US_MODEL=$2;      shift 2 ;;
-        --out)          OUT=$2;           shift 2 ;;
-        --chunk-dir)    CHUNK_DIR=$2;     shift 2 ;;
-        --rows-tool)    ROWS_TOOL=$2;     shift 2 ;;
-        --keep-chunks)  KEEP_CHUNKS=1;    shift ;;
+        --games)            GAMES=$2;            shift 2 ;;
+        --seed)             SEED=$2;             shift 2 ;;
+        --chunk-size)       CHUNK_SIZE=$2;       shift 2 ;;
+        --ussr-policy)      USSR_POLICY=$2;      shift 2 ;;
+        --us-policy)        US_POLICY=$2;        shift 2 ;;
+        --checkpoint)       CHECKPOINT=$2;       shift 2 ;;
+        --learned-side)     LEARNED_SIDE=$2;     shift 2 ;;
+        --ussr-model)       USSR_MODEL=$2;       shift 2 ;;
+        --us-model)         US_MODEL=$2;         shift 2 ;;
+        --out)              OUT=$2;              shift 2 ;;
+        --chunk-dir)        CHUNK_DIR=$2;        shift 2 ;;
+        --rows-tool)        ROWS_TOOL=$2;        shift 2 ;;
+        --temperature)      TEMPERATURE=$2;      shift 2 ;;
+        --epsilon)          EPSILON=$2;          shift 2 ;;
+        --exploration-rate) EXPLORATION_RATE=$2;  shift 2 ;;
+        --keep-chunks)
+            if [[ $# -gt 1 && ! "$2" =~ ^-- ]]; then
+                KEEP_CHUNKS=$2
+                shift 2
+            else
+                KEEP_CHUNKS=1
+                shift
+            fi
+            ;;
         -h|--help)
             sed -n '2,50p' "$0"
             exit 0
@@ -151,6 +165,15 @@ if [ -n "$LEARNED_MODEL_ARG" ]; then
         --learned-model "$LEARNED_MODEL_ARG"
         --learned-side "$LEARNED_SIDE"
     )
+fi
+if [ -n "$TEMPERATURE" ]; then
+    NATIVE_ARGS+=(--temperature "$TEMPERATURE")
+fi
+if [ -n "$EPSILON" ]; then
+    NATIVE_ARGS+=(--epsilon "$EPSILON")
+fi
+if [ -n "$EXPLORATION_RATE" ]; then
+    NATIVE_ARGS+=(--exploration-rate "$EXPLORATION_RATE")
 fi
 
 nice -n 10 uv run python cpp/tools/run_native_collection.py "${NATIVE_ARGS[@]}"

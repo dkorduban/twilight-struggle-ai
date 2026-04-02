@@ -221,6 +221,7 @@ if [ ! -f "$VSH_OUT" ]; then
                 --games "$GAMES_VSH" \
                 --seed "$VSH_SEED" \
                 --out "$VSH_OUT" \
+                --temperature 1.0 \
                 2>&1 | tee logs/collect_v${N}_vs_heuristic.log
         else
             echo "[$(date)] WARNING: C++ binary missing — falling back to Python collector"
@@ -244,6 +245,7 @@ if [ ! -f "$VSH_OUT" ]; then
                     --games "$GAMES_VSH" \
                     --seed "$VSH_US_SEED" \
                     --out "$VSH_US_OUT" \
+                    --temperature 1.0 \
                     2>&1 | tee logs/collect_v${N}_us_vs_heuristic.log
             else
                 echo "[$(date)] WARNING: C++ binary missing — skipping US-side collection"
@@ -278,6 +280,7 @@ if [ ! -f "$VSH_OUT" ]; then
                 --games "$GAMES_VSL" \
                 --seed "$VSL_SEED" \
                 --out "$VSL_OUT" \
+                --temperature 1.0 \
                 2>&1 | tee logs/collect_v${N}_vs_v${NM1}.log
             echo "[$(date)] v${N}-vs-v${NM1} self-play collection done."
         else

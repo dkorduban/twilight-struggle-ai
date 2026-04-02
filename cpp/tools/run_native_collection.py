@@ -84,6 +84,9 @@ def run_chunk(
     learned_side: str,
     ussr_model: Path | None = None,
     us_model: Path | None = None,
+    temperature: float | None = None,
+    epsilon: float | None = None,
+    exploration_rate: float | None = None,
 ) -> None:
     cmd = [
         str(rows_tool),
@@ -106,6 +109,12 @@ def run_chunk(
         cmd.extend(["--us-model", str(us_model)])
     elif learned_model is not None and learned_side == "us":
         cmd.extend(["--learned-model", str(learned_model), "--learned-side", "us"])
+    if temperature is not None and temperature > 0:
+        cmd.extend(["--temperature", str(temperature)])
+    if epsilon is not None and epsilon > 0:
+        cmd.extend(["--epsilon", str(epsilon)])
+    if exploration_rate is not None and exploration_rate > 0:
+        cmd.extend(["--exploration-rate", str(exploration_rate)])
     subprocess.run(cmd, check=True)
 
 
@@ -130,6 +139,9 @@ def main() -> None:
     parser.add_argument("--max-used-mb", type=int, default=25000)
     parser.add_argument("--max-swap-used-mb", type=int, default=2048)
     parser.add_argument("--backoff-seconds", type=float, default=5.0)
+    parser.add_argument("--temperature", type=float, default=None, help="Softmax temperature for action sampling")
+    parser.add_argument("--epsilon", type=float, default=None, help="Epsilon-greedy exploration rate")
+    parser.add_argument("--exploration-rate", type=float, default=None, help="Policy-level noise rate")
     args = parser.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -178,6 +190,9 @@ def main() -> None:
             args.learned_side,
             ussr_model=args.ussr_model,
             us_model=args.us_model,
+            temperature=args.temperature,
+            epsilon=args.epsilon,
+            exploration_rate=args.exploration_rate,
         )
 
         manifest["chunks"].append(
