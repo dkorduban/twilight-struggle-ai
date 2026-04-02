@@ -547,8 +547,24 @@ SearchResult build_search_result(const GameSlot& slot) {
     return result;
 }
 
-[[nodiscard]] bool should_sample_with_temperature(const PendingDecision& decision, const BatchedMctsConfig& config) {
-    return config.temperature > 0.0f && decision.move_number <= 30;
+// Returns the effective sampling temperature for a given move number.
+// If config.temperature == 0, always returns 0 (greedy).
+// Otherwise config.temperature is treated as a scale multiplier applied to
+// the piecewise schedule:
+//   move <= 10  -> 1.0 (full stochasticity, early game)
+//   move <= 30  -> 0.5 (moderate exploration, mid game)
+//   move > 30   -> 0.0 (greedy, late game)
+[[nodiscard]] float effective_temperature(const PendingDecision& decision, const BatchedMctsConfig& config) {
+    if (config.temperature <= 0.0f) {
+        return 0.0f;
+    }
+    float base = 0.0f;
+    if (decision.move_number <= 10) {
+        base = 1.0f;
+    } else if (decision.move_number <= 30) {
+        base = 0.5f;
+    }
+    return config.temperature * base;
 }
 
 std::optional<ActionEncoding> sample_action_by_visit_counts(
@@ -1059,8 +1075,19 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
 
     const auto search = build_search_result(slot);
     auto action = search.best_action;
-    if (action.card_id != 0 && should_sample_with_temperature(*slot.decision, config)) {
-        if (const auto sampled = sample_action_by_visit_counts(search, config.temperature, slot.rng); sampled.has_value()) {
+
+    // Epsilon-greedy: with probability epsilon_greedy, pick a uniformly random
+    // legal action from the root edges instead of the MCTS-recommended action.
+    const bool do_epsilon = config.epsilon_greedy > 0.0f
+        && !search.root_edges.empty()
+        && slot.rng.random_double() < static_cast<double>(config.epsilon_greedy);
+    if (do_epsilon) {
+        const auto idx = slot.rng.choice_index(search.root_edges.size());
+        action = search.root_edges[idx].action;
+    } else if (action.card_id != 0) {
+        // Temperature-based sampling with piecewise schedule.
+        const float temp = effective_temperature(*slot.decision, config);
+        if (const auto sampled = sample_action_by_visit_counts(search, temp, slot.rng); sampled.has_value()) {
             action = *sampled;
         }
     }
