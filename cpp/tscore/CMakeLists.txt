@@ -16,7 +16,7 @@ add_library(tscore STATIC
 )
 
 if(TS_BUILD_TORCH_RUNTIME)
-    target_sources(tscore PRIVATE learned_policy.cpp)
+    target_sources(tscore PRIVATE learned_policy.cpp ismcts.cpp mcts.cpp mcts_batched.cpp nn_features.cpp)
     target_compile_definitions(tscore PUBLIC TS_BUILD_TORCH_RUNTIME=1)
     separate_arguments(TORCH_CXX_FLAGS_LIST NATIVE_COMMAND "${TORCH_CXX_FLAGS}")
     target_compile_options(tscore PRIVATE ${TORCH_CXX_FLAGS_LIST})
@@ -67,6 +67,10 @@ install(FILES
     game_state.hpp
     legal_actions.hpp
     learned_policy.hpp
+    ismcts.hpp
+    mcts.hpp
+    mcts_batched.hpp
+    nn_features.hpp
     policies.hpp
     types.hpp
     public_state.hpp

@@ -13,61 +13,11 @@
 #include <torch/torch.h>
 
 #include "game_data.hpp"
+#include "nn_features.hpp"
 #include "policies.hpp"
 
 namespace ts {
 namespace {
-
-// These feature shapes intentionally mirror the current Python baseline model
-// interface so exported TorchScript modules can be consumed natively.
-constexpr int kScalarDim = 11;
-constexpr int kCardMaskLen = kCardSlots;
-constexpr int kCountryMaskLen = kCountrySlots;
-
-torch::Tensor card_mask(const CardSet& cards) {
-    auto tensor = torch::zeros({kCardMaskLen}, torch::TensorOptions().dtype(torch::kFloat32));
-    for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
-        if (cards.test(card_id)) {
-            tensor.index_put_({card_id}, 1.0f);
-        }
-    }
-    return tensor;
-}
-
-torch::Tensor influence_array(const PublicState& pub, Side side) {
-    auto tensor = torch::zeros({kCountryMaskLen}, torch::TensorOptions().dtype(torch::kFloat32));
-    for (int country_id = 0; country_id <= kMaxCountryId; ++country_id) {
-        tensor.index_put_({country_id}, static_cast<float>(pub.influence_of(side, static_cast<CountryId>(country_id))));
-    }
-    return tensor;
-}
-
-torch::Tensor extract_influence(const PublicState& pub) {
-    return torch::cat({influence_array(pub, Side::USSR), influence_array(pub, Side::US)}).unsqueeze(0);
-}
-
-torch::Tensor extract_cards(const PublicState& pub, const CardSet& hand) {
-    auto hand_tensor = card_mask(hand);
-    auto discard_tensor = card_mask(pub.discard);
-    auto removed_tensor = card_mask(pub.removed);
-    return torch::cat({hand_tensor, hand_tensor, discard_tensor, removed_tensor}).unsqueeze(0);
-}
-
-torch::Tensor extract_scalars(const PublicState& pub, bool holds_china, Side side) {
-    auto tensor = torch::zeros({1, kScalarDim}, torch::TensorOptions().dtype(torch::kFloat32));
-    tensor.index_put_({0, 0}, static_cast<float>(pub.vp) / 20.0f);
-    tensor.index_put_({0, 1}, static_cast<float>(pub.defcon - 1) / 4.0f);
-    tensor.index_put_({0, 2}, static_cast<float>(pub.milops[to_index(Side::USSR)]) / 6.0f);
-    tensor.index_put_({0, 3}, static_cast<float>(pub.milops[to_index(Side::US)]) / 6.0f);
-    tensor.index_put_({0, 4}, static_cast<float>(pub.space[to_index(Side::USSR)]) / 9.0f);
-    tensor.index_put_({0, 5}, static_cast<float>(pub.space[to_index(Side::US)]) / 9.0f);
-    tensor.index_put_({0, 6}, static_cast<float>(to_index(pub.china_held_by)));
-    tensor.index_put_({0, 7}, holds_china ? 1.0f : 0.0f);
-    tensor.index_put_({0, 8}, static_cast<float>(pub.turn) / 10.0f);
-    tensor.index_put_({0, 9}, static_cast<float>(pub.ar) / 8.0f);
-    tensor.index_put_({0, 10}, static_cast<float>(to_index(side)));
-    return tensor;
-}
 
 torch::Tensor get_tensor(const c10::impl::GenericDict& dict, const char* key, bool required = true) {
     const auto key_value = c10::IValue(std::string(key));
@@ -177,6 +127,13 @@ TorchScriptPolicy::TorchScriptPolicy(std::string model_path, bool use_country_he
     module_.eval();
 }
 
+void TorchScriptPolicy::set_exploration_rate(float exploration_rate) {
+    if (exploration_rate < 0.0f || exploration_rate > 1.0f) {
+        throw std::invalid_argument("exploration_rate must be in [0, 1]");
+    }
+    exploration_rate_ = exploration_rate;
+}
+
 std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
     const PublicState& pub,
     const CardSet& hand,
@@ -188,14 +145,15 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
     if (playable.empty()) {
         return std::nullopt;
     }
+    if (exploration_rate_ > 0.0f && rng.bernoulli(static_cast<double>(exploration_rate_))) {
+        auto legal_actions = enumerate_actions(hand, pub, side, holds_china);
+        if (legal_actions.empty()) {
+            return std::nullopt;
+        }
+        return legal_actions[rng.choice_index(legal_actions.size())];
+    }
 
-    std::vector<torch::jit::IValue> inputs;
-    inputs.push_back(extract_influence(pub));
-    inputs.push_back(extract_cards(pub, hand));
-    inputs.push_back(extract_scalars(pub, holds_china, side));
-
-    torch::NoGradGuard no_grad;
-    const auto outputs = module_.forward(inputs).toGenericDict();
+    const auto outputs = nn::forward_model(module_, pub, hand, holds_china, side);
     const auto card_logits = get_tensor(outputs, "card_logits").index({0});
     const auto mode_logits = get_tensor(outputs, "mode_logits").index({0});
     const auto country_logits_raw = get_tensor(outputs, "country_logits", false);

@@ -3,10 +3,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "game_loop.hpp"
 #include "game_state.hpp"
 #include "learned_policy.hpp"
+#include "mcts.hpp"
 #include "policies.hpp"
 
 namespace py = pybind11;
@@ -28,6 +30,14 @@ py::list influence_to_list(const ts::InfluenceBlock& influence) {
     for (int country_id = 0; country_id <= ts::kMaxCountryId; ++country_id) {
         out.append(influence[static_cast<size_t>(country_id)]);
     }
+    return out;
+}
+
+py::dict action_to_dict(const ts::ActionEncoding& action) {
+    py::dict out;
+    out["card_id"] = action.card_id;
+    out["mode"] = static_cast<int>(action.mode);
+    out["targets"] = action.targets;
     return out;
 }
 
@@ -196,6 +206,75 @@ double play_from_public_state(const py::dict& state_dict, py::object seed_obj) {
     return std::clamp(raw, -1.0, 1.0);
 }
 
+#if defined(TS_BUILD_TORCH_RUNTIME)
+thread_local std::string cached_model_path;
+thread_local std::optional<torch::jit::script::Module> cached_model;
+
+torch::jit::script::Module& get_or_load_model(const std::string& model_path) {
+    if (!cached_model.has_value() || cached_model_path != model_path) {
+        cached_model = torch::jit::load(model_path);
+        cached_model->eval();
+        cached_model_path = model_path;
+    }
+    return *cached_model;
+}
+
+py::dict run_mcts_search_from_state(
+    const py::dict& state_dict,
+    const std::string& model_path,
+    int n_sim,
+    float c_puct,
+    float calib_a,
+    float calib_b,
+    py::object seed_obj
+) {
+    if (n_sim <= 0) {
+        throw py::value_error("n_sim must be positive");
+    }
+    if (c_puct <= 0.0f) {
+        throw py::value_error("c_puct must be positive");
+    }
+
+    ts::GameState gs = game_state_from_dict(state_dict);
+    auto& model = get_or_load_model(model_path);
+
+    ts::MctsConfig config;
+    config.n_simulations = n_sim;
+    config.c_puct = c_puct;
+    config.calib_a = calib_a;
+    config.calib_b = calib_b;
+
+    ts::Pcg64Rng rng = seed_obj.is_none()
+        ? ts::Pcg64Rng()
+        : ts::Pcg64Rng(seed_obj.cast<uint64_t>());
+
+    const ts::SearchResult result = ts::mcts_search(gs, model, config, rng);
+
+    py::list edges_out;
+    for (const auto& edge : result.root_edges) {
+        py::dict edge_out;
+        edge_out["card_id"] = edge.action.card_id;
+        edge_out["mode"] = static_cast<int>(edge.action.mode);
+        edge_out["targets"] = edge.action.targets;
+        edge_out["visits"] = edge.visit_count;
+        edge_out["mean_value"] = edge.mean_value();
+        edge_out["prior"] = edge.prior;
+        edges_out.append(std::move(edge_out));
+    }
+
+    py::dict out;
+    py::object best_action = py::none();
+    if (!result.root_edges.empty() && result.best_action.card_id != 0) {
+        best_action = action_to_dict(result.best_action);
+    }
+    out["best_action"] = std::move(best_action);
+    out["root_value"] = result.root_value;
+    out["total_simulations"] = result.total_simulations;
+    out["edges"] = std::move(edges_out);
+    return out;
+}
+#endif
+
 }  // namespace
 
 PYBIND11_MODULE(tscore, m) {
@@ -261,7 +340,19 @@ PYBIND11_MODULE(tscore, m) {
         .def_readonly("steps", &ts::TracedGame::steps)
         .def_readonly("result", &ts::TracedGame::result);
 
-    m.def("play_game", &ts::play_game, py::arg("ussr_policy"), py::arg("us_policy"), py::arg("seed") = py::none());
+    m.def(
+        "play_game",
+        [](ts::PolicyKind ussr_policy, ts::PolicyKind us_policy, py::object seed_obj) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            return ts::play_game(ussr_policy, us_policy, seed);
+        },
+        py::arg("ussr_policy"),
+        py::arg("us_policy"),
+        py::arg("seed") = py::none()
+    );
     m.def(
         "play_from_public_state",
         [](const py::dict& state_dict, py::object seed_obj) {
@@ -311,8 +402,31 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("words"),
         py::arg("seed") = py::none()
     );
-    m.def("play_random_game", &ts::play_random_game, py::arg("seed") = py::none());
-    m.def("play_matchup", &ts::play_matchup, py::arg("ussr_policy"), py::arg("us_policy"), py::arg("game_count"), py::arg("seed") = py::none());
+    m.def(
+        "play_random_game",
+        [](py::object seed_obj) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            return ts::play_random_game(seed);
+        },
+        py::arg("seed") = py::none()
+    );
+    m.def(
+        "play_matchup",
+        [](ts::PolicyKind ussr_policy, ts::PolicyKind us_policy, int game_count, py::object seed_obj) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            return ts::play_matchup(ussr_policy, us_policy, game_count, seed);
+        },
+        py::arg("ussr_policy"),
+        py::arg("us_policy"),
+        py::arg("game_count"),
+        py::arg("seed") = py::none()
+    );
     m.def(
         "summarize_results",
         [](const std::vector<ts::GameResult>& results) {
@@ -345,6 +459,30 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("opponent_policy"),
         py::arg("game_count"),
         py::arg("seed") = py::none()
+    );
+    m.def(
+        "mcts_search_from_state",
+        &run_mcts_search_from_state,
+        py::arg("state_dict"),
+        py::arg("model_path"),
+        py::arg("n_sim") = 200,
+        py::arg("c_puct") = 1.5f,
+        py::arg("calib_a") = 1.0f,
+        py::arg("calib_b") = 0.0f,
+        py::arg("seed") = py::none(),
+        "Run native PUCT MCTS from a serialized game state and return root search statistics."
+    );
+    m.def(
+        "search_from_public_state",
+        &run_mcts_search_from_state,
+        py::arg("state_dict"),
+        py::arg("model_path"),
+        py::arg("n_sim") = 200,
+        py::arg("c_puct") = 1.5f,
+        py::arg("calib_a") = 1.0f,
+        py::arg("calib_b") = 0.0f,
+        py::arg("seed") = py::none(),
+        "Alias for mcts_search_from_state that runs native PUCT MCTS from a serialized game state."
     );
 #endif
 }

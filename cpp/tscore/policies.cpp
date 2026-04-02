@@ -714,6 +714,48 @@ std::vector<ScoredAction> rank_minimal_hybrid_actions(
     return ranked;
 }
 
+std::optional<ActionEncoding> choose_minimal_hybrid_sampled(
+    const PublicState& pub,
+    const CardSet& hand,
+    bool holds_china,
+    double temperature,
+    Pcg64Rng& rng,
+    const MinimalHybridParams& params
+) {
+    auto ranked = rank_minimal_hybrid_actions(pub, hand, holds_china, params);
+    if (ranked.empty()) {
+        return std::nullopt;
+    }
+    if (temperature <= 0.0 || ranked.size() == 1) {
+        return ranked.front().action;
+    }
+
+    // Boltzmann softmax: p_i = exp(score_i / T) / sum(exp(score_j / T))
+    // Subtract max for numerical stability.
+    double max_score = ranked.front().score;
+    for (const auto& sa : ranked) {
+        max_score = std::max(max_score, sa.score);
+    }
+
+    std::vector<double> weights(ranked.size());
+    double total = 0.0;
+    for (size_t i = 0; i < ranked.size(); ++i) {
+        weights[i] = std::exp((ranked[i].score - max_score) / temperature);
+        total += weights[i];
+    }
+
+    // Sample from the distribution.
+    double r = rng.random_double() * total;
+    double cumulative = 0.0;
+    for (size_t i = 0; i < ranked.size(); ++i) {
+        cumulative += weights[i];
+        if (r <= cumulative) {
+            return ranked[i].action;
+        }
+    }
+    return ranked.back().action;
+}
+
 std::optional<ActionEncoding> choose_action(
     PolicyKind kind,
     const PublicState& pub,

@@ -77,6 +77,17 @@ std::vector<ScoredAction> rank_minimal_hybrid_actions(
     const MinimalHybridParams& params = {}
 );
 
+// Boltzmann-sample from ranked heuristic actions using temperature.
+// temperature=0 → greedy (top action), temperature→∞ → uniform.
+std::optional<ActionEncoding> choose_minimal_hybrid_sampled(
+    const PublicState& pub,
+    const CardSet& hand,
+    bool holds_china,
+    double temperature,
+    Pcg64Rng& rng,
+    const MinimalHybridParams& params = {}
+);
+
 std::optional<ActionEncoding> choose_action(
     PolicyKind kind,
     const PublicState& pub,

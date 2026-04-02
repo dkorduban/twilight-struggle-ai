@@ -47,6 +47,19 @@ add_compile_options(
 option(TS_BUILD_PYTHON_BINDINGS "Build pybind11 Python extension module" ON)
 option(TS_BUILD_TORCH_RUNTIME "Build TorchScript/libtorch learned-policy runtime" ON)
 
+set(TS_PYTHON_EXECUTABLE "" CACHE FILEPATH "Python interpreter for CMake Python/Torch probes")
+if(NOT TS_PYTHON_EXECUTABLE)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/.venv/bin/python")
+        set(TS_PYTHON_EXECUTABLE "${CMAKE_SOURCE_DIR}/.venv/bin/python")
+    elseif(EXISTS "$ENV{HOME}/.venv/bin/python")
+        set(TS_PYTHON_EXECUTABLE "$ENV{HOME}/.venv/bin/python")
+    else()
+        find_program(TS_PYTHON_EXECUTABLE NAMES python3 REQUIRED)
+    endif()
+    set(TS_PYTHON_EXECUTABLE "${TS_PYTHON_EXECUTABLE}" CACHE FILEPATH "Python interpreter for CMake Python/Torch probes" FORCE)
+endif()
+
+set(Python3_EXECUTABLE "${TS_PYTHON_EXECUTABLE}" CACHE FILEPATH "Python interpreter for Twilight Struggle builds" FORCE)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 if(TS_BUILD_PYTHON_BINDINGS)
@@ -54,13 +67,13 @@ if(TS_BUILD_PYTHON_BINDINGS)
 endif()
 
 execute_process(
-    COMMAND python3 -c "import numpy.random._generator as g; print(g.__file__)"
+    COMMAND "${TS_PYTHON_EXECUTABLE}" -c "import numpy.random._generator as g; print(g.__file__)"
     OUTPUT_VARIABLE TS_NUMPY_GENERATOR_SO
     OUTPUT_STRIP_TRAILING_WHITESPACE
     ERROR_QUIET
 )
 execute_process(
-    COMMAND python3 -c "import sysconfig; from pathlib import Path; print(Path(sysconfig.get_config_var('LIBDIR')) / sysconfig.get_config_var('LDLIBRARY'))"
+    COMMAND "${TS_PYTHON_EXECUTABLE}" -c "import sysconfig; from pathlib import Path; print(Path(sysconfig.get_config_var('LIBDIR')) / sysconfig.get_config_var('LDLIBRARY'))"
     OUTPUT_VARIABLE TS_PYTHON_SHARED_LIB
     OUTPUT_STRIP_TRAILING_WHITESPACE
     ERROR_QUIET
@@ -69,7 +82,7 @@ execute_process(
 if(TS_BUILD_TORCH_RUNTIME)
     if(NOT DEFINED TS_TORCH_CMAKE_PREFIX)
         execute_process(
-            COMMAND python3 -c "import torch; print(torch.utils.cmake_prefix_path)"
+            COMMAND "${TS_PYTHON_EXECUTABLE}" -c "import torch; print(torch.utils.cmake_prefix_path)"
             OUTPUT_VARIABLE TS_TORCH_CMAKE_PREFIX
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET

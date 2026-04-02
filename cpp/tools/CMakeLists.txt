@@ -36,6 +36,21 @@ target_link_libraries(ts_pcg64_smoke
 
 target_compile_features(ts_pcg64_smoke PRIVATE cxx_std_23)
 
+add_executable(ts_test_human_openings_weights
+    test_human_openings_weights.cpp
+)
+
+target_link_libraries(ts_test_human_openings_weights
+    PRIVATE
+        tscore
+)
+
+target_compile_features(ts_test_human_openings_weights PRIVATE cxx_std_23)
+
+if(BUILD_TESTING)
+    add_test(NAME ts_test_human_openings_weights COMMAND ts_test_human_openings_weights)
+endif()
+
 add_executable(ts_initial_headline_choice
     initial_headline_choice.cpp
 )
@@ -70,6 +85,9 @@ target_link_libraries(ts_shuffle_stream_probe
 target_compile_features(ts_shuffle_stream_probe PRIVATE cxx_std_23)
 
 if(TS_BUILD_TORCH_RUNTIME)
+    get_filename_component(TS_TORCH_INSTALL_PREFIX "${Torch_DIR}/../../.." ABSOLUTE)
+    set(TS_TORCH_LIB_DIR "${TS_TORCH_INSTALL_PREFIX}/lib")
+
     add_executable(ts_learned_matchup
         learned_matchup.cpp
     )
@@ -80,6 +98,33 @@ if(TS_BUILD_TORCH_RUNTIME)
     )
 
     target_compile_features(ts_learned_matchup PRIVATE cxx_std_23)
+
+    add_executable(ts_mcts_search
+        ts_mcts_search.cpp
+    )
+
+    target_link_libraries(ts_mcts_search
+        PRIVATE
+            tscore
+    )
+
+    target_compile_features(ts_mcts_search PRIVATE cxx_std_23)
+    set_target_properties(ts_mcts_search PROPERTIES BUILD_RPATH "${TS_TORCH_LIB_DIR}")
+
+    add_executable(ts_collect_mcts_games_jsonl
+        collect_mcts_games_jsonl.cpp
+    )
+
+    target_link_libraries(ts_collect_mcts_games_jsonl
+        PRIVATE
+            tscore
+    )
+
+    target_compile_features(ts_collect_mcts_games_jsonl PRIVATE cxx_std_23)
+    set_target_properties(ts_collect_mcts_games_jsonl PROPERTIES BUILD_RPATH "${TS_TORCH_LIB_DIR}")
+
+    install(TARGETS ts_mcts_search RUNTIME DESTINATION bin)
+    install(TARGETS ts_collect_mcts_games_jsonl RUNTIME DESTINATION bin)
 endif()
 
 add_executable(ts_collect_trace_jsonl

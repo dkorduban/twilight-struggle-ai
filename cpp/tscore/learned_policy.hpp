@@ -22,6 +22,7 @@ public:
     explicit TorchScriptPolicy(std::string model_path, bool use_country_head = true);
 
     [[nodiscard]] const std::string& model_path() const { return model_path_; }
+    void set_exploration_rate(float exploration_rate);
 
     std::optional<ActionEncoding> choose_action(
         const PublicState& pub,
@@ -33,6 +34,7 @@ public:
 private:
     std::string model_path_;
     bool use_country_head_ = true;
+    float exploration_rate_ = 0.0f;
     torch::jit::script::Module module_;
 };
 
