@@ -57,6 +57,9 @@ ROWS_TOOL="build-ninja/cpp/tools/ts_collect_selfplay_rows_jsonl"
 EXPORT_SCRIPT="cpp/tools/export_baseline_to_torchscript.py"
 KEEP_CHUNKS=0
 TEMPERATURE=""
+USSR_TEMPERATURE=""
+US_TEMPERATURE=""
+BID=""
 EPSILON=""
 EXPLORATION_RATE=""
 
@@ -76,6 +79,9 @@ while [[ $# -gt 0 ]]; do
         --chunk-dir)        CHUNK_DIR=$2;        shift 2 ;;
         --rows-tool)        ROWS_TOOL=$2;        shift 2 ;;
         --temperature)      TEMPERATURE=$2;      shift 2 ;;
+        --ussr-temperature) USSR_TEMPERATURE=$2; shift 2 ;;
+        --us-temperature)   US_TEMPERATURE=$2;   shift 2 ;;
+        --bid)              BID=$2;              shift 2 ;;
         --epsilon)          EPSILON=$2;          shift 2 ;;
         --exploration-rate) EXPLORATION_RATE=$2;  shift 2 ;;
         --keep-chunks)
@@ -186,6 +192,15 @@ if [ -n "$LEARNED_MODEL_ARG" ]; then
 fi
 if [ -n "$TEMPERATURE" ]; then
     NATIVE_ARGS+=(--temperature "$TEMPERATURE")
+fi
+if [ -n "$USSR_TEMPERATURE" ]; then
+    NATIVE_ARGS+=(--ussr-temperature "$USSR_TEMPERATURE")
+fi
+if [ -n "$US_TEMPERATURE" ]; then
+    NATIVE_ARGS+=(--us-temperature "$US_TEMPERATURE")
+fi
+if [ -n "$BID" ]; then
+    NATIVE_ARGS+=(--bid "$BID")
 fi
 if [ -n "$EPSILON" ]; then
     NATIVE_ARGS+=(--epsilon "$EPSILON")

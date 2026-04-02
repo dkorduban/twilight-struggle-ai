@@ -85,8 +85,12 @@ def run_chunk(
     ussr_model: Path | None = None,
     us_model: Path | None = None,
     temperature: float | None = None,
+    ussr_temperature: float | None = None,
+    us_temperature: float | None = None,
+    bid: int | None = None,
     epsilon: float | None = None,
     exploration_rate: float | None = None,
+    nash_temperatures: bool = False,
 ) -> None:
     cmd = [
         str(rows_tool),
@@ -111,10 +115,18 @@ def run_chunk(
         cmd.extend(["--learned-model", str(learned_model), "--learned-side", "us"])
     if temperature is not None and temperature > 0:
         cmd.extend(["--temperature", str(temperature)])
+    if ussr_temperature is not None and ussr_temperature > 0:
+        cmd.extend(["--ussr-temperature", str(ussr_temperature)])
+    if us_temperature is not None and us_temperature > 0:
+        cmd.extend(["--us-temperature", str(us_temperature)])
+    if bid is not None and bid > 0:
+        cmd.extend(["--bid", str(bid)])
     if epsilon is not None and epsilon > 0:
         cmd.extend(["--epsilon", str(epsilon)])
     if exploration_rate is not None and exploration_rate > 0:
         cmd.extend(["--exploration-rate", str(exploration_rate)])
+    if nash_temperatures:
+        cmd.append("--nash-temperatures")
     subprocess.run(cmd, check=True)
 
 
@@ -140,8 +152,12 @@ def main() -> None:
     parser.add_argument("--max-swap-used-mb", type=int, default=2048)
     parser.add_argument("--backoff-seconds", type=float, default=5.0)
     parser.add_argument("--temperature", type=float, default=None, help="Softmax temperature for action sampling")
+    parser.add_argument("--ussr-temperature", type=float, default=None, help="Boltzmann temperature for USSR heuristic")
+    parser.add_argument("--us-temperature", type=float, default=None, help="Boltzmann temperature for US heuristic")
+    parser.add_argument("--bid", type=int, default=None, help="US bid extra influence (typically 2)")
     parser.add_argument("--epsilon", type=float, default=None, help="Epsilon-greedy exploration rate")
     parser.add_argument("--exploration-rate", type=float, default=None, help="Policy-level noise rate")
+    parser.add_argument("--nash-temperatures", action="store_true", help="Use Nash mixed strategy temperatures")
     args = parser.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -191,8 +207,12 @@ def main() -> None:
             ussr_model=args.ussr_model,
             us_model=args.us_model,
             temperature=args.temperature,
+            ussr_temperature=args.ussr_temperature,
+            us_temperature=args.us_temperature,
+            bid=args.bid,
             epsilon=args.epsilon,
             exploration_rate=args.exploration_rate,
+            nash_temperatures=args.nash_temperatures,
         )
 
         manifest["chunks"].append(
