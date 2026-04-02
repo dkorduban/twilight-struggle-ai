@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "human_openings.hpp"
+
 #include "dice.hpp"
 #include "game_data.hpp"
 #include "scoring.hpp"
@@ -1207,25 +1209,7 @@ void run_setup_phase(
 ) {
     gs.phase = GamePhase::Setup;
 
-    // Heuristic default placements with slight variation.
-    // USSR standard: Poland=4, EastGermany=1, Yugoslavia=1  (or Romania/Czech variants)
-    // US standard: WestGermany=4, Italy=2, France=1  (or Italy=3/Turkey=1 variants)
-    // 20% chance of an alternative setup for diversity.
-    struct SetupPlan { CountryId country; int amount; };
-
-    // USSR variants
-    const std::array<std::vector<SetupPlan>, 3> ussr_plans = {{
-        {{SetupPlan{12, 4}, {5, 1}, {19, 1}}},   // Poland 4, EG+1, Yugoslavia 1
-        {{SetupPlan{12, 3}, {3, 3}}},              // Poland 3, Czechoslovakia 3
-        {{SetupPlan{12, 4}, {13, 1}, {19, 1}}},   // Poland 4, Romania 1, Yugoslavia 1
-    }};
-    // US variants
-    const std::array<std::vector<SetupPlan>, 3> us_plans = {{
-        {{SetupPlan{18, 4}, {10, 2}, {7, 1}}},    // WG 4, Italy 2, France 1
-        {{SetupPlan{18, 3}, {10, 3}, {7, 1}}},    // WG 3, Italy 3, France 1
-        {{SetupPlan{18, 4}, {10, 2}, {16, 1}}},   // WG 4, Italy 2, Turkey 1
-    }};
-
+    // Sample opening from human game corpus, weighted by historical frequency.
     for (const auto side : {Side::USSR, Side::US}) {
         gs.pub.phasing = side;
         const int side_idx = to_index(side);
@@ -1237,13 +1221,24 @@ void run_setup_phase(
             }
         }();
 
-        // Choose a heuristic plan (used as fallback when policy doesn't provide valid targets)
-        const auto& plans = (side == Side::USSR) ? ussr_plans : us_plans;
-        const auto plan_idx = (rng.random_double() < 0.8) ? 0 : (1 + rng.choice_index(plans.size() - 1));
+        // Sample an opening weighted by human frequency.
+        // All human games used +2 bid, so US openings are always 9-influence atomic units
+        // (including Iran+1 bid placement). kHumanUSOpeningsBid2 is the only US table.
+        const SetupOpening* opening;
+        if (side == Side::USSR) {
+            opening = choose_random_opening(kHumanUSSROpenings.data(),
+                                            static_cast<int>(kHumanUSSROpenings.size()), rng);
+        } else {
+            opening = choose_random_opening(kHumanUSOpeningsBid2.data(),
+                                            static_cast<int>(kHumanUSOpeningsBid2.size()), rng);
+        }
+
         std::vector<CountryId> heuristic_sequence;
-        for (const auto& step : plans[plan_idx]) {
-            for (int i = 0; i < step.amount; ++i) {
-                heuristic_sequence.push_back(step.country);
+        if (opening != nullptr) {
+            for (int i = 0; i < opening->count; ++i) {
+                for (int j = 0; j < opening->placements[i].amount; ++j) {
+                    heuristic_sequence.push_back(opening->placements[i].country);
+                }
             }
         }
 
@@ -1322,9 +1317,21 @@ TracedGame play_game_traced_from_state_with_rng(
 ) {
     TracedGame traced;
 
+    // Apply competitive bid: US gets extra free influence in Western Europe.
+    // Standard online TS bid is +2 for US.
+    if (config.us_bid_extra > 0) {
+        gs.setup_influence_remaining[to_index(Side::US)] += config.us_bid_extra;
+    }
+
     // Run setup phase if game hasn't started yet (fresh game state)
     if (gs.phase == GamePhase::Setup && gs.setup_influence_remaining[0] > 0) {
-        run_setup_phase(gs, ussr_policy, us_policy, rng, &traced.steps, config);
+        if (config.skip_setup_influence) {
+            // Skip free placement, go directly to headline.
+            gs.setup_influence_remaining = {0, 0};
+            gs.phase = GamePhase::Headline;
+        } else {
+            run_setup_phase(gs, ussr_policy, us_policy, rng, &traced.steps, config);
+        }
     }
 
     for (int turn = 1; turn <= kMaxTurns; ++turn) {

@@ -47,6 +47,8 @@ struct TracedGame {
 
 struct GameLoopConfig {
     float exploration_rate = 0.0f;
+    bool skip_setup_influence = false;  // if true, skip §3.0 free influence placement
+    int us_bid_extra = 0;  // extra influence for US in setup (competitive bid, typically +2)
 };
 
 // Public wrappers used by tools and bindings so they can drive the native loop
