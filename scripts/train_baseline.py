@@ -892,6 +892,13 @@ def main() -> None:
     # ---- checkpoint directory ----
     os.makedirs(args.out_dir, exist_ok=True)
 
+    # ---- save training args for reproducibility ----
+    import json as _json
+
+    args_path = os.path.join(args.out_dir, "args.json")
+    with open(args_path, "w") as f:
+        _json.dump(vars(args), f, indent=2, sort_keys=True, default=str)
+
     # ---- resume from latest checkpoint if requested ----
     best_val_loss = float("inf")
     start_epoch = 1

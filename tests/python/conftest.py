@@ -1,17 +1,18 @@
 """Pytest configuration for the tsrl test suite."""
+
 from __future__ import annotations
 
 import os
-from tsrl.engine.rng import make_rng
 from pathlib import Path
 
 import polars as pl
 import pytest
-
+from tsrl.engine.rng import make_rng
 
 # ---------------------------------------------------------------------------
 # Worker nice-ness (xdist workers only)
 # ---------------------------------------------------------------------------
+
 
 def pytest_configure(config):
     """Register the tsrl_nice_workers plugin if xdist is available."""
@@ -38,6 +39,7 @@ class _NiceWorkersPlugin:
 # ---------------------------------------------------------------------------
 # @pytest.mark.serial support
 # ---------------------------------------------------------------------------
+
 
 def pytest_collection_modifyitems(config, items):
     """Move @pytest.mark.serial tests to the 'serial' xdist group.
@@ -77,6 +79,8 @@ def tiny_selfplay_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     for row_idx in range(_ROW_COUNT):
         rows.append(
             {
+                "game_id": f"tiny_game_{row_idx // 10}",
+                "step_idx": row_idx,
                 "ussr_influence": country_vec(row_idx),
                 "us_influence": country_vec(row_idx + 1),
                 "actor_known_in": mask_vec(2, row_idx),
@@ -99,7 +103,12 @@ def tiny_selfplay_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 "action_targets": rng.choice(target_patterns),
                 "winner_side": (-1, 0, 1)[row_idx % 3],
                 "final_vp": ((row_idx * 3) % 41) - 20,
-                "end_reason": ("turn_limit", "defcon1", "europe_control", "vp_threshold")[row_idx % 4],
+                "end_reason": (
+                    "turn_limit",
+                    "defcon1",
+                    "europe_control",
+                    "vp_threshold",
+                )[row_idx % 4],
             }
         )
 

@@ -53,6 +53,8 @@ _CARD_FEAT_DIM = 8    # ops/4, side_ussr, side_us, era_early, era_mid, era_late,
 _COUNTRY_FEAT_DIM = 11  # stability/4, is_bg, 7x region_onehot, us_start/3, ussr_start/3
 
 VALUE_BRANCH_HIDDEN = 128
+DEFAULT_PLATT_A = 1.0
+DEFAULT_PLATT_B = 0.0
 
 # Region ordering for onehot encoding (must be stable)
 _REGIONS = ["Europe", "Asia", "MiddleEast", "Africa", "CentralAmerica", "SouthAmerica", "SoutheastAsia"]
@@ -163,6 +165,39 @@ _REGION_MASKS: list[torch.Tensor] = _build_region_masks()
 # ---------------------------------------------------------------------------
 # Shared trunk building blocks
 # ---------------------------------------------------------------------------
+
+
+class PlattScaler(nn.Module):
+    """Post-hoc sigmoid calibrator for value-head outputs in [-1, 1]."""
+
+    def __init__(
+        self,
+        a: float = DEFAULT_PLATT_A,
+        b: float = DEFAULT_PLATT_B,
+    ) -> None:
+        super().__init__()
+        self.register_buffer("a", torch.tensor(float(a), dtype=torch.float32))
+        self.register_buffer("b", torch.tensor(float(b), dtype=torch.float32))
+
+    @property
+    def is_identity(self) -> bool:
+        return bool(
+            torch.isclose(
+                self.a,
+                torch.tensor(DEFAULT_PLATT_A, dtype=self.a.dtype, device=self.a.device),
+            ).item()
+            and torch.isclose(
+                self.b,
+                torch.tensor(DEFAULT_PLATT_B, dtype=self.b.dtype, device=self.b.device),
+            ).item()
+        )
+
+    def forward(self, value: torch.Tensor) -> torch.Tensor:
+        if self.is_identity:
+            return value
+        logits = value * self.a.to(device=value.device, dtype=value.dtype)
+        logits = logits + self.b.to(device=value.device, dtype=value.dtype)
+        return 2.0 * torch.sigmoid(logits) - 1.0
 
 
 class _ResidualBlock(nn.Module):

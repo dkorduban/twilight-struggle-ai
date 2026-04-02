@@ -42,25 +42,26 @@ Earlier autonomous self-play, sparse teacher search on curated hard states, teac
 Strength push: better distillation quality, league stability, evaluation quality, benchmark report, and release-candidate bot.
 
 ## Current focus
-We are in **Month 1: foundations + offline baseline + play-mode scaffold**.
+We are in **Month 3: strength push, league stability, evaluation quality, and release-candidate bot**.
 
 Highest-priority deliverables, in order:
-1. replay grammar and parser
-2. exact `PublicState` reducer
-3. causal `HandKnowledge` reducer
-4. offline smoother for actor-hand labels
-5. exact unseen-card support masks
-6. dataset builder for a **small curated corpus**
-7. first small PyTorch policy / value baseline
-8. legal-action API and minimal play-mode scaffolding for Month 2 self-play / teacher search
+1. Dirichlet noise at MCTS root + temperature-based action sampling in self-play
+2. Self-play exploration noise (epsilon-greedy or policy noise injection)
+3. Elo / BayesElo rating system for stable cross-generation evaluation
+4. Information-set MCTS (determinization-based) for online play under hidden information
+5. Architecture evaluation: benchmark attention model (`TSCountryAttnModel`) vs MLP baseline
+6. Parallel MCTS (virtual loss already scaffolded, need multi-threaded search)
+7. Online play server (HTTP/WebSocket interface for human or bot opponents)
+8. Formal benchmark report vs known baselines
 
-Suggested Month-1 time allocation:
-- 40% engine / reducer correctness
-- 25% replay ingest + hand reconstruction
-- 20% offline baseline
-- 15% legal-action / play-mode scaffolding
+Suggested Month-3 time allocation:
+- 30% ISMCTS + exploration noise (biggest strength lever)
+- 25% league / Elo evaluation infrastructure
+- 20% architecture experiments + distillation quality
+- 15% parallel MCTS + online play server
+- 10% benchmark report + release polish
 
-Do **not** spend Month-1 time on full teacher search, distributed training, architecture experiments, or UI / deployment work until the reducer, legality, and dataset path are trustworthy.
+Do **not** spend Month-3 time on replay parsing, engine reducer rewrites, or dataset schema changes — those are stable from Month 1-2.
 
 ## Default working style
 - Keep changes small, layer-local, and reversible.
