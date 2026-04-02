@@ -144,6 +144,24 @@ fi
 
 START_TIME=$(date +%s)
 
+# ── Provenance tracking ─────────────────────────────────────────────────────
+PROV_OUT="${OUT%.parquet}_provenance.json"
+python3 -c "
+from tsrl.provenance import capture_provenance, save_provenance
+prov = capture_provenance(
+    binaries=['$ROWS_TOOL'],
+    extra={
+        'games': $GAMES, 'seed': $SEED,
+        'ussr_policy': '$USSR_POLICY', 'us_policy': '$US_POLICY',
+        'checkpoint': '${CHECKPOINT:-none}',
+        'ussr_model': '${USSR_MODEL:-none}', 'us_model': '${US_MODEL:-none}',
+        'temperature': '${TEMPERATURE:-none}',
+    },
+)
+save_provenance(prov, '$PROV_OUT')
+print(f'[provenance] git={prov[\"git_sha\"][:8]} dirty={prov[\"git_dirty\"]}')
+" 2>/dev/null || echo "[provenance] Skipped (non-fatal)"
+
 # ── Run native collection (chunked via run_native_collection.py) ──────────────
 NATIVE_ARGS=(
     --out-dir "$CHUNK_DIR"

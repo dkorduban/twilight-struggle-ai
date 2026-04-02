@@ -790,6 +790,23 @@ def main() -> None:
 
     wandb_active = _setup_wandb(args)
 
+    # ---- provenance tracking ----
+    try:
+        from tsrl.provenance import capture_provenance, log_provenance_wandb, save_provenance
+
+        prov = capture_provenance(
+            input_files=[f"{args.data_dir}/*.parquet"],
+            binaries=["build-ninja/cpp/tools/ts_collect_selfplay_rows_jsonl"],
+            extra={"args": vars(args)},
+        )
+        save_provenance(prov, os.path.join(args.out_dir, "provenance.json"))
+        if wandb_active:
+            log_provenance_wandb(prov)
+        print(f"[provenance] git={prov['git_sha'][:8]} dirty={prov['git_dirty']} "
+              f"inputs={prov['input_file_count']} files")
+    except Exception as e:
+        print(f"[provenance] Skipped (non-fatal): {e}")
+
     print(f"Device: {device}")
     print(f"Data dir: {args.data_dir}")
     print(f"Output dir: {args.out_dir}")
