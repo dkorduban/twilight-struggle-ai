@@ -225,6 +225,15 @@ class TS_SelfPlayDataset(Dataset):
 
         df = pl.concat(frames, how="vertical_relaxed")
         del frames  # free individual frame memory
+
+        # Filter out setup-influence rows (card_id=0) — these aren't card-play
+        # decisions and would produce target=-1 after the card_id-1 transform.
+        if "action_card_id" in df.columns:
+            n_before = len(df)
+            df = df.filter(pl.col("action_card_id") > 0)
+            n_dropped = n_before - len(df)
+            if n_dropped > 0:
+                print(f"[dataset] Dropped {n_dropped:,} setup-influence rows (card_id=0)")
         if teacher_targets_path is not None:
             if "game_id" not in df.columns or "step_idx" not in df.columns:
                 raise ValueError(

@@ -107,23 +107,53 @@ def _rows_to_polars(rows: list[dict]) -> pl.DataFrame:
     return df
 
 
+def _cast_array_columns(df: pl.DataFrame) -> pl.DataFrame:
+    """Cast list columns to fixed-size Array types for consistent Parquet schema."""
+    for col, length in _ARRAY_COLUMNS:
+        if col in df.columns:
+            dtype = df[col].dtype
+            if dtype == pl.List(pl.Int64):
+                df = df.with_columns(pl.col(col).cast(pl.List(pl.Int32)))
+            if df[col].dtype != pl.Array(pl.Int32, length):
+                try:
+                    df = df.with_columns(pl.col(col).cast(pl.Array(pl.Int32, length)))
+                except Exception:
+                    pass  # leave as list if cast fails
+    return df
+
+
 def convert(
     input_paths: list[Path],
     output_path: Path,
 ) -> int:
-    """Convert JSONL files to Parquet. Returns total row count."""
-    all_rows: list[dict] = []
-    for path in input_paths:
-        before = len(all_rows)
-        all_rows.extend(_load_jsonl(path))
-        log.info("loaded %d rows from %s", len(all_rows) - before, path)
+    """Convert JSONL files to Parquet. Returns total row count.
 
-    if not all_rows:
+    Uses pl.read_ndjson per chunk for speed — avoids Python-dict intermediary.
+    """
+    chunks: list[pl.DataFrame] = []
+    total = 0
+    for path in input_paths:
+        try:
+            df = pl.read_ndjson(path)
+            df = _cast_array_columns(df)
+            total += len(df)
+            chunks.append(df)
+            log.info("loaded %d rows from %s (running total: %d)", len(df), path, total)
+        except Exception as exc:
+            log.warning("failed to read %s with ndjson, falling back to manual: %s", path, exc)
+            rows = _load_jsonl(path)
+            if rows:
+                df = _rows_to_polars(rows)
+                total += len(df)
+                chunks.append(df)
+                log.info("loaded %d rows from %s (fallback, running total: %d)", len(df), path, total)
+
+    if not chunks:
         log.error("no rows loaded from any input file")
         return 0
 
-    log.info("building DataFrame from %d rows ...", len(all_rows))
-    df = _rows_to_polars(all_rows)
+    log.info("concatenating %d chunks (%d total rows) ...", len(chunks), total)
+    df = pl.concat(chunks, how="diagonal_relaxed")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(str(output_path))
