@@ -1,7 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "Agent(Explore)",
       "Agent(Plan)",
@@ -34,14 +33,6 @@
       "Bash(python -m pip list)",
       "Bash(python scripts/*)"
     ],
-    "ask": [
-      "Bash(git commit *)",
-      "Bash(git push *)",
-      "Bash(gh *)",
-      "Bash(rm *)",
-      "Bash(mv *)",
-      "Bash(cp -r *)"
-    ],
     "deny": [
       "Bash(curl *)",
       "Bash(wget *)",
@@ -64,7 +55,15 @@
       "Read(./.mypy_cache/**)",
       "Read(./.ruff_cache/**)",
       "Read(./.git/**)"
-    ]
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(gh *)",
+      "Bash(rm *)",
+      "Bash(mv *)",
+      "Bash(cp -r *)"
+    ],
+    "defaultMode": "acceptEdits"
   },
   "hooks": {
     "PreToolUse": [
@@ -94,8 +93,8 @@
           {
             "type": "command",
             "command": "python3 /home/dkord/code/twilight-struggle-ai/.claude/hooks/run-targeted-checks.py",
-            "async": true,
-            "timeout": 120
+            "timeout": 120,
+            "async": true
           }
         ]
       }
