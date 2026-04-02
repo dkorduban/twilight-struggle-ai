@@ -476,12 +476,19 @@ print(pct)
             echo "[$(date)] Added self-play v${N}-vs-v${NM1} to combined_v${NP1}"
         fi
 
-        # Include heuristic anchor (always present — provides baseline quality data)
-        HEURISTIC_ANCHOR="data/selfplay/heuristic_3000games_v3_seed20000.parquet"
-        if [ -f "$HEURISTIC_ANCHOR" ]; then
-            ln -sf "$(readlink -f "$HEURISTIC_ANCHOR")" \
-                "$COMBINED_NP1/heuristic_anchor_3000g.parquet"
-            echo "[$(date)] Added heuristic anchor to combined_v${NP1}"
+        # Include heuristic anchors (always present — provides baseline quality data)
+        # v3 = original anchor (pre-DEFCON fix, historical); v4 = fixed heuristic
+        HEURISTIC_ANCHOR_OLD="data/selfplay/heuristic_3000games_v3_seed20000.parquet"
+        HEURISTIC_ANCHOR_NEW="data/selfplay/heuristic_3000games_v4_fixed_seed30000.parquet"
+        if [ -f "$HEURISTIC_ANCHOR_NEW" ]; then
+            ln -sf "$(readlink -f "$HEURISTIC_ANCHOR_NEW")" \
+                "$COMBINED_NP1/heuristic_anchor_v4_3000g.parquet"
+            echo "[$(date)] Added heuristic anchor v4 (fixed) to combined_v${NP1}"
+        fi
+        if [ -f "$HEURISTIC_ANCHOR_OLD" ]; then
+            ln -sf "$(readlink -f "$HEURISTIC_ANCHOR_OLD")" \
+                "$COMBINED_NP1/heuristic_anchor_v3_3000g.parquet"
+            echo "[$(date)] Added heuristic anchor v3 (legacy) to combined_v${NP1}"
         fi
 
         # Include curated winning games anchor dataset (VP>5 or wargames wins)
