@@ -234,6 +234,27 @@ checkpoints/
 wandb/
 .wandb-api-key.txt
 
+# C++ out-of-tree build directories
+build-*/
+
+# Claude Code / Codex working state
+.codex_tasks/
+.claude/worktrees/
+.mcp.json
+
+# Combined / derived training datasets (large, regenerate from selfplay)
+data/combined_*/
+data/heuristic_repro/
+data/imitation_t1_baseline/
+data/combined_bid2_15k/
+data/teacher_targets/
+
+# Self-play JSONL chunks (large, parquet is the canonical form)
+data/selfplay/*/
+
+# PyTorch checkpoint directories (large binary blobs)
+data/checkpoints/
+
 # Extra / private raw logs (original 7 sample logs, not checked in)
 data/raw_log_extras/
 logs/
