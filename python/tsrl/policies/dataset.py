@@ -42,11 +42,82 @@ from __future__ import annotations
 import glob
 import os
 import time
+from pathlib import Path
 
 import numpy as np
 import polars as pl
 import torch
 from torch.utils.data import Dataset
+
+_TEACHER_CARD_TARGET_SIZE = 111
+_TEACHER_MODE_TARGET_SIZE = 5
+
+
+def _load_teacher_targets(teacher_targets_path: str) -> pl.DataFrame:
+    path = Path(teacher_targets_path)
+    if path.is_file():
+        paths = [path]
+    elif path.is_dir():
+        paths = sorted(
+            p
+            for p in path.iterdir()
+            if p.is_file() and p.suffix.lower() in {".parquet", ".jsonl", ".ndjson"}
+        )
+        if not paths:
+            raise FileNotFoundError(
+                "No teacher target files (*.parquet, *.jsonl, *.ndjson) found in "
+                f"{teacher_targets_path!r}"
+            )
+    else:
+        raise FileNotFoundError(teacher_targets_path)
+
+    frames: list[pl.DataFrame] = []
+    for teacher_path in paths:
+        suffix = teacher_path.suffix.lower()
+        if suffix == ".parquet":
+            frame = pl.read_parquet(str(teacher_path))
+        elif suffix in {".jsonl", ".ndjson"}:
+            frame = pl.read_ndjson(str(teacher_path))
+        else:
+            raise ValueError(f"Unsupported teacher target format: {teacher_path}")
+        frames.append(frame)
+
+    teacher_df = pl.concat(frames, how="vertical_relaxed") if len(frames) > 1 else frames[0]
+    if "step_idx" in teacher_df.columns:
+        teacher_step_col = "step_idx"
+    elif "step_index" in teacher_df.columns:
+        teacher_step_col = "step_index"
+    else:
+        raise ValueError("Teacher targets must contain 'step_index' or 'step_idx'")
+
+    required_cols = {
+        "game_id",
+        teacher_step_col,
+        "teacher_card_target",
+        "teacher_mode_target",
+        "teacher_value_target",
+    }
+    missing = required_cols.difference(teacher_df.columns)
+    if missing:
+        raise ValueError(f"Teacher targets missing required columns: {sorted(missing)}")
+
+    teacher_df = teacher_df.select(
+        pl.col("game_id").cast(pl.String),
+        pl.col(teacher_step_col).cast(pl.Int64).alias("step_idx"),
+        pl.col("teacher_card_target").cast(pl.List(pl.Float32)),
+        pl.col("teacher_mode_target").cast(pl.List(pl.Float32)),
+        pl.col("teacher_value_target").cast(pl.Float32),
+    )
+
+    dupes = teacher_df.group_by(["game_id", "step_idx"]).len().filter(pl.col("len") > 1)
+    if len(dupes) > 0:
+        duped = dupes.row(0, named=True)
+        raise ValueError(
+            "Teacher targets contain duplicate keys for "
+            f"game_id={duped['game_id']!r}, step_idx={duped['step_idx']}"
+        )
+
+    return teacher_df
 
 
 class TS_SelfPlayDataset(Dataset):
@@ -71,7 +142,12 @@ class TS_SelfPlayDataset(Dataset):
                      value target. Requires final_vp column in all files.
     """
 
-    def __init__(self, data_dir: str, value_target_mode: str = "winner_side") -> None:
+    def __init__(
+        self,
+        data_dir: str,
+        value_target_mode: str = "winner_side",
+        teacher_targets_path: str | None = None,
+    ) -> None:
         if value_target_mode not in ("winner_side", "final_vp"):
             raise ValueError(
                 f"value_target_mode must be 'winner_side' or 'final_vp', got {value_target_mode!r}"
@@ -82,71 +158,123 @@ class TS_SelfPlayDataset(Dataset):
             raise FileNotFoundError(f"No *.parquet files found in {data_dir!r}")
 
         t0 = time.time()
-        frames = [pl.read_parquet(p) for p in paths]
-        # Normalise column order before concat — C++ and Python collectors
-        # emit identical column sets but potentially different orderings.
-        canonical = frames[0].columns
+
+        # Only read columns the model actually needs — cuts memory ~60-70%
+        # when parquet files have 75 columns but model uses ~24.
+        _NEEDED_COLS = {
+            # influence
+            "ussr_influence", "us_influence",
+            # card features
+            "actor_known_in", "actor_possible", "discard_mask", "removed_mask",
+            # scalars
+            "vp", "defcon", "milops_ussr", "milops_us",
+            "space_ussr", "space_us", "china_held_by", "actor_holds_china",
+            "turn", "ar", "phasing",
+            # targets
+            "action_card_id", "action_mode", "action_targets",
+            # value targets
+            "winner_side", "final_vp", "end_reason",
+            # teacher join keys
+            "game_id", "step_idx",
+        }
+
+        def _read_slim(p: str) -> pl.DataFrame:
+            """Read only needed columns from a parquet file."""
+            available = set(pl.read_parquet_schema(p).keys())
+            cols = sorted(_NEEDED_COLS & available)
+            return pl.read_parquet(p, columns=cols)
+
+        frames = [_read_slim(p) for p in paths]
+        # Normalise column order before concat — files may have different
+        # column sets (e.g. older data lacks full-state columns). Use the
+        # intersection so all frames share the same schema.
+        col_sets = [set(f.columns) for f in frames]
+        common = col_sets[0]
+        for s in col_sets[1:]:
+            common &= s
+        canonical = [c for c in frames[0].columns if c in common]
         frames = [f.select(canonical) for f in frames]
 
         # Normalise list/array column schemas: C++ JSONL→Parquet emits
         # Array(Int32, N) while Python collectors emit List(Int64).
         # Cast everything to List(Int32) so pl.concat doesn't fail.
         _LIST_COLS = [
-            "ussr_influence", "us_influence",
-            "discard_mask", "removed_mask",
-            "actor_known_in", "actor_known_not_in", "actor_possible",
-            "opp_known_in", "opp_known_not_in", "opp_possible",
-            "lbl_actor_hand", "lbl_card_quality", "lbl_opponent_possible",
+            "ussr_influence",
+            "us_influence",
+            "discard_mask",
+            "removed_mask",
+            "actor_known_in",
+            "actor_known_not_in",
+            "actor_possible",
+            "opp_known_in",
+            "opp_known_not_in",
+            "opp_possible",
+            "lbl_actor_hand",
+            "lbl_card_quality",
+            "lbl_opponent_possible",
         ]
+
         def _normalize_frame(f: pl.DataFrame) -> pl.DataFrame:
             casts = []
             for col in _LIST_COLS:
                 if col in f.columns:
                     casts.append(pl.col(col).cast(pl.List(pl.Int32)).alias(col))
             return f.with_columns(casts) if casts else f
+
         frames = [_normalize_frame(f) for f in frames]
 
-        df = pl.concat(frames)
+        df = pl.concat(frames, how="vertical_relaxed")
+        del frames  # free individual frame memory
+        if teacher_targets_path is not None:
+            if "game_id" not in df.columns or "step_idx" not in df.columns:
+                raise ValueError(
+                    "Teacher targets require training rows to include 'game_id' and 'step_idx'"
+                )
+            teacher_df = _load_teacher_targets(teacher_targets_path)
+            df = df.join(teacher_df, on=["game_id", "step_idx"], how="left")
         N = len(df)
 
         # --- influence (172,) ---
-        ussr_inf = np.array(df["ussr_influence"].to_list(), dtype=np.float32)   # (N, 86)
-        us_inf   = np.array(df["us_influence"].to_list(),   dtype=np.float32)   # (N, 86)
+        ussr_inf = np.array(df["ussr_influence"].to_list(), dtype=np.float32)  # (N, 86)
+        us_inf = np.array(df["us_influence"].to_list(), dtype=np.float32)  # (N, 86)
         self._influence = torch.from_numpy(np.concatenate([ussr_inf, us_inf], axis=1))  # (N, 172)
+        del ussr_inf, us_inf
 
         # --- card features (448,) stored as uint8, cast to float32 at index time ---
-        known_in = np.array(df["actor_known_in"].to_list(), dtype=np.uint8)   # (N, 112)
-        possible = np.array(df["actor_possible"].to_list(), dtype=np.uint8)   # (N, 112)
-        discard  = np.array(df["discard_mask"].to_list(),   dtype=np.uint8)   # (N, 112)
-        removed  = np.array(df["removed_mask"].to_list(),   dtype=np.uint8)   # (N, 112)
+        known_in = np.array(df["actor_known_in"].to_list(), dtype=np.uint8)  # (N, 112)
+        possible = np.array(df["actor_possible"].to_list(), dtype=np.uint8)  # (N, 112)
+        discard = np.array(df["discard_mask"].to_list(), dtype=np.uint8)  # (N, 112)
+        removed = np.array(df["removed_mask"].to_list(), dtype=np.uint8)  # (N, 112)
         # Store as uint8 tensor (4x less RAM than float32), cast to float32 in __getitem__
         self._cards = torch.from_numpy(
             np.concatenate([known_in, possible, discard, removed], axis=1)
         )  # (N, 448) uint8
+        del known_in, possible, discard, removed
 
         # --- scalars (11,) — np.stack with axis=1 on 1-D arrays gives (N, 11) ---
-        scalars = np.stack([
-            df["vp"].cast(pl.Float32).to_numpy() / 20.0,
-            (df["defcon"].cast(pl.Float32).to_numpy() - 1.0) / 4.0,
-            df["milops_ussr"].cast(pl.Float32).to_numpy() / 6.0,
-            df["milops_us"].cast(pl.Float32).to_numpy() / 6.0,
-            df["space_ussr"].cast(pl.Float32).to_numpy() / 9.0,
-            df["space_us"].cast(pl.Float32).to_numpy() / 9.0,
-            df["china_held_by"].cast(pl.Float32).to_numpy(),
-            df["actor_holds_china"].cast(pl.Float32).to_numpy(),
-            df["turn"].cast(pl.Float32).to_numpy() / 10.0,
-            df["ar"].cast(pl.Float32).to_numpy() / 8.0,
-            df["phasing"].cast(pl.Float32).to_numpy(),
-        ], axis=1).astype(np.float32)  # (N, 11)
+        scalars = np.stack(
+            [
+                df["vp"].cast(pl.Float32).to_numpy() / 20.0,
+                (df["defcon"].cast(pl.Float32).to_numpy() - 1.0) / 4.0,
+                df["milops_ussr"].cast(pl.Float32).to_numpy() / 6.0,
+                df["milops_us"].cast(pl.Float32).to_numpy() / 6.0,
+                df["space_ussr"].cast(pl.Float32).to_numpy() / 9.0,
+                df["space_us"].cast(pl.Float32).to_numpy() / 9.0,
+                df["china_held_by"].cast(pl.Float32).to_numpy(),
+                df["actor_holds_china"].cast(pl.Float32).to_numpy(),
+                df["turn"].cast(pl.Float32).to_numpy() / 10.0,
+                df["ar"].cast(pl.Float32).to_numpy() / 8.0,
+                df["phasing"].cast(pl.Float32).to_numpy(),
+            ],
+            axis=1,
+        ).astype(np.float32)  # (N, 11)
         self._scalars = torch.from_numpy(scalars)
 
         # --- integer targets ---
         self._card_target = torch.from_numpy(
             (df["action_card_id"].to_numpy() - 1).astype(np.int64)
         )  # (N,)
-        self._mode_target = torch.from_numpy(
-            df["action_mode"].to_numpy().astype(np.int64)
-        )  # (N,)
+        self._mode_target = torch.from_numpy(df["action_mode"].to_numpy().astype(np.int64))  # (N,)
 
         # --- country ops target (86,) — parsed from comma-separated string ---
         raw_targets = df["action_targets"].to_list()
@@ -164,9 +292,7 @@ class TS_SelfPlayDataset(Dataset):
         # --- value target (1,) ---
         winner_arr = df["winner_side"].cast(pl.Float32).to_numpy()  # (N,)
         if value_target_mode == "final_vp":
-            final_vp_arr = np.clip(
-                df["final_vp"].cast(pl.Float32).to_numpy() / 20.0, -1.0, 1.0
-            )
+            final_vp_arr = np.clip(df["final_vp"].cast(pl.Float32).to_numpy() / 20.0, -1.0, 1.0)
             end_reasons = df["end_reason"].to_list()
             bad_end = np.array(
                 [er in ("defcon1", "europe_control") for er in end_reasons], dtype=bool
@@ -176,9 +302,69 @@ class TS_SelfPlayDataset(Dataset):
             value_arr = winner_arr.astype(np.float32)
         self._value = torch.from_numpy(value_arr[:, None])  # (N, 1)
 
+        self._has_teacher: torch.Tensor | None = None
+        self._teacher_card: torch.Tensor | None = None
+        self._teacher_mode: torch.Tensor | None = None
+        self._teacher_value: torch.Tensor | None = None
+        if teacher_targets_path is not None:
+            teacher_card_rows = df["teacher_card_target"].to_list()
+            teacher_mode_rows = df["teacher_mode_target"].to_list()
+            teacher_value_rows = df["teacher_value_target"].to_list()
+            has_teacher = np.array(
+                [
+                    card is not None and mode is not None and value is not None
+                    for card, mode, value in zip(
+                        teacher_card_rows,
+                        teacher_mode_rows,
+                        teacher_value_rows,
+                        strict=True,
+                    )
+                ],
+                dtype=bool,
+            )
+
+            teacher_card = np.zeros((N, _TEACHER_CARD_TARGET_SIZE), dtype=np.float32)
+            teacher_mode = np.zeros((N, _TEACHER_MODE_TARGET_SIZE), dtype=np.float32)
+            teacher_value = np.zeros((N, 1), dtype=np.float32)
+            for row_idx, (card, mode, value, present) in enumerate(
+                zip(
+                    teacher_card_rows,
+                    teacher_mode_rows,
+                    teacher_value_rows,
+                    has_teacher,
+                    strict=True,
+                )
+            ):
+                if not present:
+                    continue
+                if len(card) != _TEACHER_CARD_TARGET_SIZE:
+                    raise ValueError(
+                        f"teacher_card_target row {row_idx} has len={len(card)}; "
+                        f"expected {_TEACHER_CARD_TARGET_SIZE}"
+                    )
+                if len(mode) != _TEACHER_MODE_TARGET_SIZE:
+                    raise ValueError(
+                        f"teacher_mode_target row {row_idx} has len={len(mode)}; "
+                        f"expected {_TEACHER_MODE_TARGET_SIZE}"
+                    )
+                teacher_card[row_idx] = np.asarray(card, dtype=np.float32)
+                teacher_mode[row_idx] = np.asarray(mode, dtype=np.float32)
+                teacher_value[row_idx, 0] = np.float32(value)
+
+            self._has_teacher = torch.from_numpy(has_teacher)
+            self._teacher_card = torch.from_numpy(teacher_card)
+            self._teacher_mode = torch.from_numpy(teacher_mode)
+            self._teacher_value = torch.from_numpy(teacher_value)
+
+        # Free DataFrame — all data is now in tensors
+        del df
+
         self._length = N
         elapsed = time.time() - t0
-        print(f"[dataset] Loaded {N:,} rows from {len(paths)} file(s) in {elapsed:.1f}s", flush=True)
+        print(
+            f"[dataset] Loaded {N:,} rows from {len(paths)} file(s) in {elapsed:.1f}s",
+            flush=True,
+        )
 
     @staticmethod
     def passthrough_collate(batch: dict) -> dict:
@@ -197,15 +383,23 @@ class TS_SelfPlayDataset(Dataset):
         return self._length
 
     def __getitem__(self, idx: int) -> dict:
-        return {
-            "influence":          self._influence[idx],
-            "cards":              self._cards[idx],   # uint8; cast to float32 on GPU in training loop
-            "scalars":            self._scalars[idx],
-            "card_target":        self._card_target[idx],
-            "mode_target":        self._mode_target[idx],
+        item = {
+            "influence": self._influence[idx],
+            # uint8; cast to float32 on GPU in training loop
+            "cards": self._cards[idx],
+            "scalars": self._scalars[idx],
+            "card_target": self._card_target[idx],
+            "mode_target": self._mode_target[idx],
             "country_ops_target": self._country_ops[idx],
-            "value_target":       self._value[idx],
+            "value_target": self._value[idx],
         }
+
+        if self._has_teacher is not None:
+            item["has_teacher_target"] = self._has_teacher[idx]
+            item["teacher_card_target"] = self._teacher_card[idx]
+            item["teacher_mode_target"] = self._teacher_mode[idx]
+            item["teacher_value_target"] = self._teacher_value[idx]
+        return item
 
     def __getitems__(self, indices: list) -> dict:
         """Batch indexing: one vectorised tensor slice instead of len(indices) __getitem__ calls.
@@ -216,12 +410,20 @@ class TS_SelfPlayDataset(Dataset):
         CPU overhead by ~4-8x and pushing GPU utilisation from ~20% toward ~60-70%.
         """
         idx = torch.tensor(indices, dtype=torch.long)
-        return {
-            "influence":          self._influence[idx],
-            "cards":              self._cards[idx],   # uint8; cast to float32 on GPU in training loop
-            "scalars":            self._scalars[idx],
-            "card_target":        self._card_target[idx],
-            "mode_target":        self._mode_target[idx],
+        batch = {
+            "influence": self._influence[idx],
+            # uint8; cast to float32 on GPU in training loop
+            "cards": self._cards[idx],
+            "scalars": self._scalars[idx],
+            "card_target": self._card_target[idx],
+            "mode_target": self._mode_target[idx],
             "country_ops_target": self._country_ops[idx],
-            "value_target":       self._value[idx],
+            "value_target": self._value[idx],
         }
+
+        if self._has_teacher is not None:
+            batch["has_teacher_target"] = self._has_teacher[idx]
+            batch["teacher_card_target"] = self._teacher_card[idx]
+            batch["teacher_mode_target"] = self._teacher_mode[idx]
+            batch["teacher_value_target"] = self._teacher_value[idx]
+        return batch

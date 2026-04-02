@@ -148,6 +148,10 @@ hist_path.write_text(json.dumps(hist, indent=2, sort_keys=True))
 print(f'  Saved v${N} win%={pct} to results/benchmark_history.json')
 " 2>/dev/null || true
     fi
+    # Publish bench results to W&B (best-effort, don't fail pipeline)
+    if [ -f "results/bench_v${N}.json" ]; then
+        uv run python scripts/publish_bench_to_wandb.py "results/bench_v${N}.json" --generation "v${N}" 2>/dev/null || true
+    fi
     echo "[$(date)] v${N} benchmark done."
 fi
 
