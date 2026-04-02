@@ -679,13 +679,46 @@ std::string game_id_for(uint32_t base_seed, int game_index) {
     return out.str();
 }
 
+// Run heuristic setup influence placement (TS Deluxe §3.0).
+// USSR places 6 in Eastern Europe, US places 7 in Western Europe.
+void run_setup_influence_heuristic(GameState& gs, Pcg64Rng& rng) {
+    struct SetupPlan { CountryId country; int amount; };
+
+    const std::array<std::vector<SetupPlan>, 3> ussr_plans = {{
+        {{SetupPlan{12, 4}, {5, 1}, {19, 1}}},    // Poland 4, EG+1, Yugoslavia 1
+        {{SetupPlan{12, 3}, {3, 3}}},               // Poland 3, Czech 3
+        {{SetupPlan{12, 4}, {13, 1}, {19, 1}}},    // Poland 4, Romania 1, Yugoslavia 1
+    }};
+    const std::array<std::vector<SetupPlan>, 3> us_plans = {{
+        {{SetupPlan{18, 4}, {10, 2}, {7, 1}}},    // WG 4, Italy 2, France 1
+        {{SetupPlan{18, 3}, {10, 3}, {7, 1}}},    // WG 3, Italy 3, France 1
+        {{SetupPlan{18, 4}, {10, 2}, {16, 1}}},   // WG 4, Italy 2, Turkey 1
+    }};
+
+    for (const auto side : {Side::USSR, Side::US}) {
+        const auto& plans = (side == Side::USSR) ? ussr_plans : us_plans;
+        const auto plan_idx = (rng.random_double() < 0.8) ? 0
+            : (1 + rng.choice_index(plans.size() - 1));
+        for (const auto& step : plans[plan_idx]) {
+            for (int i = 0; i < step.amount; ++i) {
+                gs.pub.set_influence(side, step.country,
+                    gs.pub.influence_of(side, step.country) + 1);
+            }
+        }
+    }
+    gs.setup_influence_remaining = {0, 0};
+    gs.phase = GamePhase::Headline;
+}
+
 void initialize_slot(GameSlot& slot, int game_index, uint32_t base_seed, const BatchedMctsConfig& config) {
     const auto seed = base_seed + static_cast<uint32_t>(game_index);
     slot = GameSlot{};
     slot.active = true;
     slot.root_state = reset_game(seed);
-    slot.sim_state = slot.root_state;
     slot.rng = Pcg64Rng(seed);
+    // Run setup influence placement before MCTS begins.
+    run_setup_influence_heuristic(slot.root_state, slot.rng);
+    slot.sim_state = slot.root_state;
     slot.game_id = game_id_for(base_seed, game_index);
     slot.turn = 1;
     slot.stage = BatchedGameStage::TurnSetup;
