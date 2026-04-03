@@ -14,15 +14,38 @@ from pathlib import Path
 
 import torch
 
-from tsrl.policies.model import TSBaselineModel
+from tsrl.policies.model import (
+    TSBaselineModel,
+    TSCardEmbedModel,
+    TSControlFeatModel,
+    TSCountryAttnModel,
+    TSCountryEmbedModel,
+    TSDirectCountryModel,
+    TSFullEmbedModel,
+    TSMarginalValueModel,
+)
+
+_MODEL_REGISTRY = {
+    "baseline": TSBaselineModel,
+    "card_embed": TSCardEmbedModel,
+    "country_embed": TSCountryEmbedModel,
+    "full_embed": TSFullEmbedModel,
+    "country_attn": TSCountryAttnModel,
+    "direct_country": TSDirectCountryModel,
+    "marginal_value": TSMarginalValueModel,
+    "control_feat": TSControlFeatModel,
+}
 
 
-def load_model(checkpoint_path: Path) -> TSBaselineModel:
+def load_model(checkpoint_path: Path) -> torch.nn.Module:
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     ckpt_args = checkpoint.get("args", {})
     hidden_dim = ckpt_args.get("hidden_dim", 256)
-    model = TSBaselineModel(hidden_dim=hidden_dim)
+    model_type = ckpt_args.get("model_type", "baseline")
+    dropout = ckpt_args.get("dropout", 0.1)
+    cls = _MODEL_REGISTRY.get(model_type, TSBaselineModel)
+    model = cls(hidden_dim=hidden_dim, dropout=dropout)
     model.load_state_dict(state_dict, strict=False)
     model.eval()
     return model

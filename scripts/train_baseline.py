@@ -84,9 +84,13 @@ from tsrl.policies.dataset import TS_SelfPlayDataset
 from tsrl.policies.model import (
     TSBaselineModel,
     TSCardEmbedModel,
+    TSControlFeatModel,
     TSCountryAttnModel,
     TSCountryEmbedModel,
+    TSDirectCountryModel,
     TSFullEmbedModel,
+    TSMarginalValueModel,
+    _MARGINAL_T_MAX,
 )
 
 # ---------------------------------------------------------------------------
@@ -179,7 +183,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--model-type",
         default="baseline",
-        choices=["baseline", "card_embed", "country_embed", "full_embed", "country_attn"],
+        choices=[
+            "baseline",
+            "card_embed",
+            "country_embed",
+            "full_embed",
+            "country_attn",
+            "direct_country",
+            "marginal_value",
+            "control_feat",
+        ],
         help="Model architecture variant (default: baseline)",
     )
     p.add_argument(
@@ -335,6 +348,7 @@ def run_epoch(
     advantage_weight: float = 0.0,
     teacher_weight: float = 0.0,
     teacher_value_weight: float = 0.3,
+    model_type: str = "baseline",
 ) -> dict[str, float]:
     """Run one full pass over ``loader``.
 
@@ -431,17 +445,37 @@ def run_epoch(
                 country_ops_mask = country_ops_target.sum(dim=1) > 0
                 country_top1 = 0.0
                 if country_ops_mask.any():
-                    ops_t = country_ops_target[country_ops_mask]
-                    ops_prob = ops_t / ops_t.sum(dim=1, keepdim=True)
-                    mixing = torch.softmax(strategy_logits[country_ops_mask], dim=1)
-                    strategy_probs = torch.softmax(country_strategy_logits[country_ops_mask], dim=2)
-                    mixture_probs = (mixing.unsqueeze(2) * strategy_probs).sum(dim=1)
-                    country_loss_per = -(ops_prob * torch.log(mixture_probs + 1e-8)).sum(dim=1)
-                    if use_adv:
-                        w_c = w[country_ops_mask]
-                        country_loss = (country_loss_per * w_c).mean()
+                    if model_type == "marginal_value":
+                        # BCE loss over cumulative allocation target.
+                        # delta_target[b, c, t] = 1 if country_ops_target[b, c] > t
+                        # This teaches the model: "is it worth placing the t-th point in c?"
+                        marginal_logits = outputs["marginal_logits"]  # (B, 86, T_MAX)
+                        ops_t = country_ops_target[country_ops_mask]  # (M, 86)
+                        marg_t = marginal_logits[country_ops_mask]    # (M, 86, T_MAX)
+                        t_indices = torch.arange(
+                            _MARGINAL_T_MAX, device=device, dtype=ops_t.dtype
+                        ).view(1, 1, _MARGINAL_T_MAX)                 # (1, 1, T_MAX)
+                        delta_target = (ops_t.unsqueeze(-1) > t_indices).float()  # (M, 86, T_MAX)
+                        country_loss_per = F.binary_cross_entropy_with_logits(
+                            marg_t, delta_target, reduction="none"
+                        ).mean(dim=(1, 2))  # (M,)
+                        if use_adv:
+                            w_c = w[country_ops_mask]
+                            country_loss = (country_loss_per * w_c).mean()
+                        else:
+                            country_loss = country_loss_per.mean()
                     else:
-                        country_loss = country_loss_per.mean()
+                        ops_t = country_ops_target[country_ops_mask]
+                        ops_prob = ops_t / ops_t.sum(dim=1, keepdim=True)
+                        mixing = torch.softmax(strategy_logits[country_ops_mask], dim=1)
+                        strategy_probs = torch.softmax(country_strategy_logits[country_ops_mask], dim=2)
+                        mixture_probs = (mixing.unsqueeze(2) * strategy_probs).sum(dim=1)
+                        country_loss_per = -(ops_prob * torch.log(mixture_probs + 1e-8)).sum(dim=1)
+                        if use_adv:
+                            w_c = w[country_ops_mask]
+                            country_loss = (country_loss_per * w_c).mean()
+                        else:
+                            country_loss = country_loss_per.mean()
                     country_top1 = (
                         (
                             country_logits[country_ops_mask].argmax(dim=1)
@@ -871,6 +905,9 @@ def main() -> None:
         "country_embed": TSCountryEmbedModel,
         "full_embed": TSFullEmbedModel,
         "country_attn": TSCountryAttnModel,
+        "direct_country": TSDirectCountryModel,
+        "marginal_value": TSMarginalValueModel,
+        "control_feat": TSControlFeatModel,
     }
     model = _MODEL_REGISTRY[args.model_type](
         dropout=args.dropout,
@@ -1051,6 +1088,7 @@ def main() -> None:
             f" --n-games {args.bench_after_train}"
             f" --seed {args.bench_seed}"
             f" --out {bench_json}"
+            f" --learned-side both"
         )
         print(f"\n[bench] Running post-training benchmark: {bench_cmd}")
         import subprocess

@@ -5,6 +5,47 @@ Newest entries at top.
 
 ---
 
+## 2026-04-02: Architecture / Feature Experiment (h128 comparison)
+
+**Tag:** `arch_feat_h128_comparison`
+**Status:** Complete
+
+**Data:** Same combined_bid2_15k (1,348,049 rows)
+
+**Hyperparameters (shared):**
+- epochs: 20, batch_size: 512, lr: 3e-4, OneCycleLR
+- hidden_dim: 128, dropout: 0.1, weight_decay: 0.0
+- value_target: final_vp, value_weight: 1.0
+- bench-after-train: 500 games
+
+**Results:**
+
+| Model | Params | val_loss | card_top1 | country_top1 | USSR WR% | US WR% | Combined |
+|-------|--------|----------|-----------|-------------|----------|--------|----------|
+| baseline h128 | 231K | 2.821 | 71.1% | 36.0% | **36.1%** | **10.2%** | **23.0%** |
+| direct_country h128 | 198K | 2.847 | 71.2% | 36.3% | 13.9% | 9.2% | 11.6% |
+| marginal_value h128 | 231K | 2.863 | 71.1% | 44.2% | 14.1% | 11.7% | 12.9% |
+| control_feat h128 | 267K | **2.795** | 71.2% | 37.2% | **30.3%** | 9.8% | **19.9%** |
+
+**Analysis:**
+- K=4 mixture-of-softmaxes baseline head is clearly better than simpler alternatives
+- direct_country (single Linear) too simple for allocation patterns
+- marginal_value (BCE per-point): high country_top1 but WR collapsed because
+  BCE logits ≠ softmax logits; C++ inference applies softmax to BCE-trained
+  logits, producing garbage country distribution
+- control_feat: best val_loss (control/region features help learning) but
+  USSR WR 6pp below baseline (30.3% vs 36.1%); may need more epochs or h256
+- US WR ~10% across all models — barely above random, model doesn't learn US play
+
+**Conclusion:** Keep K=4 MoS country head. Control features may help at larger
+scale; re-test at h256. Marginal value approach needs proper decoding path
+(constrained DP, not softmax) to be viable.
+
+**Checkpoint dirs:** `data/checkpoints/exp_{baseline,direct_country,marginal_value,control_feat}_h128/`
+**W&B:** auto-logged, entity=korduban-ai, project=twilight-struggle-ai
+
+---
+
 ## 2026-04-02: Combined bid2 training (60 epochs)
 
 **Tag:** `combined_bid2_15k_60ep`

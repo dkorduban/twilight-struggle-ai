@@ -162,6 +162,20 @@ def _build_region_masks() -> list[torch.Tensor]:
 
 _REGION_MASKS: list[torch.Tensor] = _build_region_masks()
 
+# Pre-compute static tensors for control/scoring features
+_STABILITY: torch.Tensor = (_COUNTRY_FEATS[:, 0] * 4.0).to(torch.float32)  # (86,) raw stability
+_IS_BG: torch.Tensor = _COUNTRY_FEATS[:, 1] > 0.5  # (86,) bool
+
+# Per-region: BG mask, total countries, total BGs (for scoring tier computation)
+_REGION_BG_MASKS: list[torch.Tensor] = [
+    _REGION_MASKS[i] & _IS_BG for i in range(len(_REGION_MASKS))
+]
+_REGION_COUNTRY_COUNTS: list[int] = [int(m.sum().item()) for m in _REGION_MASKS]
+_REGION_BG_COUNTS: list[int] = [int(m.sum().item()) for m in _REGION_BG_MASKS]
+_REGION_NON_BG_COUNTS: list[int] = [
+    _REGION_COUNTRY_COUNTS[i] - _REGION_BG_COUNTS[i] for i in range(len(_REGION_MASKS))
+]
+
 # ---------------------------------------------------------------------------
 # Shared trunk building blocks
 # ---------------------------------------------------------------------------
@@ -715,6 +729,326 @@ class TSFullEmbedModel(nn.Module):
         h_inf = torch.relu(self.influence_encoder_flat(influence)) + self.influence_encoder_embed(influence)
         h_card = torch.relu(self.card_encoder_flat(cards)) + self.card_encoder_embed(cards)
         h_scalar = torch.relu(self.scalar_encoder(scalars))
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        return _forward_trunk_and_heads(
+            trunk_input,
+            self.trunk_proj, self.trunk_dropout,
+            self.trunk_block1, self.trunk_block2,
+            self.card_head, self.mode_head,
+            self.strategy_heads, self.strategy_mixer,
+            self.value_branch, self.value_head,
+        )
+
+
+class TSDirectCountryModel(nn.Module):
+    """TSBaselineModel with a single Linear country head replacing K=4 mixture-of-softmaxes.
+
+    The K=4 mixture-of-softmaxes (strategy_heads + strategy_mixer) is replaced
+    with a single ``Linear(hidden_dim, 86)`` country projection.  All other
+    components (encoders, trunk, card head, mode head, value branch) are
+    identical to TSBaselineModel.
+
+    Backward-compat output contract:
+      - ``country_logits``          : (B, 86) — direct head output
+      - ``country_strategy_logits`` : (B, 1, 86) — unsqueezed for callers
+                                       that iterate over strategies
+      - ``strategy_logits``         : (B, 1) — zeros (uniform single strategy)
+
+    Input/output contract: otherwise identical to TSBaselineModel.
+    """
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        self.influence_encoder = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        # Single direct country projection — replaces strategy_heads + strategy_mixer
+        self.country_head = nn.Linear(hidden_dim, NUM_COUNTRIES)
+
+        self.value_branch = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        h_inf = torch.relu(self.influence_encoder(influence))
+        h_card = torch.relu(self.card_encoder(cards))
+        h_scalar = torch.relu(self.scalar_encoder(scalars))
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_logits = self.country_head(hidden)  # (B, 86)
+        # Backward-compat shims so the training loop can use the same loss code
+        # country_strategy_logits: (B, 1, 86), strategy_logits: (B, 1) zeros
+        country_strategy_logits = country_logits.unsqueeze(1)  # (B, 1, 86)
+        strategy_logits = torch.zeros(
+            hidden.shape[0], 1, device=hidden.device, dtype=hidden.dtype
+        )
+        value = torch.tanh(self.value_head(torch.relu(self.value_branch(hidden))))
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+        }
+
+
+# T_MAX for marginal value head: max ops value on a single country per action
+_MARGINAL_T_MAX = 4
+
+
+class TSMarginalValueModel(nn.Module):
+    """TSBaselineModel with a marginal-value country head.
+
+    Predicts ``delta[c, t]`` — the logit for placing the t-th influence point
+    in country c.  The head is ``Linear(hidden_dim, 86 * T_MAX)`` reshaped to
+    ``(B, 86, T_MAX)``.
+
+    The country loss is replaced with a per-threshold binary cross-entropy
+    over the cumulative allocation target (see train_baseline.py).  A custom
+    key ``"marginal_logits"`` is added to the output dict for this loss.
+
+    Backward-compat output contract:
+      - ``country_logits``          : (B, 86) — first-threshold slice (t=0)
+      - ``country_strategy_logits`` : (B, T_MAX, 86) — all thresholds,
+                                       permuted for callers that iterate over K
+      - ``strategy_logits``         : (B, T_MAX) — zeros
+      - ``marginal_logits``         : (B, 86, T_MAX) — raw output for custom loss
+
+    Input/output contract: otherwise identical to TSBaselineModel.
+    """
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        self.influence_encoder = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        # Marginal-value head: (B, 86 * T_MAX) -> reshape to (B, 86, T_MAX)
+        self.marginal_head = nn.Linear(hidden_dim, NUM_COUNTRIES * _MARGINAL_T_MAX)
+
+        self.value_branch = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        h_inf = torch.relu(self.influence_encoder(influence))
+        h_card = torch.relu(self.card_encoder(cards))
+        h_scalar = torch.relu(self.scalar_encoder(scalars))
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        marginal_logits = self.marginal_head(hidden).view(
+            hidden.shape[0], NUM_COUNTRIES, _MARGINAL_T_MAX
+        )  # (B, 86, T_MAX)
+
+        # country_logits: sum sigmoid(marginal) across thresholds to get
+        # expected allocation per country. This converts BCE logits to a proper
+        # country preference score compatible with softmax at inference time.
+        country_logits = torch.sigmoid(marginal_logits).sum(dim=-1)  # (B, 86)
+        # country_strategy_logits: (B, T_MAX, 86) for compat with strategy loop
+        country_strategy_logits = marginal_logits.permute(0, 2, 1)  # (B, T_MAX, 86)
+        strategy_logits = torch.zeros(
+            hidden.shape[0], _MARGINAL_T_MAX, device=hidden.device, dtype=hidden.dtype
+        )
+        value = torch.tanh(self.value_head(torch.relu(self.value_branch(hidden))))
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "marginal_logits": marginal_logits,
+            "value": value,
+        }
+
+
+class ControlFeatCountryEncoder(nn.Module):
+    """CountryEmbedEncoder extended with per-country control status features.
+
+    Adds 2 dynamic features per country:
+      ussr_controls: 1.0 if ussr_inf[c] >= us_inf[c] + stability[c]
+      us_controls:   1.0 if us_inf[c] >= ussr_inf[c] + stability[c]
+
+    Also computes 14 region-scoring scalars (appended to scalar path):
+      For each of 6 scoring regions: ussr_bg_controlled, us_bg_controlled,
+      ussr_non_bg_controlled, us_non_bg_controlled (skipped for SoutheastAsia).
+      SoutheastAsia (region 6) uses a separate rule in Shuttle Diplomacy but
+      for features we treat it same as others (2 BG + 2 non-BG counts).
+
+    Total per-country input: 2 (dynamic inf) + 11 (static) + 2 (control) = 15.
+    Total extra region scalars: 7 regions × 4 = 28 (normalized counts).
+    """
+
+    _EMBED_DIM = 32
+    _NUM_REGIONS = 7
+    _EXTRA_COUNTRY_DIM = 2  # ussr_controls, us_controls
+    _REGION_SCALAR_DIM = 28  # 7 regions × 4 counts
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("country_static", _COUNTRY_FEATS.clone())  # (86, 11)
+        self.register_buffer("stability", _STABILITY.clone())           # (86,)
+        for i, mask in enumerate(_REGION_MASKS):
+            self.register_buffer(f"region_mask_{i}", mask.clone())
+        for i, mask in enumerate(_REGION_BG_MASKS):
+            self.register_buffer(f"region_bg_mask_{i}", mask.clone())
+
+        # per-country input: 2 inf + 11 static + 2 control = 15
+        self.country_proj = nn.Linear(
+            _COUNTRY_FEAT_DIM + 2 + self._EXTRA_COUNTRY_DIM, self._EMBED_DIM
+        )
+        self.out_proj = nn.Linear(
+            (1 + self._NUM_REGIONS) * self._EMBED_DIM, INFLUENCE_HIDDEN
+        )
+
+    def _region_mask(self, i: int) -> torch.Tensor:
+        return getattr(self, f"region_mask_{i}")
+
+    def _region_bg_mask(self, i: int) -> torch.Tensor:
+        return getattr(self, f"region_bg_mask_{i}")
+
+    def forward(self, influence: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Returns (influence_hidden, region_scalars).
+
+        influence_hidden: (B, INFLUENCE_HIDDEN)
+        region_scalars: (B, 28) — per-region control counts for scalar path
+        """
+        B = influence.shape[0]
+        ussr_inf = influence[:, :NUM_COUNTRIES]         # (B, 86) raw
+        us_inf = influence[:, NUM_COUNTRIES:]            # (B, 86) raw
+        stab = self.stability.unsqueeze(0)               # (1, 86)
+
+        # Control status: binary
+        ussr_controls = (ussr_inf >= us_inf + stab).float()  # (B, 86)
+        us_controls = (us_inf >= ussr_inf + stab).float()    # (B, 86)
+
+        # Build per-country features: (B, 86, 15)
+        static = self.country_static.unsqueeze(0).expand(B, -1, -1)  # (B, 86, 11)
+        dyn = torch.stack([ussr_inf / 10.0, us_inf / 10.0], dim=-1)  # (B, 86, 2)
+        ctrl = torch.stack([ussr_controls, us_controls], dim=-1)      # (B, 86, 2)
+        per_country_feats = torch.cat([dyn, static, ctrl], dim=-1)    # (B, 86, 15)
+
+        per_country = torch.relu(self.country_proj(per_country_feats))  # (B, 86, D)
+
+        # Pooling
+        global_pool = per_country.mean(dim=1)  # (B, D)
+        region_pools = []
+        region_scalars = []
+
+        for i in range(self._NUM_REGIONS):
+            mask = self._region_mask(i)     # (86,) bool
+            bg_mask = self._region_bg_mask(i)  # (86,) bool
+            non_bg_mask = mask & ~bg_mask
+
+            if mask.any():
+                region_pool = per_country[:, mask, :].mean(dim=1)
+            else:
+                region_pool = torch.zeros(B, self._EMBED_DIM, device=influence.device)
+            region_pools.append(region_pool)
+
+            # Region scoring scalars: controlled BG and non-BG counts per side
+            n_bg = max(int(bg_mask.sum().item()), 1)
+            n_non_bg = max(int(non_bg_mask.sum().item()), 1)
+            ussr_bg = ussr_controls[:, bg_mask].sum(dim=1) / n_bg if bg_mask.any() else torch.zeros(B, device=influence.device)
+            us_bg = us_controls[:, bg_mask].sum(dim=1) / n_bg if bg_mask.any() else torch.zeros(B, device=influence.device)
+            ussr_non_bg = ussr_controls[:, non_bg_mask].sum(dim=1) / n_non_bg if non_bg_mask.any() else torch.zeros(B, device=influence.device)
+            us_non_bg = us_controls[:, non_bg_mask].sum(dim=1) / n_non_bg if non_bg_mask.any() else torch.zeros(B, device=influence.device)
+            region_scalars.extend([ussr_bg, us_bg, ussr_non_bg, us_non_bg])
+
+        concat = torch.cat([global_pool] + region_pools, dim=-1)  # (B, 8*D)
+        h_inf = torch.relu(self.out_proj(concat))  # (B, INFLUENCE_HIDDEN)
+        region_scalar_tensor = torch.stack(region_scalars, dim=-1)  # (B, 28)
+
+        return h_inf, region_scalar_tensor
+
+
+class TSControlFeatModel(nn.Module):
+    """Model with per-country control features and region scoring scalars.
+
+    Uses ControlFeatCountryEncoder which adds:
+    - ussr_controls / us_controls binary per-country features
+    - 28 region scoring scalars (BG/non-BG controlled fractions per region per side)
+
+    The 28 region scalars are concatenated with the 11 base scalars before
+    encoding, giving the scalar encoder 39 input dims total.
+
+    Input/output contract: same as TSBaselineModel.
+    """
+
+    _REGION_SCALAR_DIM = 28
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.influence_encoder_embed = ControlFeatCountryEncoder()
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+
+        self.value_branch = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        h_inf_embed, region_scalars = self.influence_encoder_embed(influence)
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + h_inf_embed
+
+        h_card = torch.relu(self.card_encoder(cards))
+        # Append region scoring scalars to base scalars
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)  # (B, 39)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
 
         trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
         return _forward_trunk_and_heads(
