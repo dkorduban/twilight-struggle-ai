@@ -9,6 +9,7 @@
 #include "game_state.hpp"
 #include "learned_policy.hpp"
 #include "mcts.hpp"
+#include "mcts_batched.hpp"
 #include "policies.hpp"
 
 namespace py = pybind11;
@@ -435,6 +436,57 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("results")
     );
 
+    // play_callback_matchup: run games with a Python callable as one side's policy.
+    // The callback receives (state_dict, hand_list, holds_china, side_int) and
+    // returns an action dict {"card_id": int, "mode": int, "targets": list[int]}
+    // or None to skip.
+    m.def(
+        "play_callback_matchup",
+        [](py::function callback, ts::Side learned_side, ts::PolicyKind opponent_policy, int game_count, py::object seed_obj) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            const ts::PolicyFn callback_fn = [&callback](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& /*rng*/) -> std::optional<ts::ActionEncoding> {
+                py::gil_scoped_acquire gil;
+                py::dict state = public_state_to_dict(pub);
+                py::list hand_list = bitset_to_list(hand);
+                py::object result = callback(state, hand_list, holds_china, static_cast<int>(pub.phasing));
+                if (result.is_none()) {
+                    return std::nullopt;
+                }
+                py::dict action_dict = result.cast<py::dict>();
+                ts::ActionEncoding action;
+                action.card_id = static_cast<ts::CardId>(action_dict["card_id"].cast<int>());
+                action.mode = static_cast<ts::ActionMode>(action_dict["mode"].cast<int>());
+                for (auto t : action_dict["targets"].cast<std::vector<int>>()) {
+                    action.targets.push_back(static_cast<ts::CountryId>(t));
+                }
+                return action;
+            };
+            const ts::PolicyFn opponent_fn = [opponent_policy](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
+                return ts::choose_action(opponent_policy, pub, hand, holds_china, rng);
+            };
+            // Use atomic setup for bit-identity with batched path:
+            // places opening influence in one shot (2 RNG calls) instead of
+            // per-point policy callbacks (15+ RNG calls).
+            ts::GameLoopConfig config;
+            config.use_atomic_setup = true;
+            // Release GIL for the game loop; callback re-acquires it as needed.
+            py::gil_scoped_release release;
+            return learned_side == ts::Side::USSR
+                ? ts::play_matchup_fn(callback_fn, opponent_fn, game_count, seed, config)
+                : ts::play_matchup_fn(opponent_fn, callback_fn, game_count, seed, config);
+        },
+        py::arg("callback"),
+        py::arg("learned_side"),
+        py::arg("opponent_policy"),
+        py::arg("game_count"),
+        py::arg("seed") = py::none(),
+        "Run games where one side uses a Python callback policy.\n"
+        "Callback signature: (state_dict, hand_list, holds_china, side_int) -> action_dict or None."
+    );
+
 #if defined(TS_BUILD_TORCH_RUNTIME)
     m.def(
         "play_learned_matchup",
@@ -443,6 +495,8 @@ PYBIND11_MODULE(tscore, m) {
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
             }
+            ts::GameLoopConfig config;
+            config.use_atomic_setup = true;  // bid+2 baked into kHumanUSOpeningsBid2
             ts::TorchScriptPolicy learned(model_path);
             const ts::PolicyFn learned_fn = [&learned](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
                 return learned.choose_action(pub, hand, holds_china, rng);
@@ -451,8 +505,8 @@ PYBIND11_MODULE(tscore, m) {
                 return ts::choose_action(opponent_policy, pub, hand, holds_china, rng);
             };
             return learned_side == ts::Side::USSR
-                ? ts::play_matchup_fn(learned_fn, opponent_fn, game_count, seed)
-                : ts::play_matchup_fn(opponent_fn, learned_fn, game_count, seed);
+                ? ts::play_matchup_fn(learned_fn, opponent_fn, game_count, seed, config)
+                : ts::play_matchup_fn(opponent_fn, learned_fn, game_count, seed, config);
         },
         py::arg("model_path"),
         py::arg("learned_side"),
@@ -483,6 +537,30 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("calib_b") = 0.0f,
         py::arg("seed") = py::none(),
         "Alias for mcts_search_from_state that runs native PUCT MCTS from a serialized game state."
+    );
+    m.def(
+        "benchmark_batched",
+        [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size, py::object seed_obj, const std::string& device_str) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            torch::Device device(device_str);
+            auto model = torch::jit::load(model_path, device);
+            model.eval();
+            return ts::benchmark_games_batched(
+                n_games, model, learned_side, pool_size,
+                seed.value_or(std::random_device{}()), device);
+        },
+        py::arg("model_path"),
+        py::arg("learned_side"),
+        py::arg("n_games"),
+        py::arg("pool_size") = 32,
+        py::arg("seed") = py::none(),
+        py::arg("device") = "cpu",
+        "Run batched greedy benchmark: learned side uses argmax from batched NN,\n"
+        "opponent uses heuristic. Returns list[GameResult].\n"
+        "device: 'cpu' or 'cuda' for GPU inference."
     );
 #endif
 }

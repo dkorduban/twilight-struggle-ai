@@ -1080,6 +1080,23 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                     mark_game_done(slot, *result);
                     break;
                 }
+                // Turn limit: sequential game loop stops at kMaxTurns and
+                // resolves winner by VP.  Mirror that here.
+                if (slot.turn >= kMaxTurns) {
+                    std::optional<Side> winner;
+                    if (slot.root_state.pub.vp > 0) {
+                        winner = Side::USSR;
+                    } else if (slot.root_state.pub.vp < 0) {
+                        winner = Side::US;
+                    }
+                    mark_game_done(slot, GameResult{
+                        .winner = winner,
+                        .final_vp = slot.root_state.pub.vp,
+                        .end_turn = kMaxTurns,
+                        .end_reason = "turn_limit",
+                    });
+                    break;
+                }
                 slot.turn += 1;
                 slot.stage = BatchedGameStage::TurnSetup;
                 break;
@@ -1544,6 +1561,395 @@ void collect_games_batched(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Greedy batched benchmark: same GameSlot/advance_until_decision machinery
+// as MCTS collection, but uses a single argmax decode instead of tree search.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Exact mirror of TorchScriptPolicy::choose_action logic from learned_policy.cpp,
+// but reads from BatchOutputs instead of calling forward_model individually.
+ActionEncoding greedy_action_from_outputs(
+    const GameState& state,
+    const nn::BatchOutputs& outputs,
+    int64_t batch_index,
+    Pcg64Rng& rng
+) {
+    const auto& pub = state.pub;
+    const auto side = pub.phasing;
+    const auto holds_china = holds_china_for(state, side);
+    const auto& hand = state.hands[to_index(side)];
+
+    auto playable = legal_cards(hand, pub, side, holds_china);
+    if (playable.empty()) {
+        return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+            .value_or(ActionEncoding{});
+    }
+
+    const auto card_logits = outputs.card_logits.index({batch_index});
+    const auto mode_logits = outputs.mode_logits.index({batch_index});
+    const auto country_logits_raw = outputs.country_logits.defined()
+        ? outputs.country_logits.index({batch_index}) : torch::Tensor{};
+    const auto strategy_logits_raw = outputs.strategy_logits.defined()
+        ? outputs.strategy_logits.index({batch_index}) : torch::Tensor{};
+    const auto country_strategy_logits_raw = outputs.country_strategy_logits.defined()
+        ? outputs.country_strategy_logits.index({batch_index}) : torch::Tensor{};
+
+    // ── Card selection with DEFCON safety (mirrors learned_policy.cpp) ──
+    auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
+    for (const auto card_id : playable) {
+        if (is_defcon_lowering_card(card_id)) {
+            const auto& ci = card_spec(card_id);
+            const bool is_opp = (ci.side != side && ci.side != Side::Neutral);
+            const bool is_neutral = (ci.side == Side::Neutral);
+            if (is_opp) {
+                if (pub.defcon <= 2) continue;
+                if (pub.defcon == 3 && pub.ar == 0) continue;
+            }
+            if (is_neutral && pub.ar == 0 && pub.defcon <= 3) continue;
+        }
+        const auto index = static_cast<int64_t>(card_id - 1);
+        masked_card.index_put_({index}, tensor_at(card_logits, index));
+    }
+
+    // If all masked, fall back to heuristic.
+    {
+        bool all_masked = true;
+        for (const auto card_id : playable) {
+            const auto index = static_cast<int64_t>(card_id - 1);
+            if (tensor_at(masked_card, index).item<float>() > -std::numeric_limits<float>::infinity()) {
+                all_masked = false;
+                break;
+            }
+        }
+        if (all_masked) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+                .value_or(ActionEncoding{});
+        }
+    }
+
+    auto sampled_card_id = static_cast<CardId>(masked_card.argmax(/*dim=*/0).item<int64_t>() + 1);
+
+    // ── Mode selection (mirrors learned_policy.cpp) ──
+    auto modes = legal_modes(sampled_card_id, pub, side);
+    if (modes.empty()) {
+        return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+            .value_or(ActionEncoding{});
+    }
+
+    auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+    for (const auto m : modes) {
+        const auto index = static_cast<int64_t>(static_cast<int>(m));
+        masked_mode.index_put_({index}, tensor_at(mode_logits, index));
+    }
+    auto mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+
+    // DEFCON safety: no coup at DEFCON ≤ 2.
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
+        if (modes.empty()) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+                .value_or(ActionEncoding{});
+        }
+        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        for (const auto m : modes) {
+            masked_mode.index_put_({static_cast<int64_t>(static_cast<int>(m))}, tensor_at(mode_logits, static_cast<int>(m)));
+        }
+        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+    }
+
+    // DEFCON safety: no event for DEFCON-lowering cards at DEFCON ≤ 2.
+    if (pub.defcon <= 2 && mode == ActionMode::Event && is_defcon_lowering_card(sampled_card_id)) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
+        if (modes.empty()) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+                .value_or(ActionEncoding{});
+        }
+        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        for (const auto m : modes) {
+            masked_mode.index_put_({static_cast<int64_t>(static_cast<int>(m))}, tensor_at(mode_logits, static_cast<int>(m)));
+        }
+        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+    }
+
+    // Re-apply coup guard after event guard may have changed mode.
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
+        if (modes.empty()) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+                .value_or(ActionEncoding{});
+        }
+        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        for (const auto m : modes) {
+            masked_mode.index_put_({static_cast<int64_t>(static_cast<int>(m))}, tensor_at(mode_logits, static_cast<int>(m)));
+        }
+        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+    }
+
+    // Belt-and-suspenders DEFCON safety gate.
+    if (pub.defcon <= 2 && is_defcon_lowering_card(sampled_card_id)) {
+        const auto& ci = card_spec(sampled_card_id);
+        const bool event_fires_for_any_mode = (ci.side != side && ci.side != Side::Neutral);
+        const bool event_fires_for_event_space =
+            (mode == ActionMode::Event) ||
+            (mode == ActionMode::Space && event_fires_for_any_mode);
+        if (event_fires_for_any_mode || event_fires_for_event_space) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+                .value_or(ActionEncoding{});
+        }
+    }
+
+    // ── Target selection ──
+    if (mode == ActionMode::Event || mode == ActionMode::Space) {
+        return ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {}};
+    }
+
+    if (country_logits_raw.defined()) {
+        auto action = build_action_from_country_logits(
+            sampled_card_id, mode, country_logits_raw,
+            pub, side, strategy_logits_raw, country_strategy_logits_raw);
+        if (!action.targets.empty()) {
+            return action;
+        }
+    }
+
+    // Fallback: random target selection (mirrors learned_policy.cpp).
+    const auto accessible = accessible_countries_filtered(pub, side, sampled_card_id, mode);
+    if (!accessible.empty()) {
+        if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
+            const auto target = accessible[rng.choice_index(accessible.size())];
+            return ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {target}};
+        }
+        const auto ops = effective_ops(sampled_card_id, pub, side);
+        ActionEncoding action{.card_id = sampled_card_id, .mode = mode, .targets = {}};
+        for (int i = 0; i < ops; ++i) {
+            action.targets.push_back(accessible[rng.choice_index(accessible.size())]);
+        }
+        return action;
+    }
+
+    return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+        .value_or(ActionEncoding{});
+}
+
+void commit_greedy_action(GameSlot& slot, const ActionEncoding& action) {
+    if (!slot.decision.has_value()) {
+        return;
+    }
+
+    auto resolved = action;
+    if (resolved.card_id == 0) {
+        resolved = choose_action(
+            PolicyKind::MinimalHybrid,
+            slot.decision->pub_snapshot,
+            slot.decision->hand_snapshot,
+            slot.decision->holds_china,
+            slot.rng
+        ).value_or(ActionEncoding{});
+    }
+    if (resolved.card_id == 0) {
+        throw std::runtime_error("greedy benchmark could not resolve an action");
+    }
+
+    const auto decision = *slot.decision;
+    slot.decision.reset();
+    slot.root.reset();
+    slot.path.clear();
+    slot.pending_expansion = false;
+    slot.pending_root_expansion = false;
+    slot.move_done = false;
+
+    if (decision.is_headline) {
+        resolved.mode = ActionMode::Event;
+        resolved.targets.clear();
+        auto& hand = slot.root_state.hands[to_index(decision.side)];
+        if (hand.test(resolved.card_id)) {
+            hand.reset(resolved.card_id);
+        }
+        // Greedy benchmark doesn't need real SearchResult, use empty.
+        slot.pending_headlines[to_index(decision.side)] = PendingHeadlineChoice{
+            .side = decision.side,
+            .holds_china = decision.holds_china,
+            .hand_snapshot = decision.hand_snapshot,
+            .action = resolved,
+            .search = SearchResult{},
+        };
+        if (decision.side == Side::USSR) {
+            slot.stage = BatchedGameStage::HeadlineChoiceUS;
+        } else {
+            finalize_headline_choices(slot);
+        }
+        return;
+    }
+
+    auto& hand = slot.root_state.hands[to_index(decision.side)];
+    if (hand.test(resolved.card_id)) {
+        hand.reset(resolved.card_id);
+    }
+
+    auto [new_pub, over, winner] = apply_action_live(slot.root_state, resolved, decision.side, slot.rng);
+    (void)new_pub;
+    sync_china_flags(slot.root_state);
+
+    if (over) {
+        mark_game_done(slot, GameResult{
+            .winner = winner,
+            .final_vp = slot.root_state.pub.vp,
+            .end_turn = slot.root_state.pub.turn,
+            .end_reason = end_reason(slot.root_state.pub, winner),
+        });
+        return;
+    }
+
+    if (decision.side == Side::USSR && slot.root_state.pub.norad_active && slot.root_state.pub.defcon == 2) {
+        if (auto norad = resolve_norad_live(slot.root_state, slot.rng); norad.has_value()) {
+            auto& [norad_pub, norad_over, norad_winner] = *norad;
+            (void)norad_pub;
+            if (norad_over) {
+                mark_game_done(slot, GameResult{
+                    .winner = norad_winner,
+                    .final_vp = slot.root_state.pub.vp,
+                    .end_turn = slot.root_state.pub.turn,
+                    .end_reason = end_reason(slot.root_state.pub, norad_winner),
+                });
+                return;
+            }
+        }
+    }
+
+    if (slot.stage == BatchedGameStage::ActionRound) {
+        advance_after_action_pair(slot);
+        return;
+    }
+    if (slot.stage == BatchedGameStage::ExtraActionRoundUS || slot.stage == BatchedGameStage::ExtraActionRoundUSSR) {
+        move_to_followup_stage_after_extra(slot, decision.side);
+        return;
+    }
+}
+
+}  // anonymous namespace
+
+std::vector<GameResult> benchmark_games_batched(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device
+) {
+    if (n_games <= 0) {
+        return {};
+    }
+    if (pool_size <= 0) {
+        pool_size = std::min(n_games, 64);
+    }
+
+    // Use a minimal MCTS config just for GameSlot initialization.
+    BatchedMctsConfig config;
+    config.pool_size = pool_size;
+    config.mcts.n_simulations = 0;  // No tree search.
+
+    std::vector<GameSlot> pool(static_cast<size_t>(pool_size));
+    int games_started = 0;
+    std::vector<GameResult> results;
+    results.reserve(static_cast<size_t>(n_games));
+
+    nn::BatchInputs batch_inputs;
+    batch_inputs.allocate(pool_size, device);
+
+    // Track which batch slot corresponds to which GameSlot, and whether
+    // the learned side needs NN inference for that decision.
+    struct BatchEntry {
+        GameSlot* slot = nullptr;
+        bool needs_nn = false;  // true = learned side, false = heuristic side
+    };
+    std::vector<BatchEntry> batch_entries;
+    batch_entries.reserve(static_cast<size_t>(pool_size));
+
+    while (static_cast<int>(results.size()) < n_games) {
+        batch_inputs.reset();
+        batch_entries.clear();
+
+        // Collect completed games, start new ones.
+        for (auto& slot : pool) {
+            if (slot.active && slot.game_done && !slot.emitted) {
+                results.push_back(slot.result);
+                slot.emitted = true;
+                slot.active = false;
+            }
+            if (!slot.active && games_started < n_games) {
+                initialize_slot(slot, games_started, base_seed, config);
+                games_started += 1;
+            }
+        }
+
+        // Advance each active game until it needs a decision.
+        for (auto& slot : pool) {
+            if (!slot.active || slot.game_done) {
+                continue;
+            }
+
+            if (slot.move_done) {
+                // Previous action was resolved; commit it.
+                // (should not happen in greedy mode, but handle anyway)
+            }
+
+            advance_until_decision(slot, config);
+            if (slot.game_done || !slot.decision.has_value()) {
+                continue;
+            }
+
+            const auto decision_side = slot.decision->side;
+            const bool is_learned = (decision_side == learned_side);
+
+            if (is_learned) {
+                // Queue for batched NN inference.
+                const auto batch_idx = batch_inputs.filled;
+                batch_inputs.fill_slot(
+                    batch_idx,
+                    slot.root_state.pub,
+                    slot.root_state.hands[to_index(decision_side)],
+                    slot.decision->holds_china,
+                    decision_side
+                );
+                batch_entries.push_back(BatchEntry{&slot, true});
+            } else {
+                // Heuristic side: resolve immediately.
+                auto heuristic_action = choose_action(
+                    PolicyKind::MinimalHybrid,
+                    slot.decision->pub_snapshot,
+                    slot.decision->hand_snapshot,
+                    slot.decision->holds_china,
+                    slot.rng
+                ).value_or(ActionEncoding{});
+                commit_greedy_action(slot, heuristic_action);
+            }
+        }
+
+        // Run batched NN inference for all learned-side decisions.
+        if (!batch_entries.empty()) {
+            const auto outputs = nn::forward_model_batched(model, batch_inputs);
+            int batch_idx = 0;
+            for (auto& entry : batch_entries) {
+                if (!entry.needs_nn) {
+                    continue;
+                }
+                auto action = greedy_action_from_outputs(
+                    entry.slot->root_state,
+                    outputs,
+                    static_cast<int64_t>(batch_idx),
+                    entry.slot->rng
+                );
+                commit_greedy_action(*entry.slot, action);
+                batch_idx += 1;
+            }
+        }
+    }
+
+    return results;
 }
 
 }  // namespace ts

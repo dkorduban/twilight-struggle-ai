@@ -1329,6 +1329,27 @@ TracedGame play_game_traced_from_state_with_rng(
             // Skip free placement, go directly to headline.
             gs.setup_influence_remaining = {0, 0};
             gs.phase = GamePhase::Headline;
+        } else if (config.use_atomic_setup) {
+            // Atomic setup: place from opening tables in one shot, no policy
+            // callbacks.  Consumes exactly 2 RNG calls (one per side for
+            // choose_random_opening), matching the batched path in
+            // mcts_batched.cpp::run_setup_influence_heuristic.
+            for (const auto side : {Side::USSR, Side::US}) {
+                const SetupOpening* opening = (side == Side::USSR)
+                    ? choose_random_opening(kHumanUSSROpenings.data(),
+                                            static_cast<int>(kHumanUSSROpenings.size()), rng)
+                    : choose_random_opening(kHumanUSOpeningsBid2.data(),
+                                            static_cast<int>(kHumanUSOpeningsBid2.size()), rng);
+                if (opening == nullptr) continue;
+                for (int i = 0; i < opening->count; ++i) {
+                    const auto country = opening->placements[i].country;
+                    const auto amount = opening->placements[i].amount;
+                    gs.pub.set_influence(side, country,
+                        gs.pub.influence_of(side, country) + amount);
+                }
+            }
+            gs.setup_influence_remaining = {0, 0};
+            gs.phase = GamePhase::Headline;
         } else {
             run_setup_phase(gs, ussr_policy, us_policy, rng, &traced.steps, config);
         }
