@@ -101,6 +101,17 @@ std::optional<GameResult> run_action_rounds_live(
     const GameLoopConfig& config = {}
 );
 
+/// Like play_game_traced_from_state_with_rng but takes GameState by reference.
+/// Use when the PolicyFn needs access to the same GameState being played
+/// (e.g. ISMCTS which reads opponent hand size and deck from the full state).
+TracedGame play_game_traced_from_state_ref_with_rng(
+    GameState& gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    Pcg64Rng& rng,
+    const GameLoopConfig& config = {}
+);
+
 GameResult play_game_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,

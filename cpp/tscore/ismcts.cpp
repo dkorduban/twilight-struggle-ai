@@ -9,6 +9,10 @@
 #include <stdexcept>
 #include <utility>
 
+#include "game_loop.hpp"
+#include "human_openings.hpp"
+#include "policies.hpp"
+
 namespace ts {
 namespace {
 
@@ -158,6 +162,69 @@ IsmctsResult ismcts_search(
         ismcts_result.best_action = ismcts_result.aggregated_edges.front().action;
     }
     return ismcts_result;
+}
+
+std::vector<GameResult> play_ismcts_matchup(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    const IsmctsConfig& config,
+    uint32_t base_seed
+) {
+    std::vector<GameResult> results;
+    results.reserve(static_cast<size_t>(std::max(0, n_games)));
+
+    for (int i = 0; i < n_games; ++i) {
+        const auto seed = base_seed + static_cast<uint32_t>(i);
+        auto gs = reset_game(seed);
+        Pcg64Rng rng(seed);
+
+        // Atomic setup: place from opening tables with +2 bid.
+        for (const auto side : {Side::USSR, Side::US}) {
+            const SetupOpening* opening = (side == Side::USSR)
+                ? choose_random_opening(kHumanUSSROpenings.data(),
+                                        static_cast<int>(kHumanUSSROpenings.size()), rng)
+                : choose_random_opening(kHumanUSOpeningsBid2.data(),
+                                        static_cast<int>(kHumanUSOpeningsBid2.size()), rng);
+            if (opening == nullptr) continue;
+            for (int j = 0; j < opening->count; ++j) {
+                gs.pub.set_influence(side, opening->placements[j].country,
+                    gs.pub.influence_of(side, opening->placements[j].country) + opening->placements[j].amount);
+            }
+        }
+        gs.setup_influence_remaining = {0, 0};
+        gs.phase = GamePhase::Headline;
+
+        // ISMCTS policy for learned side: captures &gs to access full state.
+        const PolicyFn ismcts_fn = [&gs, &model, &config](
+            const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng
+        ) -> std::optional<ActionEncoding> {
+            const auto acting = pub.phasing;
+            const auto opp_idx = to_index(other_side(acting));
+            auto opp_hand_size = static_cast<int>(gs.hands[opp_idx].count());
+            if (gs.hands[opp_idx].test(kChinaCardId)) {
+                --opp_hand_size;
+            }
+            auto result = ismcts_search(gs, acting, opp_hand_size, model, config, rng);
+            return result.best_action;
+        };
+
+        const PolicyFn heuristic_fn = [](
+            const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng
+        ) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng);
+        };
+
+        GameLoopConfig loop_config;
+        loop_config.skip_setup_influence = true;  // already done above
+
+        const auto& ussr_fn = (learned_side == Side::USSR) ? ismcts_fn : heuristic_fn;
+        const auto& us_fn = (learned_side == Side::US) ? ismcts_fn : heuristic_fn;
+
+        auto traced = play_game_traced_from_state_ref_with_rng(gs, ussr_fn, us_fn, rng, loop_config);
+        results.push_back(std::move(traced.result));
+    }
+    return results;
 }
 
 }  // namespace ts

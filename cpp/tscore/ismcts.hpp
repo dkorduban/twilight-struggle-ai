@@ -42,6 +42,16 @@ IsmctsResult ismcts_search(
     Pcg64Rng& rng
 );
 
+/// Run benchmark games where the learned side uses ISMCTS for each decision.
+/// The opponent uses the heuristic policy.  Returns one GameResult per game.
+std::vector<GameResult> play_ismcts_matchup(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    const IsmctsConfig& config,
+    uint32_t base_seed
+);
+
 #endif
 
 }  // namespace ts

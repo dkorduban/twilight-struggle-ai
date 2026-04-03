@@ -1308,8 +1308,8 @@ void run_setup_phase(
     gs.phase = GamePhase::Headline;
 }
 
-TracedGame play_game_traced_from_state_with_rng(
-    GameState gs,
+TracedGame play_game_traced_from_state_ref_with_rng(
+    GameState& gs,
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
@@ -1404,6 +1404,16 @@ TracedGame play_game_traced_from_state_with_rng(
     }
     traced.result = GameResult{.winner = std::nullopt, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
     return traced;
+}
+
+TracedGame play_game_traced_from_state_with_rng(
+    GameState gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    Pcg64Rng& rng,
+    const GameLoopConfig& config
+) {
+    return play_game_traced_from_state_ref_with_rng(gs, ussr_policy, us_policy, rng, config);
 }
 
 GameResult play_game_fn(

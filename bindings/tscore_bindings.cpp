@@ -7,6 +7,7 @@
 
 #include "game_loop.hpp"
 #include "game_state.hpp"
+#include "ismcts.hpp"
 #include "learned_policy.hpp"
 #include "mcts.hpp"
 #include "mcts_batched.hpp"
@@ -561,6 +562,34 @@ PYBIND11_MODULE(tscore, m) {
         "Run batched greedy benchmark: learned side uses argmax from batched NN,\n"
         "opponent uses heuristic. Returns list[GameResult].\n"
         "device: 'cpu' or 'cuda' for GPU inference."
+    );
+    m.def(
+        "benchmark_ismcts",
+        [](const std::string& model_path, ts::Side learned_side, int n_games,
+           int n_determinizations, int n_simulations, py::object seed_obj) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            auto model = torch::jit::load(model_path);
+            model.eval();
+            ts::IsmctsConfig config;
+            config.n_determinizations = n_determinizations;
+            config.mcts_config.n_simulations = n_simulations;
+            return ts::play_ismcts_matchup(
+                n_games, model, learned_side, config,
+                seed.value_or(std::random_device{}()));
+        },
+        py::arg("model_path"),
+        py::arg("learned_side"),
+        py::arg("n_games"),
+        py::arg("n_determinizations") = 8,
+        py::arg("n_simulations") = 50,
+        py::arg("seed") = py::none(),
+        "Run ISMCTS benchmark: learned side uses information-set MCTS,\n"
+        "opponent uses heuristic. Returns list[GameResult].\n"
+        "n_determinizations: parallel determinization count (default 8).\n"
+        "n_simulations: MCTS simulations per determinization (default 50)."
     );
 #endif
 }
