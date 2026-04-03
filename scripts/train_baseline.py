@@ -76,7 +76,7 @@ except ImportError:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset, random_split
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
@@ -172,6 +172,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument(
+        "--deterministic-split",
+        action="store_true",
+        help=(
+            "Split train/val deterministically by game_id hash instead of "
+            "random_split. Eliminates val-set variance across training seeds."
+        ),
+    )
     p.add_argument(
         "--no-wandb",
         action="store_true",
@@ -620,29 +628,16 @@ _WANDB_PROJECT = "twilight-struggle-ai"
 
 
 def _infer_run_name(args: argparse.Namespace) -> str:
-    """Derive a short, human-readable run name from CLI args.
+    """Derive a human-readable W&B run name from CLI args.
 
-    Format: v{N}_{warm|cold}
-      - version N is parsed from the last path component of --out-dir that
-        looks like a version token (e.g. 'combined_v45_vsh_filtered' -> 'v45').
-        Falls back to the raw basename if no vN token is found.
-      - warm/cold distinguishes --init-from (warm start) from scratch (cold).
+    Uses the full basename of --out-dir so the W&B name matches the checkpoint
+    directory name exactly (e.g. 'arch_country_attn_h256_v2').
+    Appends '_warm' only when --init-from is set.
     """
-    import re
-
-    # Try to find a vN token anywhere in the out-dir path.
-    version = "unknown"
-    for part in reversed(os.path.normpath(args.out_dir).split(os.sep)):
-        m = re.search(r"v(\d+)", part)
-        if m:
-            version = f"v{m.group(1)}"
-            break
-    else:
-        # Use the last non-empty path component as a fallback.
-        version = os.path.basename(os.path.normpath(args.out_dir)) or "run"
-
-    warm_cold = "warm" if getattr(args, "init_from", None) else "cold"
-    return f"{version}_{warm_cold}"
+    basename = os.path.basename(os.path.normpath(args.out_dir)) or "run"
+    if getattr(args, "init_from", None):
+        return f"{basename}_warm"
+    return basename
 
 
 def _setup_wandb(args: argparse.Namespace) -> bool:
@@ -678,6 +673,13 @@ def _setup_wandb(args: argparse.Namespace) -> bool:
         resume="allow",
     )
     print(f"W&B run initialised: {_WANDB_ENTITY}/{_WANDB_PROJECT}/{run_name}")
+
+    # Persist run ID so the benchmark pipeline can resume this run to log win rates.
+    run_id_file = os.path.join(args.out_dir, "wandb_run_id.txt")
+    os.makedirs(args.out_dir, exist_ok=True)
+    with open(run_id_file, "w") as fh:
+        fh.write(_wandb_module.run.id)
+
     return True
 
 
@@ -865,7 +867,15 @@ def main() -> None:
         )
 
     generator = torch.Generator().manual_seed(args.seed)
-    train_ds, val_ds = random_split(full_dataset, [n_train, n_val], generator=generator)
+    if getattr(args, "deterministic_split", False):
+        train_idx, val_idx = full_dataset.deterministic_split(args.val_fraction)
+        train_ds = Subset(full_dataset, train_idx)
+        val_ds = Subset(full_dataset, val_idx)
+        n_train, n_val = len(train_ds), len(val_ds)
+        print(f"  [deterministic split] train={n_train:,}  val={n_val:,}  "
+              f"({n_val / (n_train + n_val) * 100:.1f}% val)")
+    else:
+        train_ds, val_ds = random_split(full_dataset, [n_train, n_val], generator=generator)
 
     # Use 'forkserver' (or 'spawn') to avoid Polars/OpenMP thread-pool corruption
     # after fork. Polars uses internal Rayon/BLAS thread pools that deadlock in

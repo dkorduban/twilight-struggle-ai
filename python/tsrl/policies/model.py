@@ -32,6 +32,7 @@ import pathlib
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 NUM_COUNTRIES = 86  # countries 0..85 (Austria=0, Taiwan=85)
@@ -420,7 +421,7 @@ class CountryAttnEncoder(nn.Module):
     """Self-attention over per-country token embeddings.
 
     Same input/output contract as CountryEmbedEncoder but applies
-    nn.MultiheadAttention over the 86 country tokens before pooling.
+    scaled dot-product attention over the 86 country tokens before pooling.
 
     Uses embed_dim=64 (must be divisible by num_heads=4).
     Output: (B, INFLUENCE_HIDDEN=128)
@@ -438,9 +439,9 @@ class CountryAttnEncoder(nn.Module):
 
         # per-country input: ussr_inf/10, us_inf/10, 11 static features = 13
         self.country_proj = nn.Linear(_COUNTRY_FEAT_DIM + 2, self._EMBED_DIM)
-        self.attn = nn.MultiheadAttention(
-            self._EMBED_DIM, self._NUM_HEADS, batch_first=True
-        )
+        # Manual QKV + F.scaled_dot_product_attention (21× faster than nn.MHA)
+        self.qkv_proj = nn.Linear(self._EMBED_DIM, 3 * self._EMBED_DIM)
+        self.attn_out_proj = nn.Linear(self._EMBED_DIM, self._EMBED_DIM)
         self.out_proj = nn.Linear(
             (1 + self._NUM_REGIONS) * self._EMBED_DIM, INFLUENCE_HIDDEN
         )
@@ -457,8 +458,21 @@ class CountryAttnEncoder(nn.Module):
         per_country_feats = torch.cat([dyn, static], dim=-1)  # (B, 86, 13)
         tokens = torch.relu(self.country_proj(per_country_feats))  # (B, 86, D)
 
-        # Self-attention: (B, 86, D) -> (B, 86, D)
-        attn_out, _ = self.attn(tokens, tokens, tokens)  # (B, 86, D)
+        # Self-attention via F.scaled_dot_product_attention (uses FlashAttention/efficient kernels)
+        S = tokens.shape[1]  # 86
+        D = self._EMBED_DIM
+        H = self._NUM_HEADS
+        head_dim = D // H
+
+        qkv = self.qkv_proj(tokens)  # (B, S, 3*D)
+        q, k, v = qkv.chunk(3, dim=-1)  # each (B, S, D)
+        q = q.view(B, S, H, head_dim).transpose(1, 2)  # (B, H, S, head_dim)
+        k = k.view(B, S, H, head_dim).transpose(1, 2)
+        v = v.view(B, S, H, head_dim).transpose(1, 2)
+
+        attn_out = F.scaled_dot_product_attention(q, k, v)  # (B, H, S, head_dim)
+        attn_out = attn_out.transpose(1, 2).contiguous().view(B, S, D)  # (B, S, D)
+        attn_out = self.attn_out_proj(attn_out)  # (B, S, D)
 
         global_pool = attn_out.mean(dim=1)  # (B, D)
         region_pools = []

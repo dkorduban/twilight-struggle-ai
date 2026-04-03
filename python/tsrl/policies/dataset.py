@@ -365,6 +365,12 @@ class TS_SelfPlayDataset(Dataset):
             self._teacher_mode = torch.from_numpy(teacher_mode)
             self._teacher_value = torch.from_numpy(teacher_value)
 
+        # Store game_id for deterministic train/val splitting by game.
+        if "game_id" in canonical:
+            self._game_ids = df["game_id"].to_numpy().copy()
+        else:
+            self._game_ids = None
+
         # Free DataFrame — all data is now in tensors
         del df
 
@@ -374,6 +380,32 @@ class TS_SelfPlayDataset(Dataset):
             f"[dataset] Loaded {N:,} rows from {len(paths)} file(s) in {elapsed:.1f}s",
             flush=True,
         )
+
+    def deterministic_split(self, val_fraction: float = 0.05) -> tuple[list[int], list[int]]:
+        """Split into train/val by hashing game_id — deterministic regardless of seed.
+
+        Returns (train_indices, val_indices).  Every row from a given game goes
+        entirely into train or entirely into val, so there is no cross-game leakage.
+        """
+        if self._game_ids is None:
+            raise RuntimeError("Cannot split by game_id: column not in data")
+        import hashlib
+        # Assign each unique game to val if hash(game_id) mod 1/fraction < 1
+        denominator = max(1, round(1.0 / val_fraction))
+        unique_ids = set(self._game_ids.tolist())
+        val_games = set()
+        for gid in unique_ids:
+            h = int(hashlib.md5(str(gid).encode()).hexdigest(), 16)
+            if h % denominator == 0:
+                val_games.add(gid)
+        train_idx = []
+        val_idx = []
+        for i, gid in enumerate(self._game_ids.tolist()):
+            if gid in val_games:
+                val_idx.append(i)
+            else:
+                train_idx.append(i)
+        return train_idx, val_idx
 
     @staticmethod
     def passthrough_collate(batch: dict) -> dict:

@@ -24,6 +24,7 @@ Usage::
 from __future__ import annotations
 
 import hashlib
+import html as _html
 import json
 import subprocess
 from datetime import datetime, timezone
@@ -122,15 +123,16 @@ def capture_provenance(
         "git_dirty": _run_git("status", "--porcelain") != "",
     }
 
-    # Git diff summary (short stat, not full diff — keeps it concise)
+    # Git diff: stat summary + full unified diff
     diff_stat = _run_git("diff", "--stat")
     if diff_stat:
         prov["git_diff_summary"] = diff_stat.split("\n")[-1].strip()
-        # Also capture which files are modified
         prov["git_dirty_files"] = _run_git("diff", "--name-only").split("\n")
+        prov["git_diff"] = _run_git("diff", "HEAD")  # full unified diff
     else:
         prov["git_diff_summary"] = ""
         prov["git_dirty_files"] = []
+        prov["git_diff"] = ""
 
     # Input file fingerprints
     if input_files:
@@ -166,6 +168,32 @@ def save_provenance(prov: dict[str, Any], path: str | Path) -> None:
     p.write_text(json.dumps(prov, indent=2, default=str) + "\n")
 
 
+def _diff_to_html(diff_text: str) -> str:
+    """Convert a unified diff to syntax-highlighted HTML."""
+    if not diff_text:
+        return "<pre><em>No uncommitted changes.</em></pre>"
+    lines = []
+    for line in diff_text.split("\n"):
+        escaped = _html.escape(line)
+        if line.startswith("+++") or line.startswith("---"):
+            lines.append(f'<span style="font-weight:bold">{escaped}</span>')
+        elif line.startswith("+"):
+            lines.append(f'<span style="color:#22863a;background:#f0fff4">{escaped}</span>')
+        elif line.startswith("-"):
+            lines.append(f'<span style="color:#b31d28;background:#ffeef0">{escaped}</span>')
+        elif line.startswith("@@"):
+            lines.append(f'<span style="color:#005cc5">{escaped}</span>')
+        elif line.startswith("diff ") or line.startswith("index "):
+            lines.append(f'<span style="color:#6a737d">{escaped}</span>')
+        else:
+            lines.append(escaped)
+    body = "\n".join(lines)
+    return (
+        '<html><body><pre style="font-family:monospace;font-size:12px;'
+        f'line-height:1.4;white-space:pre-wrap">{body}</pre></body></html>'
+    )
+
+
 def log_provenance_wandb(prov: dict[str, Any]) -> None:
     """Log provenance to the active W&B run's config."""
     try:
@@ -188,12 +216,15 @@ def log_provenance_wandb(prov: dict[str, Any]) -> None:
             allow_val_change=True,
         )
 
+        # Log git diff as rich HTML — visible in the run's Media tab
+        diff_text = prov.get("git_diff", "")
+        wandb.log({"git_diff": wandb.Html(_diff_to_html(diff_text))}, step=0)
+
         # Log full provenance as an artifact for detailed inspection
         artifact = wandb.Artifact(
             name=f"provenance-{prov.get('git_sha', 'unknown')[:8]}",
             type="provenance",
         )
-        # Write to temp file
         import tempfile
 
         with tempfile.NamedTemporaryFile(

@@ -68,8 +68,149 @@ value_target=final_vp, dropout=0.1
 - Training time: ~10 min (vs ~27 min for v89). **2.8× speedup, same or better WR.**
 - **DECISION: Use bs=8192, lr=0.0024 for all future training.**
 
-### Gen 1 (v90) — IN PROGRESS
-- Status: Collecting learned-vs-heuristic data
-- Data: Gen 0 data + learned_v89b_vs_heuristic (2000 games each side)
+### Gen 1 (v90) — DONE
+- Data: 2.13M heur + learned_v89b_ussr (all) + learned_v89b_us (wins-only) = ~2.45M rows
 - Hyperparams: bs=8192, lr=0.0024 (fast recipe)
-- Notes: First self-play generation. Using v89b as base model.
+- val_loss: 3.8784, card_top1: 65.0%, mode_acc: 83.3%, country_top1: 34.9%
+- **USSR WR: 32.4%** | **US WR: 9.0%** | **Combined: 20.7%**
+- Notes: USSR dropped significantly. Including losing games from self-play hurts USSR.
+
+### Gen 1b (v90b) — DONE (wins-only filtered variant)
+- Data: 2.13M heur + learned_v89b_ussr (wins-only) + learned_v89b_us (wins-only) = ~2.26M rows
+- Hyperparams: bs=8192, lr=0.0024 (fast recipe)
+- val_loss: 3.8980, card_top1: 65.0%, mode_acc: 83.4%, country_top1: 34.7%
+- **USSR WR: 39.8%** | **US WR: 8.4%** | **Combined: 24.1%** ← NEW BEST
+- Notes: Wins-only filtering is critical. +1.1pp combined over v89b pure BC.
+- **DECISION: Use wins-only filtering for both sides in all future generations.**
+
+### Gen 2 (v91) — DONE
+- Data: 2.13M heur + Gen1 filtered (127k) + Gen2 filtered (148k) = 2.41M rows
+- Hyperparams: bs=8192, lr=0.0024 (fast recipe)
+- val_loss: 3.8073, best_epoch: 60
+- 500g/side: USSR 41.6% | US 10.4% | Combined 26.0% (initial, misleading)
+- **2000g/side: USSR 35.6% | US 9.2% | Combined 22.4%** (regression from v89b)
+
+### Gen 3 (v92) — DONE
+- Data: 2.13M heur + Gen1-3 filtered (420k) = 2.55M rows
+- val_loss: 3.7275
+- **2000g/side: USSR 40.0% | US 7.7% | Combined 23.9%** (no improvement)
+
+---
+
+## Phase 1 Investigation: What Does Self-Play Actually Do?
+
+After initial 500-game benchmarks suggested gen-over-gen improvement, switched to
+rigorous 2000-game benchmarks (±0.7pp CI) revealing the improvement was an illusion.
+
+### High-confidence benchmark comparison (2000 games/side, 4 seeds)
+
+| Model | Self-play data | USSR WR | US WR | Combined | val_loss |
+|-------|---------------|---------|-------|----------|----------|
+| v89b | none (pure BC) | 41.5% | 8.1% | **24.8%** ±0.7 | 3.916 |
+| v90b (seed=42) | gen1 5.6% | 44.5% | 9.7% | **27.1%** ±0.7 | 3.898 |
+| v90b (seed=123) | gen1 5.6% | 39.4% | 9.7% | **24.5%** ±0.7 | 3.900 |
+| v91 | gen1+2 11% | 35.6% | 9.2% | **22.4%** ±0.7 | 3.807 |
+| v92 | gen1+2+3 17% | 40.0% | 7.7% | **23.9%** ±0.7 | 3.728 |
+| v93 | gen1 + v90b 5k 19% | 40.4% | 9.0% | **24.7%** ±0.7 | 3.683 |
+| v94_warm | warm-start from v90b | 41.4% | 9.2% | **25.3%** ±0.7 | 3.648 |
+| v95 | heur + v90b selfplay 25% | 42.2% | 8.2% | **25.2%** ±0.7 | 3.596 |
+| v96a | v90b data @6.8% | 38.2% | 9.1% | **23.7%** ±0.7 | 3.815 |
+| v96b_aw | v90b + adv.wt 0.5 | 41.8% | 5.7% | **23.7%** ±0.7 | 3.894 |
+| v97 | v89b data 18% | 42.0% | 8.5% | **25.2%** ±0.7 | 3.679 |
+
+### Key findings
+
+1. **v90b's 27.1% was a lucky training seed.** Retrained with seed=123 → 24.5%.
+   All other models cluster at 23.7-25.3%, overlapping within ±0.7pp CI.
+
+2. **Self-play data from BC models provides NO reliable improvement.**
+   Pure heuristic BC (v89b) = 24.8%. Best self-play variant = 25.3%. Within noise.
+
+3. **val_loss improves but WR doesn't.** val_loss dropped from 3.92 → 3.60 as
+   self-play data increased, but WR stayed flat. The model better predicts training
+   data without playing better.
+
+4. **More self-play data can hurt.** v91 (11% SP) and v92 (17% SP) are below baseline.
+   Too much SP data dilutes the heuristic signal without adding useful new information.
+
+5. **Advantage weighting hurts US play.** v96b dropped US WR from ~9% to 5.7%.
+
+6. **Warm-starting doesn't help.** Best epoch = 1 (essentially unchanged from v90b).
+
+### Root cause analysis
+
+Self-play data from a BC model is **not novel enough** relative to the heuristic
+training data. The model learned to imitate the heuristic, so its play generates
+data that looks like the heuristic data. Adding near-duplicate data with a slightly
+different distribution creates noise, not signal.
+
+To improve beyond ~25% combined, we need:
+- **Architecture improvements** (Phase 2) to increase model capacity/expressiveness
+- **Real RL signal** (not behavior cloning) — policy gradient, PPO, or value-aware training
+- **Search at inference time** — MCTS with learned value/policy should beat raw policy
+- **Qualitatively different data** — human games, MCTS-generated trajectories
+
+### Phase 1 conclusion: WR plateau triggered. Proceeding to Phase 2 (Architecture).
+
+---
+
+## Phase 2: Architecture Experiments & Data Quality Audit
+
+### Data quality finding: nash contamination
+
+**Root cause:** The `heuristic_10k_setup_bid2_nash.parquet` file in `combined_v89`
+was collected before a DEFCON-safety fix in the heuristic. Key evidence:
+
+| | nash (pre-fix) | nash_b (post-fix) |
+|---|---|---|
+| Games | 10,000 | 10,000 |
+| Mean max turn | 5.6 | 9.1 |
+| Games ending turn 1-3 | 2,920 (29%) | 0 (0%) |
+| Games reaching turn 10 | 2,152 (21.5%) | 7,452 (74.5%) |
+| End at DEFCON 2 | 82% | 71% |
+| USSR win rate | **98.3%** | **65.1%** |
+| Rows/game | 78 | 134 |
+| Rows/turn | ~14 | ~15 |
+
+29% of nash games end on turns 1-3 via US DEFCON-1 suicide. The US heuristic
+coups at DEFCON 2, triggering DEFCON→1 and losing the game. This creates
+degenerate training data: 80% of nash rows come from short games where the
+US self-destructs, teaching the model a non-existent strategy.
+
+**Impact:** All Phase 1+ experiments trained on `combined_v89` (nash + nash_b) are
+affected by this contamination. However, relative comparisons remain valid since all
+models trained on the same data. Absolute WR numbers are suboptimal.
+
+**Schema compatibility:** All 4 heuristic files (nash, nash_b, nash_c, nash_d) share
+an identical 75-column schema. The differences are only in outcome distribution and
+game length, not in feature availability.
+
+**Action items:**
+1. Drop nash from training data for all future experiments
+2. Use nash_b alone (1.3M rows, 10k games) as clean baseline
+3. Or nash_b + nash_c for clean 2× (2.7M rows, 20k games)
+4. Re-run baseline h256 on clean data to establish new reference WR
+
+### 2× heuristic data volume test (v98_heur40k)
+
+Trained on nash + nash_b + nash_c + nash_d (4.87M rows, 40k games).
+**Combined WR: 23.8% ±0.7 (n=2000/side)** — no improvement over baseline 24.8%.
+
+However, this result is confounded by the nash contamination and the discovery that
+nash_c/nash_d have very different outcome distributions. A clean 2× test using
+only nash_b + nash_c is pending.
+
+### Architecture sweep (on combined_v89, results pending)
+
+Comparing baseline MLP, country attention (SDPA-fixed), and control features
+at h128 and h256. Benchmarks use 2000 games/side (4 seeds × 500).
+
+| Architecture | h128 Combined | h256 Combined |
+|---|---|---|
+| baseline | 21.1% ±0.6 | 22.4% ±0.7 (reseed; v89b=24.8%) |
+| country_attn (SDPA) | 16.1% ±0.6 | *pending* |
+| control_feat | *pending* | *pending* |
+
+Note: seed variance is ~2-4pp (measured by retraining baseline h256 with different
+seeds: 22.4% vs 24.8%). CIs above are benchmark-only; total uncertainty including
+training seed is ~±2pp.
