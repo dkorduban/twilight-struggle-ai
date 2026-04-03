@@ -4,6 +4,12 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# Ensure W&B API key is available for bench→W&B logging
+WANDB_KEY_FILE="$(dirname "$0")/../.wandb_api_key"
+if [ -f "$WANDB_KEY_FILE" ]; then
+    export WANDB_API_KEY="$(cat "$WANDB_KEY_FILE")"
+fi
+
 QUEUE_FILE="${QUEUE_FILE:-$(dirname "$0")/../results/pipeline_queue.txt}"
 RESULTS_FILE="${RESULTS_FILE:-$(dirname "$0")/../results/pipeline_results.txt}"
 PROCESSED=0
