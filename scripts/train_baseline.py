@@ -669,9 +669,17 @@ def _setup_wandb(args: argparse.Namespace) -> bool:
         entity=_WANDB_ENTITY,
         project=_WANDB_PROJECT,
         name=run_name,
-        config=vars(args),
+        config={
+            **vars(args),
+            "dataset_name": os.path.basename(os.path.normpath(args.data_dir)),
+            "dataset_version": os.path.basename(os.path.normpath(args.data_dir)),
+        },
         resume="allow",
     )
+    # Use samples_seen as primary x-axis so runs are comparable across different
+    # dataset sizes and epoch counts. Epoch is kept as a convenience label.
+    _wandb_module.define_metric("samples_seen")
+    _wandb_module.define_metric("*", step_metric="samples_seen")
     print(f"W&B run initialised: {_WANDB_ENTITY}/{_WANDB_PROJECT}/{run_name}")
 
     # Persist run ID so the benchmark pipeline can resume this run to log win rates.
@@ -689,16 +697,21 @@ def _wandb_log_epoch(
     val_metrics: dict[str, float],
     current_lr: float,
     is_best: bool,
+    samples_seen: int = 0,
 ) -> None:
     """Log per-epoch metrics to W&B."""
-    payload: dict[str, object] = {"epoch": epoch, "lr": current_lr}
+    payload: dict[str, object] = {
+        "epoch": epoch,
+        "lr": current_lr,
+        "samples_seen": samples_seen,
+    }
     for k, v in train_metrics.items():
         payload[f"train_{k}"] = v
     for k, v in val_metrics.items():
         payload[f"val_{k}"] = v
     if is_best:
         payload["best_val_loss"] = val_metrics.get("loss", float("nan"))
-    _wandb_module.log(payload, step=epoch)
+    _wandb_module.log(payload, step=samples_seen)
 
 
 def _wandb_log_dataset_qa(data_dir: str, n_total: int, n_train: int, n_val: int) -> None:
@@ -859,6 +872,10 @@ def main() -> None:
     print(f"Dataset: {n_total} steps  (train={n_train}, val={n_val})")
     if wandb_active:
         _wandb_log_dataset_qa(args.data_dir, n_total, n_train, n_val)
+        _wandb_module.config.update(
+            {"dataset_total_rows": n_total, "dataset_train_rows": n_train, "dataset_val_rows": n_val},
+            allow_val_change=True,
+        )
     if args.teacher_targets:
         print(
             "Teacher targets:"
@@ -988,6 +1005,12 @@ def main() -> None:
     # ---- early stopping state ----
     epochs_no_improve = 0
 
+    # ---- cumulative sample counter (restored from checkpoint on resume) ----
+    samples_seen = 0
+    if args.resume:
+        # Approximate from start_epoch - 1 completed epochs
+        samples_seen = (start_epoch - 1) * len(train_ds)
+
     # ---- training loop ----
     for epoch in range(start_epoch, args.epochs + 1):
         t_epoch = time.time()
@@ -1019,6 +1042,7 @@ def main() -> None:
             value_weight=args.value_weight,
         )
 
+        samples_seen += len(train_ds)
         elapsed = time.time() - t_epoch
         if scheduler is not None and not scheduler_step_per_batch:
             scheduler.step()
@@ -1056,7 +1080,7 @@ def main() -> None:
         # ---- W&B per-epoch logging ----
         if wandb_active:
             current_lr = optimizer.param_groups[0]["lr"]
-            _wandb_log_epoch(epoch, train_metrics, val_metrics, current_lr, is_best)
+            _wandb_log_epoch(epoch, train_metrics, val_metrics, current_lr, is_best, samples_seen)
 
         ckpt_payload = {
             "epoch": epoch,
