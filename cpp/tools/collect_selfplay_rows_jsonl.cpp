@@ -343,6 +343,7 @@ int main(int argc, char** argv) {
     const ts::GameLoopConfig loop_config{
         .exploration_rate = epsilon,
         .us_bid_extra = us_bid,
+        .use_atomic_setup = true,  // always use atomic setup with kHumanUSOpeningsBid2
     };
 
     std::ofstream out(*out_path);
