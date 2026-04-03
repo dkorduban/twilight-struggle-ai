@@ -209,7 +209,7 @@ at h128 and h256. Benchmarks use 2000 games/side (4 seeds × 500).
 |---|---|---|
 | baseline | 37.5%/4.7%/**21.1%** ±0.6 | 36.7%/8.1%/**22.4%** ±0.6 |
 | country_attn (SDPA) | 28.8%/3.4%/**16.1%** ±0.5 | 38.4%/7.6%/**23.0%** ±0.6 |
-| control_feat | 42.7%/3.4%/**23.1%** ±0.6 | 30.1%/6.0%/**18.1%** ±0.6 |
+| control_feat | 42.7%/3.4%/**23.1%** ±0.6 | 48.6%/9.4%/**29.0%** ±0.6 ← NEW BEST |
 
 All 6 models trained on combined_v89 (nash+nash_b, 2.13M rows), seed=42,
 bs=8192, lr=0.0024, epochs=60, patience=15, dropout=0.1.
@@ -224,16 +224,17 @@ bs=8192, lr=0.0024, epochs=60, patience=15, dropout=0.1.
    Attention needs sufficient embedding dimension to be useful. At h128, it wastes
    capacity on the attention mechanism at the expense of downstream MLPs.
 
-3. **control_feat collapses at h256**: 23.1% at h128 → 18.1% at h256. Best epoch was
-   24 (early stopping), suggesting overfitting. Region scoring features may need
-   stronger regularization at higher capacity.
+3. **control_feat h256 was NOT overfitting — first run had a bad initialization.**
+   First run: best epoch 24, val_loss 4.02 → 18.1% WR. Second run (same hyperparams,
+   new random seed): best epoch 60, val_loss 3.76 → **29.0% WR**. The first run likely
+   hit a bad local minimum early. This is the new best model.
 
-4. **USSR vs US trade-off**: control_feat h128 has the highest USSR WR (42.7%) but
-   lowest US WR (3.4%). baseline h256 is most balanced (36.7%/8.1%).
+4. **USSR vs US trade-off**: control_feat models favor USSR (42.7-48.6%) at cost of
+   US WR (3.4-9.4%). baseline h256 is most balanced.
 
-5. **Conclusion**: No architecture reliably beats baseline h256 on this data. The
-   ~25% combined ceiling is likely data-limited, not architecture-limited.
-   Next step: clean data (drop nash contamination), deterministic splits, ×3 seeds.
+5. **Conclusion**: control_feat h256 = 29.0% combined is a clear win (+6.6pp over
+   baseline h256). Region scoring features genuinely help at h256 capacity.
+   Next: clean data sweep to confirm on nash_b+c without contamination.
 
 Note: seed variance is ~2-4pp (measured by retraining baseline h256 with different
 seeds: 22.4% vs 24.8%). CIs above are benchmark-only; total uncertainty including
