@@ -846,7 +846,7 @@ def main() -> None:
         prov = capture_provenance(
             input_files=[f"{args.data_dir}/*.parquet"],
             binaries=["build-ninja/cpp/tools/ts_collect_selfplay_rows_jsonl"],
-            extra={"args": vars(args)},
+            extra={"args": vars(args), "command": " ".join(sys.argv)},
         )
         save_provenance(prov, os.path.join(args.out_dir, "provenance.json"))
         if wandb_active:

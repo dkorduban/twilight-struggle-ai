@@ -203,6 +203,7 @@ def log_provenance_wandb(prov: dict[str, Any]) -> None:
             return
 
         # Flatten for wandb config
+        extra = prov.get("extra", {})
         wandb.config.update(
             {
                 "provenance/git_sha": prov.get("git_sha", ""),
@@ -212,6 +213,7 @@ def log_provenance_wandb(prov: dict[str, Any]) -> None:
                 "provenance/input_file_count": prov.get("input_file_count", 0),
                 "provenance/input_total_bytes": prov.get("input_total_bytes", 0),
                 "provenance/timestamp": prov.get("timestamp", ""),
+                "provenance/command": extra.get("command", ""),
             },
             allow_val_change=True,
         )
