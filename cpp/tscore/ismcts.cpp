@@ -11,10 +11,16 @@
 
 #include "game_loop.hpp"
 #include "human_openings.hpp"
+#include "mcts_search_impl.hpp"
+#include "nn_features.hpp"
 #include "policies.hpp"
 
 namespace ts {
 namespace {
+
+namespace si = search_impl;
+
+constexpr int kIsmctsVirtualLossWeight = 1;
 
 int count_hand_excluding_china(const CardSet& hand) {
     auto count = static_cast<int>(hand.count());
@@ -48,6 +54,78 @@ struct AggregatedEdgeState {
     MctsEdge edge;
     int occurrences = 0;
 };
+
+struct DeterminizationSlot {
+    GameState root_state;
+    GameState sim_state;
+    std::unique_ptr<MctsNode> root;
+    std::vector<std::pair<MctsNode*, int>> path;
+    int sims_completed = 0;
+    int sims_target = 0;
+    bool pending_expansion = false;
+    bool pending_root_expansion = false;
+    bool move_done = false;
+    Pcg64Rng rng;
+};
+
+double mean_root_value(const MctsNode& root) {
+    if (root.is_terminal) {
+        return root.terminal_value;
+    }
+    if (root.total_visits == 0) {
+        return 0.0;
+    }
+
+    double total = 0.0;
+    for (const auto& edge : root.edges) {
+        total += edge.total_value;
+    }
+    return total / static_cast<double>(root.total_visits);
+}
+
+int best_root_edge_index(const MctsNode& root) {
+    if (root.edges.empty()) {
+        return -1;
+    }
+
+    int best_index = 0;
+    for (size_t i = 1; i < root.edges.size(); ++i) {
+        const auto& current = root.edges[i];
+        const auto& best = root.edges[static_cast<size_t>(best_index)];
+        if (current.visit_count > best.visit_count) {
+            best_index = static_cast<int>(i);
+            continue;
+        }
+        if (current.visit_count == best.visit_count && current.prior > best.prior) {
+            best_index = static_cast<int>(i);
+        }
+    }
+    return best_index;
+}
+
+SearchResult build_search_result(const DeterminizationSlot& slot) {
+    SearchResult result;
+    result.total_simulations = slot.sims_completed;
+    if (slot.root == nullptr) {
+        return result;
+    }
+
+    result.root_edges.reserve(slot.root->edges.size());
+    for (size_t i = 0; i < slot.root->edges.size(); ++i) {
+        auto edge = slot.root->edges[i];
+        if (i < slot.root->applied_actions.size()) {
+            edge.action = slot.root->applied_actions[i];
+        }
+        result.root_edges.push_back(std::move(edge));
+    }
+    result.root_value = mean_root_value(*slot.root);
+
+    const auto best_index = best_root_edge_index(*slot.root);
+    if (best_index >= 0 && static_cast<size_t>(best_index) < slot.root->applied_actions.size()) {
+        result.best_action = slot.root->applied_actions[static_cast<size_t>(best_index)];
+    }
+    return result;
+}
 
 }  // namespace
 
@@ -99,18 +177,155 @@ IsmctsResult ismcts_search(
     const IsmctsConfig& config,
     Pcg64Rng& rng
 ) {
+    return ismcts_search_batched(
+        partial_state,
+        acting_side,
+        opp_hand_size,
+        model,
+        config,
+        rng,
+        torch::kCPU
+    );
+}
+
+IsmctsResult ismcts_search_batched(
+    const GameState& partial_state,
+    Side acting_side,
+    int opp_hand_size,
+    torch::jit::script::Module& model,
+    const IsmctsConfig& config,
+    Pcg64Rng& rng,
+    torch::Device device
+) {
     if (config.n_determinizations <= 0) {
         throw std::invalid_argument("n_determinizations must be positive");
+    }
+
+    std::vector<DeterminizationSlot> slots(static_cast<size_t>(config.n_determinizations));
+    for (auto& slot : slots) {
+        slot.rng = Pcg64Rng(rng.next_u64());
+        slot.root_state = sample_determinization(partial_state, acting_side, opp_hand_size, slot.rng);
+        slot.sim_state = slot.root_state;
+        slot.sims_target = config.mcts_config.n_simulations;
+    }
+
+    nn::BatchInputs batch_inputs;
+    batch_inputs.allocate(config.n_determinizations, device);
+    std::vector<DeterminizationSlot*> batch_slots;
+    batch_slots.reserve(static_cast<size_t>(config.n_determinizations));
+
+    while (true) {
+        bool all_done = true;
+        batch_inputs.reset();
+        batch_slots.clear();
+
+        for (auto& slot : slots) {
+            if (slot.root == nullptr) {
+                all_done = false;
+                if (auto immediate = si::expand_without_model(slot.root_state, slot.rng); immediate.has_value()) {
+                    slot.root = std::move(immediate->node);
+                    apply_root_dirichlet_noise(*slot.root, config.mcts_config, slot.rng);
+                    if (slot.sims_target == 0) {
+                        slot.move_done = true;
+                    }
+                } else {
+                    slot.pending_expansion = true;
+                    slot.pending_root_expansion = true;
+                    batch_inputs.fill_slot(
+                        batch_inputs.filled,
+                        slot.root_state.pub,
+                        slot.root_state.hands[to_index(slot.root_state.pub.phasing)],
+                        si::holds_china_for(slot.root_state, slot.root_state.pub.phasing),
+                        slot.root_state.pub.phasing
+                    );
+                    batch_slots.push_back(&slot);
+                }
+                continue;
+            }
+
+            if (slot.sims_completed >= slot.sims_target) {
+                slot.move_done = true;
+                continue;
+            }
+
+            all_done = false;
+            const auto selection = si::select_to_leaf(
+                slot,
+                config.mcts_config.c_puct,
+                kIsmctsVirtualLossWeight
+            );
+            if (selection.needs_batch) {
+                batch_inputs.fill_slot(
+                    batch_inputs.filled,
+                    slot.sim_state.pub,
+                    slot.sim_state.hands[to_index(slot.sim_state.pub.phasing)],
+                    si::holds_china_for(slot.sim_state, slot.sim_state.pub.phasing),
+                    slot.sim_state.pub.phasing
+                );
+                batch_slots.push_back(&slot);
+                continue;
+            }
+
+            si::backpropagate(slot, selection.leaf_value, kIsmctsVirtualLossWeight);
+            slot.sims_completed += 1;
+            if (slot.sims_completed >= slot.sims_target) {
+                slot.move_done = true;
+            }
+        }
+
+        if (batch_slots.empty()) {
+            if (all_done) {
+                break;
+            }
+            continue;
+        }
+
+        const auto outputs = nn::forward_model_batched(model, batch_inputs);
+        for (size_t i = 0; i < batch_slots.size(); ++i) {
+            auto& slot = *batch_slots[i];
+            const auto batch_index = static_cast<int64_t>(i);
+            if (slot.pending_root_expansion) {
+                auto expansion = si::expand_from_outputs(
+                    slot.root_state,
+                    outputs,
+                    batch_index,
+                    config.mcts_config,
+                    slot.rng
+                );
+                slot.root = std::move(expansion.node);
+                apply_root_dirichlet_noise(*slot.root, config.mcts_config, slot.rng);
+                slot.pending_expansion = false;
+                slot.pending_root_expansion = false;
+                if (slot.sims_target == 0) {
+                    slot.move_done = true;
+                }
+                continue;
+            }
+
+            auto expansion = si::expand_from_outputs(
+                slot.sim_state,
+                outputs,
+                batch_index,
+                config.mcts_config,
+                slot.rng
+            );
+            auto& [parent, edge_index] = slot.path.back();
+            parent->children[static_cast<size_t>(edge_index)] = std::move(expansion.node);
+            slot.pending_expansion = false;
+            si::backpropagate(slot, expansion.leaf_value, kIsmctsVirtualLossWeight);
+            slot.sims_completed += 1;
+            if (slot.sims_completed >= slot.sims_target) {
+                slot.move_done = true;
+            }
+        }
     }
 
     std::vector<AggregatedEdgeState> aggregated;
     aggregated.reserve(32);
     double total_root_value = 0.0;
 
-    for (int i = 0; i < config.n_determinizations; ++i) {
-        Pcg64Rng local_rng(rng.next_u64());
-        auto determinized = sample_determinization(partial_state, acting_side, opp_hand_size, local_rng);
-        const auto result = mcts_search(determinized, model, config.mcts_config, local_rng);
+    for (const auto& slot : slots) {
+        const auto result = build_search_result(slot);
         total_root_value += result.root_value;
 
         for (const auto& edge : result.root_edges) {
@@ -169,7 +384,8 @@ std::vector<GameResult> play_ismcts_matchup(
     torch::jit::script::Module& model,
     Side learned_side,
     const IsmctsConfig& config,
-    uint32_t base_seed
+    uint32_t base_seed,
+    torch::Device device
 ) {
     std::vector<GameResult> results;
     results.reserve(static_cast<size_t>(std::max(0, n_games)));
@@ -196,7 +412,7 @@ std::vector<GameResult> play_ismcts_matchup(
         gs.phase = GamePhase::Headline;
 
         // ISMCTS policy for learned side: captures &gs to access full state.
-        const PolicyFn ismcts_fn = [&gs, &model, &config](
+        const PolicyFn ismcts_fn = [&gs, &model, &config, device](
             const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& rng
         ) -> std::optional<ActionEncoding> {
             const auto acting = pub.phasing;
@@ -205,7 +421,7 @@ std::vector<GameResult> play_ismcts_matchup(
             if (gs.hands[opp_idx].test(kChinaCardId)) {
                 --opp_hand_size;
             }
-            auto result = ismcts_search(gs, acting, opp_hand_size, model, config, rng);
+            auto result = ismcts_search_batched(gs, acting, opp_hand_size, model, config, rng, device);
             return result.best_action;
         };
 

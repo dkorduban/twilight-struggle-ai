@@ -592,19 +592,20 @@ PYBIND11_MODULE(tscore, m) {
     m.def(
         "benchmark_ismcts",
         [](const std::string& model_path, ts::Side learned_side, int n_games,
-           int n_determinizations, int n_simulations, py::object seed_obj) {
+           int n_determinizations, int n_simulations, py::object seed_obj, const std::string& device_str) {
             std::optional<uint32_t> seed;
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
             }
-            auto model = torch::jit::load(model_path);
+            torch::Device device(device_str);
+            auto model = torch::jit::load(model_path, device);
             model.eval();
             ts::IsmctsConfig config;
             config.n_determinizations = n_determinizations;
             config.mcts_config.n_simulations = n_simulations;
             return ts::play_ismcts_matchup(
                 n_games, model, learned_side, config,
-                seed.value_or(std::random_device{}()));
+                seed.value_or(std::random_device{}()), device);
         },
         py::arg("model_path"),
         py::arg("learned_side"),
@@ -612,10 +613,12 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("n_determinizations") = 8,
         py::arg("n_simulations") = 50,
         py::arg("seed") = py::none(),
+        py::arg("device") = "cpu",
         "Run ISMCTS benchmark: learned side uses information-set MCTS,\n"
         "opponent uses heuristic. Returns list[GameResult].\n"
         "n_determinizations: parallel determinization count (default 8).\n"
-        "n_simulations: MCTS simulations per determinization (default 50)."
+        "n_simulations: MCTS simulations per determinization (default 50).\n"
+        "device: 'cpu' or 'cuda' for batched leaf inference."
     );
 #endif
 }
