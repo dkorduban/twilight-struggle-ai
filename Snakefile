@@ -17,9 +17,10 @@ import os
 # Experiment definitions: name → (data_dir, seed)
 # ---------------------------------------------------------------------------
 EXPERIMENTS = {
-    "v99_nash_c_95ep_s42": ("data/nash_c_only", 42),
-    "v99_nash_c_95ep_s7":  ("data/nash_c_only", 7),
-    "v99_nash_b_95ep_s7":  ("data/nash_b_only", 7),
+    "v99_nash_c_95ep_s42":  ("data/nash_c_only", 42),
+    "v99_nash_c_95ep_s7":   ("data/nash_c_only", 7),
+    "v99_nash_b_95ep_s7":   ("data/nash_b_only", 7),
+    "v99_nash_b_95ep_s123": ("data/nash_b_only", 123),
 }
 
 # Common training hyperparams
