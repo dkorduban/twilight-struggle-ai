@@ -70,47 +70,38 @@ print(f'$name | USSR {up:.1f}% +/-{use:.1f} | US {sp:.1f}% +/-{sse:.1f} | Combin
   echo "[bench] $name done"
 }
 
+# --- Experiment list: "name data_dir seed" per line ---
+RUNS=(
+  "v99_nash_c_95ep_s42 data/nash_c_only 42"
+  "v99_nash_c_95ep_s7  data/nash_c_only 7"
+  "v99_nash_b_95ep_s7  data/nash_b_only 7"
+)
+
 BENCH_PID=""
+N=${#RUNS[@]}
+for i in "${!RUNS[@]}"; do
+  read -r name data_dir seed <<< "${RUNS[$i]}"
+  echo ""
+  echo "=== [$((i+1))/$N] $name ==="
 
-# --- Run 1: nash_c, seed 42 ---
-echo ""
-echo "=== [1/3] nash_c_95ep_s42 ==="
-uv run python scripts/train_baseline.py \
-  --data-dir data/nash_c_only \
-  --out-dir data/checkpoints/v99_nash_c_95ep_s42 \
-  --seed 42  \
-  $COMMON_ARGS 2>&1 | tail -5
-# No previous bench to wait for; launch bench in background
-export_and_bench v99_nash_c_95ep_s42 &
-BENCH_PID=$!
+  # Train (GPU)
+  uv run python scripts/train_baseline.py \
+    --data-dir "$data_dir" \
+    --out-dir "data/checkpoints/$name" \
+    --seed "$seed" \
+    $COMMON_ARGS 2>&1 | tail -5
 
-# --- Run 2: nash_c, seed 7 ---
-echo ""
-echo "=== [2/3] nash_c_95ep_s7 ==="
-uv run python scripts/train_baseline.py \
-  --data-dir data/nash_c_only \
-  --out-dir data/checkpoints/v99_nash_c_95ep_s7 \
-  --seed 7  \
-  $COMMON_ARGS 2>&1 | tail -5
-# Wait for bench 1 to finish before starting bench 2 (both want all CPU)
-wait "$BENCH_PID"
-export_and_bench v99_nash_c_95ep_s7 &
-BENCH_PID=$!
+  # Wait for previous benchmark to finish (at most 1 bench at a time — both want all CPU)
+  if [ -n "$BENCH_PID" ]; then
+    wait "$BENCH_PID"
+  fi
 
-# --- Run 3: nash_b, seed 7 ---
-echo ""
-echo "=== [3/3] nash_b_95ep_s7 ==="
-uv run python scripts/train_baseline.py \
-  --data-dir data/nash_b_only \
-  --out-dir data/checkpoints/v99_nash_b_95ep_s7 \
-  --seed 7  \
-  $COMMON_ARGS 2>&1 | tail -5
-# Wait for bench 2, then launch bench 3
-wait "$BENCH_PID"
-export_and_bench v99_nash_b_95ep_s7 &
-BENCH_PID=$!
+  # Export + benchmark in background (CPU, overlaps with next train on GPU)
+  export_and_bench "$name" &
+  BENCH_PID=$!
+done
 
-# --- Wait for final benchmark ---
+# Wait for final benchmark
 echo ""
 echo "=== Waiting for final benchmark ==="
 wait "$BENCH_PID"
