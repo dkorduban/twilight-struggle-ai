@@ -70,9 +70,9 @@ print(f'$name | USSR {up:.1f}% +/-{use:.1f} | US {sp:.1f}% +/-{sse:.1f} | Combin
   echo "[bench] $name done"
 }
 
-BENCH_PIDS=()
+BENCH_PID=""
 
-# --- Run 1: nash_c, seed 42 → train (GPU) then export+bench (CPU, background) ---
+# --- Run 1: nash_c, seed 42 ---
 echo ""
 echo "=== [1/3] nash_c_95ep_s42 ==="
 uv run python scripts/train_baseline.py \
@@ -80,10 +80,11 @@ uv run python scripts/train_baseline.py \
   --out-dir data/checkpoints/v99_nash_c_95ep_s42 \
   --seed 42  \
   $COMMON_ARGS 2>&1 | tail -5
+# No previous bench to wait for; launch bench in background
 export_and_bench v99_nash_c_95ep_s42 &
-BENCH_PIDS+=($!)
+BENCH_PID=$!
 
-# --- Run 2: nash_c, seed 7 → train (GPU) then export+bench (CPU, background) ---
+# --- Run 2: nash_c, seed 7 ---
 echo ""
 echo "=== [2/3] nash_c_95ep_s7 ==="
 uv run python scripts/train_baseline.py \
@@ -91,10 +92,12 @@ uv run python scripts/train_baseline.py \
   --out-dir data/checkpoints/v99_nash_c_95ep_s7 \
   --seed 7  \
   $COMMON_ARGS 2>&1 | tail -5
+# Wait for bench 1 to finish before starting bench 2 (both want all CPU)
+wait "$BENCH_PID"
 export_and_bench v99_nash_c_95ep_s7 &
-BENCH_PIDS+=($!)
+BENCH_PID=$!
 
-# --- Run 3: nash_b, seed 7 → train (GPU) then export+bench (CPU, background) ---
+# --- Run 3: nash_b, seed 7 ---
 echo ""
 echo "=== [3/3] nash_b_95ep_s7 ==="
 uv run python scripts/train_baseline.py \
@@ -102,15 +105,15 @@ uv run python scripts/train_baseline.py \
   --out-dir data/checkpoints/v99_nash_b_95ep_s7 \
   --seed 7  \
   $COMMON_ARGS 2>&1 | tail -5
+# Wait for bench 2, then launch bench 3
+wait "$BENCH_PID"
 export_and_bench v99_nash_b_95ep_s7 &
-BENCH_PIDS+=($!)
+BENCH_PID=$!
 
-# --- Wait for all background benchmarks ---
+# --- Wait for final benchmark ---
 echo ""
-echo "=== Waiting for benchmarks ==="
-for pid in "${BENCH_PIDS[@]}"; do
-  wait "$pid"
-done
+echo "=== Waiting for final benchmark ==="
+wait "$BENCH_PID"
 
 echo ""
 echo "=== Reference baselines ==="
