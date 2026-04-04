@@ -533,3 +533,54 @@ Options ranked by expected impact:
 2. **Reduce n_determinizations**: 4 instead of 8 cuts MCTS work by half
 3. **Tree reuse between moves**: Reuse subtree when advancing from one move to the next
 4. **Profile C++ MCTS hotpath**: Identify and optimize allocation/copy bottlenecks
+
+### ISMCTS Profiling Deep Dive (2026-04-04)
+
+Instrumented `play_ismcts_matchup_pooled` with per-phase timing:
+
+| Phase | Time | % |
+|-------|------|---|
+| expand+backprop | 97.3s | **92.2%** |
+| nn_forward | 4.0s | 3.8% |
+| select_to_leaf | 3.3s | 3.2% |
+| commit_action | 0.8s | 0.7% |
+
+**Root cause:** `expand_from_outputs()` in `mcts_search_impl.hpp` does per-element PyTorch
+tensor operations (`.index()`, `.item<double>()`, `torch::softmax()`, `torch::full_like()`)
+for every tree expansion. 45,169 expansions × dozens of tensor ops = millions of PyTorch
+dispatch calls. Each has 1-10us overhead.
+
+**Fix:** Replace PyTorch tensor ops with raw C++ float array operations (in progress via Codex).
+Expected to reduce expand+backprop from 92% to <20%, making NN forward the dominant cost
+and unlocking real speedup from cross-game batching.
+
+## Self-Play Generation Loop
+
+### Gen 0: Base model
+Best base model: **v99_nash_c_95ep_s7** (26.9% combined)
+- Data: nash_c heuristic only (1.37M rows)
+- Hyperparams: bs=8192, lr=0.0024, 95 epochs, patience=20, h256
+
+### Gen 1: Base + learned self-play data (2026-04-04)
+Data collection: 2000 games learned-vs-heuristic per side (epsilon=0.05)
+- USSR as learned: 146,612 rows (all games)
+- US as learned: 34,546 rows (filtered to US wins only, 250/2000 = 12.5% win rate)
+- Combined with heuristic anchor: 1,548,395 rows total
+
+**Training:** bs=8192, lr=0.0024, 95 epochs, patience=20, h256, seed=42
+
+| Model | USSR WR | US WR | Combined | vs Base |
+|-------|---------|-------|----------|---------|
+| v99_nash_c_95ep_s7 (base) | 43.1% ±1.1 | 10.5% ±0.7 | **26.9% ±0.7** | — |
+| gen1_v99c_s7_s42 | 42.2% ±1.1 | 9.4% ±0.7 | **25.9% ±0.6** | -1.0pp |
+
+**Analysis:** No improvement from Gen 1. The learned self-play data (181k rows, ~12% of total)
+was not strong enough to provide signal beyond the heuristic data. This is expected for the
+first self-play iteration — the model is essentially playing against a heuristic that it was
+trained to imitate, so the learned data is largely redundant.
+
+**Next steps:**
+1. Try advantage-weighted regression (--advantage-weight 0.5) to upweight winning strategies
+2. Collect more games (5k+ per side) for larger learned data fraction
+3. Try warm-starting from base checkpoint instead of cold training
+4. Collect learned-vs-learned data (both sides played by model) for distributional shift
