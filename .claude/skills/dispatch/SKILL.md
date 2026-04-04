@@ -77,9 +77,19 @@ Tests: {N} passing
    ```
 
 3. Launch background agent:
+
+   **Agent routing by task type:**
+   - **C++ / bindings / CMake tasks** → `bg-codex-implementer` with C++ prompt template
+     (Codex handles C++ well; cpp-engine-builder is for small foreground tasks only)
+   - **Python tasks** → `bg-codex-implementer` with Python prompt template
+   - **Multi-subsystem tasks** → `bg-codex-implementer` with explicit file list
+   
+   **Always use isolation: "worktree"** for bg-codex-implementer to prevent conflicts.
+
    ```
    Agent(
      subagent_type: "bg-codex-implementer",
+     isolation: "worktree",
      run_in_background: true,
      prompt: "TASK_ID: <task_id>\nMODE: <mode>\nTASK:\n<full task description>"
    )
