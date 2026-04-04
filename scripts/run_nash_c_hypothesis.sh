@@ -84,27 +84,29 @@ for i in "${!RUNS[@]}"; do
   echo ""
   echo "=== [$((i+1))/$N] $name ==="
 
-  # Train (GPU)
+  # Train (GPU) — never blocked by benchmarks
   uv run python scripts/train_baseline.py \
     --data-dir "$data_dir" \
     --out-dir "data/checkpoints/$name" \
     --seed "$seed" \
     $COMMON_ARGS 2>&1 | tail -5
 
-  # Wait for previous benchmark to finish (at most 1 bench at a time — both want all CPU)
-  if [ -n "$BENCH_PID" ]; then
-    wait "$BENCH_PID"
-  fi
-
-  # Export + benchmark in background (CPU, overlaps with next train on GPU)
-  export_and_bench "$name" &
+  # Launch bench in background; it waits for previous bench internally
+  PREV_BENCH_PID="$BENCH_PID"
+  (
+    # Wait for previous bench to finish (CPU mutex — at most 1 bench at a time)
+    if [ -n "$PREV_BENCH_PID" ]; then
+      wait "$PREV_BENCH_PID" 2>/dev/null
+    fi
+    export_and_bench "$name"
+  ) &
   BENCH_PID=$!
 done
 
-# Wait for final benchmark
+# Wait for all background benchmarks to complete
 echo ""
-echo "=== Waiting for final benchmark ==="
-wait "$BENCH_PID"
+echo "=== Waiting for benchmarks ==="
+wait
 
 echo ""
 echo "=== Reference baselines ==="
