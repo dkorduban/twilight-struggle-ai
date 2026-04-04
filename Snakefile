@@ -126,7 +126,8 @@ fd, tmp = tempfile.mkstemp(dir=os.path.dirname('{output.result}'), suffix='.tmp'
 with os.fdopen(fd, 'w') as f:
     json.dump(data, f)
 os.rename(tmp, '{output.result}')
-print('{wildcards.name} {wildcards.side}: {{wins}}/{{n}} = {{wins/n*100:.1f}}%'.format(wins=wins, n=n))
+pct = wins/n*100
+print('{wildcards.name} {wildcards.side}: {{wins}}/{{n}} = {{pct:.1f}}%'.format(wins=wins, n=n, pct=pct))
 " 2>&1 | tee {log}
         """
 

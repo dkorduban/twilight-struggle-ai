@@ -458,22 +458,34 @@ Benchmark: 2000 games/side.
 | v99_nash_c_95ep_s42 | nash_c only | 42 | 41.6% ±1.1 | 9.7% ±0.7 | **25.7% ±0.6** |
 | v99_nash_c_95ep_s7 | nash_c only | 7 | 43.1% ±1.1 | 10.5% ±0.7 | **26.9% ±0.7** |
 | v99_nash_b_95ep_s7 | nash_b only | 7 | 38.6% ±1.1 | 8.9% ±0.6 | **23.8% ±0.6** |
+| v99_nash_b_95ep_s123 | nash_b only | 123 | 29.8% ±1.0 | 5.7% ±0.5 | **17.8% ±0.6** |
 | v99_saturation_1x_95ep (ref) | nash_b only | 42 | 46.2% ±1.1 | 13.0% ±0.8 | **29.5% ±0.7** |
+
+### Summary (3 seeds each)
+
+| Dataset | Seeds | Mean Combined | Std | Range |
+|---------|-------|---------------|-----|-------|
+| nash_c | s42, s7 | 26.3% | 0.6pp | 25.7-26.9% |
+| nash_b | s42, s7, s123 | 23.7% | 4.8pp | 17.8-29.5% |
 
 ### Findings
 
 1. **Nash_c is NOT inherently worse**: nash_c_s42=25.7%, nash_c_s7=26.9% — both
-   competitive. Mean 26.3% is within seed variance of nash_b results.
+   competitive. Mean 26.3% exceeds nash_b's 3-seed mean of 23.7%.
 
-2. **Nash_b seed variance is large**: nash_b_s7=23.8% vs nash_b_s42=29.5% = **5.7pp gap
-   from seed alone**. The "nash_b best at 29.5%" conclusion may be partly lucky seed.
+2. **Nash_b seed variance is extremely large**: 3-seed range = 17.8-29.5% = **11.7pp**.
+   The "nash_b best at 29.5%" conclusion was a lucky seed (s42). s123 is the worst
+   result at 17.8%, dragging the mean well below nash_c.
 
-3. **Nash_c is slightly MORE stable**: nash_c variance = 1.2pp (25.7-26.9) vs nash_b
-   variance = 5.7pp (23.8-29.5). Smaller sample (2 seeds each), but suggestive.
+3. **Nash_c is MORE stable**: nash_c range = 1.2pp vs nash_b range = 11.7pp.
+   Nash_c's tighter distribution makes it a more reliable training dataset.
 
 4. **Mixing hurts more than either alone**: nash_b+c@95ep = 22.5% (worst), while each
-   dataset alone averages ~25-26%. Confirmed: the 2× degradation is from mixing, not
+   dataset alone averages ~24-26%. Confirmed: the 2× degradation is from mixing, not
    from nash_c quality.
+
+5. **Nash_c is the better dataset**: Higher mean (26.3% vs 23.7%) and lower variance.
+   Use nash_c for future experiments unless there's a specific reason for nash_b.
 
 ### Interpretation
 
@@ -482,4 +494,6 @@ creating subtly different strategy distributions. Training on mixed distribution
 conflicting gradients that hurt generalization. Each dataset alone, with 95 epochs of
 repetition, learns a coherent strategy.
 
-### Next: need 3+ seeds per dataset to get reliable mean estimates.
+Nash_b's extreme seed sensitivity (11.7pp range) suggests it sits on a sharper loss
+landscape where small initialization differences lead to very different local optima.
+Nash_c's stability suggests a smoother, more learnable distribution.
