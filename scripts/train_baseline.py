@@ -172,12 +172,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument(
+    split_group = p.add_mutually_exclusive_group(required=True)
+    split_group.add_argument(
         "--deterministic-split",
         action="store_true",
+        dest="deterministic_split",
         help=(
             "Split train/val deterministically by game_id hash instead of "
-            "random_split. Eliminates val-set variance across training seeds."
+            "random_split. Eliminates val-set variance across training seeds. "
+            "RECOMMENDED: prevents data leakage across game rows."
+        ),
+    )
+    split_group.add_argument(
+        "--random-split",
+        action="store_false",
+        dest="deterministic_split",
+        help=(
+            "Split train/val by random row sampling (ignores game boundaries). "
+            "WARNING: causes val leakage when rows from the same game span both splits."
         ),
     )
     p.add_argument(
@@ -885,7 +897,7 @@ def main() -> None:
         )
 
     generator = torch.Generator().manual_seed(args.seed)
-    if getattr(args, "deterministic_split", False):
+    if args.deterministic_split:
         train_idx, val_idx = full_dataset.deterministic_split(args.val_fraction)
         train_ds = Subset(full_dataset, train_idx)
         val_ds = Subset(full_dataset, val_idx)
