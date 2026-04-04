@@ -497,3 +497,39 @@ repetition, learns a coherent strategy.
 Nash_b's extreme seed sensitivity (11.7pp range) suggests it sits on a sharper loss
 landscape where small initialization differences lead to very different local optima.
 Nash_c's stability suggests a smoother, more learnable distribution.
+
+## ISMCTS Pooled Batching Speed Test (2026-04-04)
+
+Tested `play_ismcts_matchup_pooled()` — pools N concurrent games and batches NN
+leaf evaluations across all games' determinizations (up to N×8 items per batch).
+
+| Config | Time/game | Speedup |
+|--------|-----------|---------|
+| CPU pool=1 (sequential) | 51.2s | 1.0× |
+| CPU pool=4 | 45.9s | 1.12× |
+| GPU pool=4 | 46.9s | 1.09× |
+| GPU pool=4, 200 sims | 187.1s | — |
+
+All tests: 4 games, 8 determinizations, model=v99_nash_c_95ep_s42.
+
+### Findings
+
+1. **Bottleneck is CPU MCTS logic, not NN inference**: GPU gives zero benefit because
+   model forward passes are already fast (~1ms). Time is spent in select_to_leaf,
+   backpropagate, and game state management.
+
+2. **Pooled batching gives minimal speedup (~10%)**: With 50 sims and 8 dets, most
+   determinizations finish early (cached/terminal nodes) so batch utilization drops
+   quickly. Late-game moves average only 2-3 items per batch vs theoretical 32.
+
+3. **200 sims = 3.1 min/game**: Linear scaling from 50 sims (51s) to 200 sims (187s).
+   At target 200-400 sims, ISMCTS benchmarks of 100+ games would take 5-10 hours.
+
+### Next steps for ISMCTS speed
+
+The cross-game batching architecture is correct but doesn't address the real bottleneck.
+Options ranked by expected impact:
+1. **Multi-threaded determinizations**: Run 8 dets in parallel threads (true parallelism)
+2. **Reduce n_determinizations**: 4 instead of 8 cuts MCTS work by half
+3. **Tree reuse between moves**: Reuse subtree when advancing from one move to the next
+4. **Profile C++ MCTS hotpath**: Identify and optimize allocation/copy bottlenecks
