@@ -17,7 +17,7 @@ void usage(const char* argv0) {
     std::cerr
         << "usage: " << argv0
         << " --model scripted.pt --out rows.jsonl [--games N] [--n-sim N]"
-        << " [--pool-size N] [--c-puct F] [--seed N] [--virtual-loss N]"
+        << " [--pool-size N] [--max-pending N] [--c-puct F] [--seed N] [--virtual-loss N]"
         << " [--temperature F] [--dir-alpha F] [--dir-epsilon F]"
         << " [--epsilon-greedy F]\n";
 }
@@ -31,6 +31,7 @@ int main(int argc, char** argv) {
         int game_count = 10;
         int n_simulations = 200;
         int pool_size = 32;
+        int max_pending = 8;
         int virtual_loss = 3;
         float c_puct = 1.5f;
         float temperature = 0.0f;
@@ -58,6 +59,8 @@ int main(int argc, char** argv) {
                 n_simulations = std::stoi(std::string(require_value("--n-sim")));
             } else if (arg == "--pool-size") {
                 pool_size = std::stoi(std::string(require_value("--pool-size")));
+            } else if (arg == "--max-pending") {
+                max_pending = std::stoi(std::string(require_value("--max-pending")));
             } else if (arg == "--c-puct") {
                 c_puct = std::stof(std::string(require_value("--c-puct")));
             } else if (arg == "--seed") {
@@ -94,6 +97,9 @@ int main(int argc, char** argv) {
         if (pool_size <= 0) {
             throw std::runtime_error("--pool-size must be positive");
         }
+        if (max_pending <= 0) {
+            throw std::runtime_error("--max-pending must be positive");
+        }
         if (c_puct <= 0.0f) {
             throw std::runtime_error("--c-puct must be positive");
         }
@@ -118,6 +124,7 @@ int main(int argc, char** argv) {
         if (dir_alpha >= 0.0f) config.mcts.dir_alpha = dir_alpha;
         if (dir_epsilon >= 0.0f) config.mcts.dir_epsilon = dir_epsilon;
         config.pool_size = pool_size;
+        config.max_pending = max_pending;
         config.virtual_loss_weight = virtual_loss;
         config.temperature = temperature;
         config.epsilon_greedy = epsilon_greedy;

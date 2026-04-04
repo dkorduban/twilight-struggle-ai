@@ -50,15 +50,18 @@ struct PendingHeadlineChoice {
     SearchResult search;
 };
 
+struct PendingExpansion {
+    std::vector<std::pair<MctsNode*, int>> path;
+    GameState sim_state;
+    bool is_root_expansion = false;
+};
+
 struct GameSlot {
     GameState root_state;
-    GameState sim_state;
     std::unique_ptr<MctsNode> root;
-    std::vector<std::pair<MctsNode*, int>> path;
+    std::vector<PendingExpansion> pending;
     int sims_completed = 0;
     int sims_target = 0;
-    bool pending_expansion = false;
-    bool pending_root_expansion = false;
     bool move_done = false;
     bool game_done = false;
     bool emitted = false;
@@ -86,6 +89,7 @@ struct BatchedMctsConfig {
     MctsConfig mcts;
     int pool_size = 32;
     int virtual_loss_weight = 3;
+    int max_pending = 8;  // max concurrent leaves per game slot
     float temperature = 0.0f;
     float epsilon_greedy = 0.0f;
 };
