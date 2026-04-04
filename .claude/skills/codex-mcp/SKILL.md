@@ -59,8 +59,23 @@ Codex frequently returns control after partial progress (reading files, making a
 3. Repeat until done (cap at 5 iterations)
 ```
 
-**Never spawn a non-Codex agent (cpp-engine-builder, etc.) expecting it to manage Codex sessions.**
-The bg-codex-implementer agent type is purpose-built for this resume loop.
+### Delegation pattern (background Codex via subagent)
+
+**Use a general-purpose Sonnet agent** (not a custom Haiku agent) to dispatch to Codex:
+```
+Agent(model: "sonnet", isolation: "worktree", run_in_background: true,
+      prompt: "You are a Codex dispatcher. Call mcp__codex__codex early
+               with approval-policy='never', sandbox='workspace-write'.
+               Resume with mcp__codex__codex-reply until done. Codex does
+               the heavy implementation — you may read files or check output
+               lightly when needed, but don't implement code yourself.
+               <full task prompt>")
+```
+
+**Why Sonnet?** General-purpose subagents inherit MCP tools from the parent session.
+Custom agent types (bg-codex-implementer, codex-only, policy-opt-codex-haiku) with
+`mcpServers:` in YAML frontmatter do NOT get MCP tools registered by the runtime.
+Confirmed: 0/5 Haiku custom agents succeeded, Sonnet general-purpose agents work reliably.
 
 ## Prompting Best Practices
 

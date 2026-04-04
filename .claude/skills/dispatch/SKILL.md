@@ -52,55 +52,51 @@ Tests: {N} passing
 
 ---
 
-## Step 2b: Complex path — dispatch to background agent
+## Step 2b: Complex path — dispatch to background Codex agent
 
-1. Generate task ID: `impl_{YYYYMMDD}_{HHMM}_{3-word-slug}`
-   - slug = 3 lowercase words from the task, hyphenated (e.g. `taiwan-scoring-fix`)
+Launch a **general-purpose Sonnet agent** with a Codex-dispatcher prompt.
 
-2. Create task file:
-   ```
-   mkdir -p .codex_tasks/<task_id>
-   ```
-   Write `.codex_tasks/<task_id>/task.md`:
-   ```
-   # Task: <task_id>
+**Why Sonnet, not a custom Haiku agent?** General-purpose Sonnet subagents inherit
+MCP tools (including `mcp__codex__codex`) from the parent session. Custom agent types
+with `mcpServers:` in YAML frontmatter do NOT get MCP tools properly registered.
 
-   MODE: <implement|fix-tests|debug>
-   SUBMITTED: <timestamp>
+**Always use `isolation: "worktree"`** to prevent conflicts with main work.
 
-   ## Description
-   <full task description or spec content>
+```
+Agent(
+  model: "sonnet",
+  isolation: "worktree",
+  run_in_background: true,
+  prompt: "<Codex dispatcher prompt — see template below>"
+)
+```
 
-   ## Constraints
-   - Do not touch: .claude/, CLAUDE.md, docs/replay_grammar.md, data/spec/, data/raw_logs/, uv.lock
-   - Run uv run pytest tests/python/ -q -n 0 after changes
-   ```
+Report immediately:
+```
+Dispatched: <slug>
+Agent: Sonnet → Codex (worktree)
+```
 
-3. Launch background agent:
+### Codex dispatcher prompt template
 
-   **Agent routing by task type:**
-   - **C++ / bindings / CMake tasks** → `bg-codex-implementer` with C++ prompt template
-     (Codex handles C++ well; cpp-engine-builder is for small foreground tasks only)
-   - **Python tasks** → `bg-codex-implementer` with Python prompt template
-   - **Multi-subsystem tasks** → `bg-codex-implementer` with explicit file list
-   
-   **Always use isolation: "worktree"** for bg-codex-implementer to prevent conflicts.
+```
+You are a Codex dispatcher. Your primary job is to call mcp__codex__codex to delegate
+implementation work to Codex, then resume with mcp__codex__codex-reply until done.
 
-   ```
-   Agent(
-     subagent_type: "bg-codex-implementer",
-     isolation: "worktree",
-     run_in_background: true,
-     prompt: "TASK_ID: <task_id>\nMODE: <mode>\nTASK:\n<full task description>"
-   )
-   ```
+Codex does the heavy implementation. You may use other tools lightly when needed
+(e.g., read a spec file, check build output), but do NOT implement code yourself.
 
-4. Report immediately (don't wait):
-   ```
-   Dispatched: <task_id>
-   Mode: <mode>
-   Monitor: /check-tasks  or  Read .codex_tasks/<task_id>/status.md
-   ```
+Call mcp__codex__codex with:
+- approval-policy: "never"
+- sandbox: "workspace-write"
+- developer-instructions: "Be concise. After each file change, run: git add <file> && git commit -m 'WIP: <what>'. After all changes, build and test. Report files changed + build/test result."
+
+Resume with mcp__codex__codex-reply(threadId, "continue implementing") until done. Up to 15 calls.
+```
+
+### Build/test commands by language
+**C++:** `cmake --build build-ninja -j` then `ctest --test-dir build-ninja --output-on-failure`
+**Python:** `uv run pytest tests/python/ -q -n 0`
 
 ---
 
@@ -108,13 +104,11 @@ Tests: {N} passing
 
 For N independent tasks, dispatch all in one message:
 ```
-# One message with N Agent tool calls, all run_in_background=true
-Agent(bg-codex-implementer, task_1)
-Agent(bg-codex-implementer, task_2)
-Agent(bg-codex-implementer, task_3)
+Agent(model: "sonnet", isolation: "worktree", run_in_background: true, prompt: task_1)
+Agent(model: "sonnet", isolation: "worktree", run_in_background: true, prompt: task_2)
 ```
 
-All run concurrently. Main agent is free immediately.
+All run concurrently in separate worktrees. Main agent is free immediately.
 
 ---
 
