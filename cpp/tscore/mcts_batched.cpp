@@ -6,6 +6,10 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -13,6 +17,7 @@
 #include <map>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -61,6 +66,121 @@ struct SelectionResult {
     bool needs_batch = false;
     double leaf_value = 0.0;
 };
+
+// Simple thread pool that persists across iterations to avoid launch overhead.
+class SlotThreadPool {
+public:
+    explicit SlotThreadPool(int n_threads)
+        : n_threads_(std::max(1, n_threads)), done_(false), task_(nullptr) {
+        if (n_threads_ <= 1) return;
+        workers_.reserve(static_cast<size_t>(n_threads_));
+        for (int t = 0; t < n_threads_; ++t) {
+            workers_.emplace_back([this, t] { worker_loop(t); });
+        }
+    }
+
+    ~SlotThreadPool() {
+        {
+            std::unique_lock<std::mutex> lock(mu_);
+            done_ = true;
+        }
+        cv_start_.notify_all();
+        for (auto& w : workers_) w.join();
+    }
+
+    template<typename Fn>
+    void run(int n_items, Fn&& fn) {
+        if (n_threads_ <= 1 || n_items <= 1) {
+            for (int i = 0; i < n_items; ++i) fn(i);
+            return;
+        }
+        n_items_ = n_items;
+        remaining_.store(n_threads_, std::memory_order_release);
+        // Type-erase the lambda
+        auto wrapper = [&fn, this](int tid) {
+            const int chunk = (n_items_ + n_threads_ - 1) / n_threads_;
+            const int lo = tid * chunk;
+            const int hi = std::min(lo + chunk, n_items_);
+            for (int i = lo; i < hi; ++i) fn(i);
+        };
+        std::function<void(int)> task_fn = wrapper;
+        {
+            std::unique_lock<std::mutex> lock(mu_);
+            task_ = &task_fn;
+            generation_++;
+        }
+        cv_start_.notify_all();
+        // Wait for all workers to finish
+        {
+            std::unique_lock<std::mutex> lock(mu_);
+            cv_done_.wait(lock, [this] { return remaining_.load(std::memory_order_acquire) == 0; });
+            task_ = nullptr;
+        }
+    }
+
+    SlotThreadPool(const SlotThreadPool&) = delete;
+    SlotThreadPool& operator=(const SlotThreadPool&) = delete;
+
+private:
+    void worker_loop(int tid) {
+        uint64_t my_gen = 0;
+        for (;;) {
+            std::unique_lock<std::mutex> lock(mu_);
+            cv_start_.wait(lock, [this, my_gen] { return done_ || generation_ > my_gen; });
+            if (done_) return;
+            my_gen = generation_;
+            auto* fn = task_;
+            lock.unlock();
+
+            if (fn) (*fn)(tid);
+
+            if (remaining_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                cv_done_.notify_one();
+            }
+        }
+    }
+
+    int n_threads_;
+    int n_items_ = 0;
+    bool done_;
+    uint64_t generation_ = 0;
+    std::function<void(int)>* task_;
+    std::atomic<int> remaining_{0};
+    std::mutex mu_;
+    std::condition_variable cv_start_;
+    std::condition_variable cv_done_;
+    std::vector<std::thread> workers_;
+};
+
+template<typename Fn>
+void parallel_for_slots(int n_slots, Fn&& fn) {
+    const int n_threads = std::min(n_slots, static_cast<int>(std::thread::hardware_concurrency()));
+    if (n_threads <= 1) {
+        for (int i = 0; i < n_slots; ++i) {
+            fn(i);
+        }
+        return;
+    }
+
+    std::vector<std::thread> threads;
+    threads.reserve(static_cast<size_t>(n_threads));
+    const int chunk = (n_slots + n_threads - 1) / n_threads;
+    for (int t = 0; t < n_threads; ++t) {
+        const int lo = t * chunk;
+        const int hi = std::min(lo + chunk, n_slots);
+        if (lo >= hi) {
+            break;
+        }
+        threads.emplace_back([&fn, lo, hi] {
+            for (int i = lo; i < hi; ++i) {
+                fn(i);
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+}
 
 struct AggregatedVisitCount {
     CardId card_id = 0;
@@ -502,6 +622,10 @@ struct RawBatchOutputs {
     }
 };
 
+// Expand sub-phase accumulators (for profiling)
+static thread_local double g_expand_drafts = 0, g_expand_edges = 0, g_expand_alloc = 0;
+static thread_local int g_expand_count = 0;
+
 ExpansionResult expand_from_raw(
     const GameState& state,
     const RawBatchOutputs& raw,
@@ -509,13 +633,23 @@ ExpansionResult expand_from_raw(
     const MctsConfig& config,
     Pcg64Rng& rng
 ) {
+    using XClock = std::chrono::high_resolution_clock;
+    auto xt0 = XClock::now();
+
     auto node = std::make_unique<MctsNode>();
     node->side_to_move = state.pub.phasing;
     node->edges.reserve(64);
     node->children.reserve(64);
     node->applied_actions.reserve(64);
 
+    g_expand_alloc += std::chrono::duration<double>(XClock::now() - xt0).count();
+    auto xt1 = XClock::now();
+
     auto [drafts, cache] = collect_card_drafts_cached(state);
+
+    g_expand_drafts += std::chrono::duration<double>(XClock::now() - xt1).count();
+    auto xt2 = XClock::now();
+    (void)xt2;  // used at function end
     // --- Copy this item's logits to stack arrays ---
     float card_logits_arr[kMaxCardLogits];
     float mode_logits_arr[kMaxModeLogits];
@@ -681,6 +815,9 @@ ExpansionResult expand_from_raw(
             edge.prior = uniform;
         }
     }
+
+    g_expand_edges += std::chrono::duration<double>(XClock::now() - xt2).count();
+    ++g_expand_count;
 
     return ExpansionResult{
         .node = std::move(node),
@@ -1734,9 +1871,15 @@ void collect_games_batched(
     struct BatchEntry {
         GameSlot* slot = nullptr;
         size_t pending_index = 0;
+        int batch_index = 0;
+    };
+
+    struct SlotBatchInfo {
+        std::vector<std::pair<int, size_t>> entries;
     };
 
     std::vector<GameSlot> pool(static_cast<size_t>(config.pool_size));
+    std::vector<SlotBatchInfo> slot_infos(pool.size());
     int games_started = 0;
     int games_emitted = 0;
 
@@ -1746,16 +1889,26 @@ void collect_games_batched(
     std::vector<BatchEntry> batch_entries;
     batch_entries.reserve(static_cast<size_t>(config.pool_size) * static_cast<size_t>(max_pending));
 
+    const int hw_threads = static_cast<int>(std::thread::hardware_concurrency());
+    const int n_threads = std::min(config.pool_size, hw_threads);
+    SlotThreadPool thread_pool(n_threads);
+    // Limit PyTorch intra-op threads to avoid contention with our thread pool.
+    // Empirically, 2 PyTorch threads is optimal when CPU threads handle select/expand.
+    if (n_threads > 2) {
+        at::set_num_threads(2);
+    }
+
+    using Clock = std::chrono::high_resolution_clock;
+    double t_advance = 0, t_select = 0, t_nn = 0, t_expand = 0;
+    int n_batches = 0, total_batch_items = 0;
     int debug_iters = 0;
-    int debug_nn_calls = 0;
-    int debug_total_batch = 0;
-    (void)debug_nn_calls;
-    (void)debug_total_batch;
+
     while (games_emitted < n_games) {
         batch_inputs.reset();
         batch_entries.clear();
         ++debug_iters;
 
+        auto t0_adv = Clock::now();
         for (auto& slot : pool) {
             if (slot.active && slot.game_done && !slot.emitted) {
                 write_game_rows(slot, out_stream);
@@ -1769,9 +1922,17 @@ void collect_games_batched(
             }
         }
 
-        for (auto& slot : pool) {
+        t_advance += std::chrono::duration<double>(Clock::now() - t0_adv).count();
+
+        auto t0_sel = Clock::now();
+        std::atomic<int> batch_count{0};
+        thread_pool.run(static_cast<int>(pool.size()), [&](int slot_idx) {
+            auto& slot = pool[static_cast<size_t>(slot_idx)];
+            auto& info = slot_infos[static_cast<size_t>(slot_idx)];
+            info.entries.clear();
+
             if (!slot.active) {
-                continue;
+                return;
             }
 
             if (slot.move_done) {
@@ -1779,40 +1940,36 @@ void collect_games_batched(
             }
             advance_until_decision(slot, config);
             if (slot.game_done || !slot.decision.has_value()) {
-                continue;
+                return;
             }
 
-            // Root not yet expanded.
             if (slot.root == nullptr) {
                 if (!slot.pending.empty()) {
-                    // Root expansion already in-flight; wait for NN result.
-                    continue;
+                    return;
                 }
                 if (auto immediate = expand_without_model(slot.root_state, slot.rng); immediate.has_value()) {
                     slot.root = std::move(immediate->node);
-                    // Fall through to multi-pending selection below.
                 } else {
                     PendingExpansion pend;
                     pend.sim_state = clone_game_state(slot.root_state);
                     pend.is_root_expansion = true;
                     slot.pending.push_back(std::move(pend));
-                    batch_inputs.fill_slot(
-                        batch_inputs.filled,
+                    const int bi = batch_count.fetch_add(1, std::memory_order_relaxed);
+                    batch_inputs.fill_slot(bi,
                         slot.root_state.pub,
                         slot.root_state.hands[to_index(slot.root_state.pub.phasing)],
                         holds_china_for(slot.root_state, slot.root_state.pub.phasing),
-                        slot.root_state.pub.phasing
-                    );
-                    batch_entries.push_back(BatchEntry{&slot, slot.pending.size() - 1});
-                    continue;
+                        slot.root_state.pub.phasing);
+                    info.entries.emplace_back(bi, slot.pending.size() - 1);
+                    return;
                 }
             }
 
-            // Multi-pending selection loop: fill up to max_pending leaves per slot.
             if (slot.sims_completed >= slot.sims_target && slot.pending.empty()) {
                 slot.move_done = true;
-                continue;
+                return;
             }
+
             for (;;) {
                 const int budget = sims_budget(slot, max_pending);
                 if (budget <= 0) {
@@ -1820,16 +1977,14 @@ void collect_games_batched(
                 }
                 const auto selection = select_to_leaf(slot, config);
                 if (selection.needs_batch) {
-                    // select_to_leaf already pushed to slot.pending.
                     auto& pend = slot.pending.back();
-                    batch_inputs.fill_slot(
-                        batch_inputs.filled,
+                    const int bi = batch_count.fetch_add(1, std::memory_order_relaxed);
+                    batch_inputs.fill_slot(bi,
                         pend.sim_state.pub,
                         pend.sim_state.hands[to_index(pend.sim_state.pub.phasing)],
                         holds_china_for(pend.sim_state, pend.sim_state.pub.phasing),
-                        pend.sim_state.pub.phasing
-                    );
-                    batch_entries.push_back(BatchEntry{&slot, slot.pending.size() - 1});
+                        pend.sim_state.pub.phasing);
+                    info.entries.emplace_back(bi, slot.pending.size() - 1);
                 } else {
                     slot.sims_completed += 1;
                     if (slot.sims_completed >= slot.sims_target && slot.pending.empty()) {
@@ -1838,39 +1993,64 @@ void collect_games_batched(
                     }
                 }
             }
+        });
+        t_select += std::chrono::duration<double>(Clock::now() - t0_sel).count();
+
+        batch_inputs.filled = batch_count.load(std::memory_order_relaxed);
+        for (size_t slot_idx = 0; slot_idx < pool.size(); ++slot_idx) {
+            for (const auto& [batch_index, pending_index] : slot_infos[slot_idx].entries) {
+                batch_entries.push_back(BatchEntry{&pool[slot_idx], pending_index, batch_index});
+            }
         }
 
         if (!batch_entries.empty()) {
+            auto t0_nn = Clock::now();
             const auto outputs = nn::forward_model_batched(model, batch_inputs);
             const auto raw = RawBatchOutputs::extract(outputs);
-            for (size_t i = 0; i < batch_entries.size(); ++i) {
-                auto& entry = batch_entries[i];
-                auto& slot = *entry.slot;
-                auto& pend = slot.pending[entry.pending_index];
-                if (pend.is_root_expansion) {
-                    auto expansion = expand_from_raw(pend.sim_state, raw, static_cast<int>(i), config.mcts, slot.rng);
-                    slot.root = std::move(expansion.node);
-                    apply_root_dirichlet_noise(*slot.root, config.mcts, slot.rng);
-                    if (slot.sims_target == 0) {
-                        slot.move_done = true;
-                    }
-                } else {
-                    auto expansion = expand_from_raw(pend.sim_state, raw, static_cast<int>(i), config.mcts, slot.rng);
-                    auto& [parent, edge_index] = pend.path.back();
-                    parent->children[static_cast<size_t>(edge_index)] = std::move(expansion.node);
-                    backpropagate_path(pend.path, expansion.leaf_value, config.virtual_loss_weight);
-                    slot.sims_completed += 1;
-                    if (slot.sims_completed >= slot.sims_target && slot.pending.empty()) {
-                        slot.move_done = true;
+            t_nn += std::chrono::duration<double>(Clock::now() - t0_nn).count();
+            n_batches += 1;
+            total_batch_items += static_cast<int>(batch_entries.size());
+
+            auto t0_exp = Clock::now();
+            thread_pool.run(static_cast<int>(pool.size()), [&](int slot_idx) {
+                auto& slot = pool[static_cast<size_t>(slot_idx)];
+                auto& info = slot_infos[static_cast<size_t>(slot_idx)];
+                if (!slot.active) {
+                    return;
+                }
+                for (const auto& [batch_index, pending_index] : info.entries) {
+                    auto& pend = slot.pending[pending_index];
+                    if (pend.is_root_expansion) {
+                        auto expansion = expand_from_raw(pend.sim_state, raw, batch_index, config.mcts, slot.rng);
+                        slot.root = std::move(expansion.node);
+                        apply_root_dirichlet_noise(*slot.root, config.mcts, slot.rng);
+                        if (slot.sims_target == 0) {
+                            slot.move_done = true;
+                        }
+                    } else {
+                        auto expansion = expand_from_raw(pend.sim_state, raw, batch_index, config.mcts, slot.rng);
+                        auto& [parent, edge_index] = pend.path.back();
+                        parent->children[static_cast<size_t>(edge_index)] = std::move(expansion.node);
+                        backpropagate_path(pend.path, expansion.leaf_value, config.virtual_loss_weight);
+                        slot.sims_completed += 1;
                     }
                 }
-            }
-            // Clear all pending expansions after processing the batch.
-            for (auto& slot : pool) {
                 slot.pending.clear();
-            }
+                if (slot.sims_completed >= slot.sims_target && slot.pending.empty()) {
+                    slot.move_done = true;
+                }
+            });
+            t_expand += std::chrono::duration<double>(Clock::now() - t0_exp).count();
         }
     }
+
+    const double total = t_advance + t_select + t_nn + t_expand;
+    fprintf(stderr, "[MCTS profile] advance=%.3fs select=%.3fs nn=%.3fs expand=%.3fs total=%.3fs\n",
+            t_advance, t_select, t_nn, t_expand, total);
+    fprintf(stderr, "[MCTS profile] batches=%d items=%d avg_batch=%.1f iters=%d\n",
+            n_batches, total_batch_items, n_batches > 0 ? double(total_batch_items) / n_batches : 0.0, debug_iters);
+    fprintf(stderr, "[MCTS expand] alloc=%.3fs drafts=%.3fs edges=%.3fs count=%d\n",
+            g_expand_alloc, g_expand_drafts, g_expand_edges, g_expand_count);
 }
 
 // ---------------------------------------------------------------------------
