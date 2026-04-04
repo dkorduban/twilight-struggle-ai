@@ -1,5 +1,16 @@
 include(FetchContent)
 
+# Ensure Catch2 is built with the same GCC dual-ABI setting as the rest of the
+# project.  PyTorch's CMake module injects -D_GLIBCXX_USE_CXX11_ABI=0 via
+# TORCH_CXX_FLAGS, which is applied to tscore (and therefore propagated to any
+# target that links it).  If Catch2 is built with ABI=1 (the default) while
+# the test object is compiled with ABI=0, the linker cannot resolve
+# StringMaker<int>::convert and other Catch2 symbols.  Setting CMAKE_CXX_FLAGS
+# here before FetchContent_MakeAvailable forces both to use the same ABI.
+if(DEFINED TORCH_CXX_FLAGS AND TORCH_CXX_FLAGS MATCHES "_GLIBCXX_USE_CXX11_ABI=0")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=0")
+endif()
+
 FetchContent_Declare(
     Catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git

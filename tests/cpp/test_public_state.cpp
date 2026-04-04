@@ -28,24 +28,23 @@ TEST_CASE("PublicState default construction has zero milops and space", "[public
     PublicState s;
     REQUIRE(s.milops[0] == 0);
     REQUIRE(s.milops[1] == 0);
-    REQUIRE(s.space_level[0] == 0);
-    REQUIRE(s.space_level[1] == 0);
+    REQUIRE(s.space[0] == 0);
+    REQUIRE(s.space[1] == 0);
 }
 
 TEST_CASE("PublicState default construction has correct scalar defaults", "[public_state]") {
     PublicState s;
     REQUIRE(s.vp     == 0);
     REQUIRE(s.defcon == 5);
-    REQUIRE(s.turn   == 1);
-    REQUIRE(s.ar     == 1);
-    REQUIRE(s.phasing       == Superpower::USSR);
-    REQUIRE(s.china_held_by == Superpower::USSR);
+    REQUIRE(s.turn   == 0);
+    REQUIRE(s.ar     == 0);
+    REQUIRE(s.phasing       == Side::USSR);
+    REQUIRE(s.china_held_by == Side::USSR);
     REQUIRE(s.china_playable == true);
 }
 
 TEST_CASE("PublicState default construction has empty card sets", "[public_state]") {
     PublicState s;
-    REQUIRE(s.deck_remaining.none());
     REQUIRE(s.discard.none());
     REQUIRE(s.removed.none());
 }
