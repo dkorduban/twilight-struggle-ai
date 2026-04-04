@@ -405,12 +405,40 @@ better than ~95× for 2x@95ep). More unique games per epoch matters more than mo
    The lesson: for this dataset size, one-cycle schedule length must match data scale.
 
 4. **US WR is structurally stuck at 8-14%** regardless of model, data, epochs, or arch.
-   This is the dominant bottleneck. Next focus: actor_relative value target (A2) + MCTS.
+   This is the dominant bottleneck.
 
-### Next experiments (Phase A from us_bias_analysis.md)
+---
 
-- **A2 (implemented)**: `--value-target actor_relative` — flip value sign for US rows.
-  Train `v100_actor_value_s42` on 1x95ep. Expected: US WR +5-8pp if value head is the bottleneck.
-- **A1**: ISMCTS diagnostic on v99_saturation_1x_95ep (4det×50sims, 500g/side).
-  Measures if search helps US more than USSR (expect yes, since US BC is weakest).
-- **A3**: `--us-weight 2.0` loss upweighting for US rows (orthogonal to A2, can stack).
+## Phase A: US WR improvement experiments
+
+### A2: actor_relative value target
+
+`v100_actor_value_s42`: 1x clean data, 95ep, baseline h256, `--value-target actor_relative`.
+W&B: iaotaspv. Best epoch: 89.
+
+| Model | USSR WR | US WR | Combined | vs v99_saturation_1x_95ep |
+|-------|---------|-------|----------|--------------------------|
+| v99_saturation_1x_95ep (final_vp) | 46.2% ±1.1 | 13.0% ±0.8 | 29.5% ±0.7 | baseline |
+| v100_actor_value_s42 (actor_relative) | 37.4% ±1.1 | 7.0% ±0.6 | **22.2% ±0.6** | **-7.3pp** |
+
+**Result: actor_relative is significantly worse.** US WR dropped from 13% → 7%, USSR WR
+dropped from 46% → 37%. Combined dropped 7.3pp.
+
+**Root cause**: The value target polarity flips for US rows, but the input features are always
+encoded from USSR perspective (VP positive = USSR ahead, influence counts are USSR/US not
+actor/opponent). The shared trunk sees identical board features but receives opposite value
+gradient depending on `phasing`. This creates contradictory training signal in the trunk:
+the same state (e.g. USSR +10 VP) must simultaneously represent "good" (for USSR rows)
+and "bad" (for US rows with actor_relative), poisoning the shared representations.
+
+**Lesson**: Actor-relative value requires actor-relative *input encoding* (board features
+from the acting side's perspective). With USSR-centric features, flipping only the target
+makes things worse, not better.
+
+**Next steps for US WR**:
+- **A1**: ISMCTS diagnostic on v99_saturation_1x_95ep — does search help US more than USSR?
+  This would suggest the BC policy is weak for US but search can compensate.
+- **A3**: `--us-weight 2.0` upweight US rows in policy loss only (not value).
+  Cheaper, doesn't require feature re-encoding, may help by giving US policy more gradient.
+- **Longer term**: Actor-relative input encoding (flip VP sign, swap actor/opponent influence)
+  before re-trying actor_relative value target.
