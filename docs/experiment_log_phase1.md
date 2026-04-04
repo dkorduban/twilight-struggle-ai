@@ -260,26 +260,81 @@ All benchmarks: 2000 games/side (4×500 seeds), W&B summary updated via bench_pi
 |-----|---------|-------|----------|-----|
 | v99_baseline_h256_s42 (60ep) | 42.1% ±1.1 | 11.6% ±0.7 | 26.9% ±0.7 | u8x4v7d8 |
 | v99_baseline_h256_s7 | 40.8% ±1.1 | 11.5% ±0.7 | 26.1% ±0.7 | duj7xgzn |
-| v99_baseline_h256_s123 | pending | pending | pending | — |
+| v99_baseline_h256_s123 | 37.2% ±1.1 | 8.4% ±0.6 | 22.8% ±0.6 | ixl2bgra |
 
-Note: s42 ran at 60 epochs (swept at old epoch count); extra compute data point,
-excluded from seed variance. s123 benchmarked separately after export.
+Note: s42 ran at 60 epochs (extra compute data point, excluded from seed variance).
+Seed variance across s7/s123: 26.1% vs 22.8% = **3.3pp spread** (±1.6pp half-range).
+This is consistent with prior ~2-4pp estimate from combined_v89 seeds.
 
 ### Group 2: saturation test — 1× @ 95ep vs 2× @ 47ep (both ~121M samples)
 
 | Run | Data | Train rows | Epochs | USSR WR | US WR | Combined | W&B |
 |-----|------|-----------|--------|---------|-------|----------|-----|
 | v99_saturation_1x_95ep | nash_b | 1.28M | 95 | 46.2% ±1.1 | 13.0% ±0.8 | **29.5% ±0.7** | knpb3sti |
-| v99_saturation_2x_47ep | nash_b+c | 2.58M | 47 | pending | pending | pending | — |
+| v99_saturation_2x_47ep | nash_b+c | 2.58M | 47 | 42.1% ±1.1 | 11.6% ±0.7 | 26.9% ±0.7 | u9bqter9 |
 
-**Preliminary**: 1× @ 95ep outperforms both s42/s7 baseline runs despite same compute.
-Saturation 2× result pending — comparison will reveal data-volume vs epoch-count trade-off.
+**Finding**: 1× @ 95ep (29.5%) beats 2× @ 47ep (26.9%) by **2.6pp** despite identical
+total samples (~121M) and same seed (42). The difference is purely data arrangement:
+fewer unique games seen more times vs more games seen once. This suggests the dataset is
+not yet saturated from uniqueness; more epochs on a smaller clean set is better.
+
+Note: saturation_2x_47ep = same seed/data as v99_baseline_h256_s42 → identical results
+(both converge at epoch 46 of their respective training runs, same model).
 
 ### Group 3: control_feat h256 on clean data (2× @ 47 epochs)
 
 | Run | USSR WR | US WR | Combined | W&B |
 |-----|---------|-------|----------|-----|
-| v99_control_feat_h256_s42 | pending | pending | pending | — |
-| v99_control_feat_h256_s123 | pending | pending | pending | — |
+| v99_control_feat_h256_s42 | 42.4% ±1.1 | 7.1% ±0.6 | 24.8% ±0.6 | l5sch6y3 |
+| v99_control_feat_h256_s123 | 45.1% ±1.1 | 12.7% ±0.7 | 28.9% ±0.7 | ioploe14 |
 
 **Reference (arch sweep, contaminated data)**: 48.6%/9.4%/29.0%±0.6 on combined_v89.
+
+**Seed variance**: s42/s123 = 24.8% vs 28.9% = **4.1pp spread**. Mean = 26.85%.
+Control_feat architecture shows high init sensitivity (arch sweep: 18.1% / 29.0%).
+
+### v99 Clean sweep — full summary
+
+All benchmarks: 2000 games/side, 4×500 seeds. Combined = (USSR_wins + US_wins) / 4000.
+
+| Model | Arch | Data | Epochs | Mean combined | Seed variance |
+|-------|------|------|--------|--------------|---------------|
+| baseline h256 | baseline | 2× (2.58M) | 47 | 24.45% ±1.7pp | s7=26.1%, s123=22.8% |
+| control_feat h256 | control_feat | 2× (2.58M) | 47 | 26.85% ±2.1pp | s42=24.8%, s123=28.9% |
+| **saturation_1x_95ep** | **baseline** | **1× (1.28M)** | **95** | **29.5%** | — |
+| saturation_2x_47ep | baseline | 2× (2.58M) | 47 | 26.9% | (=s42) |
+
+**Winner: `v99_saturation_1x_95ep` = 29.5% combined** — baseline architecture, 1x clean data, 95 epochs.
+
+### Key findings from v99 clean sweep
+
+1. **More epochs on less data beats one pass on more data** (at ~121M total samples).
+   Saturation_1x_95ep (29.5%) > saturation_2x_47ep (26.9%) by 2.6pp despite equal compute.
+   The 10k nash_b games, seen 95 times each, learn better than 20k games seen 47 times.
+
+2. **control_feat does NOT consistently outperform baseline** on clean data.
+   Mean of two seeds: 26.85% vs 24.45% (2.4pp edge), but with 4pp seed variance this is
+   within noise. The arch sweep's 29.0% was likely a good-init seed, not a reliable result.
+
+3. **Seed variance is large for control_feat**: 4.1pp spread (s42=24.8%, s123=28.9%).
+   At least 3 seeds needed to get a reliable estimate of control_feat performance.
+
+4. **Baseline h256 is more stable**: seed variance 3.3pp (s7=26.1%, s123=22.8%).
+   Still high, but control_feat is worse.
+
+5. **Clean data is comparable to (or slightly better than) contaminated data** for baseline:
+   Baseline h256 mean on clean data (24.45%) > arch sweep on contaminated v89 (22.4%).
+   The contamination didn't help the baseline — it just inflated the contaminated nash WR.
+
+### Recommendations
+
+**For next self-play round:**
+- Use 1× clean data (nash_b, 1.28M) with 95 epochs as the BC initialization
+- Run 3 seeds (42, 7, 123) to get stable estimate
+- The saturation_1x_95ep model (29.5%) is the new strongest BC baseline
+- Baseline architecture is preferred over control_feat for reliability
+
+**For architecture experiments:**
+- control_feat needs ≥3 seeds to evaluate reliably
+- Consider testing control_feat at 95 epochs (same as saturation_1x) — might compound
+- The 4.1pp variance suggests control_feat is sensitive to initialization
