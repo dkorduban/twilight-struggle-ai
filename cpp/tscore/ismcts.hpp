@@ -42,16 +42,6 @@ IsmctsResult ismcts_search(
     Pcg64Rng& rng
 );
 
-IsmctsResult ismcts_search_batched(
-    const GameState& partial_state,
-    Side acting_side,
-    int opp_hand_size,
-    torch::jit::script::Module& model,
-    const IsmctsConfig& config,
-    Pcg64Rng& rng,
-    torch::Device device = torch::kCPU
-);
-
 /// Run benchmark games where the learned side uses ISMCTS for each decision.
 /// The opponent uses the heuristic policy.  Returns one GameResult per game.
 std::vector<GameResult> play_ismcts_matchup(
@@ -59,8 +49,17 @@ std::vector<GameResult> play_ismcts_matchup(
     torch::jit::script::Module& model,
     Side learned_side,
     const IsmctsConfig& config,
+    uint32_t base_seed
+);
+
+std::vector<GameResult> play_ismcts_matchup_pooled(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    const IsmctsConfig& config,
+    int pool_size,
     uint32_t base_seed,
-    torch::Device device = torch::kCPU
+    torch::Device device
 );
 
 #endif

@@ -564,35 +564,10 @@ PYBIND11_MODULE(tscore, m) {
         "device: 'cpu' or 'cuda' for GPU inference."
     );
     m.def(
-        "play_learned_vs_learned",
-        [](const std::string& ussr_model_path, const std::string& us_model_path, int game_count, py::object seed_obj) {
-            std::optional<uint32_t> seed;
-            if (!seed_obj.is_none()) {
-                seed = seed_obj.cast<uint32_t>();
-            }
-            ts::GameLoopConfig config;
-            config.use_atomic_setup = true;
-            ts::TorchScriptPolicy ussr_model(ussr_model_path);
-            ts::TorchScriptPolicy us_model(us_model_path);
-            const ts::PolicyFn ussr_fn = [&ussr_model](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
-                return ussr_model.choose_action(pub, hand, holds_china, rng);
-            };
-            const ts::PolicyFn us_fn = [&us_model](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& rng) {
-                return us_model.choose_action(pub, hand, holds_china, rng);
-            };
-            return ts::play_matchup_fn(ussr_fn, us_fn, game_count, seed, config);
-        },
-        py::arg("ussr_model_path"),
-        py::arg("us_model_path"),
-        py::arg("game_count"),
-        py::arg("seed") = py::none(),
-        "Play learned model vs learned model. USSR uses ussr_model_path, US uses us_model_path.\n"
-        "Can pass the same model for both sides. Returns list[GameResult]."
-    );
-    m.def(
         "benchmark_ismcts",
         [](const std::string& model_path, ts::Side learned_side, int n_games,
-           int n_determinizations, int n_simulations, py::object seed_obj, const std::string& device_str) {
+           int n_determinizations, int n_simulations, py::object seed_obj, int pool_size,
+           const std::string& device_str) {
             std::optional<uint32_t> seed;
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
@@ -603,9 +578,15 @@ PYBIND11_MODULE(tscore, m) {
             ts::IsmctsConfig config;
             config.n_determinizations = n_determinizations;
             config.mcts_config.n_simulations = n_simulations;
-            return ts::play_ismcts_matchup(
-                n_games, model, learned_side, config,
-                seed.value_or(std::random_device{}()), device);
+            return ts::play_ismcts_matchup_pooled(
+                n_games,
+                model,
+                learned_side,
+                config,
+                pool_size,
+                seed.value_or(std::random_device{}()),
+                device
+            );
         },
         py::arg("model_path"),
         py::arg("learned_side"),
@@ -613,12 +594,14 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("n_determinizations") = 8,
         py::arg("n_simulations") = 50,
         py::arg("seed") = py::none(),
+        py::arg("pool_size") = 4,
         py::arg("device") = "cpu",
         "Run ISMCTS benchmark: learned side uses information-set MCTS,\n"
         "opponent uses heuristic. Returns list[GameResult].\n"
         "n_determinizations: parallel determinization count (default 8).\n"
         "n_simulations: MCTS simulations per determinization (default 50).\n"
-        "device: 'cpu' or 'cuda' for batched leaf inference."
+        "pool_size: concurrent games batched together (default 4).\n"
+        "device: 'cpu' or 'cuda' for GPU inference."
     );
 #endif
 }
