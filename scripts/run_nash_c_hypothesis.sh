@@ -77,7 +77,8 @@ RUNS=(
   "v99_nash_b_95ep_s7  data/nash_b_only 7"
 )
 
-BENCH_PID=""
+BENCH_LOCK="results/bench_pipeline.lock"
+
 N=${#RUNS[@]}
 for i in "${!RUNS[@]}"; do
   read -r name data_dir seed <<< "${RUNS[$i]}"
@@ -85,28 +86,28 @@ for i in "${!RUNS[@]}"; do
   echo "=== [$((i+1))/$N] $name ==="
 
   # Train (GPU) — never blocked by benchmarks
-  uv run python scripts/train_baseline.py \
+  if ! uv run python scripts/train_baseline.py \
     --data-dir "$data_dir" \
     --out-dir "data/checkpoints/$name" \
     --seed "$seed" \
-    $COMMON_ARGS 2>&1 | tail -5
+    $COMMON_ARGS 2>&1 | tail -5; then
+    echo "ERROR: training $name failed, skipping benchmark"
+    continue
+  fi
 
-  # Launch bench in background; it waits for previous bench internally
-  PREV_BENCH_PID="$BENCH_PID"
+  # Launch bench in background; flock ensures at most 1 bench at a time
   (
-    # Wait for previous bench to finish (CPU mutex — at most 1 bench at a time)
-    if [ -n "$PREV_BENCH_PID" ]; then
-      wait "$PREV_BENCH_PID" 2>/dev/null
-    fi
+    flock -x 200
+    echo "[$(date '+%H:%M:%S')] bench lock acquired for $name"
     export_and_bench "$name"
-  ) &
-  BENCH_PID=$!
+  ) 200>"$BENCH_LOCK" &
 done
 
 # Wait for all background benchmarks to complete
 echo ""
 echo "=== Waiting for benchmarks ==="
 wait
+rm -f "$BENCH_LOCK"
 
 echo ""
 echo "=== Reference baselines ==="
