@@ -12,27 +12,40 @@
 #   Training and benchmarking CAN overlap (different resources).
 
 import os
+import yaml
 
 # ---------------------------------------------------------------------------
-# Experiment definitions: name → (data_dir, seed)
+# Load experiment definitions from experiments.yaml
 # ---------------------------------------------------------------------------
+with open("experiments.yaml") as _f:
+    _cfg = yaml.safe_load(_f)
+
+_defaults = _cfg["defaults"]
+_bench = _cfg["benchmark"]
+
+# name → (data_dir, seed)
 EXPERIMENTS = {
-    "v99_nash_c_95ep_s42":  ("data/nash_c_only", 42),
-    "v99_nash_c_95ep_s7":   ("data/nash_c_only", 7),
-    "v99_nash_b_95ep_s7":   ("data/nash_b_only", 7),
-    "v99_nash_b_95ep_s123": ("data/nash_b_only", 123),
+    name: (exp["data_dir"], exp["seed"])
+    for name, exp in _cfg["experiments"].items()
 }
 
-# Common training hyperparams
+# Common training hyperparams derived from defaults
 TRAIN_ARGS = (
-    "--epochs 95 --batch-size 8192 --lr 0.0024 --weight-decay 1e-4 "
-    "--label-smoothing 0.05 --one-cycle --hidden-dim 256 "
-    "--value-target final_vp --patience 20 --deterministic-split"
-)
+    f"--epochs {_defaults['epochs']} "
+    f"--batch-size {_defaults['batch_size']} "
+    f"--lr {_defaults['lr']} "
+    f"--weight-decay {_defaults['weight_decay']} "
+    f"--label-smoothing {_defaults['label_smoothing']} "
+    f"{'--one-cycle ' if _defaults['one_cycle'] else ''}"
+    f"--hidden-dim {_defaults['hidden_dim']} "
+    f"--value-target {_defaults['value_target']} "
+    f"--patience {_defaults['patience']} "
+    f"{'--deterministic-split' if _defaults['deterministic_split'] else ''}"
+).strip()
 
-BENCH_GAMES = 2000
-BENCH_POOL = 32
-BENCH_SEED = 9000
+BENCH_GAMES = _bench["games_per_side"]
+BENCH_POOL = _bench["pool_size"]
+BENCH_SEED = _bench["seed"]
 
 # ---------------------------------------------------------------------------
 # Default target: all benchmarks

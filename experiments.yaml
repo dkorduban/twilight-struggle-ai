@@ -1,0 +1,32 @@
+# Common training hyperparams (can be overridden per experiment)
+defaults:
+  epochs: 95
+  batch_size: 8192
+  lr: 0.0024
+  weight_decay: 1e-4
+  label_smoothing: 0.05
+  one_cycle: true
+  hidden_dim: 256
+  value_target: final_vp
+  patience: 20
+  deterministic_split: true
+
+# Benchmark settings
+benchmark:
+  games_per_side: 2000
+  pool_size: 32
+  seed: 9000
+
+experiments:
+  v99_nash_c_95ep_s42:
+    data_dir: data/nash_c_only
+    seed: 42
+  v99_nash_c_95ep_s7:
+    data_dir: data/nash_c_only
+    seed: 7
+  v99_nash_b_95ep_s7:
+    data_dir: data/nash_b_only
+    seed: 7
+  v99_nash_b_95ep_s123:
+    data_dir: data/nash_b_only
+    seed: 123
