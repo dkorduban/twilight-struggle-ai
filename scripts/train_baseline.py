@@ -257,11 +257,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--value-target",
         default="winner_side",
-        choices=["winner_side", "final_vp"],
+        choices=["winner_side", "final_vp", "actor_relative"],
         help=(
             "Value training target: 'winner_side' (default, {-1,0,+1} terminal "
-            "outcome) or 'final_vp' (final_vp/20 clamped to [-1,1], denser "
-            "reward signal)."
+            "outcome), 'final_vp' (final_vp/20 clamped to [-1,1], denser reward "
+            "signal), or 'actor_relative' (like final_vp but sign-flipped for US "
+            "rows so the value head learns 'good for acting side' not 'good for USSR')."
         ),
     )
     p.add_argument(

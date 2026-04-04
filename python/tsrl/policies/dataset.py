@@ -140,6 +140,10 @@ class TS_SelfPlayDataset(Dataset):
         'winner_side' (default) — use {-1, 0, +1} terminal outcome.
         'final_vp' — use final_vp/20 clamped to [-1, 1] as a denser
                      value target. Requires final_vp column in all files.
+        'actor_relative' — like 'final_vp' but sign-flipped for US rows so
+                     the value head learns "good for the acting side" instead
+                     of "good for USSR". USSR rows: final_vp/20 as-is.
+                     US rows: -(final_vp/20). Requires final_vp + phasing columns.
     """
 
     def __init__(
@@ -148,9 +152,10 @@ class TS_SelfPlayDataset(Dataset):
         value_target_mode: str = "winner_side",
         teacher_targets_path: str | None = None,
     ) -> None:
-        if value_target_mode not in ("winner_side", "final_vp"):
+        if value_target_mode not in ("winner_side", "final_vp", "actor_relative"):
             raise ValueError(
-                f"value_target_mode must be 'winner_side' or 'final_vp', got {value_target_mode!r}"
+                f"value_target_mode must be 'winner_side', 'final_vp', or 'actor_relative', "
+                f"got {value_target_mode!r}"
             )
 
         paths = sorted(glob.glob(os.path.join(data_dir, "*.parquet")))
@@ -300,13 +305,19 @@ class TS_SelfPlayDataset(Dataset):
 
         # --- value target (1,) ---
         winner_arr = df["winner_side"].cast(pl.Float32).to_numpy()  # (N,)
-        if value_target_mode == "final_vp":
+        if value_target_mode in ("final_vp", "actor_relative"):
             final_vp_arr = np.clip(df["final_vp"].cast(pl.Float32).to_numpy() / 20.0, -1.0, 1.0)
             end_reasons = df["end_reason"].to_list()
             bad_end = np.array(
                 [er in ("defcon1", "europe_control") for er in end_reasons], dtype=bool
             )
             value_arr = np.where(bad_end, winner_arr, final_vp_arr).astype(np.float32)
+            if value_target_mode == "actor_relative":
+                # phasing: 0=USSR, 1=US. For US rows, flip sign so value means
+                # "good for the acting side" not "good for USSR".
+                phasing_arr = df["phasing"].cast(pl.Float32).to_numpy()  # 0.0 or 1.0
+                us_mask = phasing_arr == 1.0
+                value_arr = np.where(us_mask, -value_arr, value_arr).astype(np.float32)
         else:
             value_arr = winner_arr.astype(np.float32)
         self._value = torch.from_numpy(value_arr[:, None])  # (N, 1)

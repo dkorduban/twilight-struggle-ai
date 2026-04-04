@@ -338,3 +338,79 @@ All benchmarks: 2000 games/side, 4×500 seeds. Combined = (USSR_wins + US_wins) 
 - control_feat needs ≥3 seeds to evaluate reliably
 - Consider testing control_feat at 95 epochs (same as saturation_1x) — might compound
 - The 4.1pp variance suggests control_feat is sensitive to initialization
+
+---
+
+## Follow-up sweep (saturation analysis recommendations)
+
+All runs: 1x clean data (nash_b, 1.28M) or 2x (nash_b+c, 2.58M); lr=0.0024, batch=8192,
+dropout=0.1, wd=1e-4, one-cycle, deterministic-split.
+
+### Group 1: control_feat h256 @ 1x95ep × 3 seeds
+Tests whether architecture + saturation compound (predicted ~30-32% if so).
+
+| Run | USSR WR | US WR | Combined | W&B |
+|-----|---------|-------|----------|-----|
+| v99_cf_1x95_s42 | 45.8% ±1.1 | 11.7% ±0.7 | 28.7% ±0.7 | l4rofm46 |
+| v99_cf_1x95_s7 | 51.1% ±1.1 | 13.7% ±0.8 | **32.4% ±0.7** | jwkjdihd |
+| v99_cf_1x95_s123 | 44.4% ±1.1 | 9.7% ±0.7 | 27.0% ±0.6 | s4w6trsi |
+
+Mean across 3 seeds: **29.4%**. Spread: 27.0%–32.4% = **5.4pp variance**.
+s7 is a strong outlier. Mean (29.4%) vs baseline_1x_95ep (29.5%) → architecture effect is ~0pp on average.
+
+**Finding**: control_feat does NOT consistently outperform baseline. s7's 32.4% is an
+initialization lucky seed. The compounding hypothesis (arch × saturation → 30-32%) is
+**not confirmed** — mean is identical to baseline at 29.4-29.5%.
+
+### Group 2: baseline h256 @ 1x120ep (epoch ceiling test)
+
+| Run | USSR WR | US WR | Combined | W&B |
+|-----|---------|-------|----------|-----|
+| v99_baseline_120ep | 40.4% ±1.1 | 11.3% ±0.7 | 25.9% ±0.7 | xsseshcp |
+
+**Finding**: 120ep (25.9%) is **worse** than 95ep (29.5%) by 3.6pp. Already past optimum at 95.
+Early stopping at best_val_loss fires at epoch 95, confirming 95ep is already optimal for 1x data.
+
+### Group 3: baseline h256 @ 2x95ep (LR schedule disambiguator)
+
+| Run | USSR WR | US WR | Combined | W&B |
+|-----|---------|-------|----------|-----|
+| v99_baseline_2x95ep | 36.0% ±1.1 | 9.0% ±0.6 | 22.5% ±0.6 | — |
+
+**Finding**: 2x@95ep (22.5%) is *worse* than 2x@47ep (26.9%) by 4.4pp. Severe overfitting:
+the model sees each of the 20k games ~95 times, memorizing without generalizing. This
+**confirms the saturation_1x win is about data diversity** (each game ~65× for 1x@95ep is
+better than ~95× for 2x@95ep). More unique games per epoch matters more than more epochs.
+
+### Follow-up sweep — full summary
+
+| Model | Data | Epochs | USSR WR | US WR | Combined | vs baseline_2x47 |
+|-------|------|--------|---------|-------|----------|-----------------|
+| v99_saturation_1x_95ep (s42) | 1× | 95 | 46.2% | 13.0% | **29.5%** | **+2.6pp** |
+| v99_cf_1x95_s7 (best seed) | 1× | 95 | 51.1% | 13.7% | **32.4%** | **+5.5pp** |
+| v99_cf_1x95_s42 | 1× | 95 | 45.8% | 11.7% | 28.7% | +1.8pp |
+| v99_cf_1x95 mean (3 seeds) | 1× | 95 | — | — | 29.4% | +2.5pp |
+| v99_baseline_2x_47ep (s42) | 2× | 47 | 42.1% | 11.6% | 26.9% | baseline |
+| v99_baseline_120ep | 1× | 120 | 40.4% | 11.3% | 25.9% | -1.0pp |
+| v99_baseline_2x95ep | 2× | 95 | 36.0% | 9.0% | 22.5% | **-4.4pp** |
+
+### Key conclusions
+
+1. **Best BC baseline is 1x@95ep**: 29.5% combined (baseline arch) or 29.4% mean (cf arch).
+   Architecture choice doesn't matter at this scale — variance from seed > variance from arch.
+
+2. **Epoch ceiling confirmed at 95ep for 1x data**. 120ep is clearly worse.
+
+3. **Overfitting on 2x@95ep is severe**: 22.5% — worse than any 2x@47ep run.
+   The lesson: for this dataset size, one-cycle schedule length must match data scale.
+
+4. **US WR is structurally stuck at 8-14%** regardless of model, data, epochs, or arch.
+   This is the dominant bottleneck. Next focus: actor_relative value target (A2) + MCTS.
+
+### Next experiments (Phase A from us_bias_analysis.md)
+
+- **A2 (implemented)**: `--value-target actor_relative` — flip value sign for US rows.
+  Train `v100_actor_value_s42` on 1x95ep. Expected: US WR +5-8pp if value head is the bottleneck.
+- **A1**: ISMCTS diagnostic on v99_saturation_1x_95ep (4det×50sims, 500g/side).
+  Measures if search helps US more than USSR (expect yes, since US BC is weakest).
+- **A3**: `--us-weight 2.0` loss upweighting for US rows (orthogonal to A2, can stack).
