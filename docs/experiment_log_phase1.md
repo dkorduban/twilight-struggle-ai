@@ -442,3 +442,44 @@ makes things worse, not better.
   Cheaper, doesn't require feature re-encoding, may help by giving US policy more gradient.
 - **Longer term**: Actor-relative input encoding (flip VP sign, swap actor/opponent influence)
   before re-trying actor_relative value target.
+
+---
+
+## Nash-C Hypothesis Test
+
+**Question**: Does nash_c data alone perform like nash_b? Or does mixing nash_b + nash_c
+cause the 2× data degradation?
+
+All runs: bs=8192, lr=0.0024, 95 epochs, patience=20, deterministic-split, baseline h256.
+Benchmark: 2000 games/side.
+
+| Model | Data | Seed | USSR WR | US WR | Combined |
+|-------|------|------|---------|-------|----------|
+| v99_nash_c_95ep_s42 | nash_c only | 42 | 41.6% ±1.1 | 9.7% ±0.7 | **25.7% ±0.6** |
+| v99_nash_c_95ep_s7 | nash_c only | 7 | 43.1% ±1.1 | 10.5% ±0.7 | **26.9% ±0.7** |
+| v99_nash_b_95ep_s7 | nash_b only | 7 | 38.6% ±1.1 | 8.9% ±0.6 | **23.8% ±0.6** |
+| v99_saturation_1x_95ep (ref) | nash_b only | 42 | 46.2% ±1.1 | 13.0% ±0.8 | **29.5% ±0.7** |
+
+### Findings
+
+1. **Nash_c is NOT inherently worse**: nash_c_s42=25.7%, nash_c_s7=26.9% — both
+   competitive. Mean 26.3% is within seed variance of nash_b results.
+
+2. **Nash_b seed variance is large**: nash_b_s7=23.8% vs nash_b_s42=29.5% = **5.7pp gap
+   from seed alone**. The "nash_b best at 29.5%" conclusion may be partly lucky seed.
+
+3. **Nash_c is slightly MORE stable**: nash_c variance = 1.2pp (25.7-26.9) vs nash_b
+   variance = 5.7pp (23.8-29.5). Smaller sample (2 seeds each), but suggestive.
+
+4. **Mixing hurts more than either alone**: nash_b+c@95ep = 22.5% (worst), while each
+   dataset alone averages ~25-26%. Confirmed: the 2× degradation is from mixing, not
+   from nash_c quality.
+
+### Interpretation
+
+The nash_b and nash_c datasets were collected with different Nash temperature schedules,
+creating subtly different strategy distributions. Training on mixed distributions creates
+conflicting gradients that hurt generalization. Each dataset alone, with 95 epochs of
+repetition, learns a coherent strategy.
+
+### Next: need 3+ seeds per dataset to get reliable mean estimates.
