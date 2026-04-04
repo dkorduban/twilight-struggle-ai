@@ -1,48 +1,86 @@
 ---
 name: check-tasks
-description: "Show status of all background tasks in .codex_tasks/. Triggers on: /check-tasks, task status, what's running, check background tasks."
+description: "Full system status: background tasks, running processes, GPU/CPU/memory utilization, lock files. Triggers on: /check-tasks, /status, task status, what's running, system status, check background."
 ---
 
-# Check-Tasks — Background Task Status
+# Status — Full System Overview
 
-Read `.codex_tasks/*/status.md` and `.codex_tasks/*/result.md` and display a summary.
+Shows background tasks, running processes, resource utilization, and lock files in one view.
 
-## Execution (main agent, 1-2 turns)
+## Execution (main agent, 2-3 turns)
 
+Run all checks in parallel:
+
+### 1. Background Codex tasks
 ```bash
 find .codex_tasks -name "status.md" 2>/dev/null | sort
 ```
+For each `status.md`: extract STATUS, AGENT, TASK, NOTE.
+For DONE/FAILED tasks, also read `result.md`.
 
-For each `status.md` found, read it and extract: STATUS, AGENT, TASK, NOTE, CODEX_THREAD.
-For DONE/FAILED tasks, also read `result.md` for the outcome summary.
+### 2. Running processes
+```bash
+pgrep -a python 2>/dev/null | head -20
+pgrep -a cmake 2>/dev/null
+```
+
+### 3. Resource utilization
+```bash
+nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader 2>/dev/null || echo "No GPU detected"
+free -m | awk 'NR==2{printf "RAM: %dMB used / %dMB total (%d%% used)\n", $3, $2, $3*100/$2}'
+nproc
+```
+
+### 4. Lock files
+```bash
+for f in results/sweep.lock results/bench_pipeline.lock; do
+  if [ -f "$f" ]; then
+    echo "LOCKED: $f — $(cat $f)"
+    # Check if PID is still alive
+    pid=$(grep -oP 'PID=\K\d+' "$f" 2>/dev/null)
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+      echo "  ⚠ PID $pid is STALE (process dead)"
+    fi
+  fi
+done
+```
 
 ## Output format
 
 ```
+SYSTEM STATUS
+=============
+
+RESOURCES
+  GPU: 45% util | 2.1GB / 4.0GB VRAM
+  RAM: 18.2GB / 30.0GB (61%)
+  CPU: 10 cores
+
+LOCKS
+  results/sweep.lock — PID=12345 started=2026-04-04 03:00 (ACTIVE)
+  results/bench_pipeline.lock — not present
+
+PROCESSES (python)
+  12345 uv run python scripts/train_baseline.py ...
+  12400 uv run python -c "import tscore; ..."
+
 BACKGROUND TASKS
-================
-task_id                          | status     | agent                 | note
----------------------------------|------------|----------------------|---------------------------
-impl_20260328_1530_taiwan-scoring | DONE       | bg-codex-implementer | 816 passing
-impl_20260328_1545_space-race-l8  | RUNNING    | bg-codex-implementer | Codex implementing — iter 1/3
-analyze_20260328_1600_parquet-qa  | VERIFYING  | bg-codex-analyzer    | running pytest
-rules_20260328_1610_comecon-pool  | FAILED     | bg-rules-lawyer      | PDF section not found
-
-Total: N tasks  (done=X  running=Y  failed=Z)
+  task_id                           | status  | note
+  ----------------------------------|---------|---------------------------
+  impl_ismcts_batched               | RUNNING | Codex implementing
+  
+  Total: 1 task (running=1)
 ```
 
-For DONE tasks, append result summary on next line (indented):
-```
-  → Files: foo.py, bar.py  |  Tests: 816 passing
-```
+### Resource warnings (per standing policy §4)
+- **RAM > 24GB used**: `⚠ WARNING: memory pressure (>80%)`
+- **RAM > 27GB used**: `🔴 CRITICAL: memory near limit (>90%) — consider killing lowest-priority process`
+- **GPU > 0% while another GPU task planned**: `⚠ GPU in use — do not launch training`
 
-For FAILED tasks, append the blocker:
-```
-  → Blocker: task requires schema change outside allowed files
-```
-
-## If .codex_tasks/ is empty or missing
+## If nothing is running
 
 ```
-No background tasks found. Use /dispatch to start one.
+SYSTEM STATUS: idle
+  GPU: 0% | RAM: 12.1GB/30.0GB | No locks | No background tasks
+  Ready for work.
 ```

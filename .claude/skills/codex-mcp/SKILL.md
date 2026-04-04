@@ -30,12 +30,37 @@ Codex sessions are **stateful** via threadId. Always:
 ### approval-policy
 | Policy | When to Use |
 |--------|-------------|
-| `never` | Review-only tasks where no shell commands are needed |
-| `on-failure` | Implementation — auto-approve commands, intervene on errors |
+| `never` | **Background agents** (no UI → hangs forever on approval prompt). Also review-only tasks. |
+| `on-failure` | **Foreground** implementation — auto-approve commands, intervene on errors |
+| `on-request` | Avoid in background — same hang risk as interactive approval |
 
 ### developer-instructions
 Inject a persona or constraints into Codex without polluting the main prompt.
 Always include: `"Be concise. Do not include your reasoning process in the response. Only output the result."`
+
+## Resume Loop Pattern (CRITICAL)
+
+Codex frequently returns control after partial progress (reading files, making a few edits).
+**The caller must resume via `codex-reply` until Codex reports completion.**
+
+### Pattern for background agents (bg-codex-implementer)
+```
+1. Call mcp__codex__codex with full task prompt → get threadId + partial response
+2. While response does not indicate completion:
+   a. Call mcp__codex__codex-reply(threadId, "continue") 
+   b. Check if Codex says "done", "complete", "all changes made", etc.
+3. Write result to .codex_tasks/<task_id>/result.md
+```
+
+### Pattern for foreground (main agent)
+```
+1. Call mcp__codex__codex → get threadId
+2. If Codex returned partial work, call mcp__codex__codex-reply(threadId, "continue implementing")
+3. Repeat until done (cap at 5 iterations)
+```
+
+**Never spawn a non-Codex agent (cpp-engine-builder, etc.) expecting it to manage Codex sessions.**
+The bg-codex-implementer agent type is purpose-built for this resume loop.
 
 ## Prompting Best Practices
 
