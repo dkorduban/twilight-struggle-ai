@@ -21,10 +21,15 @@ cd "$(dirname "$0")/.."
 LOCK_FILE="results/sweep.lock"
 mkdir -p results
 if [ -f "$LOCK_FILE" ]; then
-    echo "ERROR: another sweep is already running (lock: $LOCK_FILE). Exiting."
-    echo "  Lock contents: $(cat "$LOCK_FILE")"
-    echo "  To force-start, delete the lock file: rm $LOCK_FILE"
-    exit 1
+    LOCK_PID=$(grep -oP 'PID=\K[0-9]+' "$LOCK_FILE" 2>/dev/null)
+    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+        echo "ERROR: another sweep is already running (PID $LOCK_PID, lock: $LOCK_FILE). Exiting."
+        echo "  Lock contents: $(cat "$LOCK_FILE")"
+        exit 1
+    else
+        echo "WARNING: stale lock file found (PID ${LOCK_PID:-unknown} is dead). Removing and continuing."
+        rm -f "$LOCK_FILE"
+    fi
 fi
 echo "PID=$$  script=$0  started=$(date '+%Y-%m-%d %H:%M:%S')" > "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"; echo "[sweep] Lock released."' EXIT

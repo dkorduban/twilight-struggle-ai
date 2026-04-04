@@ -8,10 +8,14 @@ cd "$(dirname "$0")/.."
 BENCH_LOCK="$(dirname "$0")/../results/bench_pipeline.lock"
 mkdir -p "$(dirname "$0")/../results"
 if [ -f "$BENCH_LOCK" ]; then
-    echo "[bench_pipeline] ERROR: another instance is already running (lock: $BENCH_LOCK). Exiting."
-    echo "  Lock contents: $(cat "$BENCH_LOCK")"
-    echo "  To force-start: rm $BENCH_LOCK"
-    exit 1
+    LOCK_PID=$(grep -oP 'PID=\K[0-9]+' "$BENCH_LOCK" 2>/dev/null)
+    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+        echo "[bench_pipeline] ERROR: another instance already running (PID $LOCK_PID, lock: $BENCH_LOCK). Exiting."
+        exit 1
+    else
+        echo "[bench_pipeline] WARNING: stale lock (PID ${LOCK_PID:-unknown} dead). Removing and continuing."
+        rm -f "$BENCH_LOCK"
+    fi
 fi
 echo "PID=$$  started=$(date '+%Y-%m-%d %H:%M:%S')" > "$BENCH_LOCK"
 trap 'rm -f "$BENCH_LOCK"' EXIT
