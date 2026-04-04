@@ -239,3 +239,47 @@ bs=8192, lr=0.0024, epochs=60, patience=15, dropout=0.1.
 Note: seed variance is ~2-4pp (measured by retraining baseline h256 with different
 seeds: 22.4% vs 24.8%). CIs above are benchmark-only; total uncertainty including
 training seed is ~±2pp.
+
+---
+
+## Phase 1 clean sweep — v99 (post-DEFCON-fix data, deterministic train/val split)
+
+**Data**: `combined_v99_clean` (nash_b + nash_c, 2.58M rows / 2x) and `combined_v99_clean_b`
+(nash_b only, 1.28M rows / 1x). All post-DEFCON-fix: ussr_win 62.6%, us_win 35.1%.
+
+**Epoch counts matched to ~121M total samples** (= arch sweep reference):
+- 2× data (2.58M train): 47 epochs → 121.1M samples
+- 1× data (1.28M train): 95 epochs → 121.4M samples
+
+Hyperparams: lr=0.0024, batch=8192, dropout=0.1, label_smooth=0.05, wd=1e-4, one-cycle.
+All benchmarks: 2000 games/side (4×500 seeds), W&B summary updated via bench_pipeline.
+
+### Group 1: baseline h256 seed variance (2× data @ 47 epochs)
+
+| Run | USSR WR | US WR | Combined | W&B |
+|-----|---------|-------|----------|-----|
+| v99_baseline_h256_s42 (60ep) | 42.1% ±1.1 | 11.6% ±0.7 | 26.9% ±0.7 | u8x4v7d8 |
+| v99_baseline_h256_s7 | 40.8% ±1.1 | 11.5% ±0.7 | 26.1% ±0.7 | duj7xgzn |
+| v99_baseline_h256_s123 | pending | pending | pending | — |
+
+Note: s42 ran at 60 epochs (swept at old epoch count); extra compute data point,
+excluded from seed variance. s123 benchmarked separately after export.
+
+### Group 2: saturation test — 1× @ 95ep vs 2× @ 47ep (both ~121M samples)
+
+| Run | Data | Train rows | Epochs | USSR WR | US WR | Combined | W&B |
+|-----|------|-----------|--------|---------|-------|----------|-----|
+| v99_saturation_1x_95ep | nash_b | 1.28M | 95 | 46.2% ±1.1 | 13.0% ±0.8 | **29.5% ±0.7** | knpb3sti |
+| v99_saturation_2x_47ep | nash_b+c | 2.58M | 47 | pending | pending | pending | — |
+
+**Preliminary**: 1× @ 95ep outperforms both s42/s7 baseline runs despite same compute.
+Saturation 2× result pending — comparison will reveal data-volume vs epoch-count trade-off.
+
+### Group 3: control_feat h256 on clean data (2× @ 47 epochs)
+
+| Run | USSR WR | US WR | Combined | W&B |
+|-----|---------|-------|----------|-----|
+| v99_control_feat_h256_s42 | pending | pending | pending | — |
+| v99_control_feat_h256_s123 | pending | pending | pending | — |
+
+**Reference (arch sweep, contaminated data)**: 48.6%/9.4%/29.0%±0.6 on combined_v89.
