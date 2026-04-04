@@ -35,8 +35,8 @@ All other tools (Bash, Edit, Grep, Glob) are structurally blocked. Do not attemp
 |------|--------|
 | 1 | Write `.codex_tasks/<task_id>/status.md` (STATUS: STARTED) |
 | 2 | Call `mcp__codex__codex` with full task prompt |
-| 3-8 | Call `mcp__codex__codex-reply("continue")` until Codex reports done |
-| 9 | Read Codex final output, write result.md |
+| 3-20 | Call `mcp__codex__codex-reply("continue")` until Codex reports done |
+| 21-22 | Read Codex final output, write result.md |
 
 If you spend turns doing anything else, the task will fail.
 
@@ -152,9 +152,23 @@ Codex frequently returns after reading files or making partial progress. This is
 1. Call `mcp__codex__codex` with full prompt → save `threadId`
 2. If Codex didn't say "done"/"complete"/"all changes made":
    Call `mcp__codex__codex-reply(threadId, "continue implementing")`
-3. Repeat until done OR 5 total Codex calls
+3. Repeat until done OR 15 total Codex calls
 4. If Codex reports build/test failure: `mcp__codex__codex-reply(threadId, "fix the build errors")`
-5. After 5+ calls with no success → write FAILED status
+5. After 15+ calls with no success → write FAILED status
+
+## Preserving partial work
+
+Worktrees are auto-cleaned if no git changes exist. To prevent losing partial work:
+
+Tell Codex to **commit after each significant milestone** by including in the prompt:
+```
+After each file you create or modify, run:
+  git add <file> && git commit -m "WIP: <what was done>"
+This preserves your work even if the session is interrupted.
+```
+
+This way, even if the task isn't fully complete, the worktree branch survives
+with committed WIP changes that can be inspected or continued later.
 
 ## Hard stop conditions
 Stop and write FAILED if:
