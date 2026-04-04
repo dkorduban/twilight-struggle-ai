@@ -17,6 +17,18 @@
 
 cd "$(dirname "$0")/.."
 
+# ── Lock file: prevent duplicate sweep instances ───────────────────────────
+LOCK_FILE="results/sweep.lock"
+mkdir -p results
+if [ -f "$LOCK_FILE" ]; then
+    echo "ERROR: another sweep is already running (lock: $LOCK_FILE). Exiting."
+    echo "  Lock contents: $(cat "$LOCK_FILE")"
+    echo "  To force-start, delete the lock file: rm $LOCK_FILE"
+    exit 1
+fi
+echo "PID=$$  script=$0  started=$(date '+%Y-%m-%d %H:%M:%S')" > "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"; echo "[sweep] Lock released."' EXIT
+
 DATA_1X="data/combined_v99_clean_b"    # nash_b, 1.28M rows
 DATA_2X="data/combined_v99_clean"      # nash_b+c, 2.58M rows
 QUEUE_FILE="results/pipeline_queue.txt"

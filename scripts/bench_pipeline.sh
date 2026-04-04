@@ -4,6 +4,18 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# ── Lock file: prevent duplicate bench_pipeline instances ─────────────────
+BENCH_LOCK="$(dirname "$0")/../results/bench_pipeline.lock"
+mkdir -p "$(dirname "$0")/../results"
+if [ -f "$BENCH_LOCK" ]; then
+    echo "[bench_pipeline] ERROR: another instance is already running (lock: $BENCH_LOCK). Exiting."
+    echo "  Lock contents: $(cat "$BENCH_LOCK")"
+    echo "  To force-start: rm $BENCH_LOCK"
+    exit 1
+fi
+echo "PID=$$  started=$(date '+%Y-%m-%d %H:%M:%S')" > "$BENCH_LOCK"
+trap 'rm -f "$BENCH_LOCK"' EXIT
+
 # Ensure W&B API key is available for bench→W&B logging
 WANDB_KEY_FILE="$(dirname "$0")/../.wandb-api-key.txt"
 if [ -f "$WANDB_KEY_FILE" ]; then
