@@ -32,9 +32,9 @@ fi
 echo "PID=$$ started=$(date '+%Y-%m-%d %H:%M:%S')" > "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"' EXIT
 
-COMMON_ARGS="--epochs 95 --batch-size 1024 --lr 0.0012 --weight-decay 1e-4 \
+COMMON_ARGS="--epochs 95 --batch-size 8192 --lr 0.0024 --weight-decay 1e-4 \
   --label-smoothing 0.05 --one-cycle --hidden-dim 256 \
-  --value-target final_vp --patience 20"
+  --value-target final_vp --patience 20 --deterministic-split"
 
 echo "=== Nash-C Hypothesis Test ==="
 echo "Started: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -44,7 +44,35 @@ mkdir -p data/nash_c_only data/nash_b_only
 ln -sf "$(pwd)/data/combined_v99_clean/heuristic_nash_c.parquet" data/nash_c_only/heuristic_nash_c.parquet
 ln -sf "$(pwd)/data/combined_v99_clean/heuristic_nash_b.parquet" data/nash_b_only/heuristic_nash_b.parquet
 
-# --- Run 1: nash_c, seed 42 ---
+# --- Helper: export + benchmark one model (CPU-only, can overlap with GPU training) ---
+export_and_bench() {
+  local name="$1"
+  local ckpt_dir="data/checkpoints/$name"
+  echo "[bench] exporting $name"
+  uv run python cpp/tools/export_baseline_to_torchscript.py \
+    --checkpoint "$ckpt_dir/baseline_best.pt" \
+    --out "$ckpt_dir/baseline_best_scripted.pt" 2>&1
+  echo "[bench] benchmarking $name (2000 games/side)"
+  PYTHONPATH=build-ninja/bindings uv run python -c "
+import tscore, math
+n = 2000
+path = '$ckpt_dir/baseline_best_scripted.pt'
+ussr = tscore.benchmark_batched(path, tscore.Side.USSR, n, pool_size=32, seed=9000)
+us   = tscore.benchmark_batched(path, tscore.Side.US,   n, pool_size=32, seed=9000+n)
+uw = sum(1 for r in ussr if r.winner == tscore.Side.USSR)
+sw = sum(1 for r in us   if r.winner == tscore.Side.US)
+up = uw/n*100; sp = sw/n*100; cp = (uw+sw)/(2*n)*100
+use = math.sqrt(up/100*(1-up/100)/n)*100
+sse = math.sqrt(sp/100*(1-sp/100)/n)*100
+cse = math.sqrt((up/100*(1-up/100)+sp/100*(1-sp/100))/(4*n))*100
+print(f'$name | USSR {up:.1f}% +/-{use:.1f} | US {sp:.1f}% +/-{sse:.1f} | Combined {cp:.1f}% +/-{cse:.1f}')
+" 2>&1
+  echo "[bench] $name done"
+}
+
+BENCH_PIDS=()
+
+# --- Run 1: nash_c, seed 42 → train (GPU) then export+bench (CPU, background) ---
 echo ""
 echo "=== [1/3] nash_c_95ep_s42 ==="
 uv run python scripts/train_baseline.py \
@@ -52,8 +80,10 @@ uv run python scripts/train_baseline.py \
   --out-dir data/checkpoints/v99_nash_c_95ep_s42 \
   --seed 42  \
   $COMMON_ARGS 2>&1 | tail -5
+export_and_bench v99_nash_c_95ep_s42 &
+BENCH_PIDS+=($!)
 
-# --- Run 2: nash_c, seed 7 ---
+# --- Run 2: nash_c, seed 7 → train (GPU) then export+bench (CPU, background) ---
 echo ""
 echo "=== [2/3] nash_c_95ep_s7 ==="
 uv run python scripts/train_baseline.py \
@@ -61,8 +91,10 @@ uv run python scripts/train_baseline.py \
   --out-dir data/checkpoints/v99_nash_c_95ep_s7 \
   --seed 7  \
   $COMMON_ARGS 2>&1 | tail -5
+export_and_bench v99_nash_c_95ep_s7 &
+BENCH_PIDS+=($!)
 
-# --- Run 3: nash_b, seed 7 ---
+# --- Run 3: nash_b, seed 7 → train (GPU) then export+bench (CPU, background) ---
 echo ""
 echo "=== [3/3] nash_b_95ep_s7 ==="
 uv run python scripts/train_baseline.py \
@@ -70,41 +102,15 @@ uv run python scripts/train_baseline.py \
   --out-dir data/checkpoints/v99_nash_b_95ep_s7 \
   --seed 7  \
   $COMMON_ARGS 2>&1 | tail -5
+export_and_bench v99_nash_b_95ep_s7 &
+BENCH_PIDS+=($!)
 
-# --- Export all ---
+# --- Wait for all background benchmarks ---
 echo ""
-echo "=== Exporting ==="
-for dir in v99_nash_c_95ep_s42 v99_nash_c_95ep_s7 v99_nash_b_95ep_s7; do
-  uv run python cpp/tools/export_baseline_to_torchscript.py \
-    --checkpoint "data/checkpoints/$dir/baseline_best.pt" \
-    --out "data/checkpoints/$dir/baseline_best_scripted.pt" 2>&1
-  echo "exported $dir"
+echo "=== Waiting for benchmarks ==="
+for pid in "${BENCH_PIDS[@]}"; do
+  wait "$pid"
 done
-
-# --- Benchmark all ---
-echo ""
-echo "=== Benchmarking ==="
-PYTHONPATH=build-ninja/bindings uv run python -c "
-import tscore, math
-
-models = {
-    'v99_nash_c_95ep_s42': 'data/checkpoints/v99_nash_c_95ep_s42/baseline_best_scripted.pt',
-    'v99_nash_c_95ep_s7':  'data/checkpoints/v99_nash_c_95ep_s7/baseline_best_scripted.pt',
-    'v99_nash_b_95ep_s7':  'data/checkpoints/v99_nash_b_95ep_s7/baseline_best_scripted.pt',
-}
-
-n = 2000
-for name, path in models.items():
-    ussr = tscore.benchmark_batched(path, tscore.Side.USSR, n, pool_size=32, seed=9000)
-    us   = tscore.benchmark_batched(path, tscore.Side.US,   n, pool_size=32, seed=9000+n)
-    uw = sum(1 for r in ussr if r.winner == tscore.Side.USSR)
-    sw = sum(1 for r in us   if r.winner == tscore.Side.US)
-    up = uw/n*100; sp = sw/n*100; cp = (uw+sw)/(2*n)*100
-    use = math.sqrt(up/100*(1-up/100)/n)*100
-    sse = math.sqrt(sp/100*(1-sp/100)/n)*100
-    cse = math.sqrt((up/100*(1-up/100)+sp/100*(1-sp/100))/(4*n))*100
-    print(f'{name} | USSR {up:.1f}% +/-{use:.1f} | US {sp:.1f}% +/-{sse:.1f} | Combined {cp:.1f}% +/-{cse:.1f}')
-" 2>&1
 
 echo ""
 echo "=== Reference baselines ==="
