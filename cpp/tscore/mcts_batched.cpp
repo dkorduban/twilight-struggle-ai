@@ -7,9 +7,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <condition_variable>
-#include <functional>
-#include <mutex>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -67,119 +64,100 @@ struct SelectionResult {
     double leaf_value = 0.0;
 };
 
-// Simple thread pool that persists across iterations to avoid launch overhead.
-class SlotThreadPool {
+class SpinBarrier {
 public:
-    explicit SlotThreadPool(int n_threads)
-        : n_threads_(std::max(1, n_threads)), done_(false), task_(nullptr) {
-        if (n_threads_ <= 1) return;
-        workers_.reserve(static_cast<size_t>(n_threads_));
-        for (int t = 0; t < n_threads_; ++t) {
-            workers_.emplace_back([this, t] { worker_loop(t); });
-        }
-    }
+    explicit SpinBarrier(int n_threads)
+        : n_threads_(std::max(1, n_threads)),
+          count_(n_threads_),
+          generation_(0) {}
 
-    ~SlotThreadPool() {
-        {
-            std::unique_lock<std::mutex> lock(mu_);
-            done_ = true;
-        }
-        cv_start_.notify_all();
-        for (auto& w : workers_) w.join();
-    }
-
-    template<typename Fn>
-    void run(int n_items, Fn&& fn) {
-        if (n_threads_ <= 1 || n_items <= 1) {
-            for (int i = 0; i < n_items; ++i) fn(i);
+    void wait() {
+        const auto generation = generation_.load(std::memory_order_acquire);
+        if (count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            count_.store(n_threads_, std::memory_order_release);
+            generation_.fetch_add(1, std::memory_order_release);
             return;
         }
-        n_items_ = n_items;
-        remaining_.store(n_threads_, std::memory_order_release);
-        // Type-erase the lambda
-        auto wrapper = [&fn, this](int tid) {
-            const int chunk = (n_items_ + n_threads_ - 1) / n_threads_;
-            const int lo = tid * chunk;
-            const int hi = std::min(lo + chunk, n_items_);
-            for (int i = lo; i < hi; ++i) fn(i);
-        };
-        std::function<void(int)> task_fn = wrapper;
-        {
-            std::unique_lock<std::mutex> lock(mu_);
-            task_ = &task_fn;
-            generation_++;
-        }
-        cv_start_.notify_all();
-        // Wait for all workers to finish
-        {
-            std::unique_lock<std::mutex> lock(mu_);
-            cv_done_.wait(lock, [this] { return remaining_.load(std::memory_order_acquire) == 0; });
-            task_ = nullptr;
+        while (generation_.load(std::memory_order_acquire) == generation) {
+            std::this_thread::yield();
         }
     }
-
-    SlotThreadPool(const SlotThreadPool&) = delete;
-    SlotThreadPool& operator=(const SlotThreadPool&) = delete;
 
 private:
-    void worker_loop(int tid) {
-        uint64_t my_gen = 0;
-        for (;;) {
-            std::unique_lock<std::mutex> lock(mu_);
-            cv_start_.wait(lock, [this, my_gen] { return done_ || generation_ > my_gen; });
-            if (done_) return;
-            my_gen = generation_;
-            auto* fn = task_;
-            lock.unlock();
-
-            if (fn) (*fn)(tid);
-
-            if (remaining_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-                cv_done_.notify_one();
-            }
-        }
-    }
-
-    int n_threads_;
-    int n_items_ = 0;
-    bool done_;
-    uint64_t generation_ = 0;
-    std::function<void(int)>* task_;
-    std::atomic<int> remaining_{0};
-    std::mutex mu_;
-    std::condition_variable cv_start_;
-    std::condition_variable cv_done_;
-    std::vector<std::thread> workers_;
+    int n_threads_ = 1;
+    std::atomic<int> count_;
+    std::atomic<uint64_t> generation_;
 };
 
-template<typename Fn>
-void parallel_for_slots(int n_slots, Fn&& fn) {
-    const int n_threads = std::min(n_slots, static_cast<int>(std::thread::hardware_concurrency()));
-    if (n_threads <= 1) {
-        for (int i = 0; i < n_slots; ++i) {
-            fn(i);
+constexpr int kFeatureScalarDim = 11;
+
+void fill_card_mask(float* ptr, const CardSet& cards) {
+    std::fill(ptr, ptr + kCardSlots, 0.0f);
+    for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
+        if (cards.test(card_id)) {
+            ptr[card_id] = 1.0f;
         }
-        return;
+    }
+}
+
+// Write a single batch slot without touching any shared counters.
+// Each thread writes to its own disjoint slice of the batch buffer.
+void fill_batch_slot_no_count(
+    nn::BatchInputs& batch_inputs,
+    int idx,
+    const PublicState& pub,
+    const CardSet& hand,
+    bool holds_china,
+    Side side
+) {
+    if (idx < 0 || idx >= batch_inputs.capacity) {
+        throw std::out_of_range("batch slot index out of range");
     }
 
-    std::vector<std::thread> threads;
-    threads.reserve(static_cast<size_t>(n_threads));
-    const int chunk = (n_slots + n_threads - 1) / n_threads;
-    for (int t = 0; t < n_threads; ++t) {
-        const int lo = t * chunk;
-        const int hi = std::min(lo + chunk, n_slots);
-        if (lo >= hi) {
-            break;
-        }
-        threads.emplace_back([&fn, lo, hi] {
-            for (int i = lo; i < hi; ++i) {
-                fn(i);
-            }
-        });
+    float* influence_ptr = batch_inputs.influence.data_ptr<float>() + (idx * 2 * kCountrySlots);
+    for (int country_id = 0; country_id <= kMaxCountryId; ++country_id) {
+        const auto country = static_cast<CountryId>(country_id);
+        influence_ptr[country_id] = static_cast<float>(pub.influence_of(Side::USSR, country));
+        influence_ptr[kCountrySlots + country_id] = static_cast<float>(pub.influence_of(Side::US, country));
     }
-    for (auto& thread : threads) {
-        thread.join();
+
+    float* cards_ptr = batch_inputs.cards.data_ptr<float>() + (idx * 4 * kCardSlots);
+    fill_card_mask(cards_ptr, hand);
+    fill_card_mask(cards_ptr + kCardSlots, hand);
+    fill_card_mask(cards_ptr + (2 * kCardSlots), pub.discard);
+    fill_card_mask(cards_ptr + (3 * kCardSlots), pub.removed);
+
+    float* scalars_ptr = batch_inputs.scalars.data_ptr<float>() + (idx * kFeatureScalarDim);
+    scalars_ptr[0] = static_cast<float>(pub.vp) / 20.0f;
+    scalars_ptr[1] = static_cast<float>(pub.defcon - 1) / 4.0f;
+    scalars_ptr[2] = static_cast<float>(pub.milops[to_index(Side::USSR)]) / 6.0f;
+    scalars_ptr[3] = static_cast<float>(pub.milops[to_index(Side::US)]) / 6.0f;
+    scalars_ptr[4] = static_cast<float>(pub.space[to_index(Side::USSR)]) / 9.0f;
+    scalars_ptr[5] = static_cast<float>(pub.space[to_index(Side::US)]) / 9.0f;
+    scalars_ptr[6] = static_cast<float>(to_index(pub.china_held_by));
+    scalars_ptr[7] = holds_china ? 1.0f : 0.0f;
+    scalars_ptr[8] = static_cast<float>(pub.turn) / 10.0f;
+    scalars_ptr[9] = static_cast<float>(pub.ar) / 8.0f;
+    scalars_ptr[10] = static_cast<float>(to_index(side));
+}
+
+void compact_batch_tensor_rows(torch::Tensor& tensor, int src_row, int dst_row, int count) {
+    if (count <= 0 || src_row == dst_row) {
+        return;
     }
+    const auto row_width = static_cast<size_t>(tensor.size(1));
+    float* data = tensor.data_ptr<float>();
+    std::memmove(
+        data + (static_cast<size_t>(dst_row) * row_width),
+        data + (static_cast<size_t>(src_row) * row_width),
+        static_cast<size_t>(count) * row_width * sizeof(float)
+    );
+}
+
+void compact_batch_inputs(nn::BatchInputs& batch_inputs, int src_row, int dst_row, int count) {
+    compact_batch_tensor_rows(batch_inputs.influence, src_row, dst_row, count);
+    compact_batch_tensor_rows(batch_inputs.cards, src_row, dst_row, count);
+    compact_batch_tensor_rows(batch_inputs.scalars, src_row, dst_row, count);
 }
 
 struct AggregatedVisitCount {
@@ -559,64 +537,71 @@ DraftsResult collect_card_drafts_cached(const GameState& state) {
 
 // Pre-extracted raw pointers from batch outputs for zero-copy per-item access.
 struct RawBatchOutputs {
+    // Storage tensors keep the contiguous data alive across barriers.
+    torch::Tensor card_logits_storage;
     const float* card_logits = nullptr;  // [batch, n_card]
     int n_card = 0;
     int card_stride = 0;
 
+    torch::Tensor mode_logits_storage;
     const float* mode_logits = nullptr;  // [batch, n_mode]
     int n_mode = 0;
     int mode_stride = 0;
 
+    torch::Tensor country_logits_storage;
     const float* country_logits = nullptr;  // [batch, n_country]
     int n_country = 0;
     int country_stride = 0;
 
+    torch::Tensor strategy_logits_storage;
     const float* strategy_logits = nullptr;  // [batch, n_strategy]
     int n_strategy = 0;
     int strategy_stride = 0;
 
+    torch::Tensor country_strategy_logits_storage;
     const float* country_strategy_logits = nullptr;  // [batch, n_strat, n_country]
     int cs_n_strategies = 0;
     int cs_n_countries = 0;
     int cs_batch_stride = 0;  // stride between batch items
 
+    torch::Tensor value_storage;
     const float* value = nullptr;  // [batch, 1]
     int value_stride = 0;
 
     static RawBatchOutputs extract(const nn::BatchOutputs& outputs) {
         RawBatchOutputs raw;
-        auto cont_card = outputs.card_logits.contiguous();
-        raw.card_logits = cont_card.data_ptr<float>();
-        raw.n_card = std::min(static_cast<int>(cont_card.size(1)), kMaxCardLogits);
-        raw.card_stride = static_cast<int>(cont_card.stride(0));
+        raw.card_logits_storage = outputs.card_logits.contiguous();
+        raw.card_logits = raw.card_logits_storage.data_ptr<float>();
+        raw.n_card = std::min(static_cast<int>(raw.card_logits_storage.size(1)), kMaxCardLogits);
+        raw.card_stride = static_cast<int>(raw.card_logits_storage.stride(0));
 
-        auto cont_mode = outputs.mode_logits.contiguous();
-        raw.mode_logits = cont_mode.data_ptr<float>();
-        raw.n_mode = std::min(static_cast<int>(cont_mode.size(1)), kMaxModeLogits);
-        raw.mode_stride = static_cast<int>(cont_mode.stride(0));
+        raw.mode_logits_storage = outputs.mode_logits.contiguous();
+        raw.mode_logits = raw.mode_logits_storage.data_ptr<float>();
+        raw.n_mode = std::min(static_cast<int>(raw.mode_logits_storage.size(1)), kMaxModeLogits);
+        raw.mode_stride = static_cast<int>(raw.mode_logits_storage.stride(0));
 
         if (outputs.country_logits.defined()) {
-            auto cont = outputs.country_logits.contiguous();
-            raw.country_logits = cont.data_ptr<float>();
-            raw.n_country = std::min(static_cast<int>(cont.size(1)), kMaxCountryLogits);
-            raw.country_stride = static_cast<int>(cont.stride(0));
+            raw.country_logits_storage = outputs.country_logits.contiguous();
+            raw.country_logits = raw.country_logits_storage.data_ptr<float>();
+            raw.n_country = std::min(static_cast<int>(raw.country_logits_storage.size(1)), kMaxCountryLogits);
+            raw.country_stride = static_cast<int>(raw.country_logits_storage.stride(0));
         }
         if (outputs.strategy_logits.defined()) {
-            auto cont = outputs.strategy_logits.contiguous();
-            raw.strategy_logits = cont.data_ptr<float>();
-            raw.n_strategy = std::min(static_cast<int>(cont.size(1)), kMaxStrategies);
-            raw.strategy_stride = static_cast<int>(cont.stride(0));
+            raw.strategy_logits_storage = outputs.strategy_logits.contiguous();
+            raw.strategy_logits = raw.strategy_logits_storage.data_ptr<float>();
+            raw.n_strategy = std::min(static_cast<int>(raw.strategy_logits_storage.size(1)), kMaxStrategies);
+            raw.strategy_stride = static_cast<int>(raw.strategy_logits_storage.stride(0));
         }
         if (outputs.country_strategy_logits.defined()) {
-            auto cont = outputs.country_strategy_logits.contiguous();
-            raw.country_strategy_logits = cont.data_ptr<float>();
-            raw.cs_n_strategies = static_cast<int>(cont.size(1));
-            raw.cs_n_countries = static_cast<int>(cont.size(2));
-            raw.cs_batch_stride = static_cast<int>(cont.stride(0));
+            raw.country_strategy_logits_storage = outputs.country_strategy_logits.contiguous();
+            raw.country_strategy_logits = raw.country_strategy_logits_storage.data_ptr<float>();
+            raw.cs_n_strategies = static_cast<int>(raw.country_strategy_logits_storage.size(1));
+            raw.cs_n_countries = static_cast<int>(raw.country_strategy_logits_storage.size(2));
+            raw.cs_batch_stride = static_cast<int>(raw.country_strategy_logits_storage.stride(0));
         }
-        auto cont_val = outputs.value.contiguous();
-        raw.value = cont_val.data_ptr<float>();
-        raw.value_stride = static_cast<int>(cont_val.stride(0));
+        raw.value_storage = outputs.value.contiguous();
+        raw.value = raw.value_storage.data_ptr<float>();
+        raw.value_stride = static_cast<int>(raw.value_storage.stride(0));
 
         return raw;
     }
@@ -1095,6 +1080,44 @@ std::atomic<int64_t> g_cache_saved_depth{0};    // sum of best_cached_depth (act
 std::atomic<int64_t> g_cache_selections{0};     // number of selections
 std::atomic<int64_t> g_cache_hits{0};           // selections where best_cached_depth > 0
 
+// Inline replica of MctsNode::select_edge, defined locally so the compiler can
+// inline it in the hot select_to_leaf loop (production select_edge is in mcts.cpp,
+// a different TU, so it cannot be inlined without LTO).
+inline int select_edge_fast(const MctsNode& node, float c_puct) {
+    if (node.edges.empty()) {
+        return -1;
+    }
+
+    constexpr double kVirtualLossPenalty = 1.0;
+    int pending_visits = 0;
+    for (const auto& edge : node.edges) {
+        pending_visits += edge.virtual_loss;
+    }
+
+    const auto parent_visits = std::sqrt(static_cast<double>(std::max(1, node.total_visits + pending_visits)));
+    const bool invert_q = (node.side_to_move == Side::US);
+    int best_index = 0;
+    double best_score = -std::numeric_limits<double>::infinity();
+    for (size_t i = 0; i < node.edges.size(); ++i) {
+        const auto& edge = node.edges[i];
+        const auto effective_visits = edge.visit_count + edge.virtual_loss;
+        const auto virtual_loss_term = static_cast<double>(edge.virtual_loss) * kVirtualLossPenalty;
+        const auto effective_total_value = edge.total_value + (invert_q ? virtual_loss_term : -virtual_loss_term);
+        auto q = effective_visits > 0 ? effective_total_value / static_cast<double>(effective_visits) : 0.0;
+        if (invert_q) {
+            q = -q;
+        }
+        const auto u = static_cast<double>(c_puct) * static_cast<double>(edge.prior) * parent_visits /
+            static_cast<double>(1 + effective_visits);
+        const auto score = q + u;
+        if (score > best_score) {
+            best_score = score;
+            best_index = static_cast<int>(i);
+        }
+    }
+    return best_index;
+}
+
 SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) {
     PendingExpansion pend;
 
@@ -1106,7 +1129,7 @@ SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) 
 
     // Collect path first without applying actions.
     while (node != nullptr && !node->is_terminal && !node->edges.empty()) {
-        const auto edge_index = node->select_edge(config.mcts.c_puct);
+        const auto edge_index = select_edge_fast(*node, config.mcts.c_puct);
         if (edge_index < 0) break;
 
         auto& edge = node->edges[static_cast<size_t>(edge_index)];
@@ -1981,6 +2004,15 @@ void collect_games_batched(
     if (config.mcts.n_simulations < 0) {
         throw std::invalid_argument("n_simulations must be non-negative");
     }
+    if (config.n_mcts_threads < 0) {
+        throw std::invalid_argument("n_mcts_threads must be non-negative");
+    }
+    if (config.torch_intra_threads < 0) {
+        throw std::invalid_argument("torch_intra_threads must be non-negative");
+    }
+    if (config.torch_interop_threads < 0) {
+        throw std::invalid_argument("torch_interop_threads must be non-negative");
+    }
 
     // Reset cache profiling counters.
     g_cache_selections.store(0);
@@ -1994,34 +2026,63 @@ void collect_games_batched(
         int batch_index = 0;
     };
 
-    struct SlotBatchInfo {
-        std::vector<std::pair<int, size_t>> entries;
+    struct ThreadBatchState {
+        int slot_begin = 0;
+        int slot_end = 0;
+        int batch_base = 0;  // start index in batch_inputs for this thread
+        int filled = 0;      // how many batch items this thread filled
+        int compacted_offset = 0;  // offset after compaction by thread 0
+        std::vector<BatchEntry> entries;
     };
 
     std::vector<GameSlot> pool(static_cast<size_t>(config.pool_size));
-    std::vector<SlotBatchInfo> slot_infos(pool.size());
     int games_started = 0;
     int games_emitted = 0;
 
     const int max_pending = std::max(1, config.max_pending);
     nn::BatchInputs batch_inputs;
     batch_inputs.allocate(config.pool_size * max_pending, config.device);
-    std::vector<BatchEntry> batch_entries;
-    batch_entries.reserve(static_cast<size_t>(config.pool_size) * static_cast<size_t>(max_pending));
 
+    // Thread count: configurable or auto.
     const int hw_threads = static_cast<int>(std::thread::hardware_concurrency());
-    const int n_threads = std::min(config.pool_size, hw_threads);
-    SlotThreadPool thread_pool(n_threads);
-    // Tune PyTorch threading for batched MCTS on CPU.
-    // 4 intra-op threads + 1 interop thread measured best at max_pending=32.
-    // set_num_interop_threads can only be called once (before parallel work starts);
-    // subsequent calls throw. Use try/catch to silently skip if already set.
-    if (n_threads > 2) {
+    const int requested_threads = config.n_mcts_threads > 0
+        ? config.n_mcts_threads
+        : std::min(config.pool_size, std::max(1, hw_threads));
+    const int n_threads = std::max(1, std::min(config.pool_size, requested_threads));
+
+    // Configure PyTorch threading separately from MCTS threads.
+    if (config.torch_intra_threads > 0) {
+        at::set_num_threads(config.torch_intra_threads);
+    } else if (n_threads > 2) {
         at::set_num_threads(4);
+    }
+    if (config.torch_interop_threads > 0) {
         try {
-            at::set_num_interop_threads(1);
+            at::set_num_interop_threads(config.torch_interop_threads);
         } catch (...) {
             // Already set by a previous call — ignore.
+        }
+    } else if (n_threads > 2) {
+        try {
+            at::set_num_interop_threads(1);
+        } catch (...) {}
+    }
+
+    // Partition game slots evenly across threads. Each thread owns a contiguous
+    // slice of the pool and a corresponding disjoint slice of batch_inputs.
+    std::vector<ThreadBatchState> thread_states(static_cast<size_t>(n_threads));
+    {
+        const int base_slots = config.pool_size / n_threads;
+        const int extra_slots = config.pool_size % n_threads;
+        int slot_cursor = 0;
+        for (int tid = 0; tid < n_threads; ++tid) {
+            const int slot_count = base_slots + (tid < extra_slots ? 1 : 0);
+            auto& ts = thread_states[static_cast<size_t>(tid)];
+            ts.slot_begin = slot_cursor;
+            ts.slot_end = slot_cursor + slot_count;
+            ts.batch_base = slot_cursor * max_pending;
+            ts.entries.reserve(static_cast<size_t>(slot_count) * static_cast<size_t>(max_pending));
+            slot_cursor += slot_count;
         }
     }
 
@@ -2029,192 +2090,261 @@ void collect_games_batched(
     double t_advance = 0, t_select = 0, t_nn = 0, t_expand = 0;
     int n_batches = 0, total_batch_items = 0;
     int debug_iters = 0;
+    SpinBarrier barrier(n_threads);
+    std::atomic<bool> stop_requested{false};
+    int compacted_batch_size = 0;
+    RawBatchOutputs raw_outputs;
 
     // Separate RNG for Nash temperature sampling (matches collect_selfplay_rows_jsonl).
     Pcg64Rng nash_rng(base_seed + 999999U);
 
-    while (games_emitted < n_games) {
-        batch_inputs.reset();
-        batch_entries.clear();
-        ++debug_iters;
+    auto worker_loop = [&](int tid) {
+        auto& thread_state = thread_states[static_cast<size_t>(tid)];
+        for (;;) {
+            // ── Phase 1: Emit completed games + start new ones (thread 0 only) ──
+            if (tid == 0) {
+                batch_inputs.filled = 0;
+                compacted_batch_size = 0;
+                raw_outputs = RawBatchOutputs{};
 
-        auto t0_adv = Clock::now();
-        for (auto& slot : pool) {
-            if (slot.active && slot.game_done && !slot.emitted) {
-                write_game_rows(slot, out_stream);
-                if (out_results) {
-                    out_results->push_back(slot.result);
+                auto t0_adv = Clock::now();
+                for (auto& slot : pool) {
+                    if (slot.active && slot.game_done && !slot.emitted) {
+                        write_game_rows(slot, out_stream);
+                        if (out_results) {
+                            out_results->push_back(slot.result);
+                        }
+                        slot.emitted = true;
+                        slot.active = false;
+                        games_emitted += 1;
+                    }
+                    if (!slot.active && games_started < n_games) {
+                        initialize_slot(slot, games_started, base_seed, config);
+                        if (config.nash_temperatures && config.learned_side.has_value()) {
+                            const auto opponent = other_side(*config.learned_side);
+                            slot.heuristic_temperature = (opponent == Side::USSR)
+                                ? sample_nash_temperature(kNashUSSRTemps.data(),
+                                      static_cast<int>(kNashUSSRTemps.size()), nash_rng)
+                                : sample_nash_temperature(kNashUSTemps.data(),
+                                      static_cast<int>(kNashUSTemps.size()), nash_rng);
+                        }
+                        games_started += 1;
+                    }
                 }
-                slot.emitted = true;
-                slot.active = false;
-                games_emitted += 1;
-            }
-            if (!slot.active && games_started < n_games) {
-                initialize_slot(slot, games_started, base_seed, config);
-                if (config.nash_temperatures && config.learned_side.has_value()) {
-                    // Sample Nash temp for the heuristic (non-learned) side.
-                    const auto opponent = other_side(*config.learned_side);
-                    slot.heuristic_temperature = (opponent == Side::USSR)
-                        ? sample_nash_temperature(kNashUSSRTemps.data(),
-                              static_cast<int>(kNashUSSRTemps.size()), nash_rng)
-                        : sample_nash_temperature(kNashUSTemps.data(),
-                              static_cast<int>(kNashUSTemps.size()), nash_rng);
-                }
-                games_started += 1;
-            }
-        }
+                t_advance += std::chrono::duration<double>(Clock::now() - t0_adv).count();
 
-        t_advance += std::chrono::duration<double>(Clock::now() - t0_adv).count();
-
-        auto t0_sel = Clock::now();
-        std::atomic<int> batch_count{0};
-        thread_pool.run(static_cast<int>(pool.size()), [&](int slot_idx) {
-            auto& slot = pool[static_cast<size_t>(slot_idx)];
-            auto& info = slot_infos[static_cast<size_t>(slot_idx)];
-            info.entries.clear();
-
-            if (!slot.active) {
-                return;
-            }
-
-            if (slot.move_done) {
-                commit_best_action(slot, config);
-            }
-            advance_until_decision(slot, config);
-            if (slot.game_done || !slot.decision.has_value()) {
-                return;
-            }
-
-            // If learned_side is set and this decision is for the opponent,
-            // skip MCTS — use heuristic or greedy NN.
-            if (config.learned_side.has_value() &&
-                slot.decision->side != *config.learned_side) {
-                if (config.greedy_nn_opponent) {
-                    // Let root expansion happen normally — after expansion with
-                    // sims_target=0, commit_best_action picks highest-prior edge
-                    // (= greedy NN policy from the same model).
-                    slot.sims_target = 0;
-                    slot.sims_completed = 0;
-                    // Don't set move_done — fall through to root expansion below.
-                } else {
-                    slot.sims_target = 0;
-                    slot.sims_completed = 0;
-                    slot.move_done = true;
-                    // Heuristic fallback happens in commit_best_action.
-                    return;
+                stop_requested.store(games_emitted >= n_games, std::memory_order_release);
+                if (!stop_requested.load(std::memory_order_acquire)) {
+                    ++debug_iters;
                 }
             }
 
-            if (slot.root == nullptr) {
-                if (!slot.pending.empty()) {
-                    return;
-                }
-                if (auto immediate = expand_without_model(slot.root_state, slot.rng); immediate.has_value()) {
-                    slot.root = std::move(immediate->node);
-                } else {
-                    PendingExpansion pend;
-                    pend.sim_state = clone_game_state(slot.root_state);
-                    pend.is_root_expansion = true;
-                    slot.pending.push_back(std::move(pend));
-                    const int bi = batch_count.fetch_add(1, std::memory_order_relaxed);
-                    batch_inputs.fill_slot(bi,
-                        slot.root_state.pub,
-                        slot.root_state.hands[to_index(slot.root_state.pub.phasing)],
-                        holds_china_for(slot.root_state, slot.root_state.pub.phasing),
-                        slot.root_state.pub.phasing);
-                    info.entries.emplace_back(bi, slot.pending.size() - 1);
-                    return;
-                }
+            barrier.wait();  // ── Barrier 1: all threads see updated pool ──
+            if (stop_requested.load(std::memory_order_acquire)) {
+                break;
             }
 
-            if (slot.sims_completed >= slot.sims_target && slot.pending.empty()) {
-                slot.move_done = true;
-                return;
-            }
+            // ── Phase 2: Select (each thread processes its own partition) ──
+            const auto t0_sel = tid == 0 ? Clock::now() : Clock::time_point{};
+            thread_state.filled = 0;
+            thread_state.entries.clear();
 
-            for (;;) {
-                const int budget = sims_budget(slot, max_pending);
-                if (budget <= 0) {
-                    break;
+            for (int slot_idx = thread_state.slot_begin; slot_idx < thread_state.slot_end; ++slot_idx) {
+                auto& slot = pool[static_cast<size_t>(slot_idx)];
+
+                if (!slot.active) {
+                    continue;
                 }
-                const auto selection = select_to_leaf(slot, config);
-                if (selection.needs_batch) {
-                    auto& pend = slot.pending.back();
-                    const int bi = batch_count.fetch_add(1, std::memory_order_relaxed);
-                    batch_inputs.fill_slot(bi,
-                        pend.sim_state.pub,
-                        pend.sim_state.hands[to_index(pend.sim_state.pub.phasing)],
-                        holds_china_for(pend.sim_state, pend.sim_state.pub.phasing),
-                        pend.sim_state.pub.phasing);
-                    info.entries.emplace_back(bi, slot.pending.size() - 1);
-                } else {
-                    slot.sims_completed += 1;
-                    if (slot.sims_completed >= slot.sims_target && slot.pending.empty()) {
+
+                if (slot.move_done) {
+                    commit_best_action(slot, config);
+                }
+                advance_until_decision(slot, config);
+                if (slot.game_done || !slot.decision.has_value()) {
+                    continue;
+                }
+
+                // Opponent handling: heuristic fallback or greedy NN.
+                if (config.learned_side.has_value() &&
+                    slot.decision->side != *config.learned_side) {
+                    if (config.greedy_nn_opponent) {
+                        slot.sims_target = 0;
+                        slot.sims_completed = 0;
+                    } else {
+                        slot.sims_target = 0;
+                        slot.sims_completed = 0;
                         slot.move_done = true;
+                        continue;
+                    }
+                }
+
+                if (slot.root == nullptr) {
+                    if (!slot.pending.empty()) {
+                        continue;
+                    }
+                    if (auto immediate = expand_without_model(slot.root_state, slot.rng); immediate.has_value()) {
+                        slot.root = std::move(immediate->node);
+                    } else {
+                        PendingExpansion pend;
+                        pend.sim_state = clone_game_state(slot.root_state);
+                        pend.is_root_expansion = true;
+                        slot.pending.push_back(std::move(pend));
+                        const int bi = thread_state.batch_base + thread_state.filled;
+                        fill_batch_slot_no_count(
+                            batch_inputs, bi,
+                            slot.root_state.pub,
+                            slot.root_state.hands[to_index(slot.root_state.pub.phasing)],
+                            holds_china_for(slot.root_state, slot.root_state.pub.phasing),
+                            slot.root_state.pub.phasing);
+                        thread_state.entries.push_back(BatchEntry{
+                            .slot = &slot,
+                            .pending_index = slot.pending.size() - 1,
+                            .batch_index = bi,
+                        });
+                        thread_state.filled += 1;
+                        continue;
+                    }
+                }
+
+                if (slot.sims_completed >= slot.sims_target && slot.pending.empty()) {
+                    slot.move_done = true;
+                    continue;
+                }
+
+                for (;;) {
+                    const int budget = sims_budget(slot, max_pending);
+                    if (budget <= 0) {
                         break;
+                    }
+                    const auto selection = select_to_leaf(slot, config);
+                    if (selection.needs_batch) {
+                        auto& pend = slot.pending.back();
+                        const int bi = thread_state.batch_base + thread_state.filled;
+                        fill_batch_slot_no_count(
+                            batch_inputs, bi,
+                            pend.sim_state.pub,
+                            pend.sim_state.hands[to_index(pend.sim_state.pub.phasing)],
+                            holds_china_for(pend.sim_state, pend.sim_state.pub.phasing),
+                            pend.sim_state.pub.phasing);
+                        thread_state.entries.push_back(BatchEntry{
+                            .slot = &slot,
+                            .pending_index = slot.pending.size() - 1,
+                            .batch_index = bi,
+                        });
+                        thread_state.filled += 1;
+                    } else {
+                        slot.sims_completed += 1;
+                        if (slot.sims_completed >= slot.sims_target && slot.pending.empty()) {
+                            slot.move_done = true;
+                            break;
+                        }
                     }
                 }
             }
-        });
-        t_select += std::chrono::duration<double>(Clock::now() - t0_sel).count();
 
-        batch_inputs.filled = batch_count.load(std::memory_order_relaxed);
-        for (size_t slot_idx = 0; slot_idx < pool.size(); ++slot_idx) {
-            for (const auto& [batch_index, pending_index] : slot_infos[slot_idx].entries) {
-                batch_entries.push_back(BatchEntry{&pool[slot_idx], pending_index, batch_index});
-            }
-        }
+            barrier.wait();  // ── Barrier 2: all threads done selecting ──
 
-        if (!batch_entries.empty()) {
-            auto t0_nn = Clock::now();
-            const auto outputs = nn::forward_model_batched(model, batch_inputs);
-            const auto raw = RawBatchOutputs::extract(outputs);
-            t_nn += std::chrono::duration<double>(Clock::now() - t0_nn).count();
-            n_batches += 1;
-            total_batch_items += static_cast<int>(batch_entries.size());
+            // ── Phase 3: Compact + NN forward (thread 0 only) ──
+            if (tid == 0) {
+                t_select += std::chrono::duration<double>(Clock::now() - t0_sel).count();
 
-            auto t0_exp = Clock::now();
-            thread_pool.run(static_cast<int>(pool.size()), [&](int slot_idx) {
-                auto& slot = pool[static_cast<size_t>(slot_idx)];
-                auto& info = slot_infos[static_cast<size_t>(slot_idx)];
-                if (!slot.active) {
-                    return;
+                auto t0_nn = Clock::now();
+                int total = 0;
+                for (auto& ts : thread_states) {
+                    ts.compacted_offset = total;
+                    total += ts.filled;
                 }
-                for (const auto& [batch_index, pending_index] : info.entries) {
-                    auto& pend = slot.pending[pending_index];
+                compacted_batch_size = total;
+                batch_inputs.filled = total;
+
+                if (total > 0) {
+                    // Compact disjoint thread slices into contiguous block.
+                    for (auto& ts : thread_states) {
+                        const int src = ts.batch_base;
+                        const int dst = ts.compacted_offset;
+                        if (ts.filled > 0 && src != dst) {
+                            compact_batch_inputs(batch_inputs, src, dst, ts.filled);
+                        }
+                        // Remap batch indices to compacted positions.
+                        for (auto& entry : ts.entries) {
+                            entry.batch_index = dst + (entry.batch_index - src);
+                        }
+                    }
+                    raw_outputs = RawBatchOutputs::extract(
+                        nn::forward_model_batched(model, batch_inputs));
+                    n_batches += 1;
+                    total_batch_items += total;
+                }
+                t_nn += std::chrono::duration<double>(Clock::now() - t0_nn).count();
+            }
+
+            barrier.wait();  // ── Barrier 3: NN results ready ──
+
+            // ── Phase 4: Expand (each thread processes its own entries) ──
+            const auto t0_exp = tid == 0 ? Clock::now() : Clock::time_point{};
+            if (compacted_batch_size > 0) {
+                for (const auto& entry : thread_state.entries) {
+                    auto& slot = *entry.slot;
+                    auto& pend = slot.pending[entry.pending_index];
                     if (pend.is_root_expansion) {
-                        auto expansion = expand_from_raw(pend.sim_state, raw, batch_index, config.mcts, slot.rng);
+                        auto expansion = expand_from_raw(
+                            pend.sim_state, raw_outputs, entry.batch_index,
+                            config.mcts, slot.rng);
                         slot.root = std::move(expansion.node);
                         apply_root_dirichlet_noise(*slot.root, config.mcts, slot.rng);
                         if (slot.sims_target == 0) {
                             slot.move_done = true;
                         }
                     } else {
-                        auto expansion = expand_from_raw(pend.sim_state, raw, batch_index, config.mcts, slot.rng);
+                        auto expansion = expand_from_raw(
+                            pend.sim_state, raw_outputs, entry.batch_index,
+                            config.mcts, slot.rng);
                         auto& [parent, edge_index] = pend.path.back();
-                        // Cache the game state at newly expanded nodes whose parent is
-                        // frequently visited. This lets select_to_leaf skip prefix actions.
                         if (parent->total_visits >= kCacheVisitThreshold) {
                             expansion.node->cached_state =
                                 std::make_unique<GameState>(pend.sim_state);
                         }
-                        parent->children[static_cast<size_t>(edge_index)] = std::move(expansion.node);
-                        backpropagate_path(pend.path, expansion.leaf_value, config.virtual_loss_weight);
+                        parent->children[static_cast<size_t>(edge_index)] =
+                            std::move(expansion.node);
+                        backpropagate_path(pend.path, expansion.leaf_value,
+                            config.virtual_loss_weight);
                         slot.sims_completed += 1;
                     }
+                }
+            }
+
+            for (int slot_idx = thread_state.slot_begin; slot_idx < thread_state.slot_end; ++slot_idx) {
+                auto& slot = pool[static_cast<size_t>(slot_idx)];
+                if (!slot.active) {
+                    continue;
                 }
                 slot.pending.clear();
                 if (slot.sims_completed >= slot.sims_target && slot.pending.empty()) {
                     slot.move_done = true;
                 }
-            });
-            t_expand += std::chrono::duration<double>(Clock::now() - t0_exp).count();
+            }
+
+            barrier.wait();  // ── Barrier 4: all threads done expanding ──
+            if (tid == 0) {
+                t_expand += std::chrono::duration<double>(Clock::now() - t0_exp).count();
+            }
         }
+    };
+
+    // Launch worker threads. Thread 0 runs on the calling thread.
+    std::vector<std::thread> workers;
+    workers.reserve(static_cast<size_t>(std::max(0, n_threads - 1)));
+    for (int tid = 1; tid < n_threads; ++tid) {
+        workers.emplace_back(worker_loop, tid);
+    }
+    worker_loop(0);
+    for (auto& worker : workers) {
+        worker.join();
     }
 
     const double total = t_advance + t_select + t_nn + t_expand;
-    fprintf(stderr, "[MCTS profile] advance=%.3fs select=%.3fs nn=%.3fs expand=%.3fs total=%.3fs\n",
-            t_advance, t_select, t_nn, t_expand, total);
+    fprintf(stderr, "[MCTS profile] threads=%d advance=%.3fs select=%.3fs nn=%.3fs expand=%.3fs total=%.3fs\n",
+            n_threads, t_advance, t_select, t_nn, t_expand, total);
     fprintf(stderr, "[MCTS profile] batches=%d items=%d avg_batch=%.1f iters=%d\n",
             n_batches, total_batch_items, n_batches > 0 ? double(total_batch_items) / n_batches : 0.0, debug_iters);
     fprintf(stderr, "[MCTS expand] alloc=%.3fs drafts=%.3fs edges=%.3fs count=%d\n",
@@ -2699,7 +2829,10 @@ std::vector<GameResult> benchmark_mcts(
     uint32_t base_seed,
     torch::Device device,
     bool greedy_nn_opponent,
-    bool nash_temperatures
+    bool nash_temperatures,
+    int n_mcts_threads,
+    int torch_intra_threads,
+    int torch_interop_threads
 ) {
     BatchedMctsConfig config;
     config.mcts.n_simulations = n_simulations;
@@ -2708,6 +2841,9 @@ std::vector<GameResult> benchmark_mcts(
     config.greedy_nn_opponent = greedy_nn_opponent;
     config.nash_temperatures = nash_temperatures;
     config.device = device;
+    config.n_mcts_threads = n_mcts_threads;
+    config.torch_intra_threads = torch_intra_threads;
+    config.torch_interop_threads = torch_interop_threads;
     config.max_pending = 8;
     config.virtual_loss_weight = 3;
     config.temperature = 0.0f;

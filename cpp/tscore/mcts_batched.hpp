@@ -95,6 +95,9 @@ struct BatchedMctsConfig {
     int pool_size = 32;
     int virtual_loss_weight = 3;
     int max_pending = 32;  // max concurrent leaves per game slot
+    int n_mcts_threads = 0;  // 0 = auto (min(pool_size, hw_concurrency))
+    int torch_intra_threads = 0;  // 0 = auto/default runtime behavior
+    int torch_interop_threads = 0;  // 0 = auto/default
     float temperature = 0.0f;
     float epsilon_greedy = 0.0f;
     // When set, only this side uses MCTS search; the other uses heuristic
@@ -166,7 +169,10 @@ std::vector<GameResult> benchmark_mcts(
     uint32_t base_seed,
     torch::Device device = torch::kCPU,
     bool greedy_nn_opponent = false,
-    bool nash_temperatures = true
+    bool nash_temperatures = true,
+    int n_mcts_threads = 0,
+    int torch_intra_threads = 0,
+    int torch_interop_threads = 0
 );
 
 }  // namespace ts

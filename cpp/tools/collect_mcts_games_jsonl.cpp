@@ -20,7 +20,8 @@ void usage(const char* argv0) {
         << " [--pool-size N] [--max-pending N] [--c-puct F] [--seed N] [--virtual-loss N]"
         << " [--temperature F] [--dir-alpha F] [--dir-epsilon F]"
         << " [--epsilon-greedy F] [--learned-side ussr|us]"
-        << " [--heuristic-teacher-mode] [--game-id-prefix PREFIX]\n";
+        << " [--heuristic-teacher-mode] [--game-id-prefix PREFIX]"
+        << " [--mcts-threads N] [--torch-intra-threads N] [--torch-interop-threads N]\n";
 }
 
 }  // namespace
@@ -43,6 +44,9 @@ int main(int argc, char** argv) {
         std::optional<uint32_t> seed = 12345U;
         bool heuristic_teacher_mode = false;
         std::optional<std::string> game_id_prefix;
+        int mcts_threads = 0;
+        int torch_intra_threads = 0;
+        int torch_interop_threads = 0;
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -92,6 +96,12 @@ int main(int argc, char** argv) {
                 heuristic_teacher_mode = true;
             } else if (arg == "--game-id-prefix") {
                 game_id_prefix = std::string(require_value("--game-id-prefix"));
+            } else if (arg == "--mcts-threads") {
+                mcts_threads = std::stoi(std::string(require_value("--mcts-threads")));
+            } else if (arg == "--torch-intra-threads") {
+                torch_intra_threads = std::stoi(std::string(require_value("--torch-intra-threads")));
+            } else if (arg == "--torch-interop-threads") {
+                torch_interop_threads = std::stoi(std::string(require_value("--torch-interop-threads")));
             } else if (arg == "--help" || arg == "-h") {
                 usage(argv[0]);
                 return 0;
@@ -147,6 +157,9 @@ int main(int argc, char** argv) {
         config.epsilon_greedy = epsilon_greedy;
         config.learned_side = learned_side;
         config.heuristic_teacher_mode = heuristic_teacher_mode;
+        config.n_mcts_threads = mcts_threads;
+        config.torch_intra_threads = torch_intra_threads;
+        config.torch_interop_threads = torch_interop_threads;
         // Default game_id_prefix to "selfplay" in heuristic_teacher_mode so produced
         // game_ids match existing heuristic dataset rows for teacher target joining.
         if (game_id_prefix.has_value()) {

@@ -1334,3 +1334,70 @@ to the heuristic anchor data to provide a meaningful learning signal.
 
 Note: val_loss improved from 2.57 (v106 nash_c only) to 2.38 (v107 with self-play data),
 but win rate barely moved — val_loss improvement without WR improvement is a recurring pattern.
+
+## v108: Wider GNN h=384 (2026-04-05)
+
+**Hypothesis**: Wider trunk (h=384, ~768K params) captures more capacity than h=256 (~486K).
+**Data**: nash_c_only (1.37M rows, same as v106)
+**Training**: GNN, h384, bs=8192, lr=0.0024, 95ep, dropout=0.1, one-cycle, final_vp.
+
+| Model | Seed | Best Epoch | Val Loss | Nash USSR | Nash US | Nash Comb |
+|-------|------|-----------|----------|-----------|---------|-----------|
+| v106_cf_gnn_s42 (base) | 42 | — | 2.57 | 55.8% | 14.0% | **34.9%** |
+| v106_cf_gnn_s7 (base) | 7 | — | — | 52.8% | 9.2% | **31.0%** |
+| v108_cf_gnn_h384_s42 | 42 | 91 | 2.16 | 46.4% | 5.6% | **26.0%** |
+| v108_cf_gnn_h384_s7 | 7 | 80 | 2.15 | 48.4% | 9.4% | **28.9%** |
+
+**Result: h=384 is WORSE than h=256 by 6-9pp combined. Clear regression.**
+
+Lower val_loss (2.15 vs 2.57) but much worse win rate — classic overfitting pattern. The wider
+model memorizes training data better but generalizes worse to play. With 1.37M rows, h=256 is
+already at or near the capacity sweet spot for this dataset size. More parameters need more data,
+not just the same data.
+
+**Conclusion**: Model width is not the bottleneck. Do not increase hidden_dim beyond 256 without
+proportionally more training data. Focus on data quality (teacher targets, diverse self-play) not
+model size.
+
+## MCTS Thread-Per-Partition Integration (2026-04-05)
+
+Replaced old `SlotThreadPool` mutex-based MCTS parallelism with `SpinBarrier`-based
+thread-per-partition architecture. Each thread owns a contiguous slice of game slots with
+zero cross-thread sharing. Only sync point is NN inference barrier.
+
+Also integrated from fast replica: inline `select_edge_fast` (avoids cross-TU function call
+overhead in hot select loop).
+
+All thread counts now configurable: `n_mcts_threads`, `torch_intra_threads`, `torch_interop_threads`.
+
+### MCTS Throughput Matrix (under training load, RTX 3050)
+
+Best configs (32 games, n_sim=200, v106_cf_gnn_s42):
+
+| Config | sims/s | vs baseline |
+|--------|--------|-------------|
+| 1t MCTS, 1t torch (baseline) | 7,232 | 1.0x |
+| 4t MCTS, 4t torch, maxp=32 | 12,077 | 1.67x |
+| 4t MCTS, 4t torch, maxp=64 | 12,707 | 1.76x |
+| 8t MCTS, 4t torch, maxp=32 | 11,975 | 1.66x |
+
+Bottleneck at best config: NN=52%, expand=32%, select=16%.
+
+### GPU vs CPU Inference (under training load)
+
+| Device | Config | Wall time | NN time |
+|--------|--------|-----------|---------|
+| CPU | 4t/4i p32 | **46.8s** | 22.7s |
+| CUDA | 4t/1i p32 | 125.5s | 100.7s |
+| CUDA | 4t/2i p32 | 135.6s | 107.2s |
+
+**GPU is always slower on RTX 3050, even when idle:**
+
+| Scenario | CPU 4t/4i | CUDA 4t/1i | CPU advantage |
+|----------|-----------|------------|---------------|
+| GPU idle, pool=32 | **28.0s** | 46.3s | 1.7x |
+| Training on GPU, pool=32 | **46.8s** | 125.5s | 2.7x |
+
+The GNN model (~486K params) with ~200 avg batch size is too small for GPU inference to
+overcome CPU→GPU transfer + kernel launch overhead on the RTX 3050 (2048 CUDA cores).
+**Always use CPU inference for MCTS on this hardware.**
