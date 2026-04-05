@@ -8,6 +8,8 @@
 #include <cstring>
 #include <random>
 #include <span>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "public_state.hpp"
@@ -62,7 +64,12 @@ struct InlineDeck {
     CardId& back() { return data_[static_cast<size_t>(size_ - 1)]; }
     const CardId& back() const { return data_[static_cast<size_t>(size_ - 1)]; }
 
-    void push_back(CardId c) { data_[static_cast<size_t>(size_++)] = c; }
+    void push_back(CardId c) {
+        if (size_ >= kCapacity) {
+            throw std::out_of_range("InlineDeck overflow in push_back: size=" + std::to_string(size_));
+        }
+        data_[static_cast<size_t>(size_++)] = c;
+    }
     void pop_back() { --size_; }
 
     CardId* begin() { return data_.data(); }
@@ -93,6 +100,9 @@ struct InlineDeck {
         int count = 0;
         for (auto it = first; it != last; ++it) ++count;
         if (count == 0) return;
+        if (size_ + count > kCapacity) {
+            throw std::out_of_range("InlineDeck overflow in insert: size=" + std::to_string(size_) + " count=" + std::to_string(count));
+        }
         auto offset = static_cast<size_t>(pos - begin());
         // Shift existing elements right.
         std::memmove(data_.data() + offset + count, data_.data() + offset,

@@ -127,27 +127,45 @@ void deal_cards(GameState& gs, Side side, Pcg64Rng& rng) {
     }
 }
 
+// Build set of all cards accounted for (in hands, deck, discard, or removed).
+// New era cards that overlap with these must NOT be added again.
+CardSet all_accounted_cards(const GameState& gs) {
+    CardSet accounted;
+    for (const auto& hand : gs.hands) {
+        accounted |= hand;
+    }
+    for (int i = 0; i < gs.deck.size(); ++i) {
+        accounted.set(gs.deck.begin()[i]);
+    }
+    accounted |= gs.pub.discard;
+    accounted |= gs.pub.removed;
+    return accounted;
+}
+
+// TS Rules §4.4: "add the Mid War or Late War cards to the existing deck
+// and reshuffle. The ignored discards remain in the discard pile for now,
+// but will be reshuffled into the deck in the next reshuffle."
 void advance_to_mid_war(GameState& gs, Pcg64Rng& rng) {
-    auto deck = build_era_deck(Era::Mid, gs.pub.removed);
-    for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
-        if (gs.pub.discard.test(card_id)) {
-            deck.push_back(static_cast<CardId>(card_id));
+    const auto accounted = all_accounted_cards(gs);
+    // Only add genuinely new mid-war era cards (not already in deck/hands/discard/removed).
+    auto new_cards = build_era_deck(Era::Mid, gs.pub.removed);
+    for (const auto c : new_cards) {
+        if (!accounted.test(c)) {
+            gs.deck.push_back(c);
         }
     }
-    gs.pub.discard.reset();
-    gs.deck = std::move(deck);
+    // Do NOT touch the discard pile (§4.4).
     shuffle_deck(gs.deck, rng);
 }
 
 void advance_to_late_war(GameState& gs, Pcg64Rng& rng) {
-    auto deck = build_era_deck(Era::Late, gs.pub.removed);
-    for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
-        if (gs.pub.discard.test(card_id)) {
-            deck.push_back(static_cast<CardId>(card_id));
+    const auto accounted = all_accounted_cards(gs);
+    auto new_cards = build_era_deck(Era::Late, gs.pub.removed);
+    for (const auto c : new_cards) {
+        if (!accounted.test(c)) {
+            gs.deck.push_back(c);
         }
     }
-    gs.pub.discard.reset();
-    gs.deck = std::move(deck);
     shuffle_deck(gs.deck, rng);
 }
 
