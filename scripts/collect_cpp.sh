@@ -62,6 +62,7 @@ US_TEMPERATURE=""
 BID=""
 EPSILON=""
 EXPLORATION_RATE=""
+NASH_TEMPERATURES=0
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -84,6 +85,7 @@ while [[ $# -gt 0 ]]; do
         --bid)              BID=$2;              shift 2 ;;
         --epsilon)          EPSILON=$2;          shift 2 ;;
         --exploration-rate) EXPLORATION_RATE=$2;  shift 2 ;;
+        --nash-temperatures) NASH_TEMPERATURES=1; shift ;;
         --keep-chunks)
             if [[ $# -gt 1 && ! "$2" =~ ^-- ]]; then
                 KEEP_CHUNKS=$2
@@ -207,6 +209,9 @@ if [ -n "$EPSILON" ]; then
 fi
 if [ -n "$EXPLORATION_RATE" ]; then
     NATIVE_ARGS+=(--exploration-rate "$EXPLORATION_RATE")
+fi
+if [ "$NASH_TEMPERATURES" = "1" ]; then
+    NATIVE_ARGS+=(--nash-temperatures)
 fi
 
 nice -n 10 uv run python cpp/tools/run_native_collection.py "${NATIVE_ARGS[@]}"

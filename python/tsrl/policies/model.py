@@ -177,6 +177,35 @@ _REGION_NON_BG_COUNTS: list[int] = [
     _REGION_COUNTRY_COUNTS[i] - _REGION_BG_COUNTS[i] for i in range(len(_REGION_MASKS))
 ]
 
+
+def _build_country_adjacency(spec_path: str | None = None) -> torch.Tensor:
+    """Return row-normalized adjacency matrix (86, 86) from adjacency.csv.
+
+    adj[i, j] = 1/degree_i if country j is adjacent to country i, else 0.
+    Includes superpower anchor nodes (ids 81=USA, 82=USSR) in the graph.
+    """
+    import csv as _csv
+
+    path = pathlib.Path(spec_path) if spec_path is not None else _SPEC_DIR / "adjacency.csv"
+    adj = torch.zeros(86, 86, dtype=torch.float32)
+    with open(path, newline="") as f:
+        reader = _csv.reader(f)
+        for raw in reader:
+            row = [cell.split("#")[0].strip() for cell in raw]
+            if not row or row[0] == "" or row[0].startswith("#") or row[0] == "country_a":
+                continue
+            a, b = int(row[0]), int(row[1])
+            if 0 <= a < 86 and 0 <= b < 86:
+                adj[a, b] = 1.0
+                adj[b, a] = 1.0
+    # Row-normalize: divide each row by its degree (number of neighbors).
+    degree = adj.sum(dim=1, keepdim=True).clamp(min=1.0)
+    adj = adj / degree
+    return adj
+
+
+_COUNTRY_ADJACENCY: torch.Tensor = _build_country_adjacency()
+
 # ---------------------------------------------------------------------------
 # Shared trunk building blocks
 # ---------------------------------------------------------------------------
@@ -931,6 +960,7 @@ class ControlFeatCountryEncoder(nn.Module):
     Total extra region scalars: 7 regions × 4 = 28 (normalized counts).
     """
 
+    __constants__ = ['_NUM_REGIONS', '_EMBED_DIM', '_EXTRA_COUNTRY_DIM', '_REGION_SCALAR_DIM']
     _EMBED_DIM = 32
     _NUM_REGIONS = 7
     _EXTRA_COUNTRY_DIM = 2  # ussr_controls, us_controls
@@ -940,6 +970,7 @@ class ControlFeatCountryEncoder(nn.Module):
         super().__init__()
         self.register_buffer("country_static", _COUNTRY_FEATS.clone())  # (86, 11)
         self.register_buffer("stability", _STABILITY.clone())           # (86,)
+        # Register individual region masks (backward-compat state dict layout).
         for i, mask in enumerate(_REGION_MASKS):
             self.register_buffer(f"region_mask_{i}", mask.clone())
         for i, mask in enumerate(_REGION_BG_MASKS):
@@ -953,21 +984,49 @@ class ControlFeatCountryEncoder(nn.Module):
             (1 + self._NUM_REGIONS) * self._EMBED_DIM, INFLUENCE_HIDDEN
         )
 
-    def _region_mask(self, i: int) -> torch.Tensor:
-        return getattr(self, f"region_mask_{i}")
+    def _get_region_mask(self, i: int) -> torch.Tensor:
+        """TorchScript-compatible region mask lookup (explicit attr access, no dynamic getattr)."""
+        if i == 0:
+            return self.region_mask_0  # type: ignore[attr-defined]
+        elif i == 1:
+            return self.region_mask_1  # type: ignore[attr-defined]
+        elif i == 2:
+            return self.region_mask_2  # type: ignore[attr-defined]
+        elif i == 3:
+            return self.region_mask_3  # type: ignore[attr-defined]
+        elif i == 4:
+            return self.region_mask_4  # type: ignore[attr-defined]
+        elif i == 5:
+            return self.region_mask_5  # type: ignore[attr-defined]
+        else:
+            return self.region_mask_6  # type: ignore[attr-defined]
 
-    def _region_bg_mask(self, i: int) -> torch.Tensor:
-        return getattr(self, f"region_bg_mask_{i}")
+    def _get_region_bg_mask(self, i: int) -> torch.Tensor:
+        """TorchScript-compatible region BG mask lookup."""
+        if i == 0:
+            return self.region_bg_mask_0  # type: ignore[attr-defined]
+        elif i == 1:
+            return self.region_bg_mask_1  # type: ignore[attr-defined]
+        elif i == 2:
+            return self.region_bg_mask_2  # type: ignore[attr-defined]
+        elif i == 3:
+            return self.region_bg_mask_3  # type: ignore[attr-defined]
+        elif i == 4:
+            return self.region_bg_mask_4  # type: ignore[attr-defined]
+        elif i == 5:
+            return self.region_bg_mask_5  # type: ignore[attr-defined]
+        else:
+            return self.region_bg_mask_6  # type: ignore[attr-defined]
 
-    def forward(self, influence: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, influence: torch.Tensor) -> "tuple[torch.Tensor, torch.Tensor]":
         """Returns (influence_hidden, region_scalars).
 
         influence_hidden: (B, INFLUENCE_HIDDEN)
         region_scalars: (B, 28) — per-region control counts for scalar path
         """
         B = influence.shape[0]
-        ussr_inf = influence[:, :NUM_COUNTRIES]         # (B, 86) raw
-        us_inf = influence[:, NUM_COUNTRIES:]            # (B, 86) raw
+        ussr_inf = influence[:, :86]         # (B, 86) raw
+        us_inf = influence[:, 86:]            # (B, 86) raw
         stab = self.stability.unsqueeze(0)               # (1, 86)
 
         # Control status: binary
@@ -988,8 +1047,8 @@ class ControlFeatCountryEncoder(nn.Module):
         region_scalars = []
 
         for i in range(self._NUM_REGIONS):
-            mask = self._region_mask(i)     # (86,) bool
-            bg_mask = self._region_bg_mask(i)  # (86,) bool
+            mask = self._get_region_mask(i)       # (86,) bool
+            bg_mask = self._get_region_bg_mask(i)  # (86,) bool
             non_bg_mask = mask & ~bg_mask
 
             if mask.any():
@@ -999,13 +1058,29 @@ class ControlFeatCountryEncoder(nn.Module):
             region_pools.append(region_pool)
 
             # Region scoring scalars: controlled BG and non-BG counts per side
-            n_bg = max(int(bg_mask.sum().item()), 1)
-            n_non_bg = max(int(non_bg_mask.sum().item()), 1)
-            ussr_bg = ussr_controls[:, bg_mask].sum(dim=1) / n_bg if bg_mask.any() else torch.zeros(B, device=influence.device)
-            us_bg = us_controls[:, bg_mask].sum(dim=1) / n_bg if bg_mask.any() else torch.zeros(B, device=influence.device)
-            ussr_non_bg = ussr_controls[:, non_bg_mask].sum(dim=1) / n_non_bg if non_bg_mask.any() else torch.zeros(B, device=influence.device)
-            us_non_bg = us_controls[:, non_bg_mask].sum(dim=1) / n_non_bg if non_bg_mask.any() else torch.zeros(B, device=influence.device)
-            region_scalars.extend([ussr_bg, us_bg, ussr_non_bg, us_non_bg])
+            n_bg = int(bg_mask.sum().item())
+            if n_bg < 1:
+                n_bg = 1
+            n_non_bg = int(non_bg_mask.sum().item())
+            if n_non_bg < 1:
+                n_non_bg = 1
+            zeros_b = torch.zeros(B, device=influence.device)
+            if bg_mask.any():
+                ussr_bg = ussr_controls[:, bg_mask].sum(dim=1) / n_bg
+                us_bg = us_controls[:, bg_mask].sum(dim=1) / n_bg
+            else:
+                ussr_bg = zeros_b
+                us_bg = zeros_b
+            if non_bg_mask.any():
+                ussr_non_bg = ussr_controls[:, non_bg_mask].sum(dim=1) / n_non_bg
+                us_non_bg = us_controls[:, non_bg_mask].sum(dim=1) / n_non_bg
+            else:
+                ussr_non_bg = zeros_b
+                us_non_bg = zeros_b
+            region_scalars.append(ussr_bg)
+            region_scalars.append(us_bg)
+            region_scalars.append(ussr_non_bg)
+            region_scalars.append(us_non_bg)
 
         concat = torch.cat([global_pool] + region_pools, dim=-1)  # (B, 8*D)
         h_inf = torch.relu(self.out_proj(concat))  # (B, INFLUENCE_HIDDEN)
@@ -1073,6 +1148,220 @@ class TSControlFeatModel(nn.Module):
             self.strategy_heads, self.strategy_mixer,
             self.value_branch, self.value_head,
         )
+
+
+class ControlFeatGNNEncoder(nn.Module):
+    """ControlFeatCountryEncoder with 2-round graph message passing over adjacency.
+
+    Extends ControlFeatCountryEncoder by adding two rounds of graph convolution
+    after the initial per-country projection. Uses the pre-computed row-normalized
+    country adjacency matrix (86×86) as a fixed buffer.
+
+    GNN round: h_new = relu(gconv(cat([h, adj @ h], dim=-1)))
+    The adjacency aggregate (adj @ h) gives each country the mean of its
+    neighbors' features. Two rounds allows 2-hop information propagation.
+
+    Output interface: same as ControlFeatCountryEncoder — returns
+    (influence_hidden: (B, INFLUENCE_HIDDEN), region_scalars: (B, 28)).
+    """
+
+    __constants__ = ['_NUM_REGIONS', '_EMBED_DIM', '_EXTRA_COUNTRY_DIM', '_REGION_SCALAR_DIM']
+    _EMBED_DIM = 32
+    _NUM_REGIONS = 7
+    _EXTRA_COUNTRY_DIM = 2
+    _REGION_SCALAR_DIM = 28
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("country_static", _COUNTRY_FEATS.clone())
+        self.register_buffer("stability", _STABILITY.clone())
+        self.register_buffer("adjacency", _COUNTRY_ADJACENCY.clone())
+        for i, mask in enumerate(_REGION_MASKS):
+            self.register_buffer(f"region_mask_{i}", mask.clone())
+        for i, mask in enumerate(_REGION_BG_MASKS):
+            self.register_buffer(f"region_bg_mask_{i}", mask.clone())
+
+        country_in_dim = _COUNTRY_FEAT_DIM + 2 + self._EXTRA_COUNTRY_DIM  # 15
+        self.country_proj = nn.Linear(country_in_dim, self._EMBED_DIM)
+        # GNN layers: input is cat([h, adj@h], dim=-1) = 2*D → D
+        self.gconv1 = nn.Linear(2 * self._EMBED_DIM, self._EMBED_DIM)
+        self.gconv2 = nn.Linear(2 * self._EMBED_DIM, self._EMBED_DIM)
+        self.out_proj = nn.Linear(
+            (1 + self._NUM_REGIONS) * self._EMBED_DIM, INFLUENCE_HIDDEN
+        )
+
+    def _get_region_mask(self, i: int) -> torch.Tensor:
+        if i == 0:
+            return self.region_mask_0  # type: ignore[attr-defined]
+        elif i == 1:
+            return self.region_mask_1  # type: ignore[attr-defined]
+        elif i == 2:
+            return self.region_mask_2  # type: ignore[attr-defined]
+        elif i == 3:
+            return self.region_mask_3  # type: ignore[attr-defined]
+        elif i == 4:
+            return self.region_mask_4  # type: ignore[attr-defined]
+        elif i == 5:
+            return self.region_mask_5  # type: ignore[attr-defined]
+        else:
+            return self.region_mask_6  # type: ignore[attr-defined]
+
+    def _get_region_bg_mask(self, i: int) -> torch.Tensor:
+        if i == 0:
+            return self.region_bg_mask_0  # type: ignore[attr-defined]
+        elif i == 1:
+            return self.region_bg_mask_1  # type: ignore[attr-defined]
+        elif i == 2:
+            return self.region_bg_mask_2  # type: ignore[attr-defined]
+        elif i == 3:
+            return self.region_bg_mask_3  # type: ignore[attr-defined]
+        elif i == 4:
+            return self.region_bg_mask_4  # type: ignore[attr-defined]
+        elif i == 5:
+            return self.region_bg_mask_5  # type: ignore[attr-defined]
+        else:
+            return self.region_bg_mask_6  # type: ignore[attr-defined]
+
+    def forward(self, influence: torch.Tensor) -> "tuple[torch.Tensor, torch.Tensor]":
+        B = influence.shape[0]
+        ussr_inf = influence[:, :86]
+        us_inf = influence[:, 86:]
+        stab = self.stability.unsqueeze(0)
+
+        ussr_controls = (ussr_inf >= us_inf + stab).float()
+        us_controls = (us_inf >= ussr_inf + stab).float()
+
+        static = self.country_static.unsqueeze(0).expand(B, -1, -1)
+        dyn = torch.stack([ussr_inf / 10.0, us_inf / 10.0], dim=-1)
+        ctrl = torch.stack([ussr_controls, us_controls], dim=-1)
+        per_country_feats = torch.cat([dyn, static, ctrl], dim=-1)
+
+        h = torch.relu(self.country_proj(per_country_feats))  # (B, 86, D)
+
+        # GNN round 1: aggregate neighbor features via adjacency
+        h_agg1 = torch.matmul(self.adjacency, h)  # (B, 86, D)
+        h = torch.relu(self.gconv1(torch.cat([h, h_agg1], dim=-1)))  # (B, 86, D)
+
+        # GNN round 2
+        h_agg2 = torch.matmul(self.adjacency, h)  # (B, 86, D)
+        h = torch.relu(self.gconv2(torch.cat([h, h_agg2], dim=-1)))  # (B, 86, D)
+
+        # Pooling (same as ControlFeatCountryEncoder)
+        global_pool = h.mean(dim=1)
+        region_pools = []
+        region_scalars = []
+
+        for i in range(self._NUM_REGIONS):
+            mask = self._get_region_mask(i)
+            bg_mask = self._get_region_bg_mask(i)
+            non_bg_mask = mask & ~bg_mask
+
+            if mask.any():
+                region_pool = h[:, mask, :].mean(dim=1)
+            else:
+                region_pool = torch.zeros(B, self._EMBED_DIM, device=influence.device)
+            region_pools.append(region_pool)
+
+            n_bg = int(bg_mask.sum().item())
+            if n_bg < 1:
+                n_bg = 1
+            n_non_bg = int(non_bg_mask.sum().item())
+            if n_non_bg < 1:
+                n_non_bg = 1
+            zeros_b = torch.zeros(B, device=influence.device)
+            if bg_mask.any():
+                ussr_bg = ussr_controls[:, bg_mask].sum(dim=1) / n_bg
+                us_bg = us_controls[:, bg_mask].sum(dim=1) / n_bg
+            else:
+                ussr_bg = zeros_b
+                us_bg = zeros_b
+            if non_bg_mask.any():
+                ussr_non_bg = ussr_controls[:, non_bg_mask].sum(dim=1) / n_non_bg
+                us_non_bg = us_controls[:, non_bg_mask].sum(dim=1) / n_non_bg
+            else:
+                ussr_non_bg = zeros_b
+                us_non_bg = zeros_b
+            region_scalars.append(ussr_bg)
+            region_scalars.append(us_bg)
+            region_scalars.append(ussr_non_bg)
+            region_scalars.append(us_non_bg)
+
+        concat = torch.cat([global_pool] + region_pools, dim=-1)
+        h_inf = torch.relu(self.out_proj(concat))
+        region_scalar_tensor = torch.stack(region_scalars, dim=-1)
+
+        return h_inf, region_scalar_tensor
+
+
+class TSControlFeatGNNModel(nn.Module):
+    """TSControlFeatModel with 2-round GNN over country adjacency.
+
+    Identical to TSControlFeatModel except the influence encoder uses
+    ControlFeatGNNEncoder (adds 2-round graph convolution) instead of
+    ControlFeatCountryEncoder.
+
+    Input/output contract: same as TSBaselineModel.
+    """
+
+    _REGION_SCALAR_DIM = 28
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.influence_encoder_embed = ControlFeatGNNEncoder()
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+
+        self.value_branch = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        h_inf_embed, region_scalars = self.influence_encoder_embed(influence)
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + h_inf_embed
+
+        h_card = torch.relu(self.card_encoder(cards))
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(
+            hidden.shape[0], 4, 86
+        )
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+        value = torch.tanh(self.value_head(torch.relu(self.value_branch(hidden))))
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+        }
 
 
 class TSCountryAttnModel(nn.Module):

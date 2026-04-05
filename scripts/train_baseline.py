@@ -84,6 +84,7 @@ from tsrl.policies.dataset import TS_SelfPlayDataset
 from tsrl.policies.model import (
     TSBaselineModel,
     TSCardEmbedModel,
+    TSControlFeatGNNModel,
     TSControlFeatModel,
     TSCountryAttnModel,
     TSCountryEmbedModel,
@@ -212,6 +213,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "direct_country",
             "marginal_value",
             "control_feat",
+            "control_feat_gnn",
         ],
         help="Model architecture variant (default: baseline)",
     )
@@ -948,6 +950,7 @@ def main() -> None:
         "direct_country": TSDirectCountryModel,
         "marginal_value": TSMarginalValueModel,
         "control_feat": TSControlFeatModel,
+        "control_feat_gnn": TSControlFeatGNNModel,
     }
     model = _MODEL_REGISTRY[args.model_type](
         dropout=args.dropout,

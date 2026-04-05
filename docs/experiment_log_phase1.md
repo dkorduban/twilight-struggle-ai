@@ -989,9 +989,34 @@ Adding seeds 999 and 2024.
 | v104_cf_nashc_s42 | 39.2% ±1.5 | 8.6% ±0.9 | **23.9% ±0.9** | outlier low |
 | v104_cf_nashc_s7 | 54.9% ±1.6 | 8.1% ±0.9 | **31.5% ±0.9** | — |
 | v104_cf_nashc_s123 | 53.2% ±1.6 | 11.4% ±1.0 | **32.3% ±0.9** | — |
-| v104_cf_nashc_s999 | TBD | TBD | TBD | training |
-| v104_cf_nashc_s2024 | TBD | TBD | TBD | pending |
+| v104_cf_nashc_s999 | 54.2% ±1.6 | 5.6% ±0.7 | **29.9% ±0.9** | — |
+| v104_cf_nashc_s2024 | 53.8% ±1.6 | 9.8% ±0.9 | **31.8% ±0.9** | — |
 | v99_cf_1x95_s7 (ref) | 51.1% | 13.7% | **32.4%** | nash_b, reference |
+
+### Exp4 Analysis (2026-04-05)
+
+5-seed tournament results for cf_1x95 on nash_c:
+
+| Seed | USSR WR | US WR | Combined |
+|------|---------|-------|----------|
+| s42 | 39.2% | 8.6% | **23.9%** ← outlier |
+| s7 | 54.9% | 8.1% | **31.5%** |
+| s123 | 53.2% | 11.4% | **32.3%** ← best |
+| s999 | 54.2% | 5.6% | **29.9%** |
+| s2024 | 53.8% | 9.8% | **31.8%** |
+| Mean (all 5) | — | — | **29.9%** |
+| Mean (excl s42) | — | — | **31.4%** |
+
+**Best seed: s123 at 32.3%** — matches v99_cf_1x95_s7 (nash_b, 32.4%) within noise.
+s42 remains an outlier pattern consistent with earlier results.
+Excluding s42, the 4-seed range is 29.9-32.3% = 2.4pp — much tighter than expected.
+
+**Conclusions:**
+1. Nash_c and nash_b are equivalent for cf_1x95 architecture (both ~32% for good seeds).
+2. The outlier seed (s42) consistently produces ~24% regardless of dataset.
+3. The non-outlier seeds cluster tightly at 30-32% combined.
+4. **Best model for Exp3 teacher KL:** v104_cf_nashc_s123 (32.3%) or s2024 (31.8%).
+   However Exp3 uses seed=42 to test whether teacher KL fixes the outlier pattern.
 
 ---
 
@@ -1002,11 +1027,12 @@ Adding seeds 999 and 2024.
 pure heuristic (same seed, RNG saved/restored around MCTS measurement). Verified: teacher
 mode actions for selfplay_77700_0000 match nash_c parquet exactly.
 
-**Collection**: 1000 games (seed=77700, 10% of nash_c), 100 sims/decision, pool_size=32.
-Output: data/selfplay/mcts_teacher_nashc_100sim_1k.parquet (~140k rows, ~10% coverage).
-Started 2026-04-05. Expected ~2h to complete.
+**Collection**: 3 seeds (77700, 78200, 79700) × 500-1000 games, 100 sims/decision, pool_size=32.
+Combined into: data/selfplay/mcts_teacher_nashc_100sim_combined.parquet (283k rows).
+Coverage in nash_c: **14.0%** (191,833 matched / 1,367,237 BC rows).
+Collection complete as of 2026-04-05 (batch-collected in ~15 min total).
 
-**Training plan** (after collection):
+**Training** (running):
 ```bash
 uv run python scripts/train_baseline.py \
   --data-dir data/nash_c_only \
@@ -1015,13 +1041,56 @@ uv run python scripts/train_baseline.py \
   --batch-size 8192 --lr 0.0024 --epochs 95 --patience 20 \
   --dropout 0.1 --weight-decay 1e-4 --label-smoothing 0.05 \
   --one-cycle --deterministic-split --value-target final_vp --seed 42 \
-  --teacher-targets data/selfplay/mcts_teacher_nashc_100sim_1k.parquet \
+  --teacher-targets data/selfplay/mcts_teacher_nashc_100sim_combined.parquet \
   --teacher-weight 0.5
 ```
 
 | Model | USSR WR | US WR | Combined | Notes |
 |-------|---------|-------|----------|-------|
-| v105_teacher_heur_kl_s42 | TBD | TBD | TBD | collecting teacher data |
+| v104_cf_nashc_s42 (baseline) | 39.2% | 8.6% | **23.9%** | no teacher |
+| v105_teacher_heur_kl_s42 | 34.4% | 5.4% | **19.9%** | 14% coverage, w=0.5 — **regressed** |
+
+**Result: Teacher KL HURTS (-4.0pp combined vs baseline)**. This is the 5th consecutive teacher KL
+failure (v100, v101, v103, v105@4.7%, v105@14%).
+
+**Root cause — objective conflict:**
+The heuristic BC target is a ONE-HOT card distribution (the heuristic deterministically picks one
+card). MCTS visit counts are a SOFT distribution across multiple cards. The KL loss pushes the
+model toward the soft distribution while BC loss pushes toward the one-hot. These objectives
+directly oppose each other.
+
+Evidence: `teacher_kl_card = 2.06` (training metric) — extremely high KL between model outputs
+and MCTS targets, showing fundamental distributional mismatch. The model cannot simultaneously
+match heuristic (one-hot) and MCTS (soft) without sacrificing performance on both.
+
+**Conclusion**: Teacher KL distillation from MCTS onto heuristic positions **does not work**
+with the current BC setup. The conflict between hard heuristic labels and soft MCTS distributions
+prevents learning. This approach is definitively ruled out.
+
+**What DOES work for inference-time improvement**: MCTS at inference (+5pp vs greedy).
+The value head is accurate enough for search to help, but distilling search knowledge into
+BC training is not feasible with current data/approach.
+
+**Follow-up: Exp3b — low teacher weight (w=0.1, seed=7)**:
+
+| Model | USSR WR | US WR | Combined | val_loss | Notes |
+|-------|---------|-------|----------|----------|-------|
+| v104_cf_nashc_s7 (baseline) | 54.9% | 8.1% | **31.5%** | 2.27 | no teacher |
+| v105b_teacher_kl_s7_w01 | 57.6% | 7.8% | **32.7%** | 2.31 | w=0.1, 14% cov |
+
++1.2pp improvement, but within ±0.9pp CI (500 games). Marginal and uncertain.
+Teacher KL at w=0.1 does not hurt and may marginally help — but the benefit is too small
+to act on. The conflict between hard BC labels and soft MCTS targets still exists at w=0.1,
+just with less force.
+
+**Definitive teacher KL verdict**: Effect is too small to reliably measure. Not worth the
+engineering complexity for <1pp improvement when the approach fundamentally conflicts with
+hard-label BC training. Teacher KL distillation from MCTS is **deprioritized**.
+
+**Next directions**:
+1. Architecture improvements (GNN, better value head) to raise BC ceiling
+2. MCTS at inference as default for competitive play
+3. Self-play with MCTS move selection (expensive but might break BC plateau)
 
 ---
 
@@ -1054,3 +1123,112 @@ self-play data. Root causes:
 **Conclusion**: The only viable teacher distillation approach is applying KL to **heuristic
 positions** (keep BC data intact, add MCTS search on each heuristic position as teacher target).
 Pure MCTS-data training is dead.
+
+---
+
+## Exp5: GNN Country Adjacency Architecture (2026-04-05)
+
+**Architecture**: `TSControlFeatGNNModel` — adds 2-round graph message passing on the
+country graph adjacency matrix. Countries aggregate neighbor features via:
+
+```python
+h = relu(country_proj(per_country_feats))   # (B, 86, 32)
+h_agg1 = matmul(adjacency, h)               # (B, 86, 32) row-norm neighbor aggregation
+h = relu(gconv1(cat([h, h_agg1], dim=-1)))  # (B, 86, 32) round 1
+h_agg2 = matmul(adjacency, h)               # round 2 aggregation
+h = relu(gconv2(cat([h, h_agg2], dim=-1)))  # (B, 86, 32) round 2
+```
+
+Then same region pooling + control scalars as `TSControlFeatModel`.
+Parameters: 486,801 (vs ~450K for non-GNN control_feat).
+Adjacency: 86×86 row-normalized matrix from `data/spec/adjacency.csv`.
+Exported via `jit.trace` (jit.script incompatible with free function + nn.Linear args).
+
+**Training** (same hyperparams as cf_1x95 recipe):
+```bash
+uv run python scripts/train_baseline.py \
+  --data-dir data/nash_c_only \
+  --out-dir data/checkpoints/v106_cf_gnn_s7 \
+  --model-type control_feat_gnn --hidden-dim 256 \
+  --batch-size 8192 --lr 0.0024 --epochs 95 --patience 20 \
+  --dropout 0.1 --weight-decay 1e-4 --label-smoothing 0.05 \
+  --one-cycle --deterministic-split --value-target final_vp --seed 7
+```
+
+| Model | USSR WR | US WR | Combined | Notes |
+|-------|---------|-------|----------|-------|
+| v104_cf_nashc_s7 (control_feat) | 54.9% | 8.1% | **31.5%** | no GNN |
+| v104_cf_nashc_s123 (control_feat) | 53.2% | 11.4% | **32.3%** | no GNN |
+| **v106_cf_gnn_s7** | **62.6%** | **11.8%** | **37.2%** | **+5.7pp vs best cf** |
+
+**Result: GNN adjacency provides a massive +5.7pp improvement!**
+USSR WR improves from 54.9% → 62.6% (+7.7pp) and US WR from 8.1% → 11.8% (+3.7pp).
+This is the best BC model ever by a large margin.
+
+**Interpretation**: Graph message passing enables each country to aggregate information
+from its neighbors, allowing the model to reason about adjacency structure (e.g., France
+can "see" West Germany, Benelux). This is fundamental to TS strategy — influence spreads
+along adjacency, access requires adjacency or controlled countries. Two rounds of message
+passing captures 2-hop neighborhood context.
+
+**Multi-seed GNN results (4 seeds):**
+
+| Model | USSR WR | US WR | Combined | Notes |
+|-------|---------|-------|----------|-------|
+| v106_cf_gnn_s7 | 62.6% | 11.8% | **37.2%** | — |
+| v106_cf_gnn_s42 | 60.8% | 11.6% | **36.2%** | — |
+| v106_cf_gnn_s123 | 56.4% | 4.0% | **30.2%** | US collapse |
+| v106_cf_gnn_s999 | — | — | pending | — |
+| Mean (s7,s42,s123) | — | — | **34.5%** | — |
+| Mean excl s123 | — | — | **36.7%** | — |
+| cf_1x95 (4 seeds excl s42 outlier) | — | — | **31.4%** | reference |
+
+**GNN is confirmed significantly better.** Mean across 3 seeds (34.5%) is +3.1pp over cf (31.4%). Excluding the s123 US-collapse outlier: 36.7% vs 31.4% = **+5.3pp**.
+
+Three seeds show the same pattern as cf: one outlier seed with US collapse (s123 for GNN, s42 for cf), two strong seeds. The non-outlier seeds cluster at 36-37% — a genuine and large improvement.
+
+**MCTS fast-replica investigation (2026-04-05):**
+The `cpp/mcts_batched_fast/` replica was evaluated for porting. **Conclusion: do not port.**
+- Correctness test: fast replica MCTS 52% USSR vs heuristic; production MCTS 59.2%; greedy 53.8%.
+- Fast replica MCTS is WEAKER than greedy (52% vs 53.8%) — search is not helping.
+- Root cause: fast replica uses collapsed tree structure with one edge per (card, mode) for influence,
+  while production uses one edge per (card, mode, country). Influence allocation to specific countries
+  cannot be explored or evaluated differently — the tree cannot improve country-level decisions.
+- Additionally, production code is already faster than the fast replica at all measured settings
+  (due to AccessibleCache + raw-pointer expand already in production).
+- Only the `select_edge_fast` inline is structurally sound, but isolated impact is modest.
+
+**Phase 2b analysis (regional scoring scalars) — 2026-04-05:**
+Original plan was to add 14 explicit tier scalars (7 regions × 2 sides × {None,Presence,Domination,Control}).
+**Verdict: not needed.** `ControlFeatGNNEncoder` already computes 28 per-region BG/non-BG control counts
+internally from the influence tensor and concatenates them with the 11 base scalars (total 39 inputs to
+scalar_encoder). The model already has comprehensive regional information. Explicit tiers would be a
+nonlinear transformation of what the model already sees — no new signal. Phase 2b is cancelled.
+
+**Next priorities** (2026-04-05):
+1. v106_cf_gnn_s999 in progress — completes 4-seed GNN mean
+2. MCTS inference benchmark: `benchmark_mcts(v106_cf_gnn_s7, n_sim=100, n=500/side)` — running
+3. If MCTS benchmark confirms +5pp: collect GNN self-play data (Gen 0)
+4. Phase 2c if GNN self-play plateaus: allocation head + DP decoder
+
+**MCTS benchmark on GNN s7 (100 sim, 500/side, seed=77000/77500)** — 2026-04-05:
+
+| Method | USSR WR | US WR | Combined |
+|--------|---------|-------|----------|
+| Greedy (seed=77000) | 62.2% | 11.4% | **36.8%** |
+| MCTS 100sim (seed=77000) | 60.4% | 11.6% | **36.0%** |
+
+**Result: MCTS 100sim provides no significant benefit over greedy for GNN** (−0.8pp, within 2σ noise).
+This contrasts with v99 (weaker BC model) where MCTS gave +5.4pp. Hypothesis: the GNN's stronger
+card/mode policy leaves less room for tree search improvement. MCTS only searches over card/mode (not
+influence placement — one collapsed tree edge per card×mode for influence), so as the policy improves,
+the marginal value of card/mode tree search decreases.
+
+Note: `benchmark_batched` and `benchmark_mcts` both return `list[GameResult]` not `list[Side]`.
+Correct counting: `sum(1 for x in r if x.winner == tscore.Side.USSR)`, NOT `.count(tscore.Side.USSR)`.
+The `.count()` method always returns 0 for GameResult objects.
+
+**Bug fixes (2026-04-05):**
+- `mcts_batched.cpp`: `set_num_interop_threads` wrapped in try/catch (can only be set once; calling
+  it a second time threw exception on the second benchmark_mcts call)
+- All benchmark scripts updated to use correct `sum(1 for x ...)` counting

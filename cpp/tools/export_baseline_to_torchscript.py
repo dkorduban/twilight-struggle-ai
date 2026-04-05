@@ -17,6 +17,7 @@ import torch
 from tsrl.policies.model import (
     TSBaselineModel,
     TSCardEmbedModel,
+    TSControlFeatGNNModel,
     TSControlFeatModel,
     TSCountryAttnModel,
     TSCountryEmbedModel,
@@ -34,6 +35,7 @@ _MODEL_REGISTRY = {
     "direct_country": TSDirectCountryModel,
     "marginal_value": TSMarginalValueModel,
     "control_feat": TSControlFeatModel,
+    "control_feat_gnn": TSControlFeatGNNModel,
 }
 
 

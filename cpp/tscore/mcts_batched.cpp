@@ -1996,11 +1996,16 @@ void collect_games_batched(
     const int n_threads = std::min(config.pool_size, hw_threads);
     SlotThreadPool thread_pool(n_threads);
     // Tune PyTorch threading for batched MCTS on CPU.
-    // 4 intra-op threads + 1 interop thread measured best at max_pending=32
-    // in the mcts_batched_fast replica benchmark (4.88× vs baseline at 2 threads).
+    // 4 intra-op threads + 1 interop thread measured best at max_pending=32.
+    // set_num_interop_threads can only be called once (before parallel work starts);
+    // subsequent calls throw. Use try/catch to silently skip if already set.
     if (n_threads > 2) {
         at::set_num_threads(4);
-        at::set_num_interop_threads(1);
+        try {
+            at::set_num_interop_threads(1);
+        } catch (...) {
+            // Already set by a previous call — ignore.
+        }
     }
 
     using Clock = std::chrono::high_resolution_clock;
