@@ -898,3 +898,46 @@ imitating noisy MCTS play rather than learning from MCTS's search quality.
 **Lesson**: Teacher distillation needs either (a) teacher targets on 100% of training rows
 (run MCTS search on heuristic positions), or (b) separate MCTS data from BC data entirely
 (train BC on heuristic only, apply teacher KL only to matched rows).
+
+---
+
+## MCTS Sim Count Sweep (2026-04-04)
+
+Model: v99_cf_1x95_s7, vs heuristic, 100 games/side per sim count, CPU.
+
+| Sims | USSR WR | US WR | Combined | Time/100g |
+|------|---------|-------|----------|-----------|
+| 100 | 56.0% | 12.0% | **34.0%** | ~80s |
+| 200 | 56.0% | 13.0% | **34.5%** | ~130s |
+| 400 (ref, 200g/side) | 57.0% | 17.0% | **37.0%** | — |
+| 800 | 44.0% | 23.0% | **33.5%** | ~600s |
+
+**Finding**: With 100 games/side, variance is too high (±10pp) to draw conclusions. The
+400-sim result (200 games/side) of 37.0% remains the best reference point. The 800-sim
+result of 33.5% is within noise of the 100-200 sim results. The "bigger sim budget helps
+until ~400 then degrades" hypothesis is possible but needs more games to confirm.
+
+**Caveat**: The 400-sim "37%" was from a separate benchmark run at 200 games/side with
+different seeds — not directly comparable to the 100-game runs above.
+
+**Next step**: Run a definitive 400-sim vs 100-sim comparison at 500 games/side with same seeds.
+
+---
+
+## v103: Pure MCTS Teacher Distillation with 100% Coverage (2026-04-04)
+
+**Approach**: Train on 276K MCTS self-play rows (post double-softmax fix, 400 sims, 2000 games)
+with 100% teacher KL coverage. Game IDs match — every training row has a teacher target.
+This avoids the v101 failure mode (mixed data, 6% coverage).
+
+**Data**: `data/mcts_teacher_400sim_2k/` — 276K rows BC + 276K matched teacher targets.
+**Hyperparams**: baseline h256, bs=4096, lr=0.0024, 95ep, seed=7, teacher_weight=0.5, teacher_value_weight=0.3.
+**W&B**: korduban-ai/twilight-struggle-ai/v103_mcts_teacher_w05
+
+Training converged: best val_loss=5.978, card_top1=52%, mode_acc=79%.
+Overfitting present (train_loss=4.9 vs val_loss=6.4 at ep80) due to small dataset (276K vs 1.28M).
+
+| Model | USSR WR | US WR | Combined | Notes |
+|-------|---------|-------|----------|-------|
+| v103_mcts_teacher_w05 | TBD | TBD | **TBD** | Benchmarking... |
+| v99_cf_s7 (baseline) | 56.4% | 10.4% | 33.4% | 2000g/side ref |
