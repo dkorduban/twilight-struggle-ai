@@ -920,7 +920,62 @@ until ~400 then degrades" hypothesis is possible but needs more games to confirm
 **Caveat**: The 400-sim "37%" was from a separate benchmark run at 200 games/side with
 different seeds — not directly comparable to the 100-game runs above.
 
-**Next step**: Run a definitive 400-sim vs 100-sim comparison at 500 games/side with same seeds.
+**Follow-up sweep (Exp 2, post-fix, 200g/side, seed=42000):**
+
+| Sims | USSR WR | US WR | Combined | Time (s) |
+|------|---------|-------|----------|----------|
+| 50 | 54.5% | 11.0% | **32.75%** | ~340 |
+| 100 | 59.5% | 15.0% | **37.25%** | ~855 |
+| 200 | 53.0% | 14.0% | **33.5%** | ~860 |
+| 400 | 58.0% | 17.5% | **37.75%** | ~1033 |
+
+**Finding**: Results are noisy at 200 games (±7pp variance). No clear monotonic trend.
+100 and 400 sims yield ~37% each; 50 and 200 yield ~33%. Likely seed/variance artifact.
+At 200 games/side, ±7pp is too wide to determine optimal sim count.
+Need 500+ games/side to distinguish 50 vs 400 reliably.
+Best single estimate: **400 sims = 37.75% combined** (58% USSR, 17.5% US).
+
+**Definitive comparison (500g/side, seed=43000):**
+
+| Sims | USSR WR | US WR | Combined |
+|------|---------|-------|----------|
+| 100 | 53.4% | 15.2% | **34.3%** |
+| 400 | 53.0% | 14.6% | **33.8%** |
+
+**Conclusion: 100 sims = 400 sims** within noise (±3pp at 500 games). 400 sims provides ZERO
+benefit over 100 sims at 4× the compute cost. The previous "37%" estimates were noise from
+200-game samples. True MCTS benefit vs heuristic is ~34% combined (vs ~31-32% greedy), consistent
+across sim counts once variance is controlled.
+
+**Decision**: Use 100 sims for all future MCTS inference and teacher data collection.
+100 sims is ~7min/100 games vs ~17min for 400 sims — 2.4× faster with same strength.
+
+---
+
+## Exp1: Nash_c control_feat 3 seeds (2026-04-05)
+
+Training: control_feat h256, nash_c only (1.37M rows), bs=8192, lr=0.0024, 95ep, patience=20, seed=42/7/123.
+Benchmark: 1000 games/side (2×500), seeds 42000+43000.
+
+| Model | USSR WR | US WR | Combined | Notes |
+|-------|---------|-------|----------|-------|
+| v104_cf_nashc_s42 | 39.2% ±1.5 | 8.6% ±0.9 | **23.9% ±0.9** | outlier low |
+| v104_cf_nashc_s7 | 54.9% ±1.6 | 8.1% ±0.9 | **31.5% ±0.9** | — |
+| v104_cf_nashc_s123 | 53.2% ±1.6 | 11.4% ±1.0 | **32.3% ±0.9** | — |
+| v99_cf_1x95_s7 (ref) | 51.1% | 13.7% | **32.4%** | nash_b, reference |
+
+Mean (3 seeds) = 29.2%, range = 8.4pp (s42 outlier).
+Excluding s42 outlier: mean = 31.9%, range = 0.8pp.
+
+**Analysis**:
+- Nash_c seeds s7 and s123 match the reference v99_cf_1x95_s7 (nash_b) within noise: 31.5/32.3% vs 32.4%.
+- Nash_c does NOT improve over nash_b on this configuration — previous comparison suggested nash_c
+  advantage was confounded (v99_nash_c was measured at ~26% but with different seeds/benchmarks).
+- Seed variance is still large (8.4pp range) even with nash_c. The "lower variance" claim from
+  earlier limited-seed comparison was over-extrapolated.
+- s42=23.9% is a genuine outlier — same pattern as v99_cf_1x95_s7 seed runs (one seed always regresses).
+- **Decision**: Nash_c and nash_b are equivalent for cf_1x95. The best single seed (s123=32.3%) matches
+  the reference. No gain from switching. Proceed to Exp3 (teacher KL on heuristic positions).
 
 ---
 
@@ -939,5 +994,17 @@ Overfitting present (train_loss=4.9 vs val_loss=6.4 at ep80) due to small datase
 
 | Model | USSR WR | US WR | Combined | Notes |
 |-------|---------|-------|----------|-------|
-| v103_mcts_teacher_w05 | TBD | TBD | **TBD** | Benchmarking... |
+| v103_mcts_teacher_w05 | 25.6% | 1.2% | **13.4%** | Severe regression |
 | v99_cf_s7 (baseline) | 56.4% | 10.4% | 33.4% | 2000g/side ref |
+
+**Result: Severe regression (-20pp combined)**. This definitively rules out training on MCTS
+self-play data. Root causes:
+1. **Too little data**: 276K rows vs 1.28M heuristic rows — model is undertrained
+2. **Noisy trajectories**: MCTS at T=1.0 produces diverse but suboptimal action distributions
+3. **Teacher KL alone can't fix distribution mismatch**: The KL loss brings policy closer to
+   MCTS visit counts, but if the underlying game states are low-quality (from stochastic MCTS
+   play), the teacher signal is weak
+
+**Conclusion**: The only viable teacher distillation approach is applying KL to **heuristic
+positions** (keep BC data intact, add MCTS search on each heuristic position as teacher target).
+Pure MCTS-data training is dead.
