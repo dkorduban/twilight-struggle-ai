@@ -979,6 +979,52 @@ Excluding s42 outlier: mean = 31.9%, range = 0.8pp.
 
 ---
 
+## Exp4: Multi-seed tournament v104 nash_c (2026-04-05)
+
+Training 5 seeds of cf_1x95 on nash_c to find best single seed. Seeds already done: 42, 7, 123.
+Adding seeds 999 and 2024.
+
+| Model | USSR WR | US WR | Combined | Notes |
+|-------|---------|-------|----------|-------|
+| v104_cf_nashc_s42 | 39.2% ±1.5 | 8.6% ±0.9 | **23.9% ±0.9** | outlier low |
+| v104_cf_nashc_s7 | 54.9% ±1.6 | 8.1% ±0.9 | **31.5% ±0.9** | — |
+| v104_cf_nashc_s123 | 53.2% ±1.6 | 11.4% ±1.0 | **32.3% ±0.9** | — |
+| v104_cf_nashc_s999 | TBD | TBD | TBD | training |
+| v104_cf_nashc_s2024 | TBD | TBD | TBD | pending |
+| v99_cf_1x95_s7 (ref) | 51.1% | 13.7% | **32.4%** | nash_b, reference |
+
+---
+
+## Exp3: Teacher KL on Heuristic Positions (2026-04-05)
+
+**Approach**: Collect MCTS teacher targets for heuristic game positions using the new
+`heuristic_teacher_mode` in BatchedMctsConfig. Game trajectories are bit-identical to
+pure heuristic (same seed, RNG saved/restored around MCTS measurement). Verified: teacher
+mode actions for selfplay_77700_0000 match nash_c parquet exactly.
+
+**Collection**: 1000 games (seed=77700, 10% of nash_c), 100 sims/decision, pool_size=32.
+Output: data/selfplay/mcts_teacher_nashc_100sim_1k.parquet (~140k rows, ~10% coverage).
+Started 2026-04-05. Expected ~2h to complete.
+
+**Training plan** (after collection):
+```bash
+uv run python scripts/train_baseline.py \
+  --data-dir data/nash_c_only \
+  --out-dir data/checkpoints/v105_teacher_heur_kl_s42 \
+  --model-type control_feat --hidden-dim 256 \
+  --batch-size 8192 --lr 0.0024 --epochs 95 --patience 20 \
+  --dropout 0.1 --weight-decay 1e-4 --label-smoothing 0.05 \
+  --one-cycle --deterministic-split --value-target final_vp --seed 42 \
+  --teacher-targets data/selfplay/mcts_teacher_nashc_100sim_1k.parquet \
+  --teacher-weight 0.5
+```
+
+| Model | USSR WR | US WR | Combined | Notes |
+|-------|---------|-------|----------|-------|
+| v105_teacher_heur_kl_s42 | TBD | TBD | TBD | collecting teacher data |
+
+---
+
 ## v103: Pure MCTS Teacher Distillation with 100% Coverage (2026-04-04)
 
 **Approach**: Train on 276K MCTS self-play rows (post double-softmax fix, 400 sims, 2000 games)
