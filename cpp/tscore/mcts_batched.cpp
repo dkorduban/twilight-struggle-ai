@@ -1088,42 +1088,6 @@ std::atomic<int64_t> g_cache_saved_depth{0};    // sum of best_cached_depth (act
 std::atomic<int64_t> g_cache_selections{0};     // number of selections
 std::atomic<int64_t> g_cache_hits{0};           // selections where best_cached_depth > 0
 
-// Inline version of MctsNode::select_edge so the compiler can inline it into
-// select_to_leaf (the member function lives in mcts.cpp, a different TU, which
-// prevents inlining without LTO).  Logic is identical to MctsNode::select_edge.
-[[nodiscard]] static inline int select_edge_inline(const MctsNode& node, float c_puct) {
-    if (node.edges.empty()) {
-        return -1;
-    }
-    constexpr double kVirtualLossPenalty = 1.0;
-    int pending_visits = 0;
-    for (const auto& edge : node.edges) {
-        pending_visits += edge.virtual_loss;
-    }
-    const auto parent_visits = std::sqrt(static_cast<double>(std::max(1, node.total_visits + pending_visits)));
-    int best_index = 0;
-    double best_score = -std::numeric_limits<double>::infinity();
-    const bool invert_q = (node.side_to_move == Side::US);
-    for (size_t i = 0; i < node.edges.size(); ++i) {
-        const auto& edge = node.edges[i];
-        const auto effective_visits = edge.visit_count + edge.virtual_loss;
-        const auto virtual_loss_term = static_cast<double>(edge.virtual_loss) * kVirtualLossPenalty;
-        const auto effective_total_value = edge.total_value + (invert_q ? virtual_loss_term : -virtual_loss_term);
-        auto q = effective_visits > 0 ? effective_total_value / static_cast<double>(effective_visits) : 0.0;
-        if (invert_q) {
-            q = -q;
-        }
-        const auto u = static_cast<double>(c_puct) * static_cast<double>(edge.prior) * parent_visits /
-            static_cast<double>(1 + effective_visits);
-        const auto score = q + u;
-        if (score > best_score) {
-            best_score = score;
-            best_index = static_cast<int>(i);
-        }
-    }
-    return best_index;
-}
-
 SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) {
     PendingExpansion pend;
 
@@ -1135,7 +1099,7 @@ SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) 
 
     // Collect path first without applying actions.
     while (node != nullptr && !node->is_terminal && !node->edges.empty()) {
-        const auto edge_index = select_edge_inline(*node, config.mcts.c_puct);
+        const auto edge_index = node->select_edge(config.mcts.c_puct);
         if (edge_index < 0) break;
 
         auto& edge = node->edges[static_cast<size_t>(edge_index)];
