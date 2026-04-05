@@ -2413,7 +2413,8 @@ std::vector<GameResult> benchmark_games_batched(
     Side learned_side,
     int pool_size,
     uint32_t base_seed,
-    torch::Device device
+    torch::Device device,
+    bool greedy_opponent
 ) {
     if (n_games <= 0) {
         return {};
@@ -2482,6 +2483,17 @@ std::vector<GameResult> benchmark_games_batched(
 
             if (is_learned) {
                 // Queue for batched NN inference.
+                const auto batch_idx = batch_inputs.filled;
+                batch_inputs.fill_slot(
+                    batch_idx,
+                    slot.root_state.pub,
+                    slot.root_state.hands[to_index(decision_side)],
+                    slot.decision->holds_china,
+                    decision_side
+                );
+                batch_entries.push_back(BatchEntry{&slot, true});
+            } else if (greedy_opponent) {
+                // Opponent also uses NN (greedy argmax) — for MCTS-vs-greedy comparison.
                 const auto batch_idx = batch_inputs.filled;
                 batch_inputs.fill_slot(
                     batch_idx,

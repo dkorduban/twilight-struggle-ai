@@ -541,7 +541,7 @@ PYBIND11_MODULE(tscore, m) {
     );
     m.def(
         "benchmark_batched",
-        [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size, py::object seed_obj, const std::string& device_str) {
+        [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size, py::object seed_obj, const std::string& device_str, bool greedy_opponent) {
             std::optional<uint32_t> seed;
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
@@ -551,7 +551,7 @@ PYBIND11_MODULE(tscore, m) {
             model.eval();
             return ts::benchmark_games_batched(
                 n_games, model, learned_side, pool_size,
-                seed.value_or(std::random_device{}()), device);
+                seed.value_or(std::random_device{}()), device, greedy_opponent);
         },
         py::arg("model_path"),
         py::arg("learned_side"),
@@ -559,8 +559,10 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("pool_size") = 32,
         py::arg("seed") = py::none(),
         py::arg("device") = "cpu",
+        py::arg("greedy_opponent") = false,
         "Run batched greedy benchmark: learned side uses argmax from batched NN,\n"
-        "opponent uses heuristic. Returns list[GameResult].\n"
+        "opponent uses heuristic (default) or greedy NN (greedy_opponent=True).\n"
+        "Returns list[GameResult].\n"
         "device: 'cpu' or 'cuda' for GPU inference."
     );
     m.def(

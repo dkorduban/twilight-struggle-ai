@@ -107,14 +107,16 @@ void collect_games_batched(
 
 /// Run benchmark games using batched greedy inference for one side.
 /// The learned side uses argmax from the batched NN outputs; the opponent
-/// uses the heuristic policy.  Returns one GameResult per game.
+/// uses the heuristic policy (or greedy NN if greedy_opponent=true).
+/// Returns one GameResult per game.
 std::vector<GameResult> benchmark_games_batched(
     int n_games,
     torch::jit::script::Module& model,
     Side learned_side,
     int pool_size,
     uint32_t base_seed,
-    torch::Device device = torch::kCPU
+    torch::Device device = torch::kCPU,
+    bool greedy_opponent = false
 );
 
 }  // namespace ts
