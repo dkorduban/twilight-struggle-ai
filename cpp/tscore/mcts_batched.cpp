@@ -843,58 +843,66 @@ ExpansionResult expand_from_raw(
     };
 }
 
-std::vector<CardDraft> collect_card_drafts(const GameState& state) {
+// Zero-allocation predicate: does this state have any legal action that would be
+// handled by the NN model?  Equivalent to `!collect_card_drafts(state).empty()`
+// but short-circuits on the first hit and allocates nothing.
+bool has_any_model_action_cached_exact(const GameState& state) {
     const auto side = state.pub.phasing;
     const auto holds_china = holds_china_for(state, side);
-    std::vector<CardDraft> cards;
+    const auto& pub = state.pub;
+    auto cache = AccessibleCache::build(side, pub);
+    const auto& hand = state.hands[to_index(side)];
 
-    for (const auto card_id : legal_cards(state.hands[to_index(side)], state.pub, side, holds_china)) {
-        if (is_card_blocked_by_defcon(state.pub, side, card_id)) {
+    for (int raw_card_id = 1; raw_card_id <= kMaxCardId; ++raw_card_id) {
+        if (!hand.test(raw_card_id)) {
+            continue;
+        }
+        const auto card_id = static_cast<CardId>(raw_card_id);
+        if (card_id == kChinaCardId && !holds_china) {
+            continue;
+        }
+        if (is_card_blocked_by_defcon(pub, side, card_id)) {
             continue;
         }
 
-        CardDraft card{.card_id = card_id, .modes = {}};
-        for (const auto mode : legal_modes(card_id, state.pub, side)) {
-            if (mode == ActionMode::Coup && state.pub.defcon <= 2) {
-                continue;
+        const auto& spec = card_spec(card_id);
+        if (spec.ops > 0) {
+            if (!cache.influence.empty()) {
+                return true;
             }
-            if (mode == ActionMode::Event && state.pub.defcon <= 2 && is_defcon_lowering_card(card_id)) {
-                continue;
+            if (!cache.coup.empty() && pub.defcon > 2 && !pub.cuban_missile_crisis_active) {
+                return true;
             }
-
-            ModeDraft mode_draft{.mode = mode, .edges = {}};
-            if (mode == ActionMode::Event || mode == ActionMode::Space || mode == ActionMode::Influence) {
-                mode_draft.edges.push_back(ActionEncoding{
-                    .card_id = card_id,
-                    .mode = mode,
-                    .targets = {},
-                });
-            } else {
-                auto countries = legal_countries(card_id, mode, state.pub, side);
-                countries.erase(
-                    std::remove_if(countries.begin(), countries.end(), [](CountryId cid) { return !has_country_spec(cid); }),
-                    countries.end()
-                );
-                for (const auto country : countries) {
-                    mode_draft.edges.push_back(ActionEncoding{
-                        .card_id = card_id,
-                        .mode = mode,
-                        .targets = {country},
-                    });
-                }
+            if (!cache.realign.empty()) {
+                return true;
             }
-
-            if (!mode_draft.edges.empty()) {
-                card.modes.push_back(std::move(mode_draft));
+            const bool trapped = (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
+                (pub.quagmire_active && side == Side::US && !spec.is_scoring);
+            if (cache.can_space && spec.ops >= cache.space_ops_min && !trapped) {
+                return true;
             }
         }
 
-        if (!card.modes.empty()) {
-            cards.push_back(std::move(card));
+        bool event_ok = true;
+        if (card_id == 21 && !nato_prerequisite_met_inline(pub)) {
+            event_ok = false;
+        }
+        if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) {
+            event_ok = false;
+        }
+        if ((pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
+            (pub.quagmire_active && side == Side::US && !spec.is_scoring)) {
+            event_ok = false;
+        }
+        if (card_id == 103 && pub.defcon != 2) {
+            event_ok = false;
+        }
+        if (event_ok) {
+            return true;
         }
     }
 
-    return cards;
+    return false;
 }
 
 std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg64Rng& rng) {
@@ -908,8 +916,7 @@ std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg6
         return ExpansionResult{.node = std::move(node), .leaf_value = terminal_value};
     }
 
-    const auto drafts = collect_card_drafts(state);
-    if (!drafts.empty()) {
+    if (has_any_model_action_cached_exact(state)) {
         return std::nullopt;
     }
 
