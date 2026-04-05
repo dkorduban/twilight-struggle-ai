@@ -89,7 +89,7 @@ struct BatchedMctsConfig {
     MctsConfig mcts;
     int pool_size = 32;
     int virtual_loss_weight = 3;
-    int max_pending = 8;  // max concurrent leaves per game slot
+    int max_pending = 32;  // max concurrent leaves per game slot
     float temperature = 0.0f;
     float epsilon_greedy = 0.0f;
     // When set, only this side uses MCTS search; the other uses heuristic
