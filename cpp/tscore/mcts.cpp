@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <random>
 #include <stdexcept>
@@ -21,6 +22,41 @@
 
 namespace ts {
 namespace {
+
+constexpr int kMaxCardLogits = 112;   // kCardSlots
+constexpr int kMaxModeLogits = 8;     // generous upper bound for ActionMode values
+constexpr int kMaxCountryLogits = 86; // kCountrySlots
+constexpr int kMaxStrategies = 8;     // generous upper bound
+
+/// Compute softmax in-place over buf[0..n), writing probabilities back into buf.
+inline void softmax_inplace(float* buf, int n) {
+    float max_val = -std::numeric_limits<float>::infinity();
+    for (int i = 0; i < n; ++i) {
+        if (buf[i] > max_val) max_val = buf[i];
+    }
+    float sum = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        buf[i] = std::exp(buf[i] - max_val);
+        sum += buf[i];
+    }
+    if (sum > 0.0f) {
+        const float inv_sum = 1.0f / sum;
+        for (int i = 0; i < n; ++i) {
+            buf[i] *= inv_sum;
+        }
+    }
+}
+
+/// Extract a contiguous float tensor slice into a stack array.
+/// tensor must be 1-D and contiguous.  Returns element count (== tensor.size(0)).
+inline int extract_float_array(const torch::Tensor& tensor, float* out, int max_n) {
+    if (!tensor.defined()) return 0;
+    const auto n = static_cast<int>(tensor.size(0));
+    const int copy_n = std::min(n, max_n);
+    const float* src = tensor.data_ptr<float>();
+    std::memcpy(out, src, static_cast<size_t>(copy_n) * sizeof(float));
+    return copy_n;
+}
 
 constexpr std::array<int, 13> kDefconLoweringCards = {
     4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
@@ -107,14 +143,6 @@ torch::Tensor get_tensor(const c10::impl::GenericDict& dict, const char* key, bo
     return dict.at(key_value).toTensor();
 }
 
-torch::Tensor tensor_at(const torch::Tensor& tensor, int64_t index) {
-    return tensor.index({index});
-}
-
-int argmax_index(const torch::Tensor& tensor) {
-    return tensor.argmax(/*dim=*/0).item<int>();
-}
-
 std::vector<CountryId> accessible_countries_filtered(const PublicState& pub, Side side, CardId card_id, ActionMode mode) {
     auto accessible = legal_countries(card_id, mode, pub, side);
     accessible.erase(
@@ -124,72 +152,109 @@ std::vector<CountryId> accessible_countries_filtered(const PublicState& pub, Sid
     return accessible;
 }
 
-ActionEncoding build_action_from_country_logits(
+ActionEncoding build_action_from_country_logits_raw(
     CardId card_id,
     ActionMode mode,
-    const torch::Tensor& country_logits,
+    const float* country_logits_ptr,
+    int country_logits_n,
     const PublicState& pub,
     Side side,
-    const torch::Tensor& strategy_logits,
-    const torch::Tensor& country_strategy_logits
+    const float* strategy_logits_ptr,
+    int strategy_logits_n,
+    const float* country_strategy_logits_ptr,
+    int country_strategy_n_strategies,
+    int country_strategy_n_countries
 ) {
     const auto accessible = accessible_countries_filtered(pub, side, card_id, mode);
     if (accessible.empty()) {
         return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {}};
     }
 
-    auto source_logits = country_logits;
-    if (strategy_logits.defined() && country_strategy_logits.defined()) {
-        const auto strategy_index = strategy_logits.argmax(/*dim=*/0).item<int64_t>();
-        source_logits = country_strategy_logits.index({strategy_index});
+    // Choose source logits: use strategy-selected slice if available, else raw country logits.
+    const float* source_ptr = country_logits_ptr;
+    int source_n = country_logits_n;
+    float strategy_country_buf[kMaxCountryLogits];
+
+    if (strategy_logits_ptr != nullptr && country_strategy_logits_ptr != nullptr &&
+        strategy_logits_n > 0 && country_strategy_n_strategies > 0) {
+        // argmax over strategy logits
+        int best_strat = 0;
+        float best_val = strategy_logits_ptr[0];
+        for (int i = 1; i < strategy_logits_n; ++i) {
+            if (strategy_logits_ptr[i] > best_val) {
+                best_val = strategy_logits_ptr[i];
+                best_strat = i;
+            }
+        }
+        // Extract the row: country_strategy_logits is [n_strategies, n_countries]
+        const int row_offset = best_strat * country_strategy_n_countries;
+        const int copy_n = std::min(country_strategy_n_countries, kMaxCountryLogits);
+        std::memcpy(strategy_country_buf, country_strategy_logits_ptr + row_offset,
+                     static_cast<size_t>(copy_n) * sizeof(float));
+        source_ptr = strategy_country_buf;
+        source_n = copy_n;
     }
 
-    auto masked = torch::full_like(source_logits, -std::numeric_limits<float>::infinity());
+    // Build masked softmax over accessible countries
+    float masked[kMaxCountryLogits];
+    std::fill(masked, masked + kMaxCountryLogits, -std::numeric_limits<float>::infinity());
     for (const auto cid : accessible) {
-        const auto index = static_cast<int64_t>(cid);
-        masked.index_put_({index}, tensor_at(source_logits, index));
+        const int idx = static_cast<int>(cid);
+        if (idx < source_n) {
+            masked[idx] = source_ptr[idx];
+        }
     }
-    const auto probs = torch::softmax(masked, 0);
+    softmax_inplace(masked, std::min(source_n, kMaxCountryLogits));
 
     if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
-        const auto target = static_cast<CountryId>(argmax_index(probs));
-        return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {target}};
+        // argmax over masked probs
+        int best_idx = 0;
+        float best_prob = -1.0f;
+        for (const auto cid : accessible) {
+            const int idx = static_cast<int>(cid);
+            if (masked[idx] > best_prob) {
+                best_prob = masked[idx];
+                best_idx = idx;
+            }
+        }
+        return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {static_cast<CountryId>(best_idx)}};
     }
 
+    // Influence placement: proportional allocation of ops
     const auto ops = effective_ops(card_id, pub, side);
-    const auto accessible_indices = torch::tensor(
-        std::vector<int64_t>(accessible.begin(), accessible.end()),
-        torch::TensorOptions().dtype(torch::kInt64)
-    );
-    auto accessible_probs = probs.index({accessible_indices});
-    auto alloc = accessible_probs * static_cast<double>(ops);
-    auto floor_alloc = torch::floor(alloc).to(torch::kInt64);
-    auto remainder = ops - static_cast<int>(floor_alloc.sum().item<int64_t>());
+
+    // Get accessible probs and compute allocation
+    float acc_probs[kMaxCountryLogits];
+    float alloc_f[kMaxCountryLogits];
+    int alloc_i[kMaxCountryLogits];
+    const int n_acc = static_cast<int>(accessible.size());
+
+    int floor_sum = 0;
+    for (int i = 0; i < n_acc; ++i) {
+        acc_probs[i] = masked[static_cast<int>(accessible[static_cast<size_t>(i)])];
+        alloc_f[i] = acc_probs[i] * static_cast<float>(ops);
+        alloc_i[i] = static_cast<int>(std::floor(alloc_f[i]));
+        floor_sum += alloc_i[i];
+    }
+
+    int remainder = ops - floor_sum;
     if (remainder > 0) {
-        auto fractional = alloc - floor_alloc.to(torch::kFloat32);
-        std::vector<std::pair<float, CountryId>> order;
-        order.reserve(accessible.size());
-        for (size_t i = 0; i < accessible.size(); ++i) {
-            const auto index = static_cast<int64_t>(i);
-            order.emplace_back(-tensor_at(fractional, index).item<float>(), accessible[i]);
+        // Sort by fractional part descending, break ties by country id
+        std::pair<float, int> order[kMaxCountryLogits];
+        for (int i = 0; i < n_acc; ++i) {
+            const float fractional = alloc_f[i] - static_cast<float>(alloc_i[i]);
+            order[i] = {-fractional, i};
         }
-        std::sort(order.begin(), order.end());
-        for (int i = 0; i < remainder && i < static_cast<int>(order.size()); ++i) {
-            const auto target = order[static_cast<size_t>(i)].second;
-            const auto pos = static_cast<long long>(
-                std::find(accessible.begin(), accessible.end(), target) - accessible.begin()
-            );
-            const auto pos64 = static_cast<int64_t>(pos);
-            floor_alloc.index_put_({pos64}, tensor_at(floor_alloc, pos64).item<int64_t>() + 1);
+        std::sort(order, order + n_acc);
+        for (int i = 0; i < remainder && i < n_acc; ++i) {
+            alloc_i[order[i].second] += 1;
         }
     }
 
     ActionEncoding action{.card_id = card_id, .mode = mode, .targets = {}};
-    for (size_t i = 0; i < accessible.size(); ++i) {
-        const auto index = static_cast<int64_t>(i);
-        const auto count = tensor_at(floor_alloc, index).item<int64_t>();
-        for (int64_t j = 0; j < count; ++j) {
-            action.targets.push_back(accessible[i]);
+    for (int i = 0; i < n_acc; ++i) {
+        for (int j = 0; j < alloc_i[i]; ++j) {
+            action.targets.push_back(accessible[static_cast<size_t>(i)]);
         }
     }
     return action;
@@ -211,26 +276,34 @@ ActionEncoding fallback_resolved_action(const ActionEncoding& action, const Publ
     return resolved;
 }
 
-ActionEncoding resolve_edge_action(
+ActionEncoding resolve_edge_action_raw(
     const ActionEncoding& action,
     const PublicState& pub,
     Side side,
-    const torch::Tensor& country_logits,
-    const torch::Tensor& strategy_logits,
-    const torch::Tensor& country_strategy_logits
+    const float* country_logits_ptr,
+    int country_logits_n,
+    const float* strategy_logits_ptr,
+    int strategy_logits_n,
+    const float* country_strategy_logits_ptr,
+    int country_strategy_n_strategies,
+    int country_strategy_n_countries
 ) {
     if (action.mode != ActionMode::Influence) {
         return action;
     }
-    if (country_logits.defined()) {
-        auto resolved = build_action_from_country_logits(
+    if (country_logits_ptr != nullptr) {
+        auto resolved = build_action_from_country_logits_raw(
             action.card_id,
             action.mode,
-            country_logits,
+            country_logits_ptr,
+            country_logits_n,
             pub,
             side,
-            strategy_logits,
-            country_strategy_logits
+            strategy_logits_ptr,
+            strategy_logits_n,
+            country_strategy_logits_ptr,
+            country_strategy_n_strategies,
+            country_strategy_n_countries
         );
         if (!resolved.targets.empty()) {
             return resolved;
@@ -372,6 +445,7 @@ ExpansionResult expand(
         return {.node = std::move(node), .leaf_value = 0.0};
     }
 
+    // --- NN forward (only torch call in hot path) ---
     const auto outputs = nn::forward_model(
         model,
         state.pub,
@@ -379,44 +453,100 @@ ExpansionResult expand(
         holds_china_for(state, state.pub.phasing),
         state.pub.phasing
     );
-    const auto card_logits = get_tensor(outputs, "card_logits").index({0});
-    const auto mode_logits = get_tensor(outputs, "mode_logits").index({0});
-    const auto country_logits_raw = get_tensor(outputs, "country_logits", false);
-    const auto strategy_logits_raw = get_tensor(outputs, "strategy_logits", false);
-    const auto country_strategy_logits_raw = get_tensor(outputs, "country_strategy_logits", false);
-    const auto country_logits = country_logits_raw.defined() ? country_logits_raw.index({0}) : torch::Tensor{};
-    const auto strategy_logits = strategy_logits_raw.defined() ? strategy_logits_raw.index({0}) : torch::Tensor{};
-    const auto country_strategy_logits = country_strategy_logits_raw.defined()
-        ? country_strategy_logits_raw.index({0})
-        : torch::Tensor{};
 
-    auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
-    for (const auto& card : drafts) {
-        masked_card.index_put_({static_cast<int64_t>(card.card_id - 1)}, tensor_at(card_logits, card.card_id - 1));
+    // --- Extract raw float arrays from tensors ONCE ---
+    const auto card_logits_t = get_tensor(outputs, "card_logits").index({0}).contiguous();
+    const auto mode_logits_t = get_tensor(outputs, "mode_logits").index({0}).contiguous();
+    const auto country_logits_raw_t = get_tensor(outputs, "country_logits", false);
+    const auto strategy_logits_raw_t = get_tensor(outputs, "strategy_logits", false);
+    const auto country_strategy_logits_raw_t = get_tensor(outputs, "country_strategy_logits", false);
+
+    float card_logits_arr[kMaxCardLogits];
+    float mode_logits_arr[kMaxModeLogits];
+    float country_logits_arr[kMaxCountryLogits];
+    float strategy_logits_arr[kMaxStrategies];
+    float country_strategy_logits_arr[kMaxStrategies * kMaxCountryLogits];
+
+    const int n_card = extract_float_array(card_logits_t, card_logits_arr, kMaxCardLogits);
+    const int n_mode = extract_float_array(mode_logits_t, mode_logits_arr, kMaxModeLogits);
+
+    const float* country_logits_ptr = nullptr;
+    int n_country = 0;
+    const float* strategy_logits_ptr = nullptr;
+    int n_strategy = 0;
+    const float* country_strategy_ptr = nullptr;
+    int cs_n_strategies = 0;
+    int cs_n_countries = 0;
+
+    if (country_logits_raw_t.defined()) {
+        auto cl = country_logits_raw_t.index({0}).contiguous();
+        n_country = extract_float_array(cl, country_logits_arr, kMaxCountryLogits);
+        country_logits_ptr = country_logits_arr;
     }
-    const auto card_probs = torch::softmax(masked_card, 0);
+    if (strategy_logits_raw_t.defined()) {
+        auto sl = strategy_logits_raw_t.index({0}).contiguous();
+        n_strategy = extract_float_array(sl, strategy_logits_arr, kMaxStrategies);
+        strategy_logits_ptr = strategy_logits_arr;
+    }
+    if (country_strategy_logits_raw_t.defined()) {
+        auto csl = country_strategy_logits_raw_t.index({0}).contiguous();
+        cs_n_strategies = static_cast<int>(csl.size(0));
+        cs_n_countries = static_cast<int>(csl.size(1));
+        const int total = std::min(cs_n_strategies * cs_n_countries, kMaxStrategies * kMaxCountryLogits);
+        std::memcpy(country_strategy_logits_arr, csl.data_ptr<float>(),
+                     static_cast<size_t>(total) * sizeof(float));
+        country_strategy_ptr = country_strategy_logits_arr;
+    }
 
+    // --- Masked card softmax using raw arrays ---
+    float masked_card[kMaxCardLogits];
+    std::fill(masked_card, masked_card + n_card, -std::numeric_limits<float>::infinity());
+    for (const auto& card : drafts) {
+        const int idx = static_cast<int>(card.card_id) - 1;
+        if (idx >= 0 && idx < n_card) {
+            masked_card[idx] = card_logits_arr[idx];
+        }
+    }
+    softmax_inplace(masked_card, n_card);
+
+    // --- Build edges with raw float math ---
     double total_prior = 0.0;
     for (const auto& card : drafts) {
-        auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        // Masked mode softmax (recomputed per card since legal modes vary)
+        float masked_mode[kMaxModeLogits];
+        std::fill(masked_mode, masked_mode + n_mode, -std::numeric_limits<float>::infinity());
         for (const auto& mode : card.modes) {
-            masked_mode.index_put_({static_cast<int64_t>(mode.mode)}, tensor_at(mode_logits, static_cast<int>(mode.mode)));
+            const int midx = static_cast<int>(mode.mode);
+            if (midx < n_mode) {
+                masked_mode[midx] = mode_logits_arr[midx];
+            }
         }
-        const auto mode_probs = torch::softmax(masked_mode, 0);
-        const auto card_prob = tensor_at(card_probs, card.card_id - 1).item<double>();
+        softmax_inplace(masked_mode, n_mode);
+
+        const int cidx = static_cast<int>(card.card_id) - 1;
+        const double card_prob = (cidx >= 0 && cidx < n_card) ? static_cast<double>(masked_card[cidx]) : 0.0;
 
         for (const auto& mode : card.modes) {
-            const auto mode_prob = tensor_at(mode_probs, static_cast<int>(mode.mode)).item<double>();
-            if ((mode.mode == ActionMode::Coup || mode.mode == ActionMode::Realign) && country_logits.defined()) {
-                auto masked_country = torch::full_like(country_logits, -std::numeric_limits<float>::infinity());
+            const int midx = static_cast<int>(mode.mode);
+            const double mode_prob = (midx < n_mode) ? static_cast<double>(masked_mode[midx]) : 0.0;
+
+            if ((mode.mode == ActionMode::Coup || mode.mode == ActionMode::Realign) &&
+                country_logits_ptr != nullptr) {
+                // Masked country softmax
+                float masked_country[kMaxCountryLogits];
+                std::fill(masked_country, masked_country + n_country, -std::numeric_limits<float>::infinity());
                 for (const auto& edge : mode.edges) {
-                    const auto country = edge.targets.front();
-                    masked_country.index_put_({static_cast<int64_t>(country)}, tensor_at(country_logits, country));
+                    const int ci = static_cast<int>(edge.targets.front());
+                    if (ci < n_country) {
+                        masked_country[ci] = country_logits_arr[ci];
+                    }
                 }
-                const auto country_probs = torch::softmax(masked_country, 0);
+                softmax_inplace(masked_country, n_country);
+
                 for (const auto& edge : mode.edges) {
-                    const auto country = edge.targets.front();
-                    const auto prior = card_prob * mode_prob * tensor_at(country_probs, country).item<double>();
+                    const int ci = static_cast<int>(edge.targets.front());
+                    const double country_prob = (ci < n_country) ? static_cast<double>(masked_country[ci]) : 0.0;
+                    const auto prior = card_prob * mode_prob * country_prob;
                     node->edges.push_back(MctsEdge{
                         .action = edge,
                         .prior = static_cast<float>(prior),
@@ -435,13 +565,17 @@ ExpansionResult expand(
                     .prior = static_cast<float>(per_edge_prior),
                 });
                 node->children.emplace_back(nullptr);
-                node->applied_actions.push_back(resolve_edge_action(
+                node->applied_actions.push_back(resolve_edge_action_raw(
                     edge,
                     state.pub,
                     state.pub.phasing,
-                    country_logits,
-                    strategy_logits,
-                    country_strategy_logits
+                    country_logits_ptr,
+                    n_country,
+                    strategy_logits_ptr,
+                    n_strategy,
+                    country_strategy_ptr,
+                    cs_n_strategies,
+                    cs_n_countries
                 ));
                 total_prior += per_edge_prior;
             }
