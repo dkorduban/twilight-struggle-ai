@@ -1401,3 +1401,19 @@ Bottleneck at best config: NN=52%, expand=32%, select=16%.
 The GNN model (~486K params) with ~200 avg batch size is too small for GPU inference to
 overcome CPU→GPU transfer + kernel launch overhead on the RTX 3050 (2048 CUDA cores).
 **Always use CPU inference for MCTS on this hardware.**
+
+### MCTS 400sim benchmark for GNN (v106_cf_gnn_s42)
+
+| Method | USSR WR | US WR | Combined | Wall time |
+|--------|---------|-------|----------|-----------|
+| Greedy (baseline) | 55.8% | 14.0% | **34.9%** | 82s |
+| MCTS 400sim | 55.6% | 14.2% | **34.9%** | 1716s |
+
+**MCTS 400 sims = identical to greedy.** 21x slower, zero improvement.
+Combined with prior MCTS 100sim result (also no benefit), this definitively shows
+that MCTS tree search over card×mode does not help the GNN model. The GNN's policy
+is already near-optimal for card/mode selection.
+
+**Implication**: The bottleneck is influence placement quality (not searched by MCTS),
+not card/mode selection. Next architectural lever: allocation head + DP decoder
+(Phase 2c from the plan) to improve country-level placement decisions.
