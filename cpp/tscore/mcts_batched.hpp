@@ -92,9 +92,11 @@ struct BatchedMctsConfig {
     int max_pending = 8;  // max concurrent leaves per game slot
     float temperature = 0.0f;
     float epsilon_greedy = 0.0f;
-    // When set, only this side uses MCTS search; the other uses heuristic.
+    // When set, only this side uses MCTS search; the other uses heuristic
+    // (or greedy NN if greedy_nn_opponent is true).
     // When nullopt, both sides use MCTS (self-play).
     std::optional<Side> learned_side;
+    bool greedy_nn_opponent = false;  // opponent uses NN argmax instead of heuristic
 };
 
 void collect_games_batched(
@@ -102,7 +104,8 @@ void collect_games_batched(
     torch::jit::script::Module& model,
     const BatchedMctsConfig& config,
     uint32_t base_seed,
-    std::ostream& out_stream
+    std::ostream& out_stream,
+    std::vector<GameResult>* out_results = nullptr
 );
 
 /// Run benchmark games using batched greedy inference for one side.
@@ -116,7 +119,32 @@ std::vector<GameResult> benchmark_games_batched(
     int pool_size,
     uint32_t base_seed,
     torch::Device device = torch::kCPU,
-    bool greedy_opponent = false
+    bool greedy_opponent = false,
+    float temperature = 0.0f
+);
+
+/// Run MCTS (learned side) vs greedy NN (opponent) benchmark.
+/// Returns one GameResult per game.
+std::vector<GameResult> benchmark_mcts_vs_greedy(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    int n_simulations,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device = torch::kCPU
+);
+
+/// Run MCTS benchmark. Opponent is heuristic (default) or greedy NN.
+std::vector<GameResult> benchmark_mcts(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    int n_simulations,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device = torch::kCPU,
+    bool greedy_nn_opponent = false
 );
 
 }  // namespace ts

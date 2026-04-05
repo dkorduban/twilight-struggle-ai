@@ -541,7 +541,7 @@ PYBIND11_MODULE(tscore, m) {
     );
     m.def(
         "benchmark_batched",
-        [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size, py::object seed_obj, const std::string& device_str, bool greedy_opponent) {
+        [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size, py::object seed_obj, const std::string& device_str, bool greedy_opponent, float temperature) {
             std::optional<uint32_t> seed;
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
@@ -551,7 +551,7 @@ PYBIND11_MODULE(tscore, m) {
             model.eval();
             return ts::benchmark_games_batched(
                 n_games, model, learned_side, pool_size,
-                seed.value_or(std::random_device{}()), device, greedy_opponent);
+                seed.value_or(std::random_device{}()), device, greedy_opponent, temperature);
         },
         py::arg("model_path"),
         py::arg("learned_side"),
@@ -560,10 +560,10 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("seed") = py::none(),
         py::arg("device") = "cpu",
         py::arg("greedy_opponent") = false,
-        "Run batched greedy benchmark: learned side uses argmax from batched NN,\n"
-        "opponent uses heuristic (default) or greedy NN (greedy_opponent=True).\n"
-        "Returns list[GameResult].\n"
-        "device: 'cpu' or 'cuda' for GPU inference."
+        py::arg("temperature") = 0.0f,
+        "Run batched greedy benchmark: learned side uses argmax (T=0) or softmax\n"
+        "sampling (T>0). Opponent uses heuristic (default) or greedy NN.\n"
+        "Returns list[GameResult]."
     );
     m.def(
         "benchmark_ismcts",
@@ -607,6 +607,49 @@ PYBIND11_MODULE(tscore, m) {
         "pool_size: concurrent games batched together (default 4).\n"
         "max_pending_per_det: concurrent leaves per determinization via virtual loss (default 8).\n"
         "device: 'cpu' or 'cuda' for GPU inference."
+    );
+    m.def(
+        "benchmark_mcts_vs_greedy",
+        [](const std::string& model_path, ts::Side learned_side, int n_games,
+           int n_simulations, int pool_size, uint32_t seed, const std::string& device_str) {
+            torch::Device device(device_str);
+            auto model = torch::jit::load(model_path, device);
+            model.eval();
+            return ts::benchmark_mcts_vs_greedy(
+                n_games, model, learned_side, n_simulations, pool_size, seed, device);
+        },
+        py::arg("model_path"),
+        py::arg("learned_side"),
+        py::arg("n_games"),
+        py::arg("n_simulations") = 400,
+        py::arg("pool_size") = 32,
+        py::arg("seed") = 42000,
+        py::arg("device") = "cpu",
+        "Run MCTS (learned side) vs greedy NN (opponent, same model) benchmark.\n"
+        "Returns list[GameResult]."
+    );
+    m.def(
+        "benchmark_mcts",
+        [](const std::string& model_path, ts::Side learned_side, int n_games,
+           int n_simulations, int pool_size, uint32_t seed, const std::string& device_str,
+           bool greedy_nn_opponent) {
+            torch::Device device(device_str);
+            auto model = torch::jit::load(model_path, device);
+            model.eval();
+            return ts::benchmark_mcts(
+                n_games, model, learned_side, n_simulations, pool_size, seed, device,
+                greedy_nn_opponent);
+        },
+        py::arg("model_path"),
+        py::arg("learned_side"),
+        py::arg("n_games"),
+        py::arg("n_simulations") = 400,
+        py::arg("pool_size") = 32,
+        py::arg("seed") = 42000,
+        py::arg("device") = "cpu",
+        py::arg("greedy_nn_opponent") = false,
+        "Run MCTS benchmark. Opponent is heuristic (default) or greedy NN.\n"
+        "Returns list[GameResult]."
     );
 #endif
 }

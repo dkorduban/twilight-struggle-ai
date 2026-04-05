@@ -775,7 +775,93 @@ when the model's different play style reaches game states the engine hasn't been
 | v99_cf_s7 MCTS | 48.0% | 10.0% | 29.0% | -3.4pp |
 | v99_1x95ep MCTS | 29.0% | 7.0% | 18.0% | -11.5pp |
 
-**Finding**: MCTS hurts both models. The value head is too noisy — search amplifies
+**Finding**: MCTS hurts both models vs heuristic. The value head is too noisy — search amplifies
 errors instead of finding better moves. With cf_s7, USSR improves slightly (48% vs 51.1%)
 but US drops badly (10% vs 13.7%). With 1x95ep, the degradation is catastrophic.
 This confirms the value head is the bottleneck, not search depth.
+
+**UPDATE**: The above MCTS results were collected with a **double-softmax bug** in the
+batched MCTS prior computation. The model's `country_logits` output is already a probability
+distribution (mixture of softmaxes), but `expand_from_raw` applied `softmax_inplace` again,
+flattening influence placement priors toward uniform. Since influence is ~50% of all decisions,
+this made MCTS priors essentially random for the most common action type. The greedy benchmark
+path correctly used raw `country_strategy_logits` (not the pre-mixed probabilities), so greedy
+had better prior quality than MCTS.
+
+---
+
+## Double-Softmax Fix + MCTS vs Greedy NN (2026-04-04)
+
+### Bug: double-softmax on country_logits in batched MCTS
+
+**Root cause**: In `mcts_batched.cpp:expand_from_raw` and `ismcts.cpp:expand_from_raw`,
+the influence allocation and coup/realign target priors used `country_logits_arr` (already
+probabilities from the model's mixture-of-softmaxes output) and applied `softmax_inplace`
+again. This compressed the distribution toward uniform, wasting simulations on poor influence
+placements. The greedy benchmark path correctly used `strategy_logits` + `country_strategy_logits`
+(raw logits) with a single softmax.
+
+**Fix**: Modified `expand_from_raw` in both files to prefer strategy-selected raw logits
+(`country_strategy_logits[argmax(strategy_logits)]`) over pre-mixed `country_logits`.
+Now MCTS priors match the greedy policy's prior quality.
+
+### Post-Fix Greedy Benchmark (2000 games/side, seed=42000)
+
+| Model | USSR WR | US WR | Combined |
+|-------|---------|-------|----------|
+| v99_cf_s7 (best) | 49.8% | 12.8% | 31.3% |
+| v99_1x95ep | 46.3% | 9.8% | 28.1% |
+| v100_actor_value | 38.6% | 7.1% | 22.9% |
+
+Note: v100_teacher was found to have identical weights to v99_1x95ep (byte-for-byte
+identical game outcomes across multiple seeds).
+
+### MCTS vs Greedy NN — Head-to-Head (v99_cf_s7, 400 sims, 100 games/side)
+
+| MCTS side | MCTS WR | Greedy WR | Delta vs greedy-vs-greedy |
+|-----------|---------|-----------|--------------------------|
+| USSR | **86.0%** | 13.0% | +7.4pp (vs 78.6% baseline) |
+| US | **28.0%** | 71.0% | +6.6pp (vs 21.4% baseline) |
+| **Combined** | **57.0%** | **42.0%** | +15.0pp |
+
+Greedy-vs-greedy baseline: 78.6% USSR WR (from previous session).
+MCTS uses Dirichlet noise (alpha=0.3, eps=0.25), T=0 (greedy selection).
+Opponent uses greedy argmax from same model.
+
+**Finding**: After fixing the double-softmax bug, MCTS with 400 sims **definitively
+beats greedy NN by 15pp combined**. Search works! The USSR side gains +7.4pp and the
+US side gains +6.6pp from search. The fix is particularly impactful because influence
+placement is the most frequent action type, and MCTS now uses properly concentrated
+priors for it.
+
+This reverses the previous conclusion that "the value head is the bottleneck." The value
+head is good enough for MCTS to help — the problem was degraded priors preventing effective
+tree search.
+
+### MCTS vs Heuristic — Post-Fix (v99_cf_s7, 400 sims, 200 games/side)
+
+| Side | MCTS (fixed) | MCTS (pre-fix) | Greedy baseline | Delta |
+|------|-------------|----------------|-----------------|-------|
+| USSR | **57.0%** | 48.0% | 49.8% | **+7.2pp** |
+| US | **17.0%** | 10.0% | 12.8% | **+4.2pp** |
+| Combined | **37.0%** | 29.0% | 31.3% | **+5.7pp** |
+
+**Finding**: With the double-softmax fix, MCTS consistently beats greedy policy vs heuristic.
+The improvement is larger for USSR (+7.2pp) than US (+4.2pp), but both sides benefit.
+MCTS-USSR 57% is the strongest result we've seen for any single-model approach.
+
+### Greedy NN Temperature Sweep (v99_cf_s7, 1000 games/side vs heuristic)
+
+| Temperature | USSR WR | US WR | Combined |
+|-------------|---------|-------|----------|
+| T=0.0 | 55.7% | 10.1% | 32.9% |
+| **T=0.1** | **57.6%** | **11.1%** | **34.4%** |
+| T=0.2 | 53.1% | 10.2% | 31.6% |
+| T=0.3 | 53.3% | 10.6% | 31.9% |
+| T=0.5 | 54.2% | 9.3% | 31.8% |
+| T=0.8 | 55.6% | 10.5% | 33.0% |
+| T=1.0 | 52.6% | 9.8% | 31.2% |
+
+**Finding**: T=0.1 is optimal (+1.5pp combined over T=0). Light sampling helps by
+adding diversity to break deterministic patterns, but higher temperatures degrade play.
+Greedy-vs-greedy (same model): 78.0% USSR WR, confirming massive side asymmetry in learned policy.

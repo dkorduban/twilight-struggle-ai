@@ -666,7 +666,25 @@ ExpansionResult expand_from_raw(
     const float* country_logits_ptr = nullptr;
     int n_country = 0;
 
-    if (raw.country_logits != nullptr) {
+    // Prefer strategy-selected raw logits over pre-mixed country_logits (which
+    // are already probabilities — applying softmax again would double-softmax).
+    if (raw.strategy_logits != nullptr && raw.country_strategy_logits != nullptr &&
+        raw.cs_n_countries > 0 && raw.cs_n_strategies > 0) {
+        // Pick best strategy via argmax
+        const float* sl = raw.strategy_logits + batch_index * raw.strategy_stride;
+        int best_strat = 0;
+        float best_val = sl[0];
+        for (int s = 1; s < raw.n_strategy; ++s) {
+            if (sl[s] > best_val) { best_val = sl[s]; best_strat = s; }
+        }
+        // Copy that strategy's country logits (raw logits, not probabilities)
+        n_country = std::min(raw.cs_n_countries, kMaxCountryLogits);
+        const float* cs_row = raw.country_strategy_logits +
+            batch_index * raw.cs_batch_stride +
+            best_strat * raw.cs_n_countries;
+        std::memcpy(country_logits_arr, cs_row, static_cast<size_t>(n_country) * sizeof(float));
+        country_logits_ptr = country_logits_arr;
+    } else if (raw.country_logits != nullptr) {
         n_country = raw.n_country;
         std::memcpy(country_logits_arr, raw.country_logits + batch_index * raw.country_stride,
                     static_cast<size_t>(n_country) * sizeof(float));
@@ -1905,7 +1923,8 @@ void collect_games_batched(
     torch::jit::script::Module& model,
     const BatchedMctsConfig& config,
     uint32_t base_seed,
-    std::ostream& out_stream
+    std::ostream& out_stream,
+    std::vector<GameResult>* out_results
 ) {
     if (n_games <= 0) {
         throw std::invalid_argument("n_games must be positive");
@@ -1970,6 +1989,9 @@ void collect_games_batched(
         for (auto& slot : pool) {
             if (slot.active && slot.game_done && !slot.emitted) {
                 write_game_rows(slot, out_stream);
+                if (out_results) {
+                    out_results->push_back(slot.result);
+                }
                 slot.emitted = true;
                 slot.active = false;
                 games_emitted += 1;
@@ -2002,14 +2024,23 @@ void collect_games_batched(
             }
 
             // If learned_side is set and this decision is for the opponent,
-            // use heuristic immediately — no MCTS search needed.
+            // skip MCTS — use heuristic or greedy NN.
             if (config.learned_side.has_value() &&
                 slot.decision->side != *config.learned_side) {
-                // Force immediate heuristic commit by setting sims_target=0.
-                slot.sims_target = 0;
-                slot.sims_completed = 0;
-                slot.move_done = true;
-                return;
+                if (config.greedy_nn_opponent) {
+                    // Let root expansion happen normally — after expansion with
+                    // sims_target=0, commit_best_action picks highest-prior edge
+                    // (= greedy NN policy from the same model).
+                    slot.sims_target = 0;
+                    slot.sims_completed = 0;
+                    // Don't set move_done — fall through to root expansion below.
+                } else {
+                    slot.sims_target = 0;
+                    slot.sims_completed = 0;
+                    slot.move_done = true;
+                    // Heuristic fallback happens in commit_best_action.
+                    return;
+                }
             }
 
             if (slot.root == nullptr) {
@@ -2149,11 +2180,23 @@ namespace {
 
 // Exact mirror of TorchScriptPolicy::choose_action logic from learned_policy.cpp,
 // but reads from BatchOutputs instead of calling forward_model individually.
+// Sample from logits using temperature. T=0 → argmax, T>0 → softmax sampling.
+CardId sample_from_masked_logits(torch::Tensor masked, float temperature, Pcg64Rng& rng) {
+    if (temperature <= 0.0f) {
+        return static_cast<CardId>(masked.argmax(0).item<int64_t>() + 1);
+    }
+    auto scaled = masked / temperature;
+    auto probs = torch::softmax(scaled, 0);
+    auto sampled_idx = torch::multinomial(probs, 1).item<int64_t>();
+    return static_cast<CardId>(sampled_idx + 1);
+}
+
 ActionEncoding greedy_action_from_outputs(
     const GameState& state,
     const nn::BatchOutputs& outputs,
     int64_t batch_index,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    float temperature = 0.0f
 ) {
     const auto& pub = state.pub;
     const auto side = pub.phasing;
@@ -2208,7 +2251,7 @@ ActionEncoding greedy_action_from_outputs(
         }
     }
 
-    auto sampled_card_id = static_cast<CardId>(masked_card.argmax(/*dim=*/0).item<int64_t>() + 1);
+    auto sampled_card_id = sample_from_masked_logits(masked_card, temperature, rng);
 
     // ── Mode selection (mirrors learned_policy.cpp) ──
     auto modes = legal_modes(sampled_card_id, pub, side);
@@ -2263,7 +2306,13 @@ ActionEncoding greedy_action_from_outputs(
         for (const auto m : modes) {
             masked_mode.index_put_({static_cast<int64_t>(static_cast<int>(m))}, tensor_at(mode_logits, static_cast<int>(m)));
         }
-        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+        if (temperature <= 0.0f) {
+            mode = static_cast<ActionMode>(masked_mode.argmax(0).item<int64_t>());
+        } else {
+            auto scaled = masked_mode / temperature;
+            auto probs = torch::softmax(scaled, 0);
+            mode = static_cast<ActionMode>(torch::multinomial(probs, 1).item<int64_t>());
+        }
     }
 
     // Belt-and-suspenders DEFCON safety gate.
@@ -2414,7 +2463,8 @@ std::vector<GameResult> benchmark_games_batched(
     int pool_size,
     uint32_t base_seed,
     torch::Device device,
-    bool greedy_opponent
+    bool greedy_opponent,
+    float temperature
 ) {
     if (n_games <= 0) {
         return {};
@@ -2528,7 +2578,8 @@ std::vector<GameResult> benchmark_games_batched(
                     entry.slot->root_state,
                     outputs,
                     static_cast<int64_t>(batch_idx),
-                    entry.slot->rng
+                    entry.slot->rng,
+                    temperature
                 );
                 commit_greedy_action(*entry.slot, action);
                 batch_idx += 1;
@@ -2536,6 +2587,49 @@ std::vector<GameResult> benchmark_games_batched(
         }
     }
 
+    return results;
+}
+
+std::vector<GameResult> benchmark_mcts_vs_greedy(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    int n_simulations,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device
+) {
+    return benchmark_mcts(n_games, model, learned_side, n_simulations,
+                          pool_size, base_seed, device, /*greedy_nn_opponent=*/true);
+}
+
+std::vector<GameResult> benchmark_mcts(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    int n_simulations,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device,
+    bool greedy_nn_opponent
+) {
+    BatchedMctsConfig config;
+    config.mcts.n_simulations = n_simulations;
+    config.pool_size = pool_size;
+    config.learned_side = learned_side;
+    config.greedy_nn_opponent = greedy_nn_opponent;
+    config.max_pending = 8;
+    config.virtual_loss_weight = 3;
+    config.temperature = 0.0f;
+    config.mcts.dir_alpha = 0.3f;
+    config.mcts.dir_epsilon = 0.25f;
+
+    std::vector<GameResult> results;
+    results.reserve(static_cast<size_t>(n_games));
+
+    // Use a null output stream — we only want game results, not JSONL.
+    std::ostringstream null_stream;
+    collect_games_batched(n_games, model, config, base_seed, null_stream, &results);
     return results;
 }
 

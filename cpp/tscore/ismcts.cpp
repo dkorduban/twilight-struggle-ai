@@ -582,7 +582,23 @@ ExpansionResult expand_from_raw(
     const float* country_logits_ptr = nullptr;
     int n_country = 0;
 
-    if (raw.country_logits != nullptr) {
+    // Prefer strategy-selected raw logits over pre-mixed country_logits (which
+    // are already probabilities — applying softmax again would double-softmax).
+    if (raw.strategy_logits != nullptr && raw.country_strategy_logits != nullptr &&
+        raw.cs_n_countries > 0 && raw.cs_n_strategies > 0) {
+        const float* sl = raw.strategy_logits + batch_index * raw.strategy_stride;
+        int best_strat = 0;
+        float best_val = sl[0];
+        for (int s = 1; s < raw.n_strategy; ++s) {
+            if (sl[s] > best_val) { best_val = sl[s]; best_strat = s; }
+        }
+        n_country = std::min(raw.cs_n_countries, kMaxCountryLogits);
+        const float* cs_row = raw.country_strategy_logits +
+            batch_index * raw.cs_batch_stride +
+            best_strat * raw.cs_n_countries;
+        std::memcpy(country_logits_arr, cs_row, static_cast<size_t>(n_country) * sizeof(float));
+        country_logits_ptr = country_logits_arr;
+    } else if (raw.country_logits != nullptr) {
         n_country = raw.n_country;
         std::memcpy(country_logits_arr, raw.country_logits + batch_index * raw.country_stride,
                     static_cast<size_t>(n_country) * sizeof(float));
