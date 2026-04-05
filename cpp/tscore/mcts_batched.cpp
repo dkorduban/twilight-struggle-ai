@@ -2005,7 +2005,7 @@ void collect_games_batched(
 
     const int max_pending = std::max(1, config.max_pending);
     nn::BatchInputs batch_inputs;
-    batch_inputs.allocate(config.pool_size * max_pending);
+    batch_inputs.allocate(config.pool_size * max_pending, config.device);
     std::vector<BatchEntry> batch_entries;
     batch_entries.reserve(static_cast<size_t>(config.pool_size) * static_cast<size_t>(max_pending));
 
@@ -2707,6 +2707,7 @@ std::vector<GameResult> benchmark_mcts(
     config.learned_side = learned_side;
     config.greedy_nn_opponent = greedy_nn_opponent;
     config.nash_temperatures = nash_temperatures;
+    config.device = device;
     config.max_pending = 8;
     config.virtual_loss_weight = 3;
     config.temperature = 0.0f;

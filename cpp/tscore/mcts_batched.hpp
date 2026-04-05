@@ -114,6 +114,9 @@ struct BatchedMctsConfig {
     // When true, the heuristic opponent samples per-game Boltzmann temperatures
     // from the Nash equilibrium mixed strategy (matching training data).
     bool nash_temperatures = false;
+    // Device for NN inference (CPU or CUDA). Batch inputs are allocated on CPU
+    // and transferred to this device before forward, then outputs moved back.
+    torch::Device device = torch::kCPU;
 };
 
 void collect_games_batched(
