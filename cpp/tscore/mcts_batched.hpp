@@ -83,6 +83,9 @@ struct GameSlot {
     std::vector<PendingHeadlineChoice> headline_order;
     size_t headline_order_index = 0;
     std::optional<PendingDecision> decision;
+    // Saved RNG state before MCTS search starts, used in heuristic_teacher_mode to
+    // restore the game RNG so heuristic move selection is identical to pure heuristic.
+    std::optional<Pcg64Rng> rng_before_mcts;
 };
 
 struct BatchedMctsConfig {
@@ -97,6 +100,15 @@ struct BatchedMctsConfig {
     // When nullopt, both sides use MCTS (self-play).
     std::optional<Side> learned_side;
     bool greedy_nn_opponent = false;  // opponent uses NN argmax instead of heuristic
+    // When true, both sides play MinimalHybrid (heuristic) but MCTS is also run at
+    // each decision to record visit count distributions as teacher targets.
+    // Game trajectories are bit-identical to pure heuristic (same seed) because the
+    // game RNG is saved before MCTS and restored before heuristic move selection.
+    bool heuristic_teacher_mode = false;
+    // Prefix used in game_id construction: "<prefix>_<seed>_<index>".
+    // Default "mcts". Set to "selfplay" in heuristic_teacher_mode so produced
+    // game_ids match existing heuristic dataset rows for teacher target joining.
+    std::string game_id_prefix = "mcts";
 };
 
 void collect_games_batched(

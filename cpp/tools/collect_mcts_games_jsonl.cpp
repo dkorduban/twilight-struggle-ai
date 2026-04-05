@@ -19,7 +19,8 @@ void usage(const char* argv0) {
         << " --model scripted.pt --out rows.jsonl [--games N] [--n-sim N]"
         << " [--pool-size N] [--max-pending N] [--c-puct F] [--seed N] [--virtual-loss N]"
         << " [--temperature F] [--dir-alpha F] [--dir-epsilon F]"
-        << " [--epsilon-greedy F] [--learned-side ussr|us]\n";
+        << " [--epsilon-greedy F] [--learned-side ussr|us]"
+        << " [--heuristic-teacher-mode] [--game-id-prefix PREFIX]\n";
 }
 
 }  // namespace
@@ -40,6 +41,8 @@ int main(int argc, char** argv) {
         float epsilon_greedy = 0.0f;
         std::optional<ts::Side> learned_side;
         std::optional<uint32_t> seed = 12345U;
+        bool heuristic_teacher_mode = false;
+        std::optional<std::string> game_id_prefix;
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -85,6 +88,10 @@ int main(int argc, char** argv) {
                 } else {
                     throw std::invalid_argument("--learned-side must be 'ussr' or 'us'");
                 }
+            } else if (arg == "--heuristic-teacher-mode") {
+                heuristic_teacher_mode = true;
+            } else if (arg == "--game-id-prefix") {
+                game_id_prefix = std::string(require_value("--game-id-prefix"));
             } else if (arg == "--help" || arg == "-h") {
                 usage(argv[0]);
                 return 0;
@@ -139,6 +146,14 @@ int main(int argc, char** argv) {
         config.temperature = temperature;
         config.epsilon_greedy = epsilon_greedy;
         config.learned_side = learned_side;
+        config.heuristic_teacher_mode = heuristic_teacher_mode;
+        // Default game_id_prefix to "selfplay" in heuristic_teacher_mode so produced
+        // game_ids match existing heuristic dataset rows for teacher target joining.
+        if (game_id_prefix.has_value()) {
+            config.game_id_prefix = *game_id_prefix;
+        } else if (heuristic_teacher_mode) {
+            config.game_id_prefix = "selfplay";
+        }
 
         ts::collect_games_batched(game_count, model, config, seed.value_or(12345U), out);
         return 0;

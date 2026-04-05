@@ -1162,9 +1162,9 @@ SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) 
     return SelectionResult{.needs_batch = false, .leaf_value = value};
 }
 
-std::string game_id_for(uint32_t base_seed, int game_index) {
+std::string game_id_for(const std::string& prefix, uint32_t base_seed, int game_index) {
     std::ostringstream out;
-    out << "mcts_" << base_seed << "_";
+    out << prefix << "_" << base_seed << "_";
     if (game_index < 10) {
         out << "000";
     } else if (game_index < 100) {
@@ -1205,7 +1205,7 @@ void initialize_slot(GameSlot& slot, int game_index, uint32_t base_seed, const B
     slot.rng = Pcg64Rng(seed);
     // Run setup influence placement before MCTS begins.
     run_setup_influence_heuristic(slot.root_state, slot.rng);
-    slot.game_id = game_id_for(base_seed, game_index);
+    slot.game_id = game_id_for(config.game_id_prefix, base_seed, game_index);
     slot.turn = 1;
     slot.stage = BatchedGameStage::TurnSetup;
     slot.sims_target = config.mcts.n_simulations;
@@ -1217,6 +1217,12 @@ void reset_move_search(GameSlot& slot, const BatchedMctsConfig& config) {
     slot.sims_completed = 0;
     slot.sims_target = config.mcts.n_simulations;
     slot.move_done = false;
+    // In heuristic_teacher_mode, save the RNG state before MCTS begins so we can
+    // restore it in commit_best_action and keep game trajectories identical to a
+    // pure heuristic run (same seed).
+    if (config.heuristic_teacher_mode) {
+        slot.rng_before_mcts = slot.rng;
+    }
 }
 
 void mark_game_done(GameSlot& slot, GameResult result) {
@@ -1605,24 +1611,17 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
     }
 
     const auto search = build_search_result(slot);
-    auto action = search.best_action;
+    ActionEncoding action;
 
-    // Epsilon-greedy: with probability epsilon_greedy, pick a uniformly random
-    // legal action from the root edges instead of the MCTS-recommended action.
-    const bool do_epsilon = config.epsilon_greedy > 0.0f
-        && !search.root_edges.empty()
-        && slot.rng.random_double() < static_cast<double>(config.epsilon_greedy);
-    if (do_epsilon) {
-        const auto idx = slot.rng.choice_index(search.root_edges.size());
-        action = search.root_edges[idx].action;
-    } else if (action.card_id != 0) {
-        // Temperature-based sampling with piecewise schedule.
-        const float temp = effective_temperature(*slot.decision, config);
-        if (const auto sampled = sample_action_by_visit_counts(search, temp, slot.rng); sampled.has_value()) {
-            action = *sampled;
+    if (config.heuristic_teacher_mode) {
+        // Restore the RNG to its pre-MCTS state so heuristic move selection produces
+        // the same game trajectory as a pure heuristic run with the same seed.
+        if (slot.rng_before_mcts.has_value()) {
+            slot.rng = *slot.rng_before_mcts;
+            slot.rng_before_mcts.reset();
         }
-    }
-    if (action.card_id == 0) {
+        // Use MinimalHybrid for the actual game move; MCTS visit counts are kept as
+        // teacher targets only.
         action = choose_action(
             PolicyKind::MinimalHybrid,
             slot.decision->pub_snapshot,
@@ -1630,6 +1629,33 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
             slot.decision->holds_china,
             slot.rng
         ).value_or(ActionEncoding{});
+    } else {
+        action = search.best_action;
+
+        // Epsilon-greedy: with probability epsilon_greedy, pick a uniformly random
+        // legal action from the root edges instead of the MCTS-recommended action.
+        const bool do_epsilon = config.epsilon_greedy > 0.0f
+            && !search.root_edges.empty()
+            && slot.rng.random_double() < static_cast<double>(config.epsilon_greedy);
+        if (do_epsilon) {
+            const auto idx = slot.rng.choice_index(search.root_edges.size());
+            action = search.root_edges[idx].action;
+        } else if (action.card_id != 0) {
+            // Temperature-based sampling with piecewise schedule.
+            const float temp = effective_temperature(*slot.decision, config);
+            if (const auto sampled = sample_action_by_visit_counts(search, temp, slot.rng); sampled.has_value()) {
+                action = *sampled;
+            }
+        }
+        if (action.card_id == 0) {
+            action = choose_action(
+                PolicyKind::MinimalHybrid,
+                slot.decision->pub_snapshot,
+                slot.decision->hand_snapshot,
+                slot.decision->holds_china,
+                slot.rng
+            ).value_or(ActionEncoding{});
+        }
     }
     if (action.card_id == 0) {
         throw std::runtime_error("batched MCTS could not resolve an action");
