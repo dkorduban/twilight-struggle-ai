@@ -1060,31 +1060,83 @@ int sims_budget(const GameSlot& slot, int max_pending) {
     return std::max(0, std::min(remaining, slot_capacity));
 }
 
+// Minimum visit count before caching a node's state. Avoids caching rarely-visited
+// nodes that would waste memory without saving much work.
+constexpr int kCacheVisitThreshold = 0;
+
+// Profiling counters for cache effectiveness.
+std::atomic<int64_t> g_cache_total_depth{0};    // sum of path.size() across selections
+std::atomic<int64_t> g_cache_saved_depth{0};    // sum of best_cached_depth (actions skipped)
+std::atomic<int64_t> g_cache_selections{0};     // number of selections
+std::atomic<int64_t> g_cache_hits{0};           // selections where best_cached_depth > 0
+
 SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) {
     PendingExpansion pend;
-    pend.sim_state = clone_game_state(slot.root_state);
 
+    // Phase 1: Walk down the tree selecting edges, deferring state simulation.
+    // Track the deepest node with a cached state so we can clone from there.
     MctsNode* node = slot.root.get();
+    const GameState* best_cached = &slot.root_state;
+    size_t best_cached_depth = 0;  // path index after which best_cached is valid
+
+    // Collect path first without applying actions.
     while (node != nullptr && !node->is_terminal && !node->edges.empty()) {
         const auto edge_index = node->select_edge(config.mcts.c_puct);
-        if (edge_index < 0) {
-            break;
-        }
+        if (edge_index < 0) break;
 
         auto& edge = node->edges[static_cast<size_t>(edge_index)];
         edge.virtual_loss += config.virtual_loss_weight;
         pend.path.emplace_back(node, edge_index);
-        apply_tree_action(pend.sim_state, node->applied_actions[static_cast<size_t>(edge_index)], slot.rng);
-        if (node->children[static_cast<size_t>(edge_index)] == nullptr) {
-            if (auto immediate = expand_without_model(pend.sim_state, slot.rng); immediate.has_value()) {
-                node->children[static_cast<size_t>(edge_index)] = std::move(immediate->node);
-                backpropagate_path(pend.path, immediate->leaf_value, config.virtual_loss_weight);
-                return SelectionResult{.needs_batch = false, .leaf_value = immediate->leaf_value};
+
+        const bool is_leaf = (node->children[static_cast<size_t>(edge_index)] == nullptr);
+        if (!is_leaf) {
+            auto* child = node->children[static_cast<size_t>(edge_index)].get();
+            if (child->cached_state) {
+                best_cached = child->cached_state.get();
+                best_cached_depth = pend.path.size();  // after this edge
+            }
+            node = child;
+        } else {
+            node = nullptr;  // will handle leaf below
+        }
+    }
+
+    // Profile cache effectiveness.
+    g_cache_selections.fetch_add(1, std::memory_order_relaxed);
+    g_cache_total_depth.fetch_add(static_cast<int64_t>(pend.path.size()), std::memory_order_relaxed);
+    g_cache_saved_depth.fetch_add(static_cast<int64_t>(best_cached_depth), std::memory_order_relaxed);
+    if (best_cached_depth > 0) g_cache_hits.fetch_add(1, std::memory_order_relaxed);
+
+    // Phase 2: Clone from the deepest cached state and apply only remaining actions.
+    pend.sim_state = clone_game_state(*best_cached);
+    for (size_t i = best_cached_depth; i < pend.path.size(); ++i) {
+        auto [path_node, path_edge_index] = pend.path[i];
+        apply_tree_action(pend.sim_state,
+                          path_node->applied_actions[static_cast<size_t>(path_edge_index)],
+                          slot.rng);
+    }
+
+    // Phase 3: Check if we stopped at a leaf (unexpanded child) or internal/terminal.
+    if (!pend.path.empty()) {
+        auto [last_node, last_edge_idx] = pend.path.back();
+        if (last_node->children[static_cast<size_t>(last_edge_idx)] == nullptr) {
+            // Leaf — try immediate expansion or queue for batch NN.
+            if (auto immediate = expand_without_model(pend.sim_state, slot.rng);
+                immediate.has_value()) {
+                last_node->children[static_cast<size_t>(last_edge_idx)] =
+                    std::move(immediate->node);
+                backpropagate_path(pend.path, immediate->leaf_value,
+                                   config.virtual_loss_weight);
+                return SelectionResult{.needs_batch = false,
+                                       .leaf_value = immediate->leaf_value};
             }
             slot.pending.push_back(std::move(pend));
             return SelectionResult{.needs_batch = true};
         }
-        node = node->children[static_cast<size_t>(edge_index)].get();
+        // Fell through: ended at an expanded internal node (terminal or no edges).
+        node = last_node->children[static_cast<size_t>(last_edge_idx)].get();
+    } else {
+        node = slot.root.get();
     }
 
     double value = (node != nullptr && node->is_terminal) ? node->terminal_value : 0.0;
@@ -1868,6 +1920,12 @@ void collect_games_batched(
         throw std::invalid_argument("n_simulations must be non-negative");
     }
 
+    // Reset cache profiling counters.
+    g_cache_selections.store(0);
+    g_cache_hits.store(0);
+    g_cache_total_depth.store(0);
+    g_cache_saved_depth.store(0);
+
     struct BatchEntry {
         GameSlot* slot = nullptr;
         size_t pending_index = 0;
@@ -2030,6 +2088,12 @@ void collect_games_batched(
                     } else {
                         auto expansion = expand_from_raw(pend.sim_state, raw, batch_index, config.mcts, slot.rng);
                         auto& [parent, edge_index] = pend.path.back();
+                        // Cache the game state at newly expanded nodes whose parent is
+                        // frequently visited. This lets select_to_leaf skip prefix actions.
+                        if (parent->total_visits >= kCacheVisitThreshold) {
+                            expansion.node->cached_state =
+                                std::make_unique<GameState>(pend.sim_state);
+                        }
                         parent->children[static_cast<size_t>(edge_index)] = std::move(expansion.node);
                         backpropagate_path(pend.path, expansion.leaf_value, config.virtual_loss_weight);
                         slot.sims_completed += 1;
@@ -2051,6 +2115,18 @@ void collect_games_batched(
             n_batches, total_batch_items, n_batches > 0 ? double(total_batch_items) / n_batches : 0.0, debug_iters);
     fprintf(stderr, "[MCTS expand] alloc=%.3fs drafts=%.3fs edges=%.3fs count=%d\n",
             g_expand_alloc, g_expand_drafts, g_expand_edges, g_expand_count);
+    const auto cs = g_cache_selections.load();
+    const auto ch = g_cache_hits.load();
+    const auto cd = g_cache_total_depth.load();
+    const auto csd = g_cache_saved_depth.load();
+    if (cs > 0) {
+        fprintf(stderr, "[MCTS cache] selections=%lld hits=%lld (%.1f%%) avg_depth=%.2f avg_saved=%.2f save_ratio=%.1f%%\n",
+                (long long)cs, (long long)ch,
+                100.0 * ch / cs,
+                (double)cd / cs,
+                (double)csd / cs,
+                cd > 0 ? 100.0 * csd / cd : 0.0);
+    }
 }
 
 // ---------------------------------------------------------------------------

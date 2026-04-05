@@ -35,7 +35,7 @@ struct StepTrace {
     int defcon_after = 0;
     // Full hidden state snapshot at decision time (for teacher search).
     CardSet opp_hand_snapshot;
-    std::vector<CardId> deck_snapshot;
+    InlineDeck deck_snapshot;
     bool ussr_holds_china_snapshot = false;
     bool us_holds_china_snapshot = false;
 };

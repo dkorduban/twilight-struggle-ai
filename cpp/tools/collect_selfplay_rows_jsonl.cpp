@@ -86,10 +86,10 @@ std::vector<int> card_ids(const ts::CardSet& cards) {
     return ids;
 }
 
-// Converts a vector<CardId> (uint8_t / int) to vector<int> for JSON output.
-std::vector<int> deck_to_ints(const std::vector<ts::CardId>& deck) {
+// Converts an InlineDeck to vector<int> for JSON output.
+std::vector<int> deck_to_ints(const ts::InlineDeck& deck) {
     std::vector<int> ids;
-    ids.reserve(deck.size());
+    ids.reserve(static_cast<size_t>(deck.size()));
     for (const auto cid : deck) {
         ids.push_back(static_cast<int>(cid));
     }

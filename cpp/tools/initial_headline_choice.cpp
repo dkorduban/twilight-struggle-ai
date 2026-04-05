@@ -48,7 +48,7 @@ ts::GameState reset_game_with_pcg64_words(
     }
     gs.deck = build_early_deck();
     (void)numpy_generator_so;
-    ts::shuffle_with_numpy_rng(gs.deck, rng);
+    ts::shuffle_with_numpy_rng(std::span<ts::CardId>(gs.deck.begin(), gs.deck.end()), rng);
     const auto hand_size = ts::hand_size_for_turn(1);
     for (const auto side : {ts::Side::USSR, ts::Side::US}) {
         for (int i = 0; i < hand_size && !gs.deck.empty(); ++i) {

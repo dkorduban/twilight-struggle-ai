@@ -47,7 +47,7 @@ ts::GameState reset_game_with_pcg64_words(std::array<uint64_t, 4> words, std::op
 
     gs.deck = build_early_deck();
     (void)numpy_generator_so;
-    ts::shuffle_with_numpy_rng(gs.deck, rng);
+    ts::shuffle_with_numpy_rng(std::span<ts::CardId>(gs.deck.begin(), gs.deck.end()), rng);
 
     const auto hand_size = ts::hand_size_for_turn(1);
     for (const auto side : {ts::Side::USSR, ts::Side::US}) {
@@ -80,9 +80,9 @@ void print_cards(const ts::CardSet& hand) {
     std::cout << "]";
 }
 
-void print_deck(const std::vector<ts::CardId>& deck, size_t limit) {
+void print_deck(const ts::InlineDeck& deck, size_t limit) {
     std::cout << "[";
-    for (size_t i = 0; i < deck.size() && i < limit; ++i) {
+    for (size_t i = 0; i < static_cast<size_t>(deck.size()) && i < limit; ++i) {
         if (i > 0) {
             std::cout << ",";
         }

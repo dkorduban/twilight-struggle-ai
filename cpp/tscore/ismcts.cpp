@@ -7,8 +7,10 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -36,6 +38,10 @@ constexpr int kLateWarTurn = 8;
 constexpr int kMaxTurns = 10;
 constexpr int kSpaceShuttleArs = 8;
 constexpr int kVirtualLossWeight = 1;
+constexpr int kMaxCardLogits = 112;
+constexpr int kMaxModeLogits = 8;
+constexpr int kMaxCountryLogits = 86;
+constexpr int kMaxStrategies = 8;
 constexpr std::array<int, 13> kDefconLoweringCards = {
     4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
 };
@@ -65,14 +71,17 @@ struct AggregatedEdgeState {
     int occurrences = 0;
 };
 
+struct PendingExpansion {
+    std::vector<std::pair<MctsNode*, int>> path;
+    GameState sim_state;
+    bool is_root_expansion = false;
+};
+
 struct DeterminizationSlot {
     GameState root_state;
-    GameState sim_state;
     std::unique_ptr<MctsNode> root;
-    std::vector<std::pair<MctsNode*, int>> path;
+    std::vector<PendingExpansion> pending;
     int sims_completed = 0;
-    bool pending_expansion = false;
-    bool pending_root_expansion = false;
     Pcg64Rng rng;
 };
 
@@ -130,7 +139,7 @@ struct IsmctsGameSlot {
 struct BatchEntry {
     IsmctsGameSlot* game = nullptr;
     DeterminizationSlot* det = nullptr;
-    bool is_root_expansion = false;
+    size_t pending_index = 0;
 };
 
 int count_hand_excluding_china(const CardSet& hand) {
@@ -216,136 +225,24 @@ void sync_china_flags(GameState& state) {
     state.us_holds_china = state.pub.china_held_by == Side::US;
 }
 
-torch::Tensor tensor_at(const torch::Tensor& tensor, int64_t index) {
-    return tensor.index({index});
-}
 
-int argmax_index(const torch::Tensor& tensor) {
-    return tensor.argmax(/*dim=*/0).item<int>();
-}
-
-std::vector<CountryId> accessible_countries_filtered(const PublicState& pub, Side side, CardId card_id, ActionMode mode) {
-    auto accessible = legal_countries(card_id, mode, pub, side);
-    accessible.erase(
-        std::remove_if(accessible.begin(), accessible.end(), [](CountryId cid) { return !has_country_spec(cid); }),
-        accessible.end()
-    );
-    return accessible;
-}
-
-ActionEncoding build_action_from_country_logits(
-    CardId card_id,
-    ActionMode mode,
-    const torch::Tensor& country_logits,
-    const PublicState& pub,
-    Side side,
-    const torch::Tensor& strategy_logits,
-    const torch::Tensor& country_strategy_logits
-) {
-    const auto accessible = accessible_countries_filtered(pub, side, card_id, mode);
-    if (accessible.empty()) {
-        return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {}};
+/// Compute softmax in-place over buf[0..n), writing probabilities back into buf.
+inline void softmax_inplace(float* buf, int n) {
+    float max_val = -std::numeric_limits<float>::infinity();
+    for (int i = 0; i < n; ++i) {
+        if (buf[i] > max_val) max_val = buf[i];
     }
-
-    auto source_logits = country_logits;
-    if (strategy_logits.defined() && country_strategy_logits.defined()) {
-        const auto strategy_index = strategy_logits.argmax(/*dim=*/0).item<int64_t>();
-        source_logits = country_strategy_logits.index({strategy_index});
+    float sum = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        buf[i] = std::exp(buf[i] - max_val);
+        sum += buf[i];
     }
-
-    auto masked = torch::full_like(source_logits, -std::numeric_limits<float>::infinity());
-    for (const auto cid : accessible) {
-        const auto index = static_cast<int64_t>(cid);
-        masked.index_put_({index}, tensor_at(source_logits, index));
-    }
-    const auto probs = torch::softmax(masked, 0);
-
-    if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
-        const auto target = static_cast<CountryId>(argmax_index(probs));
-        return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {target}};
-    }
-
-    const auto ops = effective_ops(card_id, pub, side);
-    const auto accessible_indices = torch::tensor(
-        std::vector<int64_t>(accessible.begin(), accessible.end()),
-        torch::TensorOptions().dtype(torch::kInt64)
-    );
-    auto accessible_probs = probs.index({accessible_indices});
-    auto alloc = accessible_probs * static_cast<double>(ops);
-    auto floor_alloc = torch::floor(alloc).to(torch::kInt64);
-    auto remainder = ops - static_cast<int>(floor_alloc.sum().item<int64_t>());
-    if (remainder > 0) {
-        auto fractional = alloc - floor_alloc.to(torch::kFloat32);
-        std::vector<std::pair<float, CountryId>> order;
-        order.reserve(accessible.size());
-        for (size_t i = 0; i < accessible.size(); ++i) {
-            const auto index = static_cast<int64_t>(i);
-            order.emplace_back(-tensor_at(fractional, index).item<float>(), accessible[i]);
-        }
-        std::sort(order.begin(), order.end());
-        for (int i = 0; i < remainder && i < static_cast<int>(order.size()); ++i) {
-            const auto target = order[static_cast<size_t>(i)].second;
-            const auto pos = static_cast<long long>(
-                std::find(accessible.begin(), accessible.end(), target) - accessible.begin()
-            );
-            const auto pos64 = static_cast<int64_t>(pos);
-            floor_alloc.index_put_({pos64}, tensor_at(floor_alloc, pos64).item<int64_t>() + 1);
+    if (sum > 0.0f) {
+        const float inv_sum = 1.0f / sum;
+        for (int i = 0; i < n; ++i) {
+            buf[i] *= inv_sum;
         }
     }
-
-    ActionEncoding action{.card_id = card_id, .mode = mode, .targets = {}};
-    for (size_t i = 0; i < accessible.size(); ++i) {
-        const auto index = static_cast<int64_t>(i);
-        const auto count = tensor_at(floor_alloc, index).item<int64_t>();
-        for (int64_t j = 0; j < count; ++j) {
-            action.targets.push_back(accessible[i]);
-        }
-    }
-    return action;
-}
-
-ActionEncoding fallback_resolved_action(const ActionEncoding& action, const PublicState& pub, Side side) {
-    const auto accessible = accessible_countries_filtered(pub, side, action.card_id, action.mode);
-    if (accessible.empty()) {
-        return action;
-    }
-
-    if (action.mode == ActionMode::Coup || action.mode == ActionMode::Realign) {
-        return ActionEncoding{.card_id = action.card_id, .mode = action.mode, .targets = {accessible.front()}};
-    }
-
-    ActionEncoding resolved{.card_id = action.card_id, .mode = action.mode, .targets = {}};
-    const auto ops = effective_ops(action.card_id, pub, side);
-    resolved.targets.assign(static_cast<size_t>(ops), accessible.front());
-    return resolved;
-}
-
-ActionEncoding resolve_edge_action(
-    const ActionEncoding& action,
-    const PublicState& pub,
-    Side side,
-    const torch::Tensor& country_logits,
-    const torch::Tensor& strategy_logits,
-    const torch::Tensor& country_strategy_logits
-) {
-    if (action.mode != ActionMode::Influence) {
-        return action;
-    }
-    if (country_logits.defined()) {
-        auto resolved = build_action_from_country_logits(
-            action.card_id,
-            action.mode,
-            country_logits,
-            pub,
-            side,
-            strategy_logits,
-            country_strategy_logits
-        );
-        if (!resolved.targets.empty()) {
-            return resolved;
-        }
-    }
-    return fallback_resolved_action(action, pub, side);
 }
 
 void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng& rng) {
@@ -375,14 +272,16 @@ double rollout_value(const GameState& state, const MctsConfig& config, Pcg64Rng&
     return winner_value(result.winner);
 }
 
-double evaluate_leaf_value(
+
+double evaluate_leaf_value_raw(
     const GameState& state,
-    const torch::Tensor& value_tensor,
-    int64_t batch_index,
+    const float* value_ptr,
+    int value_stride,
+    int batch_index,
     const MctsConfig& config,
     Pcg64Rng& rng
 ) {
-    auto value = value_tensor.index({batch_index, 0}).item<double>();
+    auto value = static_cast<double>(value_ptr[batch_index * value_stride]);
     value = calibrate_value(value, config);
     if (!config.use_rollout_backup) {
         return value;
@@ -392,50 +291,158 @@ double evaluate_leaf_value(
         static_cast<double>(1.0f - config.value_weight) * rollout;
 }
 
-std::vector<CardDraft> collect_card_drafts(const GameState& state) {
+// Precomputed accessible countries for all three action modes — avoids repeated BFS.
+struct AccessibleCache {
+    std::vector<CountryId> influence;
+    std::vector<CountryId> coup;
+    std::vector<CountryId> realign;
+    bool can_space = false;
+    int space_ops_min = 2;
+
+    static AccessibleCache build(Side side, const PublicState& pub) {
+        AccessibleCache cache;
+
+        // Compute BFS-based accessibility ONCE
+        auto base_inf = accessible_countries(side, pub, ActionMode::Influence);
+        auto base_coup = accessible_countries(side, pub, ActionMode::Coup);
+
+        // Filter influence for Chernobyl
+        if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
+            const auto blocked = *pub.chernobyl_blocked_region;
+            base_inf.erase(
+                std::remove_if(base_inf.begin(), base_inf.end(),
+                    [blocked](CountryId cid) { return country_spec(cid).region == blocked; }),
+                base_inf.end()
+            );
+        }
+        cache.influence = std::move(base_inf);
+
+        // Filter coup/realign for DEFCON, NATO, Japan pact
+        auto filter_military = [&](std::vector<CountryId>& countries) {
+            countries.erase(
+                std::remove_if(countries.begin(), countries.end(),
+                    [&](CountryId cid) {
+                        if (cid == kUsaAnchorId || cid == kUssrAnchorId) return true;
+                        constexpr std::array<int, 7> kDefconRegionThreshold = {4, 3, 2, 1, 1, 1, 3};
+                        const auto threshold = kDefconRegionThreshold[static_cast<size_t>(country_spec(cid).region)];
+                        if (pub.defcon <= threshold) return true;
+                        if (side == Side::USSR) {
+                            if (pub.nato_active) {
+                                constexpr std::array<CountryId, 12> kNatoWe = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};
+                                bool in_nato = std::find(kNatoWe.begin(), kNatoWe.end(), cid) != kNatoWe.end();
+                                if (in_nato) {
+                                    bool exempted = (cid == 7 && pub.de_gaulle_active) || (cid == 18 && pub.willy_brandt_active);
+                                    if (!exempted && controls_country(Side::US, cid, pub)) return true;
+                                }
+                            }
+                            if (pub.us_japan_pact_active && cid == 22) return true;
+                        }
+                        return false;
+                    }),
+                countries.end()
+            );
+        };
+        filter_military(base_coup);
+        cache.coup = std::move(base_coup);
+        // Realign uses same base accessibility as coup
+        cache.realign = cache.coup;  // copy — realign has same restrictions
+
+        // Space eligibility
+        const auto level = pub.space[to_index(side)];
+        const auto opp_level = pub.space[to_index(other_side(side))];
+        const auto max_space = (level >= 2 && opp_level < 2) ? 2 : 1;
+        cache.can_space = (level < 8 && pub.space_attempts[to_index(side)] < max_space);
+        constexpr std::array<int, 8> kSpaceOpsMin = {2, 2, 2, 2, 3, 3, 3, 4};
+        cache.space_ops_min = kSpaceOpsMin[static_cast<size_t>(std::min(level, 7))];
+
+        return cache;
+    }
+};
+
+bool nato_prerequisite_met_inline(const PublicState& pub) {
+    return pub.warsaw_pact_played || pub.marshall_plan_played || pub.truman_doctrine_played;
+}
+
+struct DraftsResult {
+    std::vector<CardDraft> drafts;
+    AccessibleCache cache;
+};
+
+DraftsResult collect_card_drafts(const GameState& state) {
     const auto side = state.pub.phasing;
     const auto holds_china = holds_china_for(state, side);
-    std::vector<CardDraft> cards;
+    const auto& pub = state.pub;
+    auto cache = AccessibleCache::build(side, pub);
 
-    for (const auto card_id : legal_cards(state.hands[to_index(side)], state.pub, side, holds_china)) {
-        if (is_card_blocked_by_defcon(state.pub, side, card_id)) {
+    std::vector<CardDraft> cards;
+    cards.reserve(10);
+
+    for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
+        if (is_card_blocked_by_defcon(pub, side, card_id)) {
             continue;
         }
 
+        const auto& spec = card_spec(card_id);
         CardDraft card{.card_id = card_id, .modes = {}};
-        for (const auto mode : legal_modes(card_id, state.pub, side)) {
-            if (mode == ActionMode::Coup && state.pub.defcon <= 2) {
-                continue;
-            }
-            if (mode == ActionMode::Event && state.pub.defcon <= 2 && is_defcon_lowering_card(card_id)) {
-                continue;
-            }
+
+        // Inline legal_modes logic using cached accessibility
+        auto try_add_mode = [&](ActionMode mode, const std::vector<CountryId>& countries) {
+            if (countries.empty()) return;
+            if (mode == ActionMode::Coup && pub.defcon <= 2) return;
+            if (pub.cuban_missile_crisis_active && mode == ActionMode::Coup) return;
 
             ModeDraft mode_draft{.mode = mode, .edges = {}};
-            if (mode == ActionMode::Event || mode == ActionMode::Space || mode == ActionMode::Influence) {
+            mode_draft.edges.reserve(countries.size());
+            for (const auto country : countries) {
+                if (!has_country_spec(country)) continue;
                 mode_draft.edges.push_back(ActionEncoding{
                     .card_id = card_id,
                     .mode = mode,
-                    .targets = {},
+                    .targets = {country},
                 });
-            } else {
-                auto countries = legal_countries(card_id, mode, state.pub, side);
-                countries.erase(
-                    std::remove_if(countries.begin(), countries.end(), [](CountryId cid) { return !has_country_spec(cid); }),
-                    countries.end()
-                );
-                for (const auto country : countries) {
-                    mode_draft.edges.push_back(ActionEncoding{
-                        .card_id = card_id,
-                        .mode = mode,
-                        .targets = {country},
-                    });
-                }
             }
-
             if (!mode_draft.edges.empty()) {
                 card.modes.push_back(std::move(mode_draft));
             }
+        };
+
+        if (spec.ops > 0) {
+            // Influence — no per-country targets in tree, just one edge
+            if (!cache.influence.empty()) {
+                card.modes.push_back(ModeDraft{
+                    .mode = ActionMode::Influence,
+                    .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Influence, .targets = {}}},
+                });
+            }
+
+            try_add_mode(ActionMode::Coup, cache.coup);
+            try_add_mode(ActionMode::Realign, cache.realign);
+
+            // Space
+            if (cache.can_space && spec.ops >= cache.space_ops_min) {
+                bool blocked = (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
+                               (pub.quagmire_active && side == Side::US && !spec.is_scoring);
+                if (!blocked) {
+                    card.modes.push_back(ModeDraft{
+                        .mode = ActionMode::Space,
+                        .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Space, .targets = {}}},
+                    });
+                }
+            }
+        }
+
+        // Event
+        bool event_ok = true;
+        if (card_id == 21 && !nato_prerequisite_met_inline(pub)) event_ok = false;
+        if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) event_ok = false;
+        if (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) event_ok = false;
+        if (pub.quagmire_active && side == Side::US && !spec.is_scoring) event_ok = false;
+        if (card_id == 103 && pub.defcon != 2) event_ok = false;
+        if (event_ok) {
+            card.modes.push_back(ModeDraft{
+                .mode = ActionMode::Event,
+                .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Event, .targets = {}}},
+            });
         }
 
         if (!card.modes.empty()) {
@@ -443,7 +450,7 @@ std::vector<CardDraft> collect_card_drafts(const GameState& state) {
         }
     }
 
-    return cards;
+    return DraftsResult{.drafts = std::move(cards), .cache = std::move(cache)};
 }
 
 std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg64Rng& rng) {
@@ -457,7 +464,7 @@ std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg6
         return ExpansionResult{.node = std::move(node), .leaf_value = terminal_value};
     }
 
-    const auto drafts = collect_card_drafts(state);
+    const auto [drafts, _cache] = collect_card_drafts(state);
     if (!drafts.empty()) {
         return std::nullopt;
     }
@@ -480,52 +487,155 @@ std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg6
     return ExpansionResult{.node = std::move(node), .leaf_value = 0.0};
 }
 
-ExpansionResult expand_from_outputs(
+// Pre-extracted raw pointers from batch outputs for zero-copy per-item access.
+struct RawBatchOutputs {
+    const float* card_logits = nullptr;  // [batch, n_card]
+    int n_card = 0;
+    int card_stride = 0;
+
+    const float* mode_logits = nullptr;  // [batch, n_mode]
+    int n_mode = 0;
+    int mode_stride = 0;
+
+    const float* country_logits = nullptr;  // [batch, n_country]
+    int n_country = 0;
+    int country_stride = 0;
+
+    const float* strategy_logits = nullptr;  // [batch, n_strategy]
+    int n_strategy = 0;
+    int strategy_stride = 0;
+
+    const float* country_strategy_logits = nullptr;  // [batch, n_strat, n_country]
+    int cs_n_strategies = 0;
+    int cs_n_countries = 0;
+    int cs_batch_stride = 0;  // stride between batch items
+
+    const float* value = nullptr;  // [batch, 1]
+    int value_stride = 0;
+
+    static RawBatchOutputs extract(const nn::BatchOutputs& outputs) {
+        RawBatchOutputs raw;
+        auto cont_card = outputs.card_logits.contiguous();
+        raw.card_logits = cont_card.data_ptr<float>();
+        raw.n_card = std::min(static_cast<int>(cont_card.size(1)), kMaxCardLogits);
+        raw.card_stride = static_cast<int>(cont_card.stride(0));
+
+        auto cont_mode = outputs.mode_logits.contiguous();
+        raw.mode_logits = cont_mode.data_ptr<float>();
+        raw.n_mode = std::min(static_cast<int>(cont_mode.size(1)), kMaxModeLogits);
+        raw.mode_stride = static_cast<int>(cont_mode.stride(0));
+
+        if (outputs.country_logits.defined()) {
+            auto cont = outputs.country_logits.contiguous();
+            raw.country_logits = cont.data_ptr<float>();
+            raw.n_country = std::min(static_cast<int>(cont.size(1)), kMaxCountryLogits);
+            raw.country_stride = static_cast<int>(cont.stride(0));
+        }
+        if (outputs.strategy_logits.defined()) {
+            auto cont = outputs.strategy_logits.contiguous();
+            raw.strategy_logits = cont.data_ptr<float>();
+            raw.n_strategy = std::min(static_cast<int>(cont.size(1)), kMaxStrategies);
+            raw.strategy_stride = static_cast<int>(cont.stride(0));
+        }
+        if (outputs.country_strategy_logits.defined()) {
+            auto cont = outputs.country_strategy_logits.contiguous();
+            raw.country_strategy_logits = cont.data_ptr<float>();
+            raw.cs_n_strategies = static_cast<int>(cont.size(1));
+            raw.cs_n_countries = static_cast<int>(cont.size(2));
+            raw.cs_batch_stride = static_cast<int>(cont.stride(0));
+        }
+        auto cont_val = outputs.value.contiguous();
+        raw.value = cont_val.data_ptr<float>();
+        raw.value_stride = static_cast<int>(cont_val.stride(0));
+
+        return raw;
+    }
+};
+
+ExpansionResult expand_from_raw(
     const GameState& state,
-    const nn::BatchOutputs& outputs,
-    int64_t batch_index,
+    const RawBatchOutputs& raw,
+    int batch_index,
     const MctsConfig& config,
     Pcg64Rng& rng
 ) {
     auto node = std::make_unique<MctsNode>();
     node->side_to_move = state.pub.phasing;
+    node->edges.reserve(64);
+    node->children.reserve(64);
+    node->applied_actions.reserve(64);
 
-    const auto drafts = collect_card_drafts(state);
-    const auto card_logits = outputs.card_logits.index({batch_index});
-    const auto mode_logits = outputs.mode_logits.index({batch_index});
-    const auto country_logits = outputs.country_logits.defined() ? outputs.country_logits.index({batch_index}) : torch::Tensor{};
-    const auto strategy_logits = outputs.strategy_logits.defined() ? outputs.strategy_logits.index({batch_index}) : torch::Tensor{};
-    const auto country_strategy_logits = outputs.country_strategy_logits.defined()
-        ? outputs.country_strategy_logits.index({batch_index})
-        : torch::Tensor{};
+    auto [drafts, cache] = collect_card_drafts(state);
+    // --- Copy this item's logits to stack arrays ---
+    float card_logits_arr[kMaxCardLogits];
+    float mode_logits_arr[kMaxModeLogits];
+    float country_logits_arr[kMaxCountryLogits];
 
-    auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
-    for (const auto& card : drafts) {
-        masked_card.index_put_({static_cast<int64_t>(card.card_id - 1)}, tensor_at(card_logits, card.card_id - 1));
+    const int n_card = raw.n_card;
+    std::memcpy(card_logits_arr, raw.card_logits + batch_index * raw.card_stride,
+                static_cast<size_t>(n_card) * sizeof(float));
+
+    const int n_mode = raw.n_mode;
+    std::memcpy(mode_logits_arr, raw.mode_logits + batch_index * raw.mode_stride,
+                static_cast<size_t>(n_mode) * sizeof(float));
+
+    const float* country_logits_ptr = nullptr;
+    int n_country = 0;
+
+    if (raw.country_logits != nullptr) {
+        n_country = raw.n_country;
+        std::memcpy(country_logits_arr, raw.country_logits + batch_index * raw.country_stride,
+                    static_cast<size_t>(n_country) * sizeof(float));
+        country_logits_ptr = country_logits_arr;
     }
-    const auto card_probs = torch::softmax(masked_card, 0);
 
+    // --- Masked card softmax using raw arrays ---
+    float masked_card[kMaxCardLogits];
+    std::fill(masked_card, masked_card + n_card, -std::numeric_limits<float>::infinity());
+    for (const auto& card : drafts) {
+        const int idx = static_cast<int>(card.card_id) - 1;
+        if (idx >= 0 && idx < n_card) {
+            masked_card[idx] = card_logits_arr[idx];
+        }
+    }
+    softmax_inplace(masked_card, n_card);
+
+    // --- Build edges with raw float math ---
     double total_prior = 0.0;
     for (const auto& card : drafts) {
-        auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        float masked_mode[kMaxModeLogits];
+        std::fill(masked_mode, masked_mode + n_mode, -std::numeric_limits<float>::infinity());
         for (const auto& mode : card.modes) {
-            masked_mode.index_put_({static_cast<int64_t>(mode.mode)}, tensor_at(mode_logits, static_cast<int>(mode.mode)));
+            const int midx = static_cast<int>(mode.mode);
+            if (midx < n_mode) {
+                masked_mode[midx] = mode_logits_arr[midx];
+            }
         }
-        const auto mode_probs = torch::softmax(masked_mode, 0);
-        const auto card_prob = tensor_at(card_probs, card.card_id - 1).item<double>();
+        softmax_inplace(masked_mode, n_mode);
+
+        const int cidx = static_cast<int>(card.card_id) - 1;
+        const double card_prob = (cidx >= 0 && cidx < n_card) ? static_cast<double>(masked_card[cidx]) : 0.0;
 
         for (const auto& mode : card.modes) {
-            const auto mode_prob = tensor_at(mode_probs, static_cast<int>(mode.mode)).item<double>();
-            if ((mode.mode == ActionMode::Coup || mode.mode == ActionMode::Realign) && country_logits.defined()) {
-                auto masked_country = torch::full_like(country_logits, -std::numeric_limits<float>::infinity());
+            const int midx = static_cast<int>(mode.mode);
+            const double mode_prob = (midx < n_mode) ? static_cast<double>(masked_mode[midx]) : 0.0;
+
+            if ((mode.mode == ActionMode::Coup || mode.mode == ActionMode::Realign) &&
+                country_logits_ptr != nullptr) {
+                float masked_country[kMaxCountryLogits];
+                std::fill(masked_country, masked_country + n_country, -std::numeric_limits<float>::infinity());
                 for (const auto& edge : mode.edges) {
-                    const auto country = edge.targets.front();
-                    masked_country.index_put_({static_cast<int64_t>(country)}, tensor_at(country_logits, country));
+                    const int ci = static_cast<int>(edge.targets.front());
+                    if (ci < n_country) {
+                        masked_country[ci] = country_logits_arr[ci];
+                    }
                 }
-                const auto country_probs = torch::softmax(masked_country, 0);
+                softmax_inplace(masked_country, n_country);
+
                 for (const auto& edge : mode.edges) {
-                    const auto country = edge.targets.front();
-                    const auto prior = card_prob * mode_prob * tensor_at(country_probs, country).item<double>();
+                    const int ci = static_cast<int>(edge.targets.front());
+                    const double country_prob = (ci < n_country) ? static_cast<double>(masked_country[ci]) : 0.0;
+                    const auto prior = card_prob * mode_prob * country_prob;
                     node->edges.push_back(MctsEdge{
                         .action = edge,
                         .prior = static_cast<float>(prior),
@@ -544,14 +654,46 @@ ExpansionResult expand_from_outputs(
                     .prior = static_cast<float>(per_edge_prior),
                 });
                 node->children.emplace_back(nullptr);
-                node->applied_actions.push_back(resolve_edge_action(
-                    edge,
-                    state.pub,
-                    state.pub.phasing,
-                    country_logits,
-                    strategy_logits,
-                    country_strategy_logits
-                ));
+                // Resolve influence allocation using cached accessible countries
+                if (edge.mode == ActionMode::Influence && country_logits_ptr != nullptr && !cache.influence.empty()) {
+                    const auto ops = effective_ops(edge.card_id, state.pub, state.pub.phasing);
+                    float masked[kMaxCountryLogits];
+                    std::fill(masked, masked + n_country, -std::numeric_limits<float>::infinity());
+                    for (const auto cid : cache.influence) {
+                        const int idx = static_cast<int>(cid);
+                        if (idx < n_country) masked[idx] = country_logits_arr[idx];
+                    }
+                    softmax_inplace(masked, n_country);
+                    // Proportional allocation
+                    const int n_acc = static_cast<int>(cache.influence.size());
+                    int alloc_i[kMaxCountryLogits];
+                    int floor_sum = 0;
+                    float alloc_f[kMaxCountryLogits];
+                    for (int i = 0; i < n_acc; ++i) {
+                        float p = masked[static_cast<int>(cache.influence[static_cast<size_t>(i)])];
+                        alloc_f[i] = p * static_cast<float>(ops);
+                        alloc_i[i] = static_cast<int>(std::floor(alloc_f[i]));
+                        floor_sum += alloc_i[i];
+                    }
+                    int remainder = ops - floor_sum;
+                    if (remainder > 0) {
+                        std::pair<float, int> order[kMaxCountryLogits];
+                        for (int i = 0; i < n_acc; ++i) {
+                            order[i] = {-(alloc_f[i] - static_cast<float>(alloc_i[i])), i};
+                        }
+                        std::sort(order, order + n_acc);
+                        for (int i = 0; i < remainder && i < n_acc; ++i) alloc_i[order[i].second] += 1;
+                    }
+                    ActionEncoding resolved{.card_id = edge.card_id, .mode = edge.mode, .targets = {}};
+                    for (int i = 0; i < n_acc; ++i) {
+                        for (int j = 0; j < alloc_i[i]; ++j) {
+                            resolved.targets.push_back(cache.influence[static_cast<size_t>(i)]);
+                        }
+                    }
+                    node->applied_actions.push_back(std::move(resolved));
+                } else {
+                    node->applied_actions.push_back(edge);
+                }
                 total_prior += per_edge_prior;
             }
         }
@@ -571,7 +713,7 @@ ExpansionResult expand_from_outputs(
             node->applied_actions.push_back(*fallback);
             return ExpansionResult{
                 .node = std::move(node),
-                .leaf_value = evaluate_leaf_value(state, outputs.value, batch_index, config, rng),
+                .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config, rng),
             };
         }
 
@@ -592,12 +734,12 @@ ExpansionResult expand_from_outputs(
 
     return ExpansionResult{
         .node = std::move(node),
-        .leaf_value = evaluate_leaf_value(state, outputs.value, batch_index, config, rng),
+        .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config, rng),
     };
 }
 
-void backpropagate(DeterminizationSlot& det, double leaf_value) {
-    for (auto it = det.path.rbegin(); it != det.path.rend(); ++it) {
+void backpropagate_path(std::vector<std::pair<MctsNode*, int>>& path, double leaf_value) {
+    for (auto it = path.rbegin(); it != path.rend(); ++it) {
         auto* ancestor = it->first;
         auto& edge = ancestor->edges[static_cast<size_t>(it->second)];
         edge.virtual_loss = std::max(0, edge.virtual_loss - kVirtualLossWeight);
@@ -605,14 +747,12 @@ void backpropagate(DeterminizationSlot& det, double leaf_value) {
         edge.total_value += leaf_value;
         ancestor->total_visits += 1;
     }
-    det.path.clear();
+    path.clear();
 }
 
 SelectionResult select_to_leaf(DeterminizationSlot& det, const MctsConfig& config) {
-    det.path.clear();
-    det.pending_expansion = false;
-    det.pending_root_expansion = false;
-    det.sim_state = clone_game_state(det.root_state);
+    PendingExpansion pend;
+    pend.sim_state = clone_game_state(det.root_state);
 
     MctsNode* node = det.root.get();
     while (node != nullptr && !node->is_terminal && !node->edges.empty()) {
@@ -623,23 +763,26 @@ SelectionResult select_to_leaf(DeterminizationSlot& det, const MctsConfig& confi
 
         auto& edge = node->edges[static_cast<size_t>(edge_index)];
         edge.virtual_loss += kVirtualLossWeight;
-        det.path.emplace_back(node, edge_index);
-        apply_tree_action(det.sim_state, node->applied_actions[static_cast<size_t>(edge_index)], det.rng);
+        pend.path.emplace_back(node, edge_index);
+        apply_tree_action(pend.sim_state, node->applied_actions[static_cast<size_t>(edge_index)], det.rng);
         if (node->children[static_cast<size_t>(edge_index)] == nullptr) {
-            if (auto immediate = expand_without_model(det.sim_state, det.rng); immediate.has_value()) {
+            if (auto immediate = expand_without_model(pend.sim_state, det.rng); immediate.has_value()) {
                 node->children[static_cast<size_t>(edge_index)] = std::move(immediate->node);
+                backpropagate_path(pend.path, immediate->leaf_value);
                 return SelectionResult{.needs_batch = false, .leaf_value = immediate->leaf_value};
             }
-            det.pending_expansion = true;
+            det.pending.push_back(std::move(pend));
             return SelectionResult{.needs_batch = true};
         }
         node = node->children[static_cast<size_t>(edge_index)].get();
     }
 
+    double value = 0.0;
     if (node != nullptr && node->is_terminal) {
-        return SelectionResult{.needs_batch = false, .leaf_value = node->terminal_value};
+        value = node->terminal_value;
     }
-    return SelectionResult{.needs_batch = false, .leaf_value = 0.0};
+    backpropagate_path(pend.path, value);
+    return SelectionResult{.needs_batch = false, .leaf_value = value};
 }
 
 double mean_root_value(const MctsNode& root) {
@@ -1177,7 +1320,6 @@ void start_search(IsmctsGameSlot& slot, const IsmctsConfig& config) {
         auto determinized = sample_determinization(slot.game_state, acting_side, opp_hand_size, local_rng);
         DeterminizationSlot det;
         det.root_state = std::move(determinized);
-        det.sim_state = det.root_state;
         det.rng = std::move(local_rng);
         slot.dets.push_back(std::move(det));
     }
@@ -1185,7 +1327,16 @@ void start_search(IsmctsGameSlot& slot, const IsmctsConfig& config) {
 }
 
 bool determinization_complete(const DeterminizationSlot& det, int sims_target) {
-    return det.root != nullptr && det.sims_completed >= sims_target;
+    return det.root != nullptr && det.sims_completed >= sims_target && det.pending.empty();
+}
+
+int sims_budget(const DeterminizationSlot& det, int sims_target, int max_pending) {
+    if (det.root == nullptr && det.pending.empty()) return 1;  // root expansion
+    if (det.root == nullptr) return 0;  // root pending
+    int in_flight = static_cast<int>(det.pending.size());
+    int remaining = sims_target - det.sims_completed - in_flight;
+    int slot_capacity = max_pending - in_flight;
+    return std::max(0, std::min(remaining, slot_capacity));
 }
 
 bool search_complete(const IsmctsGameSlot& slot, int sims_target) {
@@ -1268,10 +1419,11 @@ void queue_batch_item(
     nn::BatchInputs& batch_inputs,
     std::vector<BatchEntry>& batch_entries,
     IsmctsGameSlot& game_slot,
-    DeterminizationSlot& det,
-    const GameState& state,
-    bool is_root_expansion
+    DeterminizationSlot& det
 ) {
+    // The last pending expansion is the one we just added
+    const auto pending_index = det.pending.size() - 1;
+    const auto& state = det.pending[pending_index].sim_state;
     const auto batch_index = batch_inputs.filled;
     batch_inputs.fill_slot(
         batch_index,
@@ -1283,7 +1435,7 @@ void queue_batch_item(
     batch_entries.push_back(BatchEntry{
         .game = &game_slot,
         .det = &det,
-        .is_root_expansion = is_root_expansion,
+        .pending_index = pending_index,
     });
 }
 
@@ -1315,7 +1467,7 @@ GameState sample_determinization(
         std::remove(hidden_pool.begin(), hidden_pool.end(), kChinaCardId),
         hidden_pool.end()
     );
-    shuffle_with_numpy_rng(hidden_pool, rng);
+    shuffle_with_numpy_rng(std::span<CardId>(hidden_pool.begin(), hidden_pool.end()), rng);
 
     const auto hidden_needed = opp_hand_size - known_opp_count;
     if (hidden_needed > static_cast<int>(hidden_pool.size())) {
@@ -1492,10 +1644,16 @@ std::vector<GameResult> play_ismcts_matchup_pooled(
     std::vector<GameResult> results;
     results.reserve(static_cast<size_t>(n_games));
 
+    const int max_pending = config.max_pending_per_det;
+    const int max_batch = pool_size * config.n_determinizations * max_pending;
     nn::BatchInputs batch_inputs;
-    batch_inputs.allocate(pool_size * config.n_determinizations, device);
+    batch_inputs.allocate(max_batch, device);
     std::vector<BatchEntry> batch_entries;
-    batch_entries.reserve(static_cast<size_t>(pool_size * config.n_determinizations));
+    batch_entries.reserve(static_cast<size_t>(max_batch));
+
+    using Clock = std::chrono::high_resolution_clock;
+    double t_advance = 0, t_select = 0, t_nn = 0, t_expand = 0, t_apply = 0;
+    int n_batches = 0, total_batch_items = 0;
 
     while (static_cast<int>(results.size()) < n_games) {
         for (auto& slot : pool) {
@@ -1519,80 +1677,100 @@ std::vector<GameResult> play_ismcts_matchup_pooled(
             }
 
             if (!slot.search_active) {
+                auto t0 = Clock::now();
                 advance_until_search_or_done(slot, learned_side);
+                t_advance += std::chrono::duration<double>(Clock::now() - t0).count();
                 if (slot.game_done || !slot.decision.has_value()) {
                     continue;
                 }
                 start_search(slot, config);
             }
 
+            auto t0s = Clock::now();
             for (auto& det : slot.dets) {
                 if (determinization_complete(det, config.mcts_config.n_simulations)) {
                     continue;
                 }
 
-                if (det.root == nullptr) {
+                // Root expansion: create a PendingExpansion for the root state
+                if (det.root == nullptr && det.pending.empty()) {
                     if (auto immediate = expand_without_model(det.root_state, det.rng); immediate.has_value()) {
                         det.root = std::move(immediate->node);
                         apply_root_dirichlet_noise(*det.root, config.mcts_config, det.rng);
                     } else {
-                        det.pending_expansion = true;
-                        det.pending_root_expansion = true;
-                        queue_batch_item(batch_inputs, batch_entries, slot, det, det.root_state, true);
+                        PendingExpansion pend;
+                        pend.sim_state = clone_game_state(det.root_state);
+                        pend.is_root_expansion = true;
+                        det.pending.push_back(std::move(pend));
+                        queue_batch_item(batch_inputs, batch_entries, slot, det);
                     }
                     continue;
                 }
-
-                if (det.sims_completed >= config.mcts_config.n_simulations) {
-                    continue;
+                if (det.root == nullptr) {
+                    continue;  // root expansion pending
                 }
 
-                const auto selection = select_to_leaf(det, config.mcts_config);
-                if (selection.needs_batch) {
-                    queue_batch_item(batch_inputs, batch_entries, slot, det, det.sim_state, false);
-                    continue;
+                // Select multiple leaves per det (up to max_pending)
+                for (;;) {
+                    const int budget = sims_budget(det, config.mcts_config.n_simulations, max_pending);
+                    if (budget <= 0) break;
+                    const auto selection = select_to_leaf(det, config.mcts_config);
+                    if (selection.needs_batch) {
+                        queue_batch_item(batch_inputs, batch_entries, slot, det);
+                    } else {
+                        det.sims_completed += 1;
+                    }
                 }
-
-                backpropagate(det, selection.leaf_value);
-                det.sims_completed += 1;
             }
+            t_select += std::chrono::duration<double>(Clock::now() - t0s).count();
         }
 
         if (!batch_entries.empty()) {
+            n_batches += 1;
+            total_batch_items += static_cast<int>(batch_entries.size());
+            auto t0n = Clock::now();
             const auto outputs = nn::forward_model_batched(model, batch_inputs);
+            t_nn += std::chrono::duration<double>(Clock::now() - t0n).count();
+            auto t0e = Clock::now();
+            const auto raw = RawBatchOutputs::extract(outputs);
             for (size_t i = 0; i < batch_entries.size(); ++i) {
                 auto& entry = batch_entries[i];
-                const auto batch_index = static_cast<int64_t>(i);
-                if (entry.is_root_expansion) {
-                    auto expansion = expand_from_outputs(
-                        entry.det->root_state,
-                        outputs,
+                const auto batch_index = static_cast<int>(i);
+                auto& pend = entry.det->pending[entry.pending_index];
+                if (pend.is_root_expansion) {
+                    auto expansion = expand_from_raw(
+                        pend.sim_state,
+                        raw,
                         batch_index,
                         config.mcts_config,
                         entry.det->rng
                     );
                     entry.det->root = std::move(expansion.node);
                     apply_root_dirichlet_noise(*entry.det->root, config.mcts_config, entry.det->rng);
-                    entry.det->pending_expansion = false;
-                    entry.det->pending_root_expansion = false;
-                    continue;
+                } else {
+                    auto expansion = expand_from_raw(
+                        pend.sim_state,
+                        raw,
+                        batch_index,
+                        config.mcts_config,
+                        entry.det->rng
+                    );
+                    auto& [parent, edge_index] = pend.path.back();
+                    parent->children[static_cast<size_t>(edge_index)] = std::move(expansion.node);
+                    backpropagate_path(pend.path, expansion.leaf_value);
+                    entry.det->sims_completed += 1;
                 }
-
-                auto expansion = expand_from_outputs(
-                    entry.det->sim_state,
-                    outputs,
-                    batch_index,
-                    config.mcts_config,
-                    entry.det->rng
-                );
-                auto& [parent, edge_index] = entry.det->path.back();
-                parent->children[static_cast<size_t>(edge_index)] = std::move(expansion.node);
-                entry.det->pending_expansion = false;
-                backpropagate(*entry.det, expansion.leaf_value);
-                entry.det->sims_completed += 1;
             }
+            // Clear all processed pending expansions
+            for (auto& slot : pool) {
+                for (auto& det : slot.dets) {
+                    det.pending.clear();
+                }
+            }
+            t_expand += std::chrono::duration<double>(Clock::now() - t0e).count();
         }
 
+        auto t0a = Clock::now();
         for (auto& slot : pool) {
             if (!search_complete(slot, config.mcts_config.n_simulations)) {
                 continue;
@@ -1611,7 +1789,14 @@ std::vector<GameResult> play_ismcts_matchup_pooled(
             }
             commit_selected_action(slot, action);
         }
+        t_apply += std::chrono::duration<double>(Clock::now() - t0a).count();
     }
+
+    const double total = t_advance + t_select + t_nn + t_expand + t_apply;
+    fprintf(stderr, "[ISMCTS profile] advance=%.3fs select=%.3fs nn=%.3fs expand=%.3fs apply=%.3fs total=%.3fs\n",
+            t_advance, t_select, t_nn, t_expand, t_apply, total);
+    fprintf(stderr, "[ISMCTS profile] batches=%d items=%d avg_batch=%.1f\n",
+            n_batches, total_batch_items, n_batches > 0 ? double(total_batch_items) / n_batches : 0.0);
 
     return results;
 }

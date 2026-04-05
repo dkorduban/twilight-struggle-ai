@@ -28,8 +28,8 @@ std::vector<CardId> build_era_deck(Era era_max, const CardSet& removed) {
     return out;
 }
 
-void shuffle_vector(std::vector<CardId>& deck, Pcg64Rng& rng) {
-    shuffle_with_numpy_rng(deck, rng);
+void shuffle_deck(InlineDeck& deck, Pcg64Rng& rng) {
+    shuffle_with_numpy_rng(std::span<CardId>(deck.begin(), deck.end()), rng);
 }
 
 // Reshuffle exactly from the public discard pile back into the hidden deck.
@@ -41,7 +41,7 @@ void reshuffle(GameState& gs, Pcg64Rng& rng) {
         }
     }
     gs.pub.discard.reset();
-    shuffle_vector(gs.deck, rng);
+    shuffle_deck(gs.deck, rng);
 }
 
 GameState reset_game_impl(std::span<const CardId> shuffled_deck) {
@@ -136,7 +136,7 @@ void advance_to_mid_war(GameState& gs, Pcg64Rng& rng) {
     }
     gs.pub.discard.reset();
     gs.deck = std::move(deck);
-    shuffle_vector(gs.deck, rng);
+    shuffle_deck(gs.deck, rng);
 }
 
 void advance_to_late_war(GameState& gs, Pcg64Rng& rng) {
@@ -148,7 +148,7 @@ void advance_to_late_war(GameState& gs, Pcg64Rng& rng) {
     }
     gs.pub.discard.reset();
     gs.deck = std::move(deck);
-    shuffle_vector(gs.deck, rng);
+    shuffle_deck(gs.deck, rng);
 }
 
 std::vector<CardId> hand_to_vector(const CardSet& hand) {

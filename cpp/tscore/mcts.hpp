@@ -34,6 +34,9 @@ struct MctsNode {
     bool is_terminal = false;
     double terminal_value = 0.0;
     Side side_to_move = Side::USSR;
+    // Cached game state at this node. When present, select_to_leaf clones from
+    // here instead of the root, saving apply_tree_action calls for the prefix.
+    std::unique_ptr<GameState> cached_state;
 
     [[nodiscard]] int select_edge(float c_puct) const;
 };
