@@ -571,7 +571,7 @@ class TSBaselineModel(nn.Module):
         card_logits = self.card_head(hidden)
         mode_logits = self.mode_head(hidden)
         country_strategy_logits = self.strategy_heads(hidden).view(
-            hidden.shape[0], NUM_STRATEGIES, NUM_COUNTRIES
+            hidden.shape[0], 4, 86  # NUM_STRATEGIES, NUM_COUNTRIES
         )
         strategy_logits = self.strategy_mixer(hidden)
         mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)

@@ -2001,6 +2001,17 @@ void collect_games_batched(
                 return;
             }
 
+            // If learned_side is set and this decision is for the opponent,
+            // use heuristic immediately — no MCTS search needed.
+            if (config.learned_side.has_value() &&
+                slot.decision->side != *config.learned_side) {
+                // Force immediate heuristic commit by setting sims_target=0.
+                slot.sims_target = 0;
+                slot.sims_completed = 0;
+                slot.move_done = true;
+                return;
+            }
+
             if (slot.root == nullptr) {
                 if (!slot.pending.empty()) {
                     return;

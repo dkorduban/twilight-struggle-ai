@@ -567,7 +567,7 @@ PYBIND11_MODULE(tscore, m) {
         "benchmark_ismcts",
         [](const std::string& model_path, ts::Side learned_side, int n_games,
            int n_determinizations, int n_simulations, py::object seed_obj, int pool_size,
-           const std::string& device_str) {
+           int max_pending_per_det, const std::string& device_str) {
             std::optional<uint32_t> seed;
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
@@ -577,6 +577,7 @@ PYBIND11_MODULE(tscore, m) {
             model.eval();
             ts::IsmctsConfig config;
             config.n_determinizations = n_determinizations;
+            config.max_pending_per_det = max_pending_per_det;
             config.mcts_config.n_simulations = n_simulations;
             return ts::play_ismcts_matchup_pooled(
                 n_games,
@@ -595,12 +596,14 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("n_simulations") = 50,
         py::arg("seed") = py::none(),
         py::arg("pool_size") = 4,
+        py::arg("max_pending_per_det") = 8,
         py::arg("device") = "cpu",
         "Run ISMCTS benchmark: learned side uses information-set MCTS,\n"
         "opponent uses heuristic. Returns list[GameResult].\n"
         "n_determinizations: parallel determinization count (default 8).\n"
         "n_simulations: MCTS simulations per determinization (default 50).\n"
         "pool_size: concurrent games batched together (default 4).\n"
+        "max_pending_per_det: concurrent leaves per determinization via virtual loss (default 8).\n"
         "device: 'cpu' or 'cuda' for GPU inference."
     );
 #endif

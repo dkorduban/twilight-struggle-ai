@@ -19,7 +19,7 @@ void usage(const char* argv0) {
         << " --model scripted.pt --out rows.jsonl [--games N] [--n-sim N]"
         << " [--pool-size N] [--max-pending N] [--c-puct F] [--seed N] [--virtual-loss N]"
         << " [--temperature F] [--dir-alpha F] [--dir-epsilon F]"
-        << " [--epsilon-greedy F]\n";
+        << " [--epsilon-greedy F] [--learned-side ussr|us]\n";
 }
 
 }  // namespace
@@ -38,6 +38,7 @@ int main(int argc, char** argv) {
         float dir_alpha = -1.0f;   // <0 means use MctsConfig default
         float dir_epsilon = -1.0f; // <0 means use MctsConfig default
         float epsilon_greedy = 0.0f;
+        std::optional<ts::Side> learned_side;
         std::optional<uint32_t> seed = 12345U;
 
         for (int i = 1; i < argc; ++i) {
@@ -75,6 +76,15 @@ int main(int argc, char** argv) {
                 dir_epsilon = std::stof(std::string(require_value("--dir-epsilon")));
             } else if (arg == "--epsilon-greedy") {
                 epsilon_greedy = std::stof(std::string(require_value("--epsilon-greedy")));
+            } else if (arg == "--learned-side") {
+                const auto val = std::string(require_value("--learned-side"));
+                if (val == "ussr" || val == "USSR") {
+                    learned_side = ts::Side::USSR;
+                } else if (val == "us" || val == "US") {
+                    learned_side = ts::Side::US;
+                } else {
+                    throw std::invalid_argument("--learned-side must be 'ussr' or 'us'");
+                }
             } else if (arg == "--help" || arg == "-h") {
                 usage(argv[0]);
                 return 0;
@@ -128,6 +138,7 @@ int main(int argc, char** argv) {
         config.virtual_loss_weight = virtual_loss;
         config.temperature = temperature;
         config.epsilon_greedy = epsilon_greedy;
+        config.learned_side = learned_side;
 
         ts::collect_games_batched(game_count, model, config, seed.value_or(12345U), out);
         return 0;

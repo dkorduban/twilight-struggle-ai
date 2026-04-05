@@ -196,9 +196,12 @@ const SpecTables& specs() {
 }
 
 const CardSpec& card_spec(CardId card_id) {
+    if (static_cast<size_t>(card_id) >= specs().cards.size()) {
+        throw std::out_of_range("card id out of range: " + std::to_string(static_cast<int>(card_id)));
+    }
     const auto& item = specs().cards[card_id];
     if (!item.has_value()) {
-        throw std::out_of_range("unknown card id");
+        throw std::out_of_range("unknown card id: " + std::to_string(static_cast<int>(card_id)));
     }
     return *item;
 }

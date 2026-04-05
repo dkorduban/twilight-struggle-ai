@@ -92,6 +92,9 @@ struct BatchedMctsConfig {
     int max_pending = 8;  // max concurrent leaves per game slot
     float temperature = 0.0f;
     float epsilon_greedy = 0.0f;
+    // When set, only this side uses MCTS search; the other uses heuristic.
+    // When nullopt, both sides use MCTS (self-play).
+    std::optional<Side> learned_side;
 };
 
 void collect_games_batched(

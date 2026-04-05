@@ -590,8 +590,192 @@ Same data as gen1, but with --advantage-weight 0.5 (upweight winning-game rows).
 the learned data fraction (12% of total), degrading broader heuristic imitation quality.
 AWR requires a much larger learned-data fraction to be effective.
 
-**Next steps:**
-1. Collect more games (5k+ per side) for larger learned data fraction
-2. Try warm-starting from base checkpoint instead of cold training
-3. Collect learned-vs-learned data (both sides played by model) for distributional shift
-4. Consider init-from-base fine-tuning on learned data only (lower LR, fewer epochs)
+### Gen 1 Fine-tune: learned-only data from base checkpoint (2026-04-04)
+Init from v99_nash_c_95ep_s42, train on learned data only (181k rows), lr=0.0006, 30 epochs.
+
+**Reference (1000 games/side, seeds 50000+60000):**
+
+| Model | USSR WR | US WR | Combined | vs Base |
+|-------|---------|-------|----------|---------|
+| v99_nash_c_95ep_s42 (base) | 38.1% | 9.9% | **24.0%** | — |
+| gen1_finetune_s42 | 36.7% ±1.5 | 3.6% ±0.6 | **20.2%** | **-3.8pp** |
+
+**Fine-tuning hurt performance.** USSR roughly flat (38.1% → 36.7%), but US collapsed
+(9.9% → 3.6%). Fine-tuning on learned data (collected as USSR-vs-heuristic and
+US-wins-only-vs-heuristic) over-specialized toward those play patterns and destroyed
+US generalization. Consistent with game asymmetry findings.
+
+**Conclusion:** Neither mixing (Gen 1, -1.0pp), AWR (-3.7pp), nor fine-tuning (-3.8pp)
+improved on the pure BC baseline with v99 data. The model's first-generation self-play
+data is not strong enough to improve beyond heuristic imitation.
+
+### ISMCTS raw-pointer optimization (2026-04-04)
+Replaced PyTorch tensor dispatch (tensor.index(), torch::softmax(), .item<double>())
+with raw C float arrays and C++ softmax in `ismcts.cpp::expand_from_outputs`.
+Same pattern already proven 3.3× on greedy benchmark in `mcts_batched.cpp`.
+
+| Metric | Before | After | Speedup |
+|--------|--------|-------|---------|
+| ISMCTS 4 games (64 sims, 8 dets) | ~50s | ~30s | ~1.7× |
+| Per-game | ~12.5s | ~7.5s | ~1.7× |
+
+Less than 3.3× because ISMCTS NN forward pass is now the dominant cost (raw-pointer
+optimization only affects post-inference tensor extraction, not the forward pass itself).
+
+### Architecture sweep results (from pipeline, 2000 games/side)
+
+| Model | Seed | USSR WR | US WR | Combined |
+|-------|------|---------|-------|----------|
+| v99_baseline_h256 | s42 | 42.1% | 11.6% | 26.9% |
+| v99_baseline_h256 | s7 | 40.8% | 11.5% | 26.1% |
+| v99_baseline_h256 | s123 | 37.2% | 8.4% | 22.8% |
+| **Baseline mean** | | **40.0%** | **10.5%** | **25.3%** |
+| v99_saturation_1x_95ep | s42 | 46.2% | 13.0% | **29.5%** |
+| v99_control_feat_h256 | s42 | 42.4% | 7.1% | 24.8% |
+| v99_control_feat_h256 | s123 | 45.1% | 12.7% | **28.9%** |
+| v99_cf_1x95 | s42 | 45.8% | 11.7% | 28.7% |
+| **v99_cf_1x95** | **s7** | **51.1%** | **13.7%** | **32.4%** |
+| v99_cf_1x95 | s123 | 44.4% | 9.7% | 27.0% |
+| **CF 1x95 mean** | | **47.1%** | **11.7%** | **29.4%** |
+
+**Key finding:** `TSControlFeatModel` with 1× saturation (95 ep) is the best architecture.
+- +4.1pp combined over baseline mean (29.4% vs 25.3%)
+- Best single model: v99_cf_1x95_s7 at **32.4% combined** (51.1% USSR!)
+- Region scoring scalars + per-country control features clearly help
+- High seed variance (27.0% to 32.4%) suggests benefit is real but noisy
+
+**Decision:** Use v99_cf_1x95_s7 as the base model for Gen 2 self-play data collection.
+Collecting 2000 games USSR-side + 2000 games US-side (eps=0.05, Nash temps).
+
+### Gen 2: self-play with best architecture — DONE
+
+**Base model:** v99_cf_1x95_s7 (32.4% combined, best ever)
+**Data collection:** 2048 USSR + 2048 US learned-vs-heuristic (264k + 260k rows)
+**Training data:** heuristic (1.37M) + USSR learned (147k) + US learned wins-only (35k) = 1.55M rows
+**Hyperparams:** control_feat, h256, bs=8192, lr=0.0024, 95ep, seed=42
+
+| Model | USSR WR | US WR | Combined | vs base |
+|-------|---------|-------|----------|---------|
+| v99_cf_1x95_s7 (base) | 51.1% | 13.7% | **32.4%** | — |
+| gen2_cf_s42 (greedy) | 33.2% | 9.6% | **21.4%** | **-11.0pp** |
+| gen2_cf_s42 (ISMCTS 100g) | 29.0% | — | — | — |
+
+**Result: Severe regression.** Including learned data in training hurts, consistent with
+Phase 1 findings. The BC self-play data degrades model quality.
+
+---
+
+## ISMCTS Batching Optimization
+
+### Multi-pending virtual loss (2026-04-04)
+
+Redesigned ISMCTS to support multiple concurrent leaf selections per determinization
+via virtual loss. Instead of selecting one leaf per det and batching, now selects up
+to `max_pending_per_det` leaves (default 8) before a single batched NN call.
+
+Combined with larger `pool_size` (running all games in parallel), this produces
+dramatically larger NN batches:
+
+| Config | avg_batch | NN time | Total (20g) | Batches |
+|--------|----------|---------|-------------|---------|
+| pool=4, pending=1 (old) | 27.4 | 37.1s | 164s | 19,246 |
+| pool=4, pending=8 | 187.1 | 12.1s | 132s | 3,052 |
+| pool=20, pending=8 | 922.3 | 6.8s | 124s | 619 |
+| pool=40, pending=8 (40g) | 1,868.9 | 13.8s | 256s | 599 |
+| pool=100, pending=8 (100g) | 4,511.2 | 35.8s | 639s | 603 |
+
+**Key metrics:**
+- NN amortization: **27 → 4,511 avg batch size (167×)**
+- NN calls: **19,246 → 603 batches (32×)**
+- NN time per game: **~1.9s → 0.36s (5.3× speedup)**
+- Total per game: **~8.2s → 6.4s (1.3× overall on CPU)**
+- **NN is no longer the bottleneck** — expand (tree ops) now dominates at 46%
+
+GPU testing: RTX 3050 is **slower** than CPU for this model size (~1M params).
+GPU overhead (kernel launch + data transfer) exceeds the compute benefit for
+small models, even with batch sizes >1000. GPU would help with larger models.
+
+### Expand phase optimization (tree operations)
+
+After multi-pending made NN fast, expand (tree ops) became the bottleneck at 46%.
+Profiling revealed two hot spots in `expand_from_raw`:
+1. `collect_card_drafts` (58%) — repeated BFS for accessible countries via `legal_modes`/`legal_countries`
+2. Edge building (42%) — `resolve_edge_action_raw` calling BFS again per influence edge
+
+**Fix 1: AccessibleCache** — compute BFS-based accessible countries ONCE per expansion
+(for influence, coup, realign modes), then reuse in both draft collection and edge
+resolution. Previously `legal_modes` called BFS 3× per card, `legal_countries` again
+per mode, and `resolve_edge_action_raw` again per influence edge — ~30+ BFS per expansion.
+Now: 1 BFS per expansion.
+
+**Fix 2: Inline influence allocation** — replaced `resolve_edge_action_raw` with inline
+proportional allocation using cached accessible list, eliminating redundant BFS calls.
+
+| Optimization | expand (s) | total (s) | vs original |
+|-------------|-----------|---------|------------|
+| Original (pool=4, pending=1) | 85.6 | 306.9 | 1.0× |
+| Multi-pending + raw batch | 66.8 | 124.1 | 2.5× |
+| + AccessibleCache | 28.7 | 59.7 | 5.1× |
+| + Inline influence alloc | 28.6 | **58.4** | **5.3×** |
+
+**Per-game: 15.3s → 2.9s (5.3× faster).** 20 games complete in under 1 minute.
+
+### ISMCTS 200-game benchmark (v99_cf_1x95_s7, 50 sims, 8 dets, pool=64, pending=8)
+
+| Side | Wins/Total | WR | Time | per-game |
+|------|-----------|-----|------|----------|
+| USSR | 85/200 | **42.5%** | 736s | 3.7s |
+
+Profile: expand=329s (45%), select=182s (25%), apply=119s (16%), nn=90s (12%).
+Avg batch: 2757, total batches: 1959.
+
+**Finding**: ISMCTS at 50 sims (42.5% USSR) is *weaker* than greedy policy (51.1% USSR).
+With only 50 sims and 8 determinizations, search doesn't help — the value function isn't
+accurate enough and determinization adds noise. Would need 200+ sims to likely match greedy.
+
+---
+
+## MCTS Teacher Distillation (2026-04-04)
+
+### Approach
+Use full-information MCTS self-play to generate soft policy targets (visit count
+distributions). Train the policy network via KL-divergence to match MCTS's decisions.
+Unlike BC self-play (which failed), this provides *search-quality* targets with a soft
+distribution over actions, not just single-action imitation.
+
+### Teacher data collection
+Model: v99_cf_1x95_s7, 50 sims, pool_size=32, Dirichlet noise (alpha=0.3, eps=0.25),
+temperature=1.0 (sample proportional to visits). 2× 1000 games with different seeds.
+Rate: ~2.8s/game, ~143 rows/game.
+
+### v100 Training Results
+
+Two models trained on `combined_v99_clean_b` with batch_size=8192, lr=0.0024, 95 epochs:
+
+| Model | Value Target | Teacher | USSR WR | US WR | Combined |
+|-------|-------------|---------|---------|-------|----------|
+| v100_teacher | final_vp | MCTS 50sim (w=0.5) | 43.2% | 12.6% | 27.9% |
+| v100_actor_value | actor_relative | none | 37.6% | 8.3% | 23.0% |
+| v99_1x95ep (baseline) | final_vp | none | 46.2% | 13.0% | 29.5% |
+| v99_cf_s7 (best) | final_vp | none | 51.1% | 13.7% | 32.4% |
+
+**Finding**: Both v100 variants regress vs baseline. Likely causes:
+1. **Wrong hyperparams**: batch_size=8192 + lr=0.0024 (8× batch, 2× LR vs proven recipe)
+2. **Teacher data from weak model**: MCTS targets collected with v23 (much weaker) add noise
+3. **actor_relative value target**: Hurts badly (-6.5pp combined vs final_vp)
+
+Note: v100 models trigger a card_id=0 engine bug in ~5-10% of games, so results are
+approximate (benchmarked with crash-skipping). The bug occurs during event resolution
+when the model's different play style reaches game states the engine hasn't been tested on.
+
+### MCTS vs Heuristic — Full Knowledge (400 sims, 100 games/side)
+
+| Model | USSR WR | US WR | Combined | vs Greedy |
+|-------|---------|-------|----------|-----------|
+| v99_cf_s7 MCTS | 48.0% | 10.0% | 29.0% | -3.4pp |
+| v99_1x95ep MCTS | 29.0% | 7.0% | 18.0% | -11.5pp |
+
+**Finding**: MCTS hurts both models. The value head is too noisy — search amplifies
+errors instead of finding better moves. With cf_s7, USSR improves slightly (48% vs 51.1%)
+but US drops badly (10% vs 13.7%). With 1x95ep, the degradation is catastrophic.
+This confirms the value head is the bottleneck, not search depth.
