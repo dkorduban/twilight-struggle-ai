@@ -878,3 +878,23 @@ Greedy-vs-greedy (same model): 78.0% USSR WR, confirming massive side asymmetry 
 Even with hidden information (8 determinizations × 50 sims), search now beats greedy.
 The improvement is larger for ISMCTS (+13.5pp) than full-info MCTS (+7.2pp),
 likely because the prior quality matters even more when determinization adds noise.
+
+### v101 Teacher Distillation Attempt (heuristic + MCTS data, teacher KL)
+
+**Setup**: Trained on heuristic_nash_b (1.28M rows) + MCTS self-play (88K rows, 600 games),
+with teacher KL loss (weight=0.5) from MCTS visit count distributions. Teacher coverage: 6.1%.
+Same hyperparams as v99_cf_s7 (lr=0.0024, batch=8192, 95 epochs, seed=7).
+
+| Model | USSR WR | US WR | Combined |
+|-------|---------|-------|----------|
+| v101_teacher_w05 | 39.0% | 5.8% | 22.4% |
+| v99_cf_s7 (baseline) | 56.4% | 10.4% | 33.4% |
+
+**Finding**: Significant regression (-11pp combined). The MCTS self-play data mixed into
+training hurts: it has different action distributions (stochastic from T=1.0 visit counts)
+that confuse the BC loss. 6% teacher coverage is too sparse to compensate. The model is
+imitating noisy MCTS play rather than learning from MCTS's search quality.
+
+**Lesson**: Teacher distillation needs either (a) teacher targets on 100% of training rows
+(run MCTS search on heuristic positions), or (b) separate MCTS data from BC data entirely
+(train BC on heuristic only, apply teacher KL only to matched rows).
