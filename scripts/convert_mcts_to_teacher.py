@@ -34,8 +34,9 @@ def convert_row(row: dict) -> dict | None:
     if not visit_counts:
         return None
 
-    # Normalize visit counts into card probability distribution
-    card_visits = [0.0] * 112  # kCardSlots = kMaxCardId + 1 = 112
+    # Normalize visit counts into card probability distribution.
+    # Card IDs are 1-111; the model uses 111-dim output (card_id - 1 indexing).
+    card_visits = [0.0] * 111  # indices 0..110 map to card_ids 1..111
     mode_visits = [0.0] * 5    # 5 action modes
     total_visits = 0
 
@@ -43,8 +44,8 @@ def convert_row(row: dict) -> dict | None:
         card_id = entry["card_id"]
         mode = entry["mode"]
         visits = entry["visits"]
-        if 0 <= card_id < 112:
-            card_visits[card_id] += visits
+        if 1 <= card_id <= 111:
+            card_visits[card_id - 1] += visits
         if 0 <= mode < 5:
             mode_visits[mode] += visits
         total_visits += visits

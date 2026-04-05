@@ -865,3 +865,16 @@ MCTS-USSR 57% is the strongest result we've seen for any single-model approach.
 **Finding**: T=0.1 is optimal (+1.5pp combined over T=0). Light sampling helps by
 adding diversity to break deterministic patterns, but higher temperatures degrade play.
 Greedy-vs-greedy (same model): 78.0% USSR WR, confirming massive side asymmetry in learned policy.
+
+### ISMCTS vs Heuristic — Post-Fix (v99_cf_s7, 50 sims × 8 dets, 50 games)
+
+| Method | USSR WR | vs Pre-Fix | vs Greedy |
+|--------|---------|-----------|-----------|
+| ISMCTS (fixed) | **56.0%** | +13.5pp | +6.2pp |
+| ISMCTS (pre-fix) | 42.5% | baseline | -7.3pp |
+| Greedy baseline | ~49.8% | — | baseline |
+
+**Finding**: ISMCTS also benefits massively from the double-softmax fix (+13.5pp).
+Even with hidden information (8 determinizations × 50 sims), search now beats greedy.
+The improvement is larger for ISMCTS (+13.5pp) than full-info MCTS (+7.2pp),
+likely because the prior quality matters even more when determinization adds noise.
