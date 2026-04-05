@@ -111,6 +111,9 @@ struct BatchedMctsConfig {
     // Default "mcts". Set to "selfplay" in heuristic_teacher_mode so produced
     // game_ids match existing heuristic dataset rows for teacher target joining.
     std::string game_id_prefix = "mcts";
+    // When true, the heuristic opponent samples per-game Boltzmann temperatures
+    // from the Nash equilibrium mixed strategy (matching training data).
+    bool nash_temperatures = false;
 };
 
 void collect_games_batched(
@@ -135,7 +138,7 @@ std::vector<GameResult> benchmark_games_batched(
     torch::Device device = torch::kCPU,
     bool greedy_opponent = false,
     float temperature = 0.0f,
-    bool nash_temperatures = false
+    bool nash_temperatures = true
 );
 
 /// Run MCTS (learned side) vs greedy NN (opponent) benchmark.
@@ -159,7 +162,8 @@ std::vector<GameResult> benchmark_mcts(
     int pool_size,
     uint32_t base_seed,
     torch::Device device = torch::kCPU,
-    bool greedy_nn_opponent = false
+    bool greedy_nn_opponent = false,
+    bool nash_temperatures = true
 );
 
 }  // namespace ts

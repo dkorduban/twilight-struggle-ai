@@ -1648,13 +1648,23 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
             }
         }
         if (action.card_id == 0) {
-            action = choose_action(
-                PolicyKind::MinimalHybrid,
-                slot.decision->pub_snapshot,
-                slot.decision->hand_snapshot,
-                slot.decision->holds_china,
-                slot.rng
-            ).value_or(ActionEncoding{});
+            if (slot.heuristic_temperature > 0.0f) {
+                action = choose_minimal_hybrid_sampled(
+                    slot.decision->pub_snapshot,
+                    slot.decision->hand_snapshot,
+                    slot.decision->holds_china,
+                    slot.heuristic_temperature,
+                    slot.rng
+                ).value_or(ActionEncoding{});
+            } else {
+                action = choose_action(
+                    PolicyKind::MinimalHybrid,
+                    slot.decision->pub_snapshot,
+                    slot.decision->hand_snapshot,
+                    slot.decision->holds_china,
+                    slot.rng
+                ).value_or(ActionEncoding{});
+            }
         }
     }
     if (action.card_id == 0) {
@@ -2013,6 +2023,9 @@ void collect_games_batched(
     int n_batches = 0, total_batch_items = 0;
     int debug_iters = 0;
 
+    // Separate RNG for Nash temperature sampling (matches collect_selfplay_rows_jsonl).
+    Pcg64Rng nash_rng(base_seed + 999999U);
+
     while (games_emitted < n_games) {
         batch_inputs.reset();
         batch_entries.clear();
@@ -2031,6 +2044,15 @@ void collect_games_batched(
             }
             if (!slot.active && games_started < n_games) {
                 initialize_slot(slot, games_started, base_seed, config);
+                if (config.nash_temperatures && config.learned_side.has_value()) {
+                    // Sample Nash temp for the heuristic (non-learned) side.
+                    const auto opponent = other_side(*config.learned_side);
+                    slot.heuristic_temperature = (opponent == Side::USSR)
+                        ? sample_nash_temperature(kNashUSSRTemps.data(),
+                              static_cast<int>(kNashUSSRTemps.size()), nash_rng)
+                        : sample_nash_temperature(kNashUSTemps.data(),
+                              static_cast<int>(kNashUSTemps.size()), nash_rng);
+                }
                 games_started += 1;
             }
         }
@@ -2669,13 +2691,15 @@ std::vector<GameResult> benchmark_mcts(
     int pool_size,
     uint32_t base_seed,
     torch::Device device,
-    bool greedy_nn_opponent
+    bool greedy_nn_opponent,
+    bool nash_temperatures
 ) {
     BatchedMctsConfig config;
     config.mcts.n_simulations = n_simulations;
     config.pool_size = pool_size;
     config.learned_side = learned_side;
     config.greedy_nn_opponent = greedy_nn_opponent;
+    config.nash_temperatures = nash_temperatures;
     config.max_pending = 8;
     config.virtual_loss_weight = 3;
     config.temperature = 0.0f;

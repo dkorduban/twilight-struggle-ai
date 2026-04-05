@@ -561,11 +561,11 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("device") = "cpu",
         py::arg("greedy_opponent") = false,
         py::arg("temperature") = 0.0f,
-        py::arg("nash_temperatures") = false,
+        py::arg("nash_temperatures") = true,
         "Run batched greedy benchmark: learned side uses argmax (T=0) or softmax\n"
         "sampling (T>0). Opponent uses heuristic (default) or greedy NN.\n"
-        "If nash_temperatures=true, the heuristic opponent samples per-game\n"
-        "temperatures from the Nash mixed strategy (matching training data).\n"
+        "If nash_temperatures=true (default), the heuristic opponent samples\n"
+        "per-game temperatures from the Nash mixed strategy (matching training data).\n"
         "Returns list[GameResult]."
     );
     m.def(
@@ -635,13 +635,13 @@ PYBIND11_MODULE(tscore, m) {
         "benchmark_mcts",
         [](const std::string& model_path, ts::Side learned_side, int n_games,
            int n_simulations, int pool_size, uint32_t seed, const std::string& device_str,
-           bool greedy_nn_opponent) {
+           bool greedy_nn_opponent, bool nash_temperatures) {
             torch::Device device(device_str);
             auto model = torch::jit::load(model_path, device);
             model.eval();
             return ts::benchmark_mcts(
                 n_games, model, learned_side, n_simulations, pool_size, seed, device,
-                greedy_nn_opponent);
+                greedy_nn_opponent, nash_temperatures);
         },
         py::arg("model_path"),
         py::arg("learned_side"),
@@ -651,7 +651,10 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("seed") = 42000,
         py::arg("device") = "cpu",
         py::arg("greedy_nn_opponent") = false,
+        py::arg("nash_temperatures") = true,
         "Run MCTS benchmark. Opponent is heuristic (default) or greedy NN.\n"
+        "If nash_temperatures=true (default), the heuristic opponent samples\n"
+        "per-game temperatures from the Nash mixed strategy.\n"
         "Returns list[GameResult]."
     );
 #endif
