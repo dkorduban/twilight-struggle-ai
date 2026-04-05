@@ -17,7 +17,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-BASE_MODEL="data/checkpoints/v106_cf_gnn_s7/baseline_best_scripted.pt"
+BASE_MODEL="data/checkpoints/v106_cf_gnn_s42/baseline_best_scripted.pt"
 ANCHOR_DATA="data/nash_c_only"
 GEN0_DIR="data/selfplay/gnn_gen0"
 OUT_DIR="data/checkpoints/v107_cf_gnn_gen0"

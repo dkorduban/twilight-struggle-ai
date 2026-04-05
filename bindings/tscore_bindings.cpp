@@ -541,7 +541,7 @@ PYBIND11_MODULE(tscore, m) {
     );
     m.def(
         "benchmark_batched",
-        [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size, py::object seed_obj, const std::string& device_str, bool greedy_opponent, float temperature) {
+        [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size, py::object seed_obj, const std::string& device_str, bool greedy_opponent, float temperature, bool nash_temperatures) {
             std::optional<uint32_t> seed;
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
@@ -551,7 +551,7 @@ PYBIND11_MODULE(tscore, m) {
             model.eval();
             return ts::benchmark_games_batched(
                 n_games, model, learned_side, pool_size,
-                seed.value_or(std::random_device{}()), device, greedy_opponent, temperature);
+                seed.value_or(std::random_device{}()), device, greedy_opponent, temperature, nash_temperatures);
         },
         py::arg("model_path"),
         py::arg("learned_side"),
@@ -561,8 +561,11 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("device") = "cpu",
         py::arg("greedy_opponent") = false,
         py::arg("temperature") = 0.0f,
+        py::arg("nash_temperatures") = false,
         "Run batched greedy benchmark: learned side uses argmax (T=0) or softmax\n"
         "sampling (T>0). Opponent uses heuristic (default) or greedy NN.\n"
+        "If nash_temperatures=true, the heuristic opponent samples per-game\n"
+        "temperatures from the Nash mixed strategy (matching training data).\n"
         "Returns list[GameResult]."
     );
     m.def(

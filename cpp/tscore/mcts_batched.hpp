@@ -86,6 +86,8 @@ struct GameSlot {
     // Saved RNG state before MCTS search starts, used in heuristic_teacher_mode to
     // restore the game RNG so heuristic move selection is identical to pure heuristic.
     std::optional<Pcg64Rng> rng_before_mcts;
+    // Per-game heuristic temperature (0 = deterministic argmax).
+    float heuristic_temperature = 0.0f;
 };
 
 struct BatchedMctsConfig {
@@ -132,7 +134,8 @@ std::vector<GameResult> benchmark_games_batched(
     uint32_t base_seed,
     torch::Device device = torch::kCPU,
     bool greedy_opponent = false,
-    float temperature = 0.0f
+    float temperature = 0.0f,
+    bool nash_temperatures = false
 );
 
 /// Run MCTS (learned side) vs greedy NN (opponent) benchmark.

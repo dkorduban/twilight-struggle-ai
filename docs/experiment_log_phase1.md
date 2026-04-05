@@ -1178,12 +1178,15 @@ passing captures 2-hop neighborhood context.
 | v106_cf_gnn_s7 | 62.6% | 11.8% | **37.2%** | — |
 | v106_cf_gnn_s42 | 60.8% | 11.6% | **36.2%** | — |
 | v106_cf_gnn_s123 | 56.4% | 4.0% | **30.2%** | US collapse |
-| v106_cf_gnn_s999 | — | — | pending | — |
-| Mean (s7,s42,s123) | — | — | **34.5%** | — |
-| Mean excl s123 | — | — | **36.7%** | — |
-| cf_1x95 (4 seeds excl s42 outlier) | — | — | **31.4%** | reference |
+| v106_cf_gnn_s999 | 56.8% | 8.4% | **32.6%** | US collapse |
+| **GNN mean (all 4, canonical)** | — | — | **35.3%** | seed=50000/50500 |
+| **GNN mean (s7+s42, strong seeds)** | — | — | **38.9%** | — |
+| v99_cf_1x95_s7 (cf reference) | 53.6% | 8.4% | **31.0%** | canonical seed=50000 |
 
-**GNN is confirmed significantly better.** Mean across 3 seeds (34.5%) is +3.1pp over cf (31.4%). Excluding the s123 US-collapse outlier: 36.7% vs 31.4% = **+5.3pp**.
+**GNN is confirmed significantly better.** Canonical benchmark (seed=50000/50500):
+- All 4 seeds: mean 35.3% vs cf 31.0% = **+4.3pp**
+- Strong seeds (s7+s42): mean 38.9% vs cf 31.0% = **+7.9pp**
+- s123 and s999 are US-collapse outliers (US WR 4-8%); pattern mirrors cf where 1-2 seeds collapse
 
 Three seeds show the same pattern as cf: one outlier seed with US collapse (s123 for GNN, s42 for cf), two strong seeds. The non-outlier seeds cluster at 36-37% — a genuine and large improvement.
 
@@ -1206,10 +1209,11 @@ scalar_encoder). The model already has comprehensive regional information. Expli
 nonlinear transformation of what the model already sees — no new signal. Phase 2b is cancelled.
 
 **Next priorities** (2026-04-05):
-1. v106_cf_gnn_s999 in progress — completes 4-seed GNN mean
-2. MCTS inference benchmark: `benchmark_mcts(v106_cf_gnn_s7, n_sim=100, n=500/side)` — running
-3. If MCTS benchmark confirms +5pp: collect GNN self-play data (Gen 0)
-4. Phase 2c if GNN self-play plateaus: allocation head + DP decoder
+1. ~~v106_cf_gnn_s999 in progress~~ DONE: 32.6% (outlier seed)
+2. ~~MCTS inference benchmark~~ DONE: no significant MCTS benefit at 100 sim
+3. **GNN Gen 0 self-play collection running** (s42 base, 2000g USSR + 2000g US)
+4. After Gen 0: train v107_cf_gnn_gen0, benchmark vs v106 baseline
+5. Phase 2c if Gen 0 self-play plateaus: allocation head + DP decoder
 
 **MCTS benchmark on GNN s7 (100 sim, 500/side, seed=77000/77500)** — 2026-04-05:
 
@@ -1232,3 +1236,101 @@ The `.count()` method always returns 0 for GameResult objects.
 - `mcts_batched.cpp`: `set_num_interop_threads` wrapped in try/catch (can only be set once; calling
   it a second time threw exception on the second benchmark_mcts call)
 - All benchmark scripts updated to use correct `sum(1 for x ...)` counting
+
+---
+
+## Benchmark Methodology Audit (2026-04-05)
+
+### Critical finding: Train/Benchmark temperature mismatch
+
+**Training data** collected with `--nash-temperatures`: heuristic uses `choose_minimal_hybrid_sampled()`
+with per-game Boltzmann temps drawn from Nash equilibrium mixed strategy.
+
+**Benchmark** (`benchmark_games_batched`): heuristic used deterministic `choose_action(MinimalHybrid)` —
+T=0 argmax. **No temperature, no sampling.**
+
+This is a **train/test mismatch**: model trains against Nash-temp heuristic but is evaluated
+against deterministic heuristic.
+
+### Nash-temp heuristic is STRONGER than deterministic
+
+5000-game heuristic-vs-heuristic comparison:
+
+| Condition | USSR WR | US WR | Draws | DEFCON-1 | Avg VP |
+|-----------|---------|-------|-------|----------|--------|
+| Nash temps (seed=50000) | 66.19% | 33.81% | 111 | 985 | 2.57 |
+| Nash temps (seed=60000) | 67.37% | 32.63% | 115 | 1036 | 2.81 |
+| **Nash mean** | **66.8%** | **33.2%** | — | — | — |
+| T=0 deterministic (seed=50000) | 72.43% | 27.57% | 103 | 744 | 5.31 |
+| Theoretical Nash value | **66.09%** | **33.91%** | — | — | — |
+
+**Empirical mean (66.8%) matches theoretical Nash value (66.09%)** within ±1.2pp noise.
+
+The deterministic heuristic is **weaker** (more exploitable) — especially as US side. Nash temps
+add stochasticity that prevents exploitation of predictable deterministic play.
+
+### Impact on model benchmarks
+
+All previous benchmarks measured against T=0 deterministic heuristic (easier opponent).
+Adding `nash_temperatures=True` to `benchmark_batched`:
+
+| Model | T=0 USSR | T=0 US | T=0 Combined | Nash USSR | Nash US | Nash Combined |
+|-------|----------|--------|-------------|-----------|---------|---------------|
+| v106_cf_gnn_s42 | 67.0% | 14.0% | **40.5%** | 55.8% | 14.0% | **34.9%** |
+| v99_cf_1x95_s7 | 53.6% | 8.4% | **31.0%** | 46.6% | 9.2% | **27.9%** |
+
+**GNN advantage preserved**: +7.0pp with Nash temps (vs +9.5pp at T=0).
+USSR WR drops ~11pp across all models (harder opponent), US WR roughly stable.
+
+### Recommendation
+
+**All future benchmarks should use `nash_temperatures=True`** to match training conditions.
+T=0 numbers are kept for backwards comparison but are **not the primary metric**.
+
+Code fix: Added `nash_temperatures` parameter to `benchmark_games_batched` and Python binding.
+Usage: `tscore.benchmark_batched(model, side, n_games, seed=50000, nash_temperatures=True)`
+
+### Full Nash-temp canonical benchmark (seed=50000/50500, 500g/side)
+
+| Model | T=0 USSR | T=0 US | T=0 Comb | Nash USSR | Nash US | Nash Comb |
+|-------|----------|--------|----------|-----------|---------|-----------|
+| v106_cf_gnn_s7 | 60.4% | 14.2% | 37.3% | 52.8% | 9.2% | **31.0%** |
+| v106_cf_gnn_s42 | 67.0% | 14.0% | 40.5% | 55.8% | 14.0% | **34.9%** |
+| v106_cf_gnn_s123 | 57.8% | 4.0% | 30.9% | 48.6% | 3.2% | **25.9%** |
+| v106_cf_gnn_s999 | 56.8% | 8.4% | 32.6% | 43.8% | 9.2% | **26.5%** |
+| **GNN mean (all 4)** | — | — | **35.3%** | — | — | **29.6%** |
+| v99_cf_1x95_s7 | 53.6% | 8.4% | 31.0% | 46.6% | 9.2% | **27.9%** |
+| v99_cf_1x95_s42 | — | — | — | 40.2% | 8.4% | **24.3%** |
+| v99_cf_1x95_s123 | — | — | — | 40.6% | 7.0% | **23.8%** |
+| **cf mean (3 seeds)** | — | — | — | — | — | **25.3%** |
+
+**GNN advantage at Nash temps**: +4.3pp (all-4 GNN vs 3 cf seeds).
+Excluding s42 outlier: GNN mean (s7+s123+s999) = 27.8% vs cf mean = 25.3% = **+2.5pp** — real but modest.
+The s42 seed is a GNN-specific lucky initialization (+10.6pp over cf s42).
+
+**Key takeaway**: GNN provides a genuine +2.5-4.3pp improvement over cf under fair Nash-temp benchmarking.
+This is smaller than the T=0 headline of +4.3-9.5pp but still meaningful and consistent across seeds.
+
+---
+
+## v107: GNN Gen 0 Self-Play (2026-04-05)
+
+**Base model**: v106_cf_gnn_s42 (best GNN seed, Nash combined=34.9%)
+**Data**: 1.37M nash_c anchor + 281K USSR self-play (all rows) + 32K US self-play (wins only, 11.7%)
+**Total**: 1.68M rows
+**Training**: GNN, h256, bs=8192, lr=0.0024, 95ep, seed=7. Best epoch: 95 (val_loss=2.3832).
+
+| Model | T=0 USSR | T=0 US | T=0 Comb | Nash USSR | Nash US | Nash Comb |
+|-------|----------|--------|----------|-----------|---------|-----------|
+| v106_cf_gnn_s42 (base) | 67.0% | 14.0% | 40.5% | 55.8% | 14.0% | **34.9%** |
+| **v107_cf_gnn_gen0** | **67.0%** | **14.4%** | **40.7%** | **57.0%** | **14.8%** | **35.9%** |
+| Delta | +0.0pp | +0.4pp | +0.2pp | +1.2pp | +0.8pp | **+1.0pp** |
+
+**Result: +1.0pp at Nash temps (within ±2.5pp CI). Not statistically significant.**
+
+Self-play data from the GNN model provides minimal improvement — same pattern as Phase 1
+BC self-play experiments (v89b→v90b was also ~1pp). The model's self-play data is too similar
+to the heuristic anchor data to provide a meaningful learning signal.
+
+Note: val_loss improved from 2.57 (v106 nash_c only) to 2.38 (v107 with self-play data),
+but win rate barely moved — val_loss improvement without WR improvement is a recurring pattern.

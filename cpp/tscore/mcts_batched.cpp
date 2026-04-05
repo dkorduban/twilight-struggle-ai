@@ -2497,7 +2497,8 @@ std::vector<GameResult> benchmark_games_batched(
     uint32_t base_seed,
     torch::Device device,
     bool greedy_opponent,
-    float temperature
+    float temperature,
+    bool nash_temperatures
 ) {
     if (n_games <= 0) {
         return {};
@@ -2505,6 +2506,9 @@ std::vector<GameResult> benchmark_games_batched(
     if (pool_size <= 0) {
         pool_size = std::min(n_games, 64);
     }
+
+    // Separate RNG for Nash temperature sampling (matches collect_selfplay_rows_jsonl).
+    Pcg64Rng nash_rng(base_seed + 999999U);
 
     // Use a minimal MCTS config just for GameSlot initialization.
     BatchedMctsConfig config;
@@ -2541,6 +2545,16 @@ std::vector<GameResult> benchmark_games_batched(
             }
             if (!slot.active && games_started < n_games) {
                 initialize_slot(slot, games_started, base_seed, config);
+                if (nash_temperatures) {
+                    // Sample per-game temperature from Nash mixed strategy
+                    // (same distribution used in training data collection).
+                    const auto side_temp = (learned_side == Side::USSR)
+                        ? sample_nash_temperature(kNashUSTemps.data(),
+                              static_cast<int>(kNashUSTemps.size()), nash_rng)
+                        : sample_nash_temperature(kNashUSSRTemps.data(),
+                              static_cast<int>(kNashUSSRTemps.size()), nash_rng);
+                    slot.heuristic_temperature = side_temp;
+                }
                 games_started += 1;
             }
         }
@@ -2587,15 +2601,26 @@ std::vector<GameResult> benchmark_games_batched(
                 );
                 batch_entries.push_back(BatchEntry{&slot, true});
             } else {
-                // Heuristic side: resolve immediately.
-                auto heuristic_action = choose_action(
-                    PolicyKind::MinimalHybrid,
-                    slot.decision->pub_snapshot,
-                    slot.decision->hand_snapshot,
-                    slot.decision->holds_china,
-                    slot.rng
-                ).value_or(ActionEncoding{});
-                commit_greedy_action(slot, heuristic_action);
+                // Heuristic side: resolve with optional temperature.
+                std::optional<ActionEncoding> heuristic_action;
+                if (slot.heuristic_temperature > 0.0f) {
+                    heuristic_action = choose_minimal_hybrid_sampled(
+                        slot.decision->pub_snapshot,
+                        slot.decision->hand_snapshot,
+                        slot.decision->holds_china,
+                        slot.heuristic_temperature,
+                        slot.rng
+                    );
+                } else {
+                    heuristic_action = choose_action(
+                        PolicyKind::MinimalHybrid,
+                        slot.decision->pub_snapshot,
+                        slot.decision->hand_snapshot,
+                        slot.decision->holds_china,
+                        slot.rng
+                    );
+                }
+                commit_greedy_action(slot, heuristic_action.value_or(ActionEncoding{}));
             }
         }
 
