@@ -1790,3 +1790,34 @@ auxiliary loss (KL between strategies).
 **Revised dead ends list**:
 9. Edge pruning at 100sim (no benefit) — **but 400sim+ with pruning shows +1.6pp to +8.8pp**
 11. K>1 + pruning (K=2/K=4, -20pp even with pruned trees)
+
+---
+
+## v113: Teacher KL with Strong MCTS Targets (2026-04-06)
+
+**Hypothesis**: Previous teacher KL attempts failed (dead end #1) because the MCTS
+teacher (100sim, no pruning) was ≤ greedy quality. Now we have MCTS 2000sim+pruning
+at +8.8pp over greedy — genuinely stronger teacher targets should produce KL loss
+that actually helps.
+
+**Teacher data**: 1000 heuristic games (seed=77700, matching nash_c), MCTS 2000sim
+with prune=1e-4. ~150K teacher rows covering ~10% of nash_c training positions.
+
+**Training**: v106 recipe + `--teacher-targets` + `--teacher-weight 0.5`
+```bash
+--model-type control_feat_gnn --hidden-dim 256 --batch-size 8192 --lr 0.0024
+--epochs 95 --patience 20 --dropout 0.1 --weight-decay 1e-4 --label-smoothing 0.05
+--one-cycle --deterministic-split --value-target final_vp --seed 42
+--teacher-targets teacher_targets.parquet --teacher-weight 0.5 --teacher-value-weight 0.3
+```
+
+**Key differences from previous Exp3 teacher KL**:
+1. Teacher quality: 2000sim+pruning (+8.8pp) vs 100sim (-1.4pp)
+2. Architecture: GNN (v106) vs MLP (v104) — GNN has better base performance
+3. Same ~10% coverage — limited by collection compute
+
+**Success criteria**: v113 > v106 baseline (34.9%) by >2pp combined.
+**If fails again**: Teacher KL may be fundamentally incompatible with this model,
+regardless of teacher quality. Would indicate the bottleneck is elsewhere.
+
+**Status**: Teacher collection running (~150K rows from 1000 games), pipeline queued.
