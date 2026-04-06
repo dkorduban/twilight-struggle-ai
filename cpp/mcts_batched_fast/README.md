@@ -201,6 +201,58 @@ Next likely exact targets:
   sub-phases inside `expand_from_raw_flat(...)` directly so the next change is driven
   by measured costs rather than guesses.
 
+Latest findings after the compact internal tree rewrite:
+
+- I converted the internal tree storage from `MctsNode`/`MctsEdge` plus
+  `applied_actions` to a compact local representation:
+  - `FastEdge` stores `{card_id, mode, country, target_offset, target_count, prior, visits, value}`
+  - `FastNode` stores `edges`, `children`, and a flat `resolved_targets` array
+- This removes persistent per-edge `ActionEncoding` storage and cuts hot-path
+  vector churn in `expand` and `commit`.
+- The first compact-tree attempt was not exact and later proved invalid:
+  - the flat exact path was consuming cached military country lists directly
+  - the old draft path filtered each military target with `has_country_spec(...)`
+  - the flat path skipped that guard and could create an illegal `country=0` coup edge
+- Fix:
+  - sanitize accessible country caches locally in `AccessibleCache::build`
+  - keep cheap compact-edge validity checks in materialization for safety
+- I also added benchmark telemetry for:
+  - `pre_load` / `post_load`
+  - `pre_max_mhz` / `run_max_mhz` / `post_max_mhz`
+  - in this WSL environment the observable `/proc/cpuinfo` max stayed at about
+    `2995.1 MHz`, so the frequency signal is useful only as a local consistency
+    check, not as a true host boost measurement
+
+Current single-thread best validated production-like results, all `warmup=0`:
+
+| Config | pre_load | run_max_mhz | sims/s | vs `8174.7` baseline |
+|---|---:|---:|---:|---:|
+| `games=32 n_sim=400 pool=32 max_pending=64 torch_threads=2` | `190.6%` | `2995.1` | `27120.7` | `3.32x` |
+| `games=32 n_sim=400 pool=32 max_pending=96 torch_threads=2` | `239.7%` | `2995.1` | `27585.9` | `3.37x` |
+| `games=32 n_sim=400 pool=32 max_pending=96 torch_threads=2` repeat | `201.1%` | `2995.1` | `24599.6` | `3.01x` |
+| `games=32 n_sim=400 pool=32 max_pending=128 torch_threads=2` | `171.7%` | `2995.1` | `26729.2` | `3.27x` |
+
+- Best measured throughput so far:
+  - `27585.9 sims/s`
+  - config: `games=32`, `n_sim=400`, `pool=32`, `max_pending=96`, `torch_threads=2`
+  - speedup vs working baseline `8174.7 sims/s`: `3.37x`
+- Repeated validation on the same best config stayed above the target:
+  - `24599.6 sims/s`
+  - `3.01x` vs baseline
+- Best recent phase breakdown on the best-measured `32/400/96/2` run:
+  - `advance=0.122s`
+  - `select=11.474s`
+  - `nn=23.731s`
+  - `expand=26.703s`
+  - `commit=1.431s`
+
+Quick tuning notes after the compact-tree fix:
+
+- `torch_threads=2` beats `3` and `4` on the current CPU-only setup.
+- `forward_worker=1` did not help on the current host.
+- Increasing `max_pending` from `64` to `96` helped.
+- Increasing further to `128` regressed slightly from the `96` peak.
+
 Build:
 
 ```bash

@@ -4,6 +4,7 @@
 
 #if defined(TS_BUILD_TORCH_RUNTIME)
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -33,6 +34,39 @@ struct LoadSample {
     double loadavg1 = 0.0;
     int logical_cpus = 0;
 };
+
+std::optional<uint64_t> read_max_cpu_mhz_x1000() {
+    std::ifstream in("/proc/cpuinfo");
+    if (!in) {
+        return std::nullopt;
+    }
+
+    std::string line;
+    uint64_t best = 0;
+    while (std::getline(in, line)) {
+        constexpr std::string_view kPrefix = "cpu MHz";
+        if (!line.starts_with(kPrefix)) {
+            continue;
+        }
+        const auto colon = line.find(':');
+        if (colon == std::string::npos) {
+            continue;
+        }
+        try {
+            const auto mhz = std::stod(line.substr(colon + 1));
+            if (mhz > 0.0) {
+                const auto mhz_x1000 = static_cast<uint64_t>(mhz * 1000.0);
+                best = std::max(best, mhz_x1000);
+            }
+        } catch (const std::exception&) {
+        }
+    }
+
+    if (best == 0) {
+        return std::nullopt;
+    }
+    return best;
+}
 
 void usage(const char* argv0) {
     std::cerr
@@ -259,6 +293,25 @@ int main(int argc, char** argv) {
         for (int run = 0; run < warmup + repeats; ++run) {
             const bool is_warmup = run < warmup;
             const auto load_before = wait_for_acceptable_load(load_threshold, load_sample_ms, load_wait_s);
+            const auto mhz_before = read_max_cpu_mhz_x1000();
+            std::atomic<bool> stop_freq_sampler = false;
+            std::atomic<uint64_t> max_run_mhz_x1000 = mhz_before.value_or(0);
+            std::thread freq_sampler([&] {
+                while (!stop_freq_sampler.load(std::memory_order_relaxed)) {
+                    if (const auto mhz = read_max_cpu_mhz_x1000(); mhz.has_value()) {
+                        auto current = max_run_mhz_x1000.load(std::memory_order_relaxed);
+                        while (current < *mhz &&
+                               !max_run_mhz_x1000.compare_exchange_weak(
+                                   current,
+                                   *mhz,
+                                   std::memory_order_relaxed,
+                                   std::memory_order_relaxed
+                               )) {
+                        }
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                }
+            });
             const auto result = ts::fastmcts::benchmark_mcts_fast(
                 games,
                 model,
@@ -266,12 +319,18 @@ int main(int argc, char** argv) {
                 seed + static_cast<uint32_t>(run * 100000U),
                 torch::kCPU
             );
+            stop_freq_sampler.store(true, std::memory_order_relaxed);
+            freq_sampler.join();
             const auto load_after = sample_system_load(load_sample_ms);
+            const auto mhz_after = read_max_cpu_mhz_x1000();
 
             std::cout << std::fixed << std::setprecision(1)
                       << "[" << (is_warmup ? "warmup" : "run") << " " << (run + 1) << "/" << (warmup + repeats) << "] "
                       << "pre_load=" << load_before.cpu_total_pct << "% "
                       << "post_load=" << load_after.cpu_total_pct << "% "
+                      << "pre_max_mhz=" << (mhz_before.has_value() ? static_cast<double>(*mhz_before) / 1000.0 : 0.0) << " "
+                      << "run_max_mhz=" << static_cast<double>(max_run_mhz_x1000.load(std::memory_order_relaxed)) / 1000.0 << " "
+                      << "post_max_mhz=" << (mhz_after.has_value() ? static_cast<double>(*mhz_after) / 1000.0 : 0.0) << " "
                       << "elapsed=" << result.elapsed_s << "s "
                       << "sims=" << result.total_simulations << " "
                       << "baseline_sims_per_s=" << baseline_sims << " "
