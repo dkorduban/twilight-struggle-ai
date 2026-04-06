@@ -1,0 +1,54 @@
+MCTS K-sample benchmark: 100 games/side, 400 sims, pool=16
+Model: v106_cf_gnn_s42 (baseline 34.9% greedy)
+Config                         | USSR WR | US WR |      Combined | Time
+------------------------------------------------------------------------------------------
+[MCTS profile] threads=16 advance=0.019s commit=0.823s select=8.545s nn=63.307s expand=11.171s total=83.866s
+[MCTS profile] batches=4027 items=2612288 avg_batch=648.7 iters=4039
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=165194 total_edges=56870069 avg=344.3
+[MCTS modes] inf=778255(1%) coup=18933089(33%) realign=35820592(63%) space=592723(1%) event=745410(1%) other=0
+[MCTS cache] selections=2867200 hits=2184181 (76.2%) avg_depth=2.45 max_depth=8 avg_saved=1.44 save_ratio=59.0%
+[MCTS profile] threads=16 advance=0.018s commit=0.693s select=7.281s nn=53.584s expand=10.055s total=71.631s
+[MCTS profile] batches=3924 items=2462816 avg_batch=627.6 iters=3949
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=315343 total_edges=48972598 avg=155.3
+[MCTS modes] inf=678735(1%) coup=14376760(29%) realign=32756444(67%) space=506480(1%) event=654179(1%) other=0
+[MCTS cache] selections=2914000 hits=1244093 (42.7%) avg_depth=1.91 max_depth=8 avg_saved=0.90 save_ratio=47.1%
+K=1 (400sim baseline)          | USSR  65% | US  10% | Combined  37.5% +/-3.4 | 159s
+[MCTS profile] threads=1 advance=0.003s commit=10.565s select=37.328s nn=130.463s expand=474.694s total=653.053s
+[MCTS profile] batches=4346 items=2761409 avg_batch=635.4 iters=4371
+[MCTS expand] alloc=15.812s drafts=196.596s edges=239.977s count=3076752 total_edges=989446878 avg=321.6
+[MCTS modes] inf=48380103(5%) coup=315282247(32%) realign=603777635(61%) space=9740312(1%) event=12266581(1%) other=0
+[MCTS K-sample] calls=12841287 edges=48380103 avg_edges=3.8 time=208.657s avg=16.2us
+[MCTS cache] selections=2938000 hits=2138534 (72.8%) avg_depth=2.07 max_depth=7 avg_saved=1.07 save_ratio=51.5%
+[MCTS profile] threads=1 advance=0.004s commit=11.143s select=36.387s nn=121.392s expand=473.402s total=642.327s
+[MCTS profile] batches=3838 items=2541639 avg_batch=662.2 iters=3851
+[MCTS expand] alloc=29.775s drafts=426.268s edges=448.563s count=5618391 total_edges=861642154 avg=153.4
+[MCTS modes] inf=42494910(5%) coup=269440890(31%) realign=530250628(62%) space=8584838(1%) event=10870888(1%) other=0
+[MCTS K-sample] calls=11358763 edges=42494910 avg_edges=3.7 time=180.881s avg=15.9us
+[MCTS cache] selections=2906000 hits=1343918 (46.2%) avg_depth=1.78 max_depth=7 avg_saved=0.77 save_ratio=43.3%
+K=4 (400sim determ)            | USSR  27% | US   3% | Combined  15.0% +/-2.5 | 1274s
+[MCTS profile] threads=1 advance=0.008s commit=29.490s select=99.677s nn=340.254s expand=1453.803s total=1923.233s
+[MCTS profile] batches=4492 items=2794261 avg_batch=622.1 iters=4506
+[MCTS expand] alloc=77.986s drafts=1047.685s edges=1160.120s count=8412652 total_edges=996778194 avg=118.5
+[MCTS modes] inf=33382630(3%) coup=314288855(32%) realign=626715078(63%) space=9887912(1%) event=12503719(1%) other=0
+[MCTS K-sample] calls=13119957 edges=33382630 avg_edges=2.5 time=605.567s avg=46.2us
+[MCTS cache] selections=2997200 hits=2106361 (70.3%) avg_depth=2.09 max_depth=7 avg_saved=1.08 save_ratio=51.9%
+[MCTS profile] threads=1 advance=0.009s commit=30.982s select=105.143s nn=349.854s expand=1459.418s total=1945.406s
+[MCTS profile] batches=3917 items=2490345 avg_batch=635.8 iters=3935
+[MCTS expand] alloc=122.777s drafts=1665.321s edges=1888.159s count=10902997 total_edges=814883915 avg=74.7
+[MCTS modes] inf=28547101(4%) coup=248615461(31%) realign=518613333(64%) space=8436182(1%) event=10671838(1%) other=0
+[MCTS K-sample] calls=11165050 edges=28547101 avg_edges=2.6 time=621.705s avg=55.7us
+[MCTS cache] selections=2866800 hits=1358848 (47.4%) avg_depth=1.84 max_depth=7 avg_saved=0.83 save_ratio=45.0%
+K=4 + T_s=1.0 (400sim)         | USSR  34% | US   0% | Combined  17.0% +/-2.7 | 3809s
+[MCTS profile] threads=1 advance=0.005s commit=17.389s select=58.462s nn=193.029s expand=764.798s total=1033.682s
+[MCTS profile] batches=4264 items=2750147 avg_batch=645.0 iters=4292
+[MCTS expand] alloc=147.278s drafts=2081.919s edges=2176.867s count=13653144 total_edges=975509117 avg=71.4
+[MCTS modes] inf=40323447(4%) coup=308528406(32%) realign=604784004(62%) space=9681801(1%) event=12191459(1%) other=0
+[MCTS K-sample] calls=12810902 edges=40323447 avg_edges=3.1 time=241.621s avg=18.9us
+[MCTS cache] selections=2927200 hits=2128824 (72.7%) avg_depth=2.06 max_depth=8 avg_saved=1.06 save_ratio=51.3%
+[MCTS profile] threads=1 advance=0.004s commit=14.644s select=47.169s nn=156.442s expand=609.193s total=827.453s
+[MCTS profile] batches=4016 items=2520048 avg_batch=627.5 iters=4030
+[MCTS expand] alloc=165.948s drafts=2418.828s edges=2403.230s count=16173192 total_edges=857737729 avg=53.0
+[MCTS modes] inf=35221243(4%) coup=281846528(33%) realign=521423178(61%) space=8478377(1%) event=10768403(1%) other=0
+[MCTS K-sample] calls=11302337 edges=35221243 avg_edges=3.1 time=190.372s avg=16.8us
+[MCTS cache] selections=2877600 hits=1332849 (46.3%) avg_depth=1.79 max_depth=7 avg_saved=0.78 save_ratio=43.5%
+K=4+T_s=1+T_c=0.5(400s)        | USSR  37% | US   8% | Combined  22.5% +/-3.0 | 1830s

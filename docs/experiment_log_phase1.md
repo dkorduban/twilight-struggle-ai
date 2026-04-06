@@ -1516,3 +1516,105 @@ deterministic-split, value_target=final_vp, seed=42.
 **Success criteria**: v111_cd_47ep > v106 baseline (34.9%) by >2pp = clean 2x helps.
 **If v111_cd_47ep ≈ v106**: data volume is not the bottleneck at this architecture.
 **If v111_b_only < v111_c_only at matched epochs**: nash_b is lower quality data.
+
+### v111 Results (2026-04-06)
+
+| Model | Data | Rows | Epochs | USSR WR | US WR | Nash Combined |
+|-------|------|------|--------|---------|-------|---------------|
+| v106_cf_gnn_s42 (base) | 1x nash_c | 1.37M | 91 | 55.8% | 14.0% | **34.9%** |
+| v111_cd_47ep_s42 | nash_c+d | 2.74M | 47 | 51.2% | 15.0% | **33.1% ±1.5** |
+| v111_cd_95ep_s42 | nash_c+d | 2.74M | 95 | 45.6% | 7.4% | **26.5% ±1.4** |
+| v111_c_only_47ep_s42 | nash_c | 1.37M | 47 | 51.8% | 9.2% | **30.5% ±1.5** |
+| v111_b_only_95ep_s42 | nash_b | 1.35M | 95 | 52.2% | 12.6% | **32.4% ±1.5** |
+
+### v111 Analysis
+
+1. **Clean 2x data does not help**: v111_cd_47ep (33.1%) ≈ v111_c_only_47ep (30.5%), both
+   regress vs v106 baseline (34.9%). Doubling identical-config data adds no new signal.
+2. **Overtraining confirmed again**: v111_cd_95ep (26.5%) is catastrophic on 2x data.
+3. **nash_b is slightly better than nash_c at matched epochs**: v111_b_only_95ep (32.4%)
+   vs v111_c_only_47ep (30.5%) — but neither reaches v106's 34.9%. The v106 result may
+   have been a lucky seed/epoch combination, or the 91 epochs with patience-based early
+   stopping found a better minimum than a fixed epoch count.
+4. **v111_c_only_47ep (30.5%) is notably worse than v106 (34.9%)** despite training on
+   the same data with similar hyperparams. Key difference: v106 used 95 epochs with early
+   stopping (best at epoch 91), while v111_c uses a fixed 47 epochs. This confirms that
+   **one-cycle with fixed epochs ≠ one-cycle with patience-based early stopping** — the
+   model needs enough epochs to find the optimal point.
+5. **Data volume is definitively not the bottleneck.** This is the 3rd experiment series
+   (v110, v111) confirming that 2x-3x data at 1.37M+ rows provides no improvement.
+
+**Dead ends confirmed so far** (all worse than v106_cf_gnn_s42 baseline):
+1. Teacher KL distillation (5 attempts, all regressed)
+2. Wider trunk h=384 (v108, -6 to -9pp)
+3. Self-play Gen 0 (v107, +1pp, within noise)
+4. MCTS search 100/400 sim (0pp improvement)
+5. Side-conditional model (v109, -4 to -5pp)
+6. Data volume 2x-3x (v110, v111, 0 to -10pp)
+7. Fixed epoch count vs patience-based early stopping (v111, -2 to -5pp)
+
+---
+
+## v112: True 1x Baseline Control (2026-04-06)
+
+**Discovery**: v106_cf_gnn_s42 trained on `data/nash_c_only/` which accidentally contained
+**two identical copies** of nash_c (SHA256 match confirmed). Effective dataset was 2.73M rows
+from 2× the same 1.37M parquet. v111_c_only used a clean single-copy directory (1.37M rows).
+
+**Question**: Was v106's 34.9% due to the duplicate data, or the 95ep/patience=20 schedule?
+
+| Model | Data | Rows | Schedule | USSR WR | US WR | Nash Combined |
+|-------|------|------|----------|---------|-------|---------------|
+| v106_cf_gnn_s42 | 2× nash_c (accidental dupe) | 2.73M | 95ep/p=20 | 55.8% | 14.0% | **34.9%** |
+| v112_true_1x_95ep_s42 | 1× nash_c | 1.37M | 95ep/p=20 | 55.0% | 13.6% | **34.3% ±1.5** |
+| v112_true_1x_95ep_s7 | 1× nash_c | 1.37M | 95ep/p=20 | 52.6% | 11.4% | **32.0% ±1.5** |
+| v111_c_only_47ep_s42 | 1× nash_c | 1.37M | 47ep/p=15 | 51.8% | 9.2% | **30.5% ±1.5** |
+
+**Verdict**: v112 (34.3%) ≈ v106 (34.9%). Difference = 0.6pp, well within SE. The duplicate
+data was a no-op. The 4.4pp gap between v111_c (30.5%) and v112 (34.3%) was entirely due to
+insufficient epochs/patience (47ep/p=15 vs 95ep/p=20). **The training schedule matters; data
+duplication does not.**
+
+**Seed variance**: v112_s42=34.3%, v112_s7=32.0% — **2.3pp spread** on the same data/schedule.
+This is consistent with v106 seed variance (s42=34.9%, s7=31.0% = 3.9pp spread on 2× data).
+Experiments should use seed=42 as the primary and seed=7 as confirmation. Differences <3pp
+between experiments are likely noise.
+
+**Corrected baseline**: v112_s42 (34.3%) is the true 1× performance on nash_c with optimal
+schedule. v106 (34.9%) is statistically equivalent but trained on accidental 2× data.
+
+---
+
+## MCTS K-Sample Influence Expansion (2026-04-06)
+
+**Hypothesis**: K>1 diverse influence allocations as separate tree edges allows MCTS to explore
+different placement strategies. K=4 generates 4 distinct influence allocations per (card, Influence).
+
+### Results
+
+| Config | Sims | USSR WR | US WR | Combined | Wall time |
+|--------|------|---------|-------|----------|-----------|
+| K=1 (baseline) | 100 | 58% | 17% | **37.5%** | 50s |
+| K=4 deterministic | 100 | 32% | 2% | **17.0%** | 417s |
+| K=4 + T_s=1.0 | 100 | 28% | 0% | **14.0%** | 360s |
+| K=4 + T_s=1.0 + T_c=0.5 | 100 | 34% | 5% | **19.5%** | 355s |
+| K=1 (baseline) | 400 | 65% | 10% | **37.5%** | 159s |
+| K=4 deterministic | 400 | 27% | 3% | **15.0%** | 1274s |
+
+**K=4 causes ~20pp catastrophic regression at all sim budgets.** 400 sims does NOT recover.
+
+### Root cause analysis (see results/k_sample_analysis.md)
+
+No implementation bugs. Three compounding architectural causes:
+1. **Slow-path fallback**: K>1 triggers `expand_from_raw()` (8× slower), so K=4 at 400 sims
+   gets effective exploration of ~50 K=1 sims.
+2. **Tree width mismatch**: ~474 edges/node (61% realign + 32% coup). At 100-400 sims,
+   PUCT degenerates to "follow the prior." Need ~2000-5000 sims for meaningful exploration.
+3. **Prior dilution**: K=4 splits influence prior 4 ways, making each influence edge less
+   attractive vs concentrated coup/realign priors. Biases search toward military operations.
+
+**Recommendation**: Abandon K>1. Invest in tree width reduction (prune low-prior edges to
+~50-100/node) which benefits K=1 search quality. Revisit K>1 only after pruning.
+
+**Dead ends updated**:
+8. K>1 influence expansion (K=4, -20pp at 100-400 sims)
