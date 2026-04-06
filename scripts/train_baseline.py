@@ -85,6 +85,7 @@ from tsrl.policies.model import (
     TSBaselineModel,
     TSCardEmbedModel,
     TSControlFeatGNNModel,
+    TSControlFeatGNNSideModel,
     TSControlFeatModel,
     TSCountryAttnModel,
     TSCountryEmbedModel,
@@ -214,6 +215,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "marginal_value",
             "control_feat",
             "control_feat_gnn",
+            "control_feat_gnn_side",
         ],
         help="Model architecture variant (default: baseline)",
     )
@@ -951,6 +953,7 @@ def main() -> None:
         "marginal_value": TSMarginalValueModel,
         "control_feat": TSControlFeatModel,
         "control_feat_gnn": TSControlFeatGNNModel,
+        "control_feat_gnn_side": TSControlFeatGNNSideModel,
     }
     model = _MODEL_REGISTRY[args.model_type](
         dropout=args.dropout,

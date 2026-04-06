@@ -636,14 +636,18 @@ PYBIND11_MODULE(tscore, m) {
         [](const std::string& model_path, ts::Side learned_side, int n_games,
            int n_simulations, int pool_size, uint32_t seed, const std::string& device_str,
            bool greedy_nn_opponent, bool nash_temperatures,
-           int n_mcts_threads, int torch_intra_threads, int torch_interop_threads) {
+           int n_mcts_threads, int torch_intra_threads, int torch_interop_threads,
+           int influence_samples, float influence_t_strategy, float influence_t_country,
+           bool influence_proportional_first) {
             torch::Device device(device_str);
             auto model = torch::jit::load(model_path, device);
             model.eval();
             return ts::benchmark_mcts(
                 n_games, model, learned_side, n_simulations, pool_size, seed, device,
                 greedy_nn_opponent, nash_temperatures,
-                n_mcts_threads, torch_intra_threads, torch_interop_threads);
+                n_mcts_threads, torch_intra_threads, torch_interop_threads,
+                influence_samples, influence_t_strategy, influence_t_country,
+                influence_proportional_first);
         },
         py::arg("model_path"),
         py::arg("learned_side"),
@@ -657,10 +661,14 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("n_mcts_threads") = 0,
         py::arg("torch_intra_threads") = 0,
         py::arg("torch_interop_threads") = 0,
+        py::arg("influence_samples") = 1,
+        py::arg("influence_t_strategy") = 0.0f,
+        py::arg("influence_t_country") = 0.0f,
+        py::arg("influence_proportional_first") = true,
         "Run MCTS benchmark. Opponent is heuristic (default) or greedy NN.\n"
         "If nash_temperatures=true (default), the heuristic opponent samples\n"
         "per-game temperatures from the Nash mixed strategy.\n"
-        "Thread params: 0 = auto.\n"
+        "Thread params: 0 = auto. influence_samples: K edges per influence action.\n"
         "Returns list[GameResult]."
     );
 #endif

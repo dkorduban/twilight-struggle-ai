@@ -60,6 +60,7 @@ struct GameSlot {
     GameState root_state;
     std::unique_ptr<MctsNode> root;
     std::vector<PendingExpansion> pending;
+    bool record_history = true;
     int sims_completed = 0;
     int sims_target = 0;
     bool move_done = false;
@@ -120,6 +121,23 @@ struct BatchedMctsConfig {
     // Device for NN inference (CPU or CUDA). Batch inputs are allocated on CPU
     // and transferred to this device before forward, then outputs moved back.
     torch::Device device = torch::kCPU;
+
+    // K-sample influence allocation knobs.
+    // T_s=0, T_c=0, K=1 → bit-identical to current behavior (guard skips new path).
+    float influence_t_strategy = 0.0f;    // Temperature for strategy selection.
+                                           // 0 = argmax (current). >0 = sample.
+    float influence_t_country = 0.0f;     // Temperature for country sampling.
+                                           // 0 = proportional rounding (current).
+                                           // >0 = multinomial sample.
+    bool influence_proportional_first = true;
+                                           // First allocation per strategy uses
+                                           // deterministic proportional when K>1.
+    int influence_samples = 1;            // K: number of influence edges per (card, Influence).
+                                           // 1 = single edge (current). >1 = K diverse edges.
+    bool verbose_tree_stats = false;      // When true, collect per-node edge utilization
+                                           // histogram (requires tree walk — adds ~1% overhead).
+    bool record_rows = true;              // When false, skip per-step trace/search recording
+                                           // and JSONL emission (benchmark mode).
 };
 
 void collect_games_batched(
@@ -172,7 +190,11 @@ std::vector<GameResult> benchmark_mcts(
     bool nash_temperatures = true,
     int n_mcts_threads = 0,
     int torch_intra_threads = 0,
-    int torch_interop_threads = 0
+    int torch_interop_threads = 0,
+    int influence_samples = 1,
+    float influence_t_strategy = 0.0f,
+    float influence_t_country = 0.0f,
+    bool influence_proportional_first = true
 );
 
 }  // namespace ts

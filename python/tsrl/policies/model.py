@@ -54,6 +54,7 @@ _CARD_FEAT_DIM = 8    # ops/4, side_ussr, side_us, era_early, era_mid, era_late,
 _COUNTRY_FEAT_DIM = 11  # stability/4, is_bg, 7x region_onehot, us_start/3, ussr_start/3
 
 VALUE_BRANCH_HIDDEN = 128
+SIDE_EMBED_DIM = 32  # learned side embedding for side-conditional models
 DEFAULT_PLATT_A = 1.0
 DEFAULT_PLATT_B = 0.0
 
@@ -1353,6 +1354,95 @@ class TSControlFeatGNNModel(nn.Module):
         strategy_probs = torch.softmax(country_strategy_logits, dim=2)
         country_logits = (mixing * strategy_probs).sum(dim=1)
         value = torch.tanh(self.value_head(torch.relu(self.value_branch(hidden))))
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+        }
+
+
+class TSControlFeatGNNSideModel(nn.Module):
+    """TSControlFeatGNNModel with side embedding + separate value heads.
+
+    Changes vs TSControlFeatGNNModel:
+    1. A learned 32-dim side embedding (USSR=0, US=1) concatenated to trunk input.
+       Side is extracted from scalars[:, 10] (already 0/1 in the dataset).
+    2. Separate value heads for USSR and US — selected at forward time by side.
+       This lets the model learn different value functions per side without
+       the shared head trying to compromise between asymmetric objectives.
+
+    Policy heads remain shared (both sides need to pick from the same card/mode space).
+    Input/output contract: same as TSBaselineModel.
+    """
+
+    _REGION_SCALAR_DIM = 28
+    _SIDE_SCALAR_IDX = 10  # index into scalars tensor where side is encoded
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.influence_encoder_embed = ControlFeatGNNEncoder()
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+
+        self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN + SIDE_EMBED_DIM, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+
+        self.value_branch_ussr = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_ussr = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+        self.value_branch_us = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_us = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        h_inf_embed, region_scalars = self.influence_encoder_embed(influence)
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + h_inf_embed
+
+        h_card = torch.relu(self.card_encoder(cards))
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+
+        # Side embedding from scalar index 10 (0=USSR, 1=US)
+        side_idx = scalars[:, self._SIDE_SCALAR_IDX].long()
+        h_side = self.side_embed(side_idx)  # (B, SIDE_EMBED_DIM)
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar, h_side], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(
+            hidden.shape[0], 4, 86
+        )
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+
+        # Side-conditional value: select USSR or US head per sample
+        v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
+        v_us = torch.tanh(self.value_head_us(torch.relu(self.value_branch_us(hidden))))
+        is_us = side_idx.unsqueeze(1).float()  # (B, 1), 0 for USSR, 1 for US
+        value = (1.0 - is_us) * v_ussr + is_us * v_us
 
         return {
             "card_logits": card_logits,

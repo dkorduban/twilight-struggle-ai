@@ -1417,3 +1417,100 @@ is already near-optimal for card/mode selection.
 **Implication**: The bottleneck is influence placement quality (not searched by MCTS),
 not card/mode selection. Next architectural lever: allocation head + DP decoder
 (Phase 2c from the plan) to improve country-level placement decisions.
+
+---
+
+## v109: Side-Conditional GNN (2026-04-05)
+
+**Hypothesis**: Separate value heads per side + 32-dim learned side embedding will improve
+asymmetric play. Side already in input as scalar[10] but only as 0/1 — embedding gives
+more capacity, and separate value heads avoid compromising between asymmetric objectives.
+
+**Architecture changes** (TSControlFeatGNNSideModel):
+- 32-dim nn.Embedding(2, 32) for side, concatenated to trunk input (TRUNK_IN + 32)
+- Separate value_branch_ussr/value_head_ussr and value_branch_us/value_head_us
+- Policy heads shared (both sides pick from same card/mode space)
+- 528K params (vs 510K for base GNN — +18K from embedding + duplicate value branch)
+
+**Data**: nash_c_only (1.37M rows, same as v106)
+**Training**: GNN side-conditional, h256, bs=8192, lr=0.0024, 95ep, one-cycle, final_vp.
+
+| Model | Seed | Best Epoch | Val Loss | T=0 USSR | T=0 US | T=0 Comb | Nash USSR | Nash US | Nash Comb |
+|-------|------|-----------|----------|----------|--------|----------|-----------|---------|-----------|
+| v106_cf_gnn_s42 (base) | 42 | — | 2.57 | 67.0% | 14.0% | 40.5% | 55.8% | 14.0% | **34.9%** |
+| v106_cf_gnn_s7 (base) | 7 | — | — | 60.4% | 14.2% | 37.3% | 52.8% | 9.2% | **31.0%** |
+| v109_cf_gnn_side_s42 | 42 | 92 | 2.26 | 53.6% | 9.2% | 31.4% | 54.0% | 7.0% | **30.5%** |
+| v109_cf_gnn_side_s7 | 7 | 92 | 2.16 | 54.6% | 12.8% | 33.7% | 44.2% | 8.0% | **26.1%** |
+
+**Result: Side-conditional model is WORSE by ~4-5pp Nash combined. Clear regression.**
+
+Lower val_loss (2.26 vs 2.57) did not translate to better play — same pattern as v108 (wider trunk).
+US WR collapsed from 14.0% → 7.0% (s42) despite separate value heads intended to help US.
+
+**Analysis**: The side embedding (32 dims for a binary input) is overparameterized. Separate
+value heads split training signal — each head sees only half the data. The shared value head
+in v106 benefits from seeing both sides' trajectories. The scalar side input (0/1) already
+gives the model sufficient side conditioning.
+
+**Dead ends confirmed so far** (all worse than v106_cf_gnn_s42 baseline):
+1. Teacher KL distillation (5 attempts, all regressed)
+2. Wider trunk h=384 (v108, -6 to -9pp)
+3. Self-play Gen 0 (v107, +1pp, within noise)
+4. MCTS search 100/400 sim (0pp improvement)
+5. **Side-conditional model (v109, -4 to -5pp)**
+
+---
+
+## v110: Data Volume Sweep (2026-04-06)
+
+**Baseline**: v106_cf_gnn_s42 (nash_c only, 1.37M rows, 34.9% Nash combined)
+
+### Results
+
+| Model | Data | Rows | Epochs | Val Loss | USSR WR | US WR | Nash Combined |
+|-------|------|------|--------|----------|---------|-------|---------------|
+| v106_cf_gnn_s42 (base) | 1x nash_c | 1.37M | 91 | 2.13 | 55.8% | 14.0% | **34.9%** |
+| v110_gnn_2x47_s42 | 2x nash_bc | 2.7M | 47 | 2.65 | 58.6% | 12.0% | **35.3% ±1.5** |
+| v110_gnn_2x95_s42 | 2x nash_bc | 2.7M | 94 | 2.60 | 51.2% | 11.4% | **31.3% ±1.5** |
+| v110_gnn_3x32_s42 | 3x nash_bcd | 4.0M | 32 | 2.43 | 52.6% | 10.8% | **31.7% ±1.5** |
+| v110_gnn_3x95_s42 | 3x nash_bcd | 4.0M | pending | — | pending | | |
+
+### Findings
+
+1. **More data doesn't help**: 2x47 is +0.4pp (within noise), 3x32 regresses -3.2pp.
+2. **Overtraining on 2x/3x**: 2x95 regresses -3.6pp vs 2x47, confirming lr/epoch tuning issue.
+3. **US WR drops across all variants** (12.0% → 10.8% vs baseline 14.0%).
+
+### Temperature forensics (2026-04-06)
+
+All three clean datasets (nash_b, nash_c, nash_d) use `--nash-temperatures --bid 2`.
+They differ only in seed: nash_b=300000, nash_c=77700, nash_d=77800.
+
+| Dataset | Seed | Games | USSR WR | US WR | Mean steps | Rows |
+|---------|------|-------|---------|-------|------------|------|
+| nash_b | 300000 | 10k | 65.1% | 32.9% | 134.5 | 1.35M |
+| nash_c | 77700 | 10k | 67.4% | 30.3% | 136.7 | 1.37M |
+| nash_d | 77800 | 10k | 67.5% | 30.3% | 136.7 | 1.37M |
+
+**nash_c and nash_d are statistically identical** (KS=0.0014, same binary SHA).
+**nash_b differs at ~5 sigma** (2.3pp US WR gap) — likely collected from a different
+binary/git commit. No provenance file exists for nash_b to verify.
+
+### Planned experiments: clean data combinations
+
+Since nash_c and nash_d are from identical configs (same binary, same Nash temps),
+and nash_b is from an unknown binary, test clean combinations:
+
+| Run | Data | Rows | Epochs | Rationale |
+|-----|------|------|--------|-----------|
+| v111_cd_47ep_s42 | nash_c + nash_d | 2.74M | 47 | Clean 2x from identical configs |
+| v111_cd_95ep_s42 | nash_c + nash_d | 2.74M | 95 | Check if 95ep still overtrain on clean 2x |
+| v111_c_only_47ep_s42 | nash_c only | 1.37M | 47 | Epoch-matched control for 2x47 |
+| v111_b_only_95ep_s42 | nash_b only | 1.35M | 95 | Isolate nash_b quality vs nash_c |
+
+All use: GNN h256, bs=8192, lr=0.0024, dropout=0.1, wd=1e-4, ls=0.05, one-cycle,
+deterministic-split, value_target=final_vp, seed=42.
+
+**Success criteria**: v111_cd_47ep > v106 baseline (34.9%) by >2pp = clean 2x helps.
+**If v111_cd_47ep ≈ v106**: data volume is not the bottleneck at this architecture.
+**If v111_b_only < v111_c_only at matched epochs**: nash_b is lower quality data.
