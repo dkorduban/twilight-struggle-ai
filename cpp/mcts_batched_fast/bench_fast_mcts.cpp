@@ -19,6 +19,7 @@
 #include <thread>
 #include <vector>
 
+#include <sched.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -81,6 +82,7 @@ void usage(const char* argv0) {
         << " [--c-puct F] [--temperature F] [--epsilon-greedy F]"
         << " [--dir-alpha F] [--dir-epsilon F] [--learned-side both|ussr|us]"
         << " [--seed N] [--mcts-workers N] [--torch-threads N] [--torch-interop N]"
+        << " [--pin-workers] [--worker-core-span N]"
         << " [--forward-worker] [--load-threshold N] [--load-sample-ms N]"
         << " [--load-wait-s N] [--warmup N] [--repeats N]"
         << " [--baseline-sims F] [--target-multiple F]\n";
@@ -90,6 +92,39 @@ int split_even(int total, int parts, int index) {
     const int base = total / parts;
     const int remainder = total % parts;
     return base + (index < remainder ? 1 : 0);
+}
+
+std::vector<int> build_worker_cpu_set(int worker_index, int worker_count, int logical_cpus, int core_span) {
+    if (worker_index < 0 || worker_count <= 0 || logical_cpus <= 0 || core_span <= 0) {
+        return {};
+    }
+
+    const int span = std::min(core_span, logical_cpus);
+    const int start = (worker_index * logical_cpus) / worker_count;
+    std::vector<int> cpus;
+    cpus.reserve(static_cast<size_t>(span));
+    for (int offset = 0; offset < span; ++offset) {
+        const int cpu = (start + offset) % logical_cpus;
+        if (std::find(cpus.begin(), cpus.end(), cpu) == cpus.end()) {
+            cpus.push_back(cpu);
+        }
+    }
+    return cpus;
+}
+
+void pin_current_process_or_throw(const std::vector<int>& cpus) {
+    if (cpus.empty()) {
+        return;
+    }
+
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    for (const int cpu : cpus) {
+        CPU_SET(cpu, &mask);
+    }
+    if (::sched_setaffinity(0, sizeof(mask), &mask) != 0) {
+        throw std::runtime_error("sched_setaffinity failed");
+    }
 }
 
 ts::fastmcts::BenchResult merge_worker_results(
@@ -236,6 +271,8 @@ int main(int argc, char** argv) {
         int mcts_workers = 1;
         int torch_threads = 1;
         int torch_interop = 1;
+        bool pin_workers = false;
+        int worker_core_span = 0;
         bool forward_worker = false;
         double load_threshold = 1000.0;
         int load_sample_ms = 250;
@@ -245,6 +282,8 @@ int main(int argc, char** argv) {
         double baseline_sims = kWorkingBaselineSimsPerS;
         double target_multiple = kGoalMultiple;
         int child_output_fd = -1;
+        int worker_index = -1;
+        int worker_total = 1;
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -298,6 +337,10 @@ int main(int argc, char** argv) {
                 torch_threads = std::stoi(std::string(require_value("--torch-threads")));
             } else if (arg == "--torch-interop") {
                 torch_interop = std::stoi(std::string(require_value("--torch-interop")));
+            } else if (arg == "--pin-workers") {
+                pin_workers = true;
+            } else if (arg == "--worker-core-span") {
+                worker_core_span = std::stoi(std::string(require_value("--worker-core-span")));
             } else if (arg == "--forward-worker") {
                 forward_worker = true;
             } else if (arg == "--load-threshold") {
@@ -316,6 +359,10 @@ int main(int argc, char** argv) {
                 target_multiple = std::stod(std::string(require_value("--target-multiple")));
             } else if (arg == "--child-output-fd") {
                 child_output_fd = std::stoi(std::string(require_value("--child-output-fd")));
+            } else if (arg == "--worker-index") {
+                worker_index = std::stoi(std::string(require_value("--worker-index")));
+            } else if (arg == "--worker-total") {
+                worker_total = std::stoi(std::string(require_value("--worker-total")));
             } else if (arg == "--help" || arg == "-h") {
                 usage(argv[0]);
                 return 0;
@@ -328,9 +375,20 @@ int main(int argc, char** argv) {
         if (games <= 0 || n_sim < 0 || pool_size <= 0 || max_pending <= 0 || virtual_loss <= 0 ||
             cache_visit_threshold < 0 || torch_threads <= 0 || torch_interop <= 0 ||
             mcts_workers <= 0 ||
+            worker_core_span < 0 || worker_total <= 0 ||
             warmup < 0 || repeats <= 0 || load_sample_ms <= 0 || load_wait_s < 0.0 || load_threshold <= 0.0 ||
             baseline_sims <= 0.0 || target_multiple <= 0.0) {
             throw std::invalid_argument("invalid non-positive argument");
+        }
+        if (worker_index >= worker_total) {
+            throw std::invalid_argument("worker-index must be less than worker-total");
+        }
+
+        const int logical_cpus = std::max(1u, std::thread::hardware_concurrency());
+        const int effective_core_span = std::max(1, worker_core_span > 0 ? worker_core_span : torch_threads);
+        if (pin_workers && worker_index >= 0) {
+            const auto pinned_cpus = build_worker_cpu_set(worker_index, worker_total, logical_cpus, effective_core_span);
+            pin_current_process_or_throw(pinned_cpus);
         }
 
         at::set_num_threads(torch_threads);
@@ -387,6 +445,8 @@ int main(int argc, char** argv) {
                   << " mcts_workers=" << mcts_workers
                   << " torch_threads=" << torch_threads
                   << " torch_interop=" << torch_interop
+                  << " pin_workers=" << (pin_workers ? 1 : 0)
+                  << " worker_core_span=" << effective_core_span
                   << " forward_worker=" << (forward_worker ? 1 : 0)
                   << " learned_side=" << (learned_side == ts::Side::USSR ? "ussr" : learned_side == ts::Side::US ? "us" : "both")
                   << " warmup=" << warmup
@@ -477,8 +537,14 @@ int main(int argc, char** argv) {
                             "--torch-interop", std::to_string(torch_interop),
                             "--warmup", "0",
                             "--repeats", "1",
+                            "--worker-index", std::to_string(worker),
+                            "--worker-total", std::to_string(mcts_workers),
+                            "--worker-core-span", std::to_string(effective_core_span),
                             "--child-output-fd", std::to_string(result_pipe[1]),
                         };
+                        if (pin_workers) {
+                            child_args_storage.push_back("--pin-workers");
+                        }
                         if (forward_worker) {
                             child_args_storage.push_back("--forward-worker");
                         }

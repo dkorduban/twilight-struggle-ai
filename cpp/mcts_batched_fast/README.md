@@ -267,19 +267,39 @@ Clean zero-sharing parallel follow-up:
 
 Parallel scaling results:
 
-| Config | sims/s | Reference | Scaling |
-|---|---:|---:|---:|
-| Single worker, production-like shard: `games=32 n_sim=400 pool=32 max_pending=96 torch_threads=1` | `22973.8` | `1x` | `1.00x` |
-| Two zero-sharing workers: `games=64 n_sim=400 pool=64 max_pending=96 mcts_workers=2 torch_threads=1` | `41664.1` | same per-worker shape | `1.81x` |
+Best clean `1x/2x/3x/4x` scaling line so far, all `nice -n 0`, `warmup=0`,
+`seed=12345`, `n_sim=400`, `torch_threads=1`, `torch_interop=1`,
+`max_pending=64`, `pool_size=games`, and `games=32 * workers`:
 
-- The small sanity case showed similar behavior:
+| Workers | Config | pre_load | run_max_mhz | sims/s | Scaling vs 1x |
+|---|---|---:|---:|---:|---:|
+| `1x` | `games=32 pool=32 max_pending=64 mcts_workers=1` | `218.3%` | `2995.1` | `22830.9` | `1.00x` |
+| `2x` | `games=64 pool=64 max_pending=64 mcts_workers=2` | `157.2%` | `2995.1` | `41657.6` | `1.82x` |
+| `3x` | `games=96 pool=96 max_pending=64 mcts_workers=3` | `7.0%` | `2995.1` | `60256.4` | `2.64x` |
+| `4x` | `games=128 pool=128 max_pending=64 mcts_workers=4` | `8.0%` | `2995.1` | `74438.4` | `3.26x` |
+
+- This is the best current zero-sharing scaling shape:
+  - one process per worker
+  - one Torch intra-op thread per worker
+  - no shared MCTS state
+  - each worker owns its own model, trees, RNG, and scratch buffers
+- `max_pending=64` scaled better than the nearby alternatives I tried:
+  - `max_pending=96` was worse at high worker counts
+  - `max_pending=48` was also worse at `4x`
+- I also tried hard CPU pinning with `sched_setaffinity` in the local bench harness:
+  - example `4x` pinned result: `69433.0 sims/s`
+  - best `4x` unpinned result on the same shape: `74438.4 sims/s`
+  - verdict: keep pinning support as an option in the harness, but leave the default
+    path unpinned
+- The earlier small sanity case showed the same trend:
   - single worker `games=16 n_sim=100 pool=16 max_pending=32 torch_threads=1`:
     `21623.3 sims/s`
   - two workers `games=16 n_sim=100 pool=16 max_pending=32 mcts_workers=2 torch_threads=1`:
     `36865.1 sims/s`
   - scaling: about `1.70x`
-- So the current clean parallel path is not perfectly linear, but it is meaningfully
-  closer to the requested zero-sharing design than the earlier in-process thread attempt.
+- So the current clean parallel path is not perfectly linear, but it is materially
+  closer to linear than the earlier in-process thread attempt and stays faithful to
+  the zero-sharing design goal.
 
 Build:
 
