@@ -378,6 +378,22 @@ struct AccessibleCache {
         auto base_inf = accessible_countries(side, pub, ActionMode::Influence);
         auto base_coup = accessible_countries(side, pub, ActionMode::Coup);
 
+        // Sanitize: remove invalid country IDs (anchors, spec-less entries) from both lists.
+        // This mirrors the fast-replica fix and ensures expand_from_raw_fast can iterate
+        // cache.coup/cache.realign directly without per-edge has_country_spec guards.
+        auto filter_valid = [](std::vector<CountryId>& countries) {
+            countries.erase(
+                std::remove_if(countries.begin(), countries.end(),
+                    [](CountryId cid) {
+                        return cid == 0 || cid == kUsaAnchorId ||
+                               cid == kUssrAnchorId || !has_country_spec(cid);
+                    }),
+                countries.end()
+            );
+        };
+        filter_valid(base_inf);
+        filter_valid(base_coup);
+
         // Filter influence for Chernobyl
         if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
             const auto blocked = *pub.chernobyl_blocked_region;
