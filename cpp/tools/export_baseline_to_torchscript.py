@@ -18,6 +18,7 @@ from tsrl.policies.model import (
     TSBaselineModel,
     TSCardEmbedModel,
     TSControlFeatGNNModel,
+    TSControlFeatGNNSideModel,
     TSControlFeatModel,
     TSCountryAttnModel,
     TSCountryEmbedModel,
@@ -36,6 +37,7 @@ _MODEL_REGISTRY = {
     "marginal_value": TSMarginalValueModel,
     "control_feat": TSControlFeatModel,
     "control_feat_gnn": TSControlFeatGNNModel,
+    "control_feat_gnn_side": TSControlFeatGNNSideModel,
 }
 
 

@@ -49,6 +49,8 @@ def load_model(checkpoint_path: str, device: str = "cuda"):
     from tsrl.policies.model import (
         TSBaselineModel,
         TSCardEmbedModel,
+        TSControlFeatGNNModel,
+        TSControlFeatGNNSideModel,
         TSControlFeatModel,
         TSCountryAttnModel,
         TSCountryEmbedModel,
@@ -66,6 +68,8 @@ def load_model(checkpoint_path: str, device: str = "cuda"):
         "direct_country": TSDirectCountryModel,
         "marginal_value": TSMarginalValueModel,
         "control_feat": TSControlFeatModel,
+        "control_feat_gnn": TSControlFeatGNNModel,
+        "control_feat_gnn_side": TSControlFeatGNNSideModel,
     }
 
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)

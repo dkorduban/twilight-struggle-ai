@@ -41,6 +41,9 @@ from tsrl.policies.learned_policy import (
 from tsrl.policies.model import (
     TSBaselineModel,
     TSCardEmbedModel,
+    TSControlFeatGNNModel,
+    TSControlFeatGNNSideModel,
+    TSControlFeatModel,
     TSCountryEmbedModel,
     TSFullEmbedModel,
     TSCountryAttnModel,
@@ -52,6 +55,9 @@ _BENCH_MODEL_REGISTRY = {
     "country_embed": TSCountryEmbedModel,
     "full_embed": TSFullEmbedModel,
     "country_attn": TSCountryAttnModel,
+    "control_feat": TSControlFeatModel,
+    "control_feat_gnn": TSControlFeatGNNModel,
+    "control_feat_gnn_side": TSControlFeatGNNSideModel,
 }
 from tsrl.policies.minimal_hybrid import _DEFCON_LOWERING_CARDS, make_minimal_hybrid_policy
 from tsrl.schemas import ActionEncoding, ActionMode, Side
