@@ -176,7 +176,7 @@ def test_heuristic_games_reach_turn_10():
         # Alternate which side is "learned"; heuristic plays the other
         return Side.USSR if game_idx % 2 == 0 else Side.US
 
-    def learned_infer_fn(requests: list[DecisionRequest]) -> list[ActionEncoding]:
+    def learned_infer_fn(requests: list[DecisionRequest], game_states) -> list[ActionEncoding]:
         # Both sides use heuristic
         return [choose_minimal_hybrid(req.pub, req.hand, req.holds_china) for req in requests]
 
@@ -544,7 +544,7 @@ def test_game_defcon_progression_statistics():
     def learned_side_fn(game_idx: int) -> Side:
         return Side.USSR
 
-    def learned_infer_fn(requests: list[DecisionRequest]) -> list[ActionEncoding]:
+    def learned_infer_fn(requests: list[DecisionRequest], game_states) -> list[ActionEncoding]:
         return [choose_minimal_hybrid(req.pub, req.hand, req.holds_china) for req in requests]
 
     def heuristic_fn(req: DecisionRequest) -> ActionEncoding:

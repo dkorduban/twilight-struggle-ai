@@ -1,16 +1,32 @@
 import os
-from tsrl.engine.rng import make_rng
+import tempfile
+from pathlib import Path
 
+import torch
 import pytest
 
+from tsrl.engine.rng import make_rng
 from tsrl.schemas import ActionEncoding, ActionMode, Side
 
 
-def test_model_candidate_fn_returns_list():
+def _make_test_checkpoint(tmp_path: Path) -> str:
+    """Create a minimal TSBaselineModel checkpoint compatible with current architecture."""
+    from tsrl.policies.model import TSBaselineModel
+    model = TSBaselineModel(hidden_dim=64)  # small hidden dim for fast tests
+    ckpt_path = str(tmp_path / "test_baseline.pt")
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "args": {"hidden_dim": 64, "model_type": "baseline"},
+        },
+        ckpt_path,
+    )
+    return ckpt_path
+
+
+def test_model_candidate_fn_returns_list(tmp_path):
     """make_model_candidate_fn returns a list of ActionEncodings."""
-    ckpt = "data/checkpoints/retrain_v17/baseline_best.pt"
-    if not os.path.exists(ckpt):
-        pytest.skip("checkpoint not found")
+    ckpt = _make_test_checkpoint(tmp_path)
 
     from tsrl.engine.game_state import deal_cards, reset
     from tsrl.policies.learned_policy import make_model_candidate_fn
@@ -31,11 +47,9 @@ def test_model_candidate_fn_returns_list():
         assert isinstance(a, ActionEncoding)
 
 
-def test_model_candidate_fn_with_uct_mcts():
+def test_model_candidate_fn_with_uct_mcts(tmp_path):
     """uct_mcts with model candidate_fn should produce a valid action."""
-    ckpt = "data/checkpoints/retrain_v17/baseline_best.pt"
-    if not os.path.exists(ckpt):
-        pytest.skip("checkpoint not found")
+    ckpt = _make_test_checkpoint(tmp_path)
 
     from tsrl.engine.game_state import deal_cards, reset
     from tsrl.engine.mcts import uct_mcts
@@ -51,11 +65,9 @@ def test_model_candidate_fn_with_uct_mcts():
     assert action is not None
 
 
-def test_learned_policy_no_defcon2_coup():
+def test_learned_policy_no_defcon2_coup(tmp_path):
     """make_learned_policy must never return a COUP action at DEFCON 2."""
-    ckpt = "data/checkpoints/retrain_v17/baseline_best.pt"
-    if not os.path.exists(ckpt):
-        pytest.skip("checkpoint not found")
+    ckpt = _make_test_checkpoint(tmp_path)
 
     from tsrl.engine.game_state import deal_cards, reset
     from tsrl.policies.learned_policy import make_learned_policy
