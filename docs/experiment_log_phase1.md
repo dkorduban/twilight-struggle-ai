@@ -1473,13 +1473,15 @@ gives the model sufficient side conditioning.
 | v110_gnn_2x47_s42 | 2x nash_bc | 2.7M | 47 | 2.65 | 58.6% | 12.0% | **35.3% ±1.5** |
 | v110_gnn_2x95_s42 | 2x nash_bc | 2.7M | 94 | 2.60 | 51.2% | 11.4% | **31.3% ±1.5** |
 | v110_gnn_3x32_s42 | 3x nash_bcd | 4.0M | 32 | 2.43 | 52.6% | 10.8% | **31.7% ±1.5** |
-| v110_gnn_3x95_s42 | 3x nash_bcd | 4.0M | pending | — | pending | | |
+| v110_gnn_3x95_s42 | 3x nash_bcd | 4.0M | 95 | — | 40.8% | 8.4% | **24.6% ±1.4** |
 
 ### Findings
 
 1. **More data doesn't help**: 2x47 is +0.4pp (within noise), 3x32 regresses -3.2pp.
-2. **Overtraining on 2x/3x**: 2x95 regresses -3.6pp vs 2x47, confirming lr/epoch tuning issue.
-3. **US WR drops across all variants** (12.0% → 10.8% vs baseline 14.0%).
+2. **Severe overtraining on 3x95**: 3x95 = 24.6% (−10.3pp vs 2x47), catastrophic regression.
+3. **Overtraining on 2x95**: 2x95 regresses -3.6pp vs 2x47, confirming lr/epoch tuning issue.
+4. **US WR drops across all variants** (12.0% → 10.8% vs baseline 14.0%).
+5. **3x95 collapses US completely**: 8.4% US WR (vs 14.0% baseline), severe asymmetric regression.
 
 ### Temperature forensics (2026-04-06)
 
