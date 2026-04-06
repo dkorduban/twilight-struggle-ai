@@ -12,6 +12,19 @@ Goals:
 - prefer improvements to the non-NN path; NN throughput should stay roughly flat
 - reach 10x higher sims/s than the initial single-thread baseline
 
+Current working target:
+
+- original batched baseline on the boosted production-like config
+  (`games=32`, `n_sim=400`, `pool=32`, `max_pending=64`, `torch_threads=4`):
+  `8174.7 sims/s`
+- current goal: `3x` that baseline = `24524.1 sims/s`
+
+Current working optimization target:
+
+- direct original-batched baseline on the boosted `games=32`, `n_sim=400`, `pool=32`,
+  `max_pending=64`, `torch_threads=4` config: `8174.7 sims/s`
+- current working goal: `3x` that baseline = `24524.1 sims/s`
+
 Baseline source of truth:
 
 - experiment log: `docs/experiment_log_phase1.md`
@@ -120,6 +133,11 @@ Exactness correction:
     rather than the compact shortcut
   - replaced the expensive exact no-model leaf check with a zero-allocation exact
     cached predicate
+- Latest exact-path work after the `02eadd6` checkpoint:
+  - replaced the active exact expansion input with a compact exact legal-card
+    representation instead of prebuilding per-country `ActionEncoding` drafts
+  - preserved the exact card, mode, and country iteration order
+  - reserved the exact node edge count up front to reduce expansion reallocations
 - Best cleanly validated exact production-like point so far:
   - `games=32`, `pool=32`, `n_sim=400`, `max_pending=64`, `torch_threads=4`
   - `current sims/s = 13133.4`
@@ -131,6 +149,57 @@ Exactness correction:
   - `current sims/s = 10811.3`
   - `speedup vs baseline = 4.23x`
   - `avg_batch = 2364.6`
+- High-load directional smoke only, not validated:
+  - config: `games=8`, `pool=8`, `n_sim=50`, `max_pending=64`, `torch_threads=4`,
+    `warmup=0`
+  - previous checkpoint `02eadd6`: `1934.5 sims/s` at `pre_load=1751.8%`,
+    `expand=12.6s`, `nn=12.4s`, `commit=2.3s`
+  - current exact compact-draft path: `6372.3 sims/s` at `pre_load=1143.4%`,
+    `expand=3.5s`, `nn=3.3s`, `commit=1.5s`
+  - host load moved a lot between runs, so this is only a directional sign that the
+    compact exact draft path is worth re-validating once the machine is quiet
+
+Latest exact verdict on the last optimization:
+
+- The last exact optimization was the compact exact-draft rewrite:
+  - replace prebuilt per-country `ActionEncoding` draft vectors with a compact
+    per-card legality summary
+  - preserve the exact card, mode, and country iteration order
+  - reserve exact node edge counts up front
+- Clean boosted `32/400`, `warmup=0`, `seed=12345` comparison:
+
+| Variant | sims/s | vs original baseline |
+|---|---:|---:|
+| Original batched baseline | `8174.7` | `1.00x` |
+| Pre-speedup fast checkpoint `02eadd6` | `11869.2` | `1.45x` |
+| Current post-speedup build | `14740.4` | `1.80x` |
+
+- Verdict: keep it. Against the pre-speedup fast checkpoint, the last optimization
+  improved throughput by about `1.24x` (`14740.4 / 11869.2`).
+- Current gap to target:
+  - target = `24524.1 sims/s`
+  - current = `14740.4 sims/s`
+  - remaining gain needed = about `1.66x`
+
+Next likely exact targets:
+
+- `expand` remains the highest-value target. The next step is likely reducing node
+  and action storage overhead further without changing the exact edge set.
+- A local node/edge/action arena is a strong candidate:
+  - pool `MctsNode`
+  - pool `children` storage
+  - reduce `std::vector` growth and allocator churn in expansion
+- `commit` is still the second-largest bucket. The likely win is not cached-state
+  copying, but splitting and optimizing the common post-action path:
+  - action application
+  - NORAD follow-up
+  - stage advancement / cleanup
+- `ActionEncoding` remains heavier than necessary on the hot path. A compact internal
+  action representation for tree storage, materialized to full `ActionEncoding` only
+  at apply-time, is still plausible if done without changing math or ordering.
+- If expansion stays dominant after storage work, the next pass should instrument
+  sub-phases inside `expand_from_raw_flat(...)` directly so the next change is driven
+  by measured costs rather than guesses.
 
 Build:
 

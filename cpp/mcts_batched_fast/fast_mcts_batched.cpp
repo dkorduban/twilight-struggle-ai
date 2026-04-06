@@ -571,7 +571,7 @@ DraftsResult collect_card_drafts_cached(const GameState& state) {
     return DraftsResult{.drafts = std::move(cards), .cache = std::move(cache)};
 }
 
-[[maybe_unused]] CompactLegalCardsResult collect_compact_legal_cards(const GameState& state) {
+CompactLegalCardsResult collect_compact_legal_cards(const GameState& state) {
     const auto side = state.pub.phasing;
     const auto holds_china = holds_china_for(state, side);
     const auto& pub = state.pub;
@@ -580,15 +580,7 @@ DraftsResult collect_card_drafts_cached(const GameState& state) {
     std::vector<LegalCardInfo> cards;
     cards.reserve(10);
 
-    const auto& hand = state.hands[to_index(side)];
-    for (int raw_card_id = 1; raw_card_id <= kMaxCardId; ++raw_card_id) {
-        if (!hand.test(raw_card_id)) {
-            continue;
-        }
-        const auto card_id = static_cast<CardId>(raw_card_id);
-        if (card_id == kChinaCardId && !holds_china) {
-            continue;
-        }
+    for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
         if (is_card_blocked_by_defcon(pub, side, card_id)) {
             continue;
         }
@@ -632,6 +624,18 @@ DraftsResult collect_card_drafts_cached(const GameState& state) {
         .cards = std::move(cards),
         .cache = std::move(cache),
     };
+}
+
+int exact_edge_count(const CompactLegalCardsResult& legal) {
+    int total = 0;
+    for (const auto& card : legal.cards) {
+        total += card.has_influence ? 1 : 0;
+        total += card.has_coup ? static_cast<int>(legal.cache.coup.size()) : 0;
+        total += card.has_realign ? static_cast<int>(legal.cache.realign.size()) : 0;
+        total += card.has_space ? 1 : 0;
+        total += card.has_event ? 1 : 0;
+    }
+    return total;
 }
 
 bool has_any_model_action_cached_exact(const GameState& state) {
@@ -1064,13 +1068,17 @@ ExpansionResult expand_from_raw_flat(
     const MctsConfig& config,
     Pcg64Rng& rng
 ) {
+    auto legal = collect_compact_legal_cards(state);
+    const auto& cards = legal.cards;
+    const auto& cache = legal.cache;
+
     auto node = std::make_unique<MctsNode>();
     node->side_to_move = state.pub.phasing;
-    node->edges.reserve(64);
-    node->children.reserve(64);
-    node->applied_actions.reserve(64);
+    const int reserved_edges = exact_edge_count(legal);
+    node->edges.reserve(static_cast<size_t>(std::max(1, reserved_edges)));
+    node->children.reserve(static_cast<size_t>(std::max(1, reserved_edges)));
+    node->applied_actions.reserve(static_cast<size_t>(std::max(1, reserved_edges)));
 
-    auto [drafts, cache] = collect_card_drafts_cached(state);
     const float* card_logits = raw.card_logits + batch_index * raw.card_stride;
     const int n_card = raw.n_card;
     const float* mode_logits = raw.mode_logits + batch_index * raw.mode_stride;
@@ -1101,7 +1109,7 @@ ExpansionResult expand_from_raw_flat(
 
     float card_probs[kMaxCardLogits];
     int card_prob_count = 0;
-    for (const auto& card : drafts) {
+    for (const auto& card : cards) {
         const int idx = static_cast<int>(card.card_id) - 1;
         if (idx >= 0 && idx < n_card) {
             card_probs[card_prob_count++] = card_logits[idx];
@@ -1125,60 +1133,112 @@ ExpansionResult expand_from_raw_flat(
     }
 
     double total_prior = 0.0;
-    for (int card_idx = 0; card_idx < static_cast<int>(drafts.size()); ++card_idx) {
-        const auto& card = drafts[static_cast<size_t>(card_idx)];
-        float mode_probs[kMaxModeLogits];
-        const int mode_count = static_cast<int>(card.modes.size());
+    for (int card_idx = 0; card_idx < static_cast<int>(cards.size()); ++card_idx) {
+        const auto& card = cards[static_cast<size_t>(card_idx)];
+        ActionMode mode_order[5];
+        float mode_probs[5];
+        int mode_count = 0;
+        if (card.has_influence) {
+            mode_order[mode_count] = ActionMode::Influence;
+            mode_probs[mode_count++] = static_cast<int>(ActionMode::Influence) < n_mode
+                ? mode_logits[static_cast<int>(ActionMode::Influence)]
+                : -std::numeric_limits<float>::infinity();
+        }
+        if (card.has_coup) {
+            mode_order[mode_count] = ActionMode::Coup;
+            mode_probs[mode_count++] = static_cast<int>(ActionMode::Coup) < n_mode
+                ? mode_logits[static_cast<int>(ActionMode::Coup)]
+                : -std::numeric_limits<float>::infinity();
+        }
+        if (card.has_realign) {
+            mode_order[mode_count] = ActionMode::Realign;
+            mode_probs[mode_count++] = static_cast<int>(ActionMode::Realign) < n_mode
+                ? mode_logits[static_cast<int>(ActionMode::Realign)]
+                : -std::numeric_limits<float>::infinity();
+        }
+        if (card.has_space) {
+            mode_order[mode_count] = ActionMode::Space;
+            mode_probs[mode_count++] = static_cast<int>(ActionMode::Space) < n_mode
+                ? mode_logits[static_cast<int>(ActionMode::Space)]
+                : -std::numeric_limits<float>::infinity();
+        }
+        if (card.has_event) {
+            mode_order[mode_count] = ActionMode::Event;
+            mode_probs[mode_count++] = static_cast<int>(ActionMode::Event) < n_mode
+                ? mode_logits[static_cast<int>(ActionMode::Event)]
+                : -std::numeric_limits<float>::infinity();
+        }
         if (mode_count <= 0) {
             continue;
-        }
-        for (int i = 0; i < mode_count; ++i) {
-            const int mode_idx = static_cast<int>(card.modes[static_cast<size_t>(i)].mode);
-            mode_probs[i] = mode_idx < n_mode ? mode_logits[mode_idx] : -std::numeric_limits<float>::infinity();
         }
         softmax_compact_inplace(mode_probs, mode_count);
 
         const double card_prob = static_cast<double>(card_probs[card_idx]);
 
         for (int mode_idx = 0; mode_idx < mode_count; ++mode_idx) {
-            const auto& mode = card.modes[static_cast<size_t>(mode_idx)];
+            const auto mode = mode_order[mode_idx];
             const double mode_prob = static_cast<double>(mode_probs[mode_idx]);
 
-            if ((mode.mode == ActionMode::Coup || mode.mode == ActionMode::Realign) &&
-                military_prob_count == static_cast<int>(mode.edges.size())) {
-                for (int i = 0; i < military_prob_count; ++i) {
-                    const auto prior = card_prob * mode_prob * static_cast<double>(military_probs[i]);
-                    const auto& edge = mode.edges[static_cast<size_t>(i)];
+            if ((mode == ActionMode::Coup || mode == ActionMode::Realign)) {
+                const auto& military_targets = mode == ActionMode::Coup ? cache.coup : cache.realign;
+                if (military_prob_count == static_cast<int>(military_targets.size())) {
+                    for (int i = 0; i < military_prob_count; ++i) {
+                        ActionEncoding edge{
+                            .card_id = card.card_id,
+                            .mode = mode,
+                            .targets = {military_targets[static_cast<size_t>(i)]},
+                        };
+                        const auto prior = card_prob * mode_prob * static_cast<double>(military_probs[i]);
+                        node->edges.push_back(MctsEdge{
+                            .action = edge,
+                            .prior = static_cast<float>(prior),
+                        });
+                        node->children.emplace_back(nullptr);
+                        node->applied_actions.push_back(std::move(edge));
+                        total_prior += prior;
+                    }
+                    continue;
+                }
+
+                const auto per_edge_prior = card_prob * mode_prob;
+                for (const auto country : military_targets) {
+                    ActionEncoding edge{
+                        .card_id = card.card_id,
+                        .mode = mode,
+                        .targets = {country},
+                    };
                     node->edges.push_back(MctsEdge{
                         .action = edge,
-                        .prior = static_cast<float>(prior),
+                        .prior = static_cast<float>(per_edge_prior),
                     });
                     node->children.emplace_back(nullptr);
                     node->applied_actions.push_back(edge);
-                    total_prior += prior;
+                    total_prior += per_edge_prior;
                 }
                 continue;
             }
 
             const auto per_edge_prior = card_prob * mode_prob;
-            for (const auto& edge : mode.edges) {
-                node->edges.push_back(MctsEdge{
-                    .action = edge,
-                    .prior = static_cast<float>(per_edge_prior),
-                });
-                node->children.emplace_back(nullptr);
-                if (edge.mode == ActionMode::Influence &&
-                    influence_prob_count == static_cast<int>(cache.influence.size()) &&
-                    !cache.influence.empty()) {
-                    const auto ops = effective_ops(edge.card_id, state.pub, state.pub.phasing);
-                    node->applied_actions.push_back(
-                        build_influence_action_from_probs(edge.card_id, ops, cache.influence, influence_probs)
-                    );
-                } else {
-                    node->applied_actions.push_back(edge);
-                }
-                total_prior += per_edge_prior;
+            ActionEncoding edge{
+                .card_id = card.card_id,
+                .mode = mode,
+                .targets = {},
+            };
+            node->edges.push_back(MctsEdge{
+                .action = edge,
+                .prior = static_cast<float>(per_edge_prior),
+            });
+            node->children.emplace_back(nullptr);
+            if (mode == ActionMode::Influence &&
+                influence_prob_count == static_cast<int>(cache.influence.size()) &&
+                !cache.influence.empty()) {
+                node->applied_actions.push_back(
+                    build_influence_action_from_probs(card.card_id, card.ops, cache.influence, influence_probs)
+                );
+            } else {
+                node->applied_actions.push_back(edge);
             }
+            total_prior += per_edge_prior;
         }
     }
 

@@ -20,8 +20,8 @@
 
 namespace {
 
-constexpr double kExperimentBaselineSimsPerS = 2553.6;
-constexpr double kExperimentBaselineSecPerGame = 2.8;
+constexpr double kWorkingBaselineSimsPerS = 8174.7;
+constexpr double kGoalMultiple = 3.0;
 
 struct CpuTimes {
     uint64_t idle = 0;
@@ -43,7 +43,8 @@ void usage(const char* argv0) {
         << " [--dir-alpha F] [--dir-epsilon F] [--learned-side both|ussr|us]"
         << " [--seed N] [--torch-threads N] [--torch-interop N]"
         << " [--forward-worker] [--load-threshold N] [--load-sample-ms N]"
-        << " [--load-wait-s N] [--warmup N] [--repeats N]\n";
+        << " [--load-wait-s N] [--warmup N] [--repeats N]"
+        << " [--baseline-sims F] [--target-multiple F]\n";
 }
 
 CpuTimes read_cpu_times() {
@@ -130,6 +131,8 @@ int main(int argc, char** argv) {
         double load_wait_s = 5.0;
         int warmup = 1;
         int repeats = 1;
+        double baseline_sims = kWorkingBaselineSimsPerS;
+        double target_multiple = kGoalMultiple;
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -193,6 +196,10 @@ int main(int argc, char** argv) {
                 warmup = std::stoi(std::string(require_value("--warmup")));
             } else if (arg == "--repeats") {
                 repeats = std::stoi(std::string(require_value("--repeats")));
+            } else if (arg == "--baseline-sims") {
+                baseline_sims = std::stod(std::string(require_value("--baseline-sims")));
+            } else if (arg == "--target-multiple") {
+                target_multiple = std::stod(std::string(require_value("--target-multiple")));
             } else if (arg == "--help" || arg == "-h") {
                 usage(argv[0]);
                 return 0;
@@ -204,7 +211,8 @@ int main(int argc, char** argv) {
 
         if (games <= 0 || n_sim < 0 || pool_size <= 0 || max_pending <= 0 || virtual_loss <= 0 ||
             cache_visit_threshold < 0 || torch_threads <= 0 || torch_interop <= 0 ||
-            warmup < 0 || repeats <= 0 || load_sample_ms <= 0 || load_wait_s < 0.0 || load_threshold <= 0.0) {
+            warmup < 0 || repeats <= 0 || load_sample_ms <= 0 || load_wait_s < 0.0 || load_threshold <= 0.0 ||
+            baseline_sims <= 0.0 || target_multiple <= 0.0) {
             throw std::invalid_argument("invalid non-positive argument");
         }
 
@@ -240,8 +248,9 @@ int main(int argc, char** argv) {
                   << " learned_side=" << (learned_side == ts::Side::USSR ? "ussr" : learned_side == ts::Side::US ? "us" : "both")
                   << " warmup=" << warmup
                   << " repeats=" << repeats
-                  << " baseline_sims_per_s=" << kExperimentBaselineSimsPerS
-                  << " baseline_s_per_game=" << kExperimentBaselineSecPerGame
+                  << " baseline_sims_per_s=" << baseline_sims
+                  << " target_multiple=" << target_multiple
+                  << " target_sims_per_s=" << (baseline_sims * target_multiple)
                   << "\n";
 
         std::vector<ts::fastmcts::BenchResult> measured;
@@ -265,9 +274,10 @@ int main(int argc, char** argv) {
                       << "post_load=" << load_after.cpu_total_pct << "% "
                       << "elapsed=" << result.elapsed_s << "s "
                       << "sims=" << result.total_simulations << " "
-                      << "baseline_sims_per_s=" << kExperimentBaselineSimsPerS << " "
+                      << "baseline_sims_per_s=" << baseline_sims << " "
                       << "current_sims_per_s=" << result.sims_per_s << " "
-                      << "speedup=" << (result.sims_per_s / kExperimentBaselineSimsPerS) << "x "
+                      << "speedup=" << (result.sims_per_s / baseline_sims) << "x "
+                      << "target_sims_per_s=" << (baseline_sims * target_multiple) << " "
                       << "decisions=" << result.mcts_decisions << " "
                       << "avg_batch=" << result.avg_batch << "\n";
             std::cout << std::fixed << std::setprecision(3)
@@ -299,11 +309,12 @@ int main(int argc, char** argv) {
 
         std::cout << std::fixed << std::setprecision(1)
                   << "[summary] repeats=" << measured.size()
-                  << " baseline_sims_per_s=" << kExperimentBaselineSimsPerS
+                  << " baseline_sims_per_s=" << baseline_sims
                   << " mean_current_sims_per_s=" << mean_sims_per_s
                   << " best_current_sims_per_s=" << best_sims_per_s
-                  << " mean_speedup=" << (mean_sims_per_s / kExperimentBaselineSimsPerS) << "x"
-                  << " best_speedup=" << (best_sims_per_s / kExperimentBaselineSimsPerS) << "x"
+                  << " mean_speedup=" << (mean_sims_per_s / baseline_sims) << "x"
+                  << " best_speedup=" << (best_sims_per_s / baseline_sims) << "x"
+                  << " target_sims_per_s=" << (baseline_sims * target_multiple)
                   << " mean_elapsed=" << mean_elapsed << "s\n";
         return 0;
     } catch (const std::exception& ex) {
