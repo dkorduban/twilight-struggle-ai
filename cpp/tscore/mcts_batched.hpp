@@ -50,46 +50,6 @@ struct PendingHeadlineChoice {
     SearchResult search;
 };
 
-struct PendingExpansion {
-    std::vector<std::pair<MctsNode*, int>> path;
-    GameState sim_state;
-    bool is_root_expansion = false;
-};
-
-struct GameSlot {
-    GameState root_state;
-    std::unique_ptr<MctsNode> root;
-    std::vector<PendingExpansion> pending;
-    bool record_history = true;
-    int sims_completed = 0;
-    int sims_target = 0;
-    bool move_done = false;
-    bool game_done = false;
-    bool emitted = false;
-    bool active = false;
-    Pcg64Rng rng;
-
-    std::string game_id;
-    std::vector<StepTrace> traces;
-    std::vector<SearchResult> search_results;
-    GameResult result;
-
-    BatchedGameStage stage = BatchedGameStage::TurnSetup;
-    int turn = 1;
-    int total_ars = 0;
-    int current_ar = 0;
-    int decisions_started = 0;
-    Side current_side = Side::USSR;
-    std::array<std::optional<PendingHeadlineChoice>, 2> pending_headlines = {};
-    std::vector<PendingHeadlineChoice> headline_order;
-    size_t headline_order_index = 0;
-    std::optional<PendingDecision> decision;
-    // Saved RNG state before MCTS search starts, used in heuristic_teacher_mode to
-    // restore the game RNG so heuristic move selection is identical to pure heuristic.
-    std::optional<Pcg64Rng> rng_before_mcts;
-    // Per-game heuristic temperature (0 = deterministic argmax).
-    float heuristic_temperature = 0.0f;
-};
 
 struct BatchedMctsConfig {
     MctsConfig mcts;

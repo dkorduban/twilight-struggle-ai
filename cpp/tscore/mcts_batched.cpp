@@ -56,8 +56,151 @@ struct CardDraft {
     std::vector<ModeDraft> modes;
 };
 
+// ---------------------------------------------------------------------------
+// Compact tree storage (FastNode / FastEdge)
+// FastEdge avoids per-edge ActionEncoding heap allocation by storing influence
+// targets in a flat resolved_targets array on the node, indexed by offset/count.
+// ---------------------------------------------------------------------------
+
+struct FastEdge {
+    CardId card_id = 0;
+    ActionMode mode = ActionMode::Influence;
+    CountryId country = 0;          // for Coup/Realign; 0 for Influence/Event/Space
+    int target_offset = 0;          // index into FastNode::resolved_targets
+    int target_count = 0;           // number of influence targets
+    float prior = 0.0f;
+    int visit_count = 0;
+    int virtual_loss = 0;
+    double total_value = 0.0;
+};
+
+struct FastNode {
+    std::vector<FastEdge> edges;
+    std::vector<std::unique_ptr<FastNode>> children;
+    std::vector<CountryId> resolved_targets;  // flat influence target storage
+    int total_visits = 0;
+    bool is_terminal = false;
+    double terminal_value = 0.0;
+    Side side_to_move = Side::USSR;
+    std::unique_ptr<GameState> cached_state;
+};
+
+// Reconstruct a full ActionEncoding from a compact FastEdge.
+ActionEncoding materialize_action(const FastNode& node, size_t edge_index) {
+    const auto& edge = node.edges[edge_index];
+    ActionEncoding action{edge.card_id, edge.mode, {}};
+    if (edge.mode == ActionMode::Influence && edge.target_count > 0) {
+        action.targets.reserve(static_cast<size_t>(edge.target_count));
+        for (int i = 0; i < edge.target_count; ++i) {
+            action.targets.push_back(
+                node.resolved_targets[static_cast<size_t>(edge.target_offset + i)]);
+        }
+    } else if ((edge.mode == ActionMode::Coup || edge.mode == ActionMode::Realign) &&
+               edge.country != 0) {
+        action.targets.push_back(edge.country);
+    }
+    return action;
+}
+
+// Append an edge to a FastNode, storing influence targets in resolved_targets.
+void append_compact_edge(FastNode& node, const ActionEncoding& action, float prior) {
+    int target_offset = 0;
+    int target_count = 0;
+    CountryId country = 0;
+    if (action.mode == ActionMode::Influence && !action.targets.empty()) {
+        target_offset = static_cast<int>(node.resolved_targets.size());
+        target_count = static_cast<int>(action.targets.size());
+        node.resolved_targets.insert(
+            node.resolved_targets.end(), action.targets.begin(), action.targets.end());
+    } else if ((action.mode == ActionMode::Coup || action.mode == ActionMode::Realign) &&
+               !action.targets.empty()) {
+        country = action.targets.front();
+    }
+    node.edges.push_back(FastEdge{
+        .card_id = action.card_id,
+        .mode = action.mode,
+        .country = country,
+        .target_offset = target_offset,
+        .target_count = target_count,
+        .prior = prior,
+    });
+    node.children.emplace_back(nullptr);
+}
+
+void apply_root_dirichlet_noise_fast(FastNode& root, const MctsConfig& config, Pcg64Rng& rng) {
+    if (config.dir_epsilon <= 0.0f || config.dir_alpha <= 0.0f || root.edges.empty()) {
+        return;
+    }
+    std::vector<double> noise(root.edges.size(), 0.0);
+    std::gamma_distribution<double> gamma(static_cast<double>(config.dir_alpha), 1.0);
+    double total_noise = 0.0;
+    for (auto& sample : noise) {
+        sample = gamma(rng);
+        total_noise += sample;
+    }
+    if (total_noise <= 0.0) {
+        const auto uniform = 1.0 / static_cast<double>(noise.size());
+        std::fill(noise.begin(), noise.end(), uniform);
+    } else {
+        for (auto& sample : noise) {
+            sample /= total_noise;
+        }
+    }
+    const auto epsilon = static_cast<double>(config.dir_epsilon);
+    const auto keep = 1.0 - epsilon;
+    for (size_t i = 0; i < root.edges.size(); ++i) {
+        root.edges[i].prior = static_cast<float>(
+            keep * static_cast<double>(root.edges[i].prior) + epsilon * noise[i]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Internal game pool types (not part of public API)
+// ---------------------------------------------------------------------------
+
+struct PendingExpansion {
+    std::vector<std::pair<FastNode*, int>> path;
+    GameState sim_state;
+    bool is_root_expansion = false;
+};
+
+struct GameSlot {
+    GameState root_state;
+    std::unique_ptr<FastNode> root;
+    std::vector<PendingExpansion> pending;
+    bool record_history = true;
+    int sims_completed = 0;
+    int sims_target = 0;
+    bool move_done = false;
+    bool game_done = false;
+    bool emitted = false;
+    bool active = false;
+    Pcg64Rng rng;
+
+    std::string game_id;
+    std::vector<StepTrace> traces;
+    std::vector<SearchResult> search_results;
+    GameResult result;
+
+    BatchedGameStage stage = BatchedGameStage::TurnSetup;
+    int turn = 1;
+    int total_ars = 0;
+    int current_ar = 0;
+    int decisions_started = 0;
+    Side current_side = Side::USSR;
+    std::array<std::optional<PendingHeadlineChoice>, 2> pending_headlines = {};
+    std::vector<PendingHeadlineChoice> headline_order;
+    size_t headline_order_index = 0;
+    std::optional<PendingDecision> decision;
+    // Saved RNG state before MCTS search starts, used in heuristic_teacher_mode to
+    // restore the game RNG so heuristic move selection is identical to pure heuristic.
+    std::optional<Pcg64Rng> rng_before_mcts;
+    // Per-game heuristic temperature (0 = deterministic argmax).
+    float heuristic_temperature = 0.0f;
+};
+
 struct ExpansionResult {
-    std::unique_ptr<MctsNode> node;
+    std::unique_ptr<FastNode> node;
     double leaf_value = 0.0;
 };
 
@@ -606,7 +749,7 @@ CompactLegalCardsResult collect_compact_legal_cards(const GameState& state) {
 }
 
 // Pre-counts exact number of edges for a given compact legal set so the node's
-// edge/child/applied_actions vectors can be reserved precisely (no reallocations).
+// edge/child/resolved_targets vectors can be reserved precisely (no reallocations).
 int exact_edge_count(const CompactLegalCardsResult& legal) {
     const int coup_count = static_cast<int>(legal.cache.coup.size());
     int total = 0;
@@ -951,7 +1094,7 @@ static thread_local int g_mode_other = 0;
 static thread_local int g_edge_util_histogram[11] = {};  // [0..9] = 0-90%, [10] = 100%
 static thread_local int g_edge_util_nodes = 0;
 
-void collect_tree_edge_utilization(const MctsNode* node) {
+void collect_tree_edge_utilization(const FastNode* node) {
     if (!node || node->edges.empty()) return;
     int visited = 0;
     for (const auto& e : node->edges) {
@@ -979,11 +1122,11 @@ ExpansionResult expand_from_raw(
     using XClock = std::chrono::high_resolution_clock;
     auto xt0 = XClock::now();
 
-    auto node = std::make_unique<MctsNode>();
+    auto node = std::make_unique<FastNode>();
     node->side_to_move = state.pub.phasing;
     node->edges.reserve(64);
     node->children.reserve(64);
-    node->applied_actions.reserve(64);
+    node->resolved_targets.reserve(128);
 
     g_expand_alloc += std::chrono::duration<double>(XClock::now() - xt0).count();
     auto xt1 = XClock::now();
@@ -1140,12 +1283,7 @@ ExpansionResult expand_from_raw(
                     const int ci = static_cast<int>(edge.targets.front());
                     const double country_prob = (ci < n_country) ? static_cast<double>(masked_country[ci]) : 0.0;
                     const auto prior = card_prob * mode_prob * country_prob;
-                    node->edges.push_back(MctsEdge{
-                        .action = edge,
-                        .prior = static_cast<float>(prior),
-                    });
-                    node->children.emplace_back(nullptr);
-                    node->applied_actions.push_back(edge);
+                    append_compact_edge(*node, edge, static_cast<float>(prior));
                     total_prior += prior;
                 }
                 continue;
@@ -1298,12 +1436,8 @@ ExpansionResult expand_from_raw(
                                 ? influence_total_prior * alloc.density / density_sum
                                 : influence_total_prior / static_cast<double>(allocations.size());
 
-                            node->edges.push_back(MctsEdge{
-                                .action = edge,
-                                .prior = static_cast<float>(norm_prior),
-                            });
-                            node->children.emplace_back(nullptr);
-                            node->applied_actions.push_back(std::move(alloc.action));
+                            // Use alloc.action (resolved targets), not the template edge.
+                            append_compact_edge(*node, alloc.action, static_cast<float>(norm_prior));
                             total_prior += norm_prior;
                         }
 
@@ -1314,11 +1448,6 @@ ExpansionResult expand_from_raw(
 
                     } else {
                         // --- Original single-allocation path (bit-identical at defaults) ---
-                        node->edges.push_back(MctsEdge{
-                            .action = edge,
-                            .prior = static_cast<float>(per_edge_prior),
-                        });
-                        node->children.emplace_back(nullptr);
                         float masked[kMaxCountryLogits];
                         std::fill(masked, masked + n_country, -std::numeric_limits<float>::infinity());
                         for (const auto cid : cache.influence) {
@@ -1328,17 +1457,12 @@ ExpansionResult expand_from_raw(
                         softmax_inplace(masked, n_country);
                         auto resolved = proportional_allocation(masked, cache.influence, ops, n_country);
                         ActionEncoding act{edge.card_id, edge.mode, std::move(resolved.targets)};
-                        node->applied_actions.push_back(std::move(act));
+                        append_compact_edge(*node, act, static_cast<float>(per_edge_prior));
                         total_prior += per_edge_prior;
                     }
                 } else {
                     // Non-influence edge (or no country logits)
-                    node->edges.push_back(MctsEdge{
-                        .action = edge,
-                        .prior = static_cast<float>(per_edge_prior),
-                    });
-                    node->children.emplace_back(nullptr);
-                    node->applied_actions.push_back(edge);
+                    append_compact_edge(*node, edge, static_cast<float>(per_edge_prior));
                     total_prior += per_edge_prior;
                 }
             }
@@ -1354,9 +1478,7 @@ ExpansionResult expand_from_raw(
                 rng
             );
             fallback.has_value()) {
-            node->edges.push_back(MctsEdge{.action = *fallback, .prior = 1.0f});
-            node->children.emplace_back(nullptr);
-            node->applied_actions.push_back(*fallback);
+            append_compact_edge(*node, *fallback, 1.0f);
             return ExpansionResult{
                 .node = std::move(node),
                 .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config.mcts, rng),
@@ -1383,7 +1505,7 @@ ExpansionResult expand_from_raw(
     g_expand_total_edges += static_cast<int>(node->edges.size());
     // Count mode composition
     for (const auto& e : node->edges) {
-        switch (e.action.mode) {
+        switch (e.mode) {
             case ActionMode::Influence: ++g_mode_influence; break;
             case ActionMode::Coup:      ++g_mode_coup; break;
             case ActionMode::Realign: ++g_mode_realign; break;
@@ -1422,12 +1544,12 @@ ExpansionResult expand_from_raw_fast(
     const auto& cache = legal.cache;
 
     // --- Allocate node with exact capacity (no reallocations) ---
-    auto node = std::make_unique<MctsNode>();
+    auto node = std::make_unique<FastNode>();
     node->side_to_move = state.pub.phasing;
     const int reserved = exact_edge_count(legal);
     node->edges.reserve(static_cast<size_t>(std::max(1, reserved)));
     node->children.reserve(static_cast<size_t>(std::max(1, reserved)));
-    node->applied_actions.reserve(static_cast<size_t>(std::max(1, reserved)));
+    node->resolved_targets.reserve(static_cast<size_t>(std::max(8, reserved * 2)));
 
     // --- Resolve logit pointers (no memcpy — point directly into batch output) ---
     const float* card_logits = raw.card_logits + batch_index * raw.card_stride;
@@ -1541,9 +1663,7 @@ ExpansionResult expand_from_raw_fast(
                             .targets = {military_targets[static_cast<size_t>(i)]},
                         };
                         const double prior = per_edge_prior * static_cast<double>(military_probs[i]);
-                        node->edges.push_back(MctsEdge{.action = edge, .prior = static_cast<float>(prior)});
-                        node->children.emplace_back(nullptr);
-                        node->applied_actions.push_back(edge);
+                        append_compact_edge(*node, edge, static_cast<float>(prior));
                         total_prior += prior;
                     }
                 } else {
@@ -1553,9 +1673,7 @@ ExpansionResult expand_from_raw_fast(
                             .mode = mode,
                             .targets = {country},
                         };
-                        node->edges.push_back(MctsEdge{.action = edge, .prior = static_cast<float>(per_edge_prior)});
-                        node->children.emplace_back(nullptr);
-                        node->applied_actions.push_back(edge);
+                        append_compact_edge(*node, edge, static_cast<float>(per_edge_prior));
                         total_prior += per_edge_prior;
                     }
                 }
@@ -1563,29 +1681,27 @@ ExpansionResult expand_from_raw_fast(
             }
 
             if (mode == ActionMode::Influence) {
-                ActionEncoding edge_tpl{.card_id = card.card_id, .mode = ActionMode::Influence, .targets = {}};
-                node->edges.push_back(MctsEdge{.action = edge_tpl, .prior = static_cast<float>(per_edge_prior)});
-                node->children.emplace_back(nullptr);
-
                 if (country_logits_ptr != nullptr && !cache.influence.empty() &&
                     inf_count == static_cast<int>(cache.influence.size())) {
                     auto resolved = proportional_allocation_compact(
                         influence_probs, cache.influence, card.ops);
                     ActionEncoding act{card.card_id, ActionMode::Influence, std::move(resolved)};
-                    node->applied_actions.push_back(std::move(act));
+                    append_compact_edge(*node, act, static_cast<float>(per_edge_prior));
                 } else {
-                    node->applied_actions.push_back(edge_tpl);
+                    const ActionEncoding edge_tpl{
+                        .card_id = card.card_id, .mode = ActionMode::Influence, .targets = {}};
+                    append_compact_edge(*node, edge_tpl, static_cast<float>(per_edge_prior));
                 }
                 total_prior += per_edge_prior;
                 continue;
             }
 
             // Space / Event
-            const ActionEncoding edge{.card_id = card.card_id, .mode = mode, .targets = {}};
-            node->edges.push_back(MctsEdge{.action = edge, .prior = static_cast<float>(per_edge_prior)});
-            node->children.emplace_back(nullptr);
-            node->applied_actions.push_back(edge);
-            total_prior += per_edge_prior;
+            {
+                const ActionEncoding edge{.card_id = card.card_id, .mode = mode, .targets = {}};
+                append_compact_edge(*node, edge, static_cast<float>(per_edge_prior));
+                total_prior += per_edge_prior;
+            }
         }
     }
 
@@ -1598,9 +1714,7 @@ ExpansionResult expand_from_raw_fast(
                 rng
             );
             fallback.has_value()) {
-            node->edges.push_back(MctsEdge{.action = *fallback, .prior = 1.0f});
-            node->children.emplace_back(nullptr);
-            node->applied_actions.push_back(*fallback);
+            append_compact_edge(*node, *fallback, 1.0f);
             return ExpansionResult{
                 .node = std::move(node),
                 .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config.mcts, rng),
@@ -1625,7 +1739,7 @@ ExpansionResult expand_from_raw_fast(
     ++g_expand_count;
     g_expand_total_edges += static_cast<int>(node->edges.size());
     for (const auto& e : node->edges) {
-        switch (e.action.mode) {
+        switch (e.mode) {
             case ActionMode::Influence: ++g_mode_influence; break;
             case ActionMode::Coup:      ++g_mode_coup; break;
             case ActionMode::Realign:   ++g_mode_realign; break;
@@ -1704,7 +1818,7 @@ bool has_any_model_action_cached_exact(const GameState& state) {
 }
 
 std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg64Rng& rng) {
-    auto node = std::make_unique<MctsNode>();
+    auto node = std::make_unique<FastNode>();
     node->side_to_move = state.pub.phasing;
 
     if (state.game_over) {
@@ -1726,9 +1840,7 @@ std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg6
             rng
         );
         fallback.has_value()) {
-        node->edges.push_back(MctsEdge{.action = *fallback, .prior = 1.0f});
-        node->children.emplace_back(nullptr);
-        node->applied_actions.push_back(*fallback);
+        append_compact_edge(*node, *fallback, 1.0f);
         return ExpansionResult{.node = std::move(node), .leaf_value = 0.0};
     }
 
@@ -1738,7 +1850,7 @@ std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg6
 
 // expand_from_outputs removed — replaced by expand_from_raw for performance
 
-double mean_root_value(const MctsNode& root) {
+double mean_root_value(const FastNode& root) {
     if (root.is_terminal) {
         return root.terminal_value;
     }
@@ -1753,7 +1865,7 @@ double mean_root_value(const MctsNode& root) {
     return total / static_cast<double>(root.total_visits);
 }
 
-int best_root_edge_index(const MctsNode& root) {
+int best_root_edge_index(const FastNode& root) {
     if (root.edges.empty()) {
         return -1;
     }
@@ -1773,6 +1885,18 @@ int best_root_edge_index(const MctsNode& root) {
     return best_index;
 }
 
+// Convert FastEdge → MctsEdge (materializing the action from compact storage).
+MctsEdge to_mcts_edge(const FastNode& node, size_t edge_index) {
+    const auto& fe = node.edges[edge_index];
+    MctsEdge me;
+    me.action = materialize_action(node, edge_index);
+    me.prior = fe.prior;
+    me.visit_count = fe.visit_count;
+    me.virtual_loss = fe.virtual_loss;
+    me.total_value = fe.total_value;
+    return me;
+}
+
 SearchResult build_search_result(const GameSlot& slot, bool include_root_edges) {
     SearchResult result;
     result.total_simulations = slot.sims_completed;
@@ -1781,12 +1905,15 @@ SearchResult build_search_result(const GameSlot& slot, bool include_root_edges) 
     }
 
     if (include_root_edges) {
-        result.root_edges = slot.root->edges;
+        result.root_edges.reserve(slot.root->edges.size());
+        for (size_t i = 0; i < slot.root->edges.size(); ++i) {
+            result.root_edges.push_back(to_mcts_edge(*slot.root, i));
+        }
     }
     result.root_value = mean_root_value(*slot.root);
     const auto best_index = best_root_edge_index(*slot.root);
     if (best_index >= 0) {
-        result.best_action = slot.root->applied_actions[static_cast<size_t>(best_index)];
+        result.best_action = materialize_action(*slot.root, static_cast<size_t>(best_index));
     }
     return result;
 }
@@ -1863,7 +1990,7 @@ std::optional<ActionEncoding> sample_action_by_visit_counts(
     return search.root_edges[weights.back().first].action;
 }
 
-void backpropagate_path(std::vector<std::pair<MctsNode*, int>>& path, double leaf_value, int vl_weight) {
+void backpropagate_path(std::vector<std::pair<FastNode*, int>>& path, double leaf_value, int vl_weight) {
     for (auto it = path.rbegin(); it != path.rend(); ++it) {
         auto* ancestor = it->first;
         auto& edge = ancestor->edges[static_cast<size_t>(it->second)];
@@ -1896,10 +2023,8 @@ std::atomic<int64_t> g_cache_selections{0};     // number of selections
 std::atomic<int64_t> g_cache_max_depth{0};      // max path.size() seen
 std::atomic<int64_t> g_cache_hits{0};           // selections where best_cached_depth > 0
 
-// Inline replica of MctsNode::select_edge, defined locally so the compiler can
-// inline it in the hot select_to_leaf loop (production select_edge is in mcts.cpp,
-// a different TU, so it cannot be inlined without LTO).
-inline int select_edge_fast(const MctsNode& node, float c_puct) {
+// Inline PUCT edge selection over FastNode edges.
+inline int select_edge_fast(const FastNode& node, float c_puct) {
     if (node.edges.empty()) {
         return -1;
     }
@@ -1939,7 +2064,7 @@ SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) 
 
     // Phase 1: Walk down the tree selecting edges, deferring state simulation.
     // Track the deepest node with a cached state so we can clone from there.
-    MctsNode* node = slot.root.get();
+    FastNode* node = slot.root.get();
     const GameState* best_cached = &slot.root_state;
     size_t best_cached_depth = 0;  // path index after which best_cached is valid
 
@@ -1981,7 +2106,7 @@ SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) 
     for (size_t i = best_cached_depth; i < pend.path.size(); ++i) {
         auto [path_node, path_edge_index] = pend.path[i];
         apply_tree_action(pend.sim_state,
-                          path_node->applied_actions[static_cast<size_t>(path_edge_index)],
+                          materialize_action(*path_node, static_cast<size_t>(path_edge_index)),
                           slot.rng);
     }
 
@@ -3147,7 +3272,7 @@ void collect_games_batched(
                             pend.sim_state, raw_outputs, entry.batch_index,
                             config, slot.rng);
                         slot.root = std::move(expansion.node);
-                        apply_root_dirichlet_noise(*slot.root, config.mcts, slot.rng);
+                        apply_root_dirichlet_noise_fast(*slot.root, config.mcts, slot.rng);
                         if (slot.sims_target == 0) {
                             slot.move_done = true;
                         }
