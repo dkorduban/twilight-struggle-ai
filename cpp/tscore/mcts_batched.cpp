@@ -7,11 +7,13 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <barrier>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <map>
+#include <cstdlib>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -64,29 +66,17 @@ struct SelectionResult {
     double leaf_value = 0.0;
 };
 
-class SpinBarrier {
+class PhaseBarrier {
 public:
-    explicit SpinBarrier(int n_threads)
-        : n_threads_(std::max(1, n_threads)),
-          count_(n_threads_),
-          generation_(0) {}
+    explicit PhaseBarrier(int n_threads)
+        : barrier_(std::max(1, n_threads)) {}
 
     void wait() {
-        const auto generation = generation_.load(std::memory_order_acquire);
-        if (count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            count_.store(n_threads_, std::memory_order_release);
-            generation_.fetch_add(1, std::memory_order_release);
-            return;
-        }
-        while (generation_.load(std::memory_order_acquire) == generation) {
-            std::this_thread::yield();
-        }
+        barrier_.arrive_and_wait();
     }
 
 private:
-    int n_threads_ = 1;
-    std::atomic<int> count_;
-    std::atomic<uint64_t> generation_;
+    std::barrier<> barrier_;
 };
 
 constexpr int kFeatureScalarDim = 11;
@@ -535,6 +525,85 @@ DraftsResult collect_card_drafts_cached(const GameState& state) {
     return DraftsResult{.drafts = std::move(cards), .cache = std::move(cache)};
 }
 
+// ---------------------------------------------------------------------------
+// Compact legal card representation — boolean mode flags, no ActionEncoding
+// allocations. Used by expand_from_raw_fast for the default K=1 path.
+// ---------------------------------------------------------------------------
+
+struct LegalCardInfo {
+    CardId card_id = 0;
+    int ops = 0;
+    bool has_influence = false;
+    bool has_coup = false;
+    bool has_realign = false;
+    bool has_space = false;
+    bool has_event = false;
+};
+
+struct CompactLegalCardsResult {
+    std::vector<LegalCardInfo> cards;
+    AccessibleCache cache;
+};
+
+CompactLegalCardsResult collect_compact_legal_cards(const GameState& state) {
+    const auto side = state.pub.phasing;
+    const auto holds_china = holds_china_for(state, side);
+    const auto& pub = state.pub;
+    auto cache = AccessibleCache::build(side, pub);
+
+    std::vector<LegalCardInfo> cards;
+    cards.reserve(10);
+
+    for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
+        if (is_card_blocked_by_defcon(pub, side, card_id)) {
+            continue;
+        }
+
+        const auto& spec = card_spec(card_id);
+        const int ops = effective_ops(card_id, pub, side);
+        const bool trapped = (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
+            (pub.quagmire_active && side == Side::US && !spec.is_scoring);
+
+        LegalCardInfo card{
+            .card_id = card_id,
+            .ops = ops,
+            .has_influence = spec.ops > 0 && !cache.influence.empty(),
+            .has_coup = spec.ops > 0 && !cache.coup.empty() && pub.defcon > 2 && !pub.cuban_missile_crisis_active,
+            .has_realign = spec.ops > 0 && !cache.realign.empty(),
+            .has_space = spec.ops > 0 && cache.can_space && spec.ops >= cache.space_ops_min && !trapped,
+            .has_event = false,
+        };
+
+        bool event_ok = true;
+        if (card_id == 21 && !nato_prerequisite_met_inline(pub)) event_ok = false;
+        if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) event_ok = false;
+        if (trapped) event_ok = false;
+        if (card_id == 103 && pub.defcon != 2) event_ok = false;
+        card.has_event = event_ok;
+
+        if (card.has_influence || card.has_coup || card.has_realign || card.has_space || card.has_event) {
+            cards.push_back(card);
+        }
+    }
+
+    return CompactLegalCardsResult{.cards = std::move(cards), .cache = std::move(cache)};
+}
+
+// Pre-counts exact number of edges for a given compact legal set so the node's
+// edge/child/applied_actions vectors can be reserved precisely (no reallocations).
+int exact_edge_count(const CompactLegalCardsResult& legal) {
+    const int coup_count = static_cast<int>(legal.cache.coup.size());
+    int total = 0;
+    for (const auto& card : legal.cards) {
+        total += card.has_influence ? 1 : 0;
+        total += card.has_coup ? coup_count : 0;
+        total += card.has_realign ? coup_count : 0;  // realign uses same country set as coup
+        total += card.has_space ? 1 : 0;
+        total += card.has_event ? 1 : 0;
+    }
+    return total;
+}
+
 // Pre-extracted raw pointers from batch outputs for zero-copy per-item access.
 struct RawBatchOutputs {
     // Storage tensors keep the contiguous data alive across barriers.
@@ -607,15 +676,288 @@ struct RawBatchOutputs {
     }
 };
 
+// ---------------------------------------------------------------------------
+// K-sample influence allocation helpers
+// ---------------------------------------------------------------------------
+
+// Zobrist hash table for order-invariant deduplication of influence allocations.
+// hash(allocation) = sum over all placed ops of kInfluenceZobrist[country_id].
+// Initialized from a fixed seed unrelated to the game RNG.
+static const std::array<uint64_t, 86> kInfluenceZobrist = []() {
+    std::array<uint64_t, 86> table{};
+    Pcg64Rng zobrist_rng(0xDEADBEEF42ULL);
+    for (int i = 0; i < 86; ++i) {
+        table[static_cast<size_t>(i)] = zobrist_rng.next_u64();
+    }
+    return table;
+}();
+
+struct AllocationResult {
+    std::vector<CountryId> targets;
+    uint64_t hash;
+};
+
+// Proportional allocation: floor(p * ops) for each country, then distribute
+// remainder by largest fractional part. Targets sorted by country id.
+AllocationResult proportional_allocation(
+    const float* probs,              // softmaxed country probs, indexed by CountryId
+    const std::vector<CountryId>& accessible,
+    int ops,
+    int /*n_country*/
+) {
+    const int n_acc = static_cast<int>(accessible.size());
+    int alloc_i[kMaxCountryLogits] = {};
+    float alloc_f[kMaxCountryLogits] = {};
+    int floor_sum = 0;
+    for (int i = 0; i < n_acc; ++i) {
+        float p = probs[static_cast<int>(accessible[static_cast<size_t>(i)])];
+        alloc_f[i] = p * static_cast<float>(ops);
+        alloc_i[i] = static_cast<int>(std::floor(alloc_f[i]));
+        floor_sum += alloc_i[i];
+    }
+    int remainder = ops - floor_sum;
+    if (remainder > 0) {
+        std::pair<float, int> order[kMaxCountryLogits];
+        for (int i = 0; i < n_acc; ++i) {
+            order[i] = {-(alloc_f[i] - static_cast<float>(alloc_i[i])), i};
+        }
+        std::sort(order, order + n_acc);
+        for (int i = 0; i < remainder && i < n_acc; ++i) {
+            alloc_i[order[i].second] += 1;
+        }
+    }
+    // Build targets sorted by country id, compute Zobrist hash
+    uint64_t hash = 0;
+    std::vector<CountryId> targets;
+    targets.reserve(static_cast<size_t>(ops));
+    for (int i = 0; i < n_acc; ++i) {
+        if (alloc_i[i] > 0) {
+            const CountryId cid = accessible[static_cast<size_t>(i)];
+            const int cid_int = static_cast<int>(cid);
+            for (int j = 0; j < alloc_i[i]; ++j) {
+                targets.push_back(cid);
+            }
+            hash += static_cast<uint64_t>(alloc_i[i]) *
+                    kInfluenceZobrist[static_cast<size_t>(cid_int)];
+        }
+    }
+    // targets already in country-id order since we iterate accessible in order
+    return AllocationResult{std::move(targets), hash};
+}
+
+// Compact variant of proportional_allocation: probs[i] is the softmaxed probability
+// for accessible[i] (position-indexed, not CountryId-indexed). Only returns targets;
+// hash is not needed for the non-K-sample path.
+std::vector<CountryId> proportional_allocation_compact(
+    const float* compact_probs,
+    const std::vector<CountryId>& accessible,
+    int ops
+) {
+    const int n_acc = static_cast<int>(accessible.size());
+    int alloc_i[kMaxCountryLogits] = {};
+    float alloc_f[kMaxCountryLogits] = {};
+    int floor_sum = 0;
+    for (int i = 0; i < n_acc; ++i) {
+        alloc_f[i] = compact_probs[i] * static_cast<float>(ops);
+        alloc_i[i] = static_cast<int>(std::floor(alloc_f[i]));
+        floor_sum += alloc_i[i];
+    }
+    int remainder = ops - floor_sum;
+    if (remainder > 0) {
+        std::pair<float, int> order[kMaxCountryLogits];
+        for (int i = 0; i < n_acc; ++i) {
+            order[i] = {-(alloc_f[i] - static_cast<float>(alloc_i[i])), i};
+        }
+        std::sort(order, order + n_acc);
+        for (int i = 0; i < remainder && i < n_acc; ++i) {
+            alloc_i[order[i].second] += 1;
+        }
+    }
+    std::vector<CountryId> targets;
+    targets.reserve(static_cast<size_t>(ops));
+    for (int i = 0; i < n_acc; ++i) {
+        for (int j = 0; j < alloc_i[i]; ++j) {
+            targets.push_back(accessible[static_cast<size_t>(i)]);
+        }
+    }
+    return targets;
+}
+
+// Categorical sample: draw from discrete distribution with given probs (must sum to 1).
+int categorical_sample(const float* probs, int n, Pcg64Rng& rng) {
+    const double u = static_cast<double>(rng.next_u32()) / 4294967296.0;
+    double cum = 0.0;
+    for (int i = 0; i < n - 1; ++i) {
+        cum += static_cast<double>(probs[i]);
+        if (u < cum) return i;
+    }
+    return n - 1;
+}
+
+// Multinomial sample: draw ops samples from temperature-scaled distribution.
+// temperature > 0; probs[c] = softmaxed probability for accessible countries.
+AllocationResult multinomial_sample(
+    const float* probs,                       // softmaxed probs indexed by CountryId
+    const std::vector<CountryId>& accessible,
+    int ops,
+    int /*n_country*/,
+    float temperature,
+    Pcg64Rng& rng
+) {
+    const int n_acc = static_cast<int>(accessible.size());
+    // Temperature-scale probs and renormalize
+    float scaled[kMaxCountryLogits] = {};
+    float total = 0.0f;
+    const float inv_T = 1.0f / temperature;
+    for (int i = 0; i < n_acc; ++i) {
+        float p = probs[static_cast<int>(accessible[static_cast<size_t>(i)])];
+        float sp = (p > 0.0f) ? std::pow(p, inv_T) : 0.0f;
+        scaled[i] = sp;
+        total += sp;
+    }
+    if (total > 0.0f) {
+        for (int i = 0; i < n_acc; ++i) scaled[i] /= total;
+    } else {
+        const float unif = 1.0f / static_cast<float>(n_acc);
+        for (int i = 0; i < n_acc; ++i) scaled[i] = unif;
+    }
+    // Build CDF and sample ops times
+    int counts[kMaxCountryLogits] = {};
+    for (int op = 0; op < ops; ++op) {
+        const double u = static_cast<double>(rng.next_u32()) / 4294967296.0;
+        double cum = 0.0;
+        int chosen = n_acc - 1;
+        for (int i = 0; i < n_acc - 1; ++i) {
+            cum += static_cast<double>(scaled[i]);
+            if (u < cum) { chosen = i; break; }
+        }
+        counts[chosen]++;
+    }
+    // Build targets sorted by country id, compute Zobrist hash
+    uint64_t hash = 0;
+    std::vector<CountryId> targets;
+    targets.reserve(static_cast<size_t>(ops));
+    for (int i = 0; i < n_acc; ++i) {
+        if (counts[i] > 0) {
+            const CountryId cid = accessible[static_cast<size_t>(i)];
+            const int cid_int = static_cast<int>(cid);
+            for (int j = 0; j < counts[i]; ++j) {
+                targets.push_back(cid);
+            }
+            hash += static_cast<uint64_t>(counts[i]) *
+                    kInfluenceZobrist[static_cast<size_t>(cid_int)];
+        }
+    }
+    return AllocationResult{std::move(targets), hash};
+}
+
+// Multinomial probability: ops! / prod(count_i!) * prod(p_i^count_i)
+// computed in log-space. p_i from RAW (unscaled) country_probs.
+double multinomial_probability(
+    const std::vector<CountryId>& targets,
+    const float* strategy_probs,   // softmaxed probs indexed by CountryId
+    const std::vector<CountryId>& accessible,
+    int ops,
+    int /*n_country*/
+) {
+    // Lookup table for log(k!) for k = 0..ops (max ops = 5 → 120)
+    static const double log_factorial[6] = {
+        0.0,                    // 0!
+        0.0,                    // 1!
+        0.6931471805599453,     // 2!
+        1.791759469228327,      // 3!
+        3.1780538303479458,     // 4!
+        4.787491742782046       // 5!
+    };
+
+    // Count ops per accessible country
+    const int n_acc = static_cast<int>(accessible.size());
+    int counts[kMaxCountryLogits] = {};
+    for (const auto& cid : targets) {
+        // Find index in accessible
+        for (int i = 0; i < n_acc; ++i) {
+            if (accessible[static_cast<size_t>(i)] == cid) {
+                counts[i]++;
+                break;
+            }
+        }
+    }
+
+    // Re-normalize strategy_probs over accessible countries
+    float acc_probs[kMaxCountryLogits] = {};
+    float acc_total = 0.0f;
+    for (int i = 0; i < n_acc; ++i) {
+        float p = strategy_probs[static_cast<int>(accessible[static_cast<size_t>(i)])];
+        acc_probs[i] = p;
+        acc_total += p;
+    }
+    if (acc_total > 0.0f) {
+        for (int i = 0; i < n_acc; ++i) acc_probs[i] /= acc_total;
+    }
+
+    // log density = log(ops!) - sum(log(count_i!)) + sum(count_i * log(p_i))
+    const int bounded_ops = std::min(ops, 5);
+    double log_density = log_factorial[bounded_ops];
+    for (int i = 0; i < n_acc; ++i) {
+        if (counts[i] > 0) {
+            const int bk = std::min(counts[i], 5);
+            log_density -= log_factorial[bk];
+            if (acc_probs[i] > 0.0f) {
+                log_density += static_cast<double>(counts[i]) *
+                               std::log(static_cast<double>(acc_probs[i]));
+            } else {
+                return 0.0;  // zero probability placement
+            }
+        }
+    }
+    return std::exp(log_density);
+}
+
+// ---------------------------------------------------------------------------
 // Expand sub-phase accumulators (for profiling)
+// ---------------------------------------------------------------------------
 static thread_local double g_expand_drafts = 0, g_expand_edges = 0, g_expand_alloc = 0;
 static thread_local int g_expand_count = 0;
+static thread_local int g_expand_total_edges = 0;  // total edges created across all expansions
+static thread_local double g_ksample_time = 0;
+static thread_local int g_ksample_count = 0;
+static thread_local int g_ksample_edges_total = 0;
+// Mode composition counters
+static thread_local int g_mode_influence = 0;
+static thread_local int g_mode_coup = 0;
+static thread_local int g_mode_realign = 0;
+static thread_local int g_mode_space = 0;
+static thread_local int g_mode_event = 0;
+static thread_local int g_mode_other = 0;
+
+// Edge utilization: per-node fraction of edges with visits > 0
+// We bin into 10 buckets: [0%, 10%), [10%, 20%), ..., [90%, 100%], plus a 100% exact bucket.
+static thread_local int g_edge_util_histogram[11] = {};  // [0..9] = 0-90%, [10] = 100%
+static thread_local int g_edge_util_nodes = 0;
+
+void collect_tree_edge_utilization(const MctsNode* node) {
+    if (!node || node->edges.empty()) return;
+    int visited = 0;
+    for (const auto& e : node->edges) {
+        if (e.visit_count > 0) ++visited;
+    }
+    const double frac = static_cast<double>(visited) / static_cast<double>(node->edges.size());
+    int bucket = static_cast<int>(frac * 10.0);
+    if (bucket >= 11) bucket = 10;
+    if (visited == static_cast<int>(node->edges.size())) bucket = 10;  // 100% exact
+    g_edge_util_histogram[bucket]++;
+    g_edge_util_nodes++;
+    // Recurse into children
+    for (const auto& child : node->children) {
+        if (child) collect_tree_edge_utilization(child.get());
+    }
+}
 
 ExpansionResult expand_from_raw(
     const GameState& state,
     const RawBatchOutputs& raw,
     int batch_index,
-    const MctsConfig& config,
+    const BatchedMctsConfig& config,
     Pcg64Rng& rng
 ) {
     using XClock = std::chrono::high_resolution_clock;
@@ -688,6 +1030,65 @@ ExpansionResult expand_from_raw(
     softmax_inplace(masked_card, n_card);
 
     // --- Build edges with raw float math ---
+    const bool use_ksample = country_logits_ptr != nullptr &&
+        !cache.influence.empty() &&
+        (config.influence_samples > 1 ||
+         config.influence_t_strategy > 0.0f ||
+         config.influence_t_country > 0.0f);
+
+    int ksample_effective_n_strat = 0;
+    float ksample_country_probs_all[kMaxStrategies][kMaxCountryLogits] = {};
+    float ksample_strategy_logits_buf[kMaxStrategies] = {};
+    float ksample_strategy_probs[kMaxStrategies] = {};
+    if (use_ksample) {
+        const int n_strat = (raw.strategy_logits != nullptr &&
+                             raw.country_strategy_logits != nullptr &&
+                             raw.cs_n_strategies > 0)
+                            ? std::min(raw.cs_n_strategies, kMaxStrategies)
+                            : 0;
+
+        if (n_strat > 0) {
+            for (int s = 0; s < n_strat; ++s) {
+                const float* cs_row = raw.country_strategy_logits +
+                    batch_index * raw.cs_batch_stride +
+                    s * raw.cs_n_countries;
+                float masked[kMaxCountryLogits];
+                std::fill(masked, masked + n_country, -std::numeric_limits<float>::infinity());
+                for (const auto cid : cache.influence) {
+                    const int idx = static_cast<int>(cid);
+                    if (idx < n_country && idx < raw.cs_n_countries) {
+                        masked[idx] = cs_row[idx];
+                    }
+                }
+                softmax_inplace(masked, n_country);
+                std::memcpy(ksample_country_probs_all[s], masked,
+                            static_cast<size_t>(n_country) * sizeof(float));
+            }
+        } else {
+            float masked[kMaxCountryLogits];
+            std::fill(masked, masked + n_country, -std::numeric_limits<float>::infinity());
+            for (const auto cid : cache.influence) {
+                const int idx = static_cast<int>(cid);
+                if (idx < n_country) {
+                    masked[idx] = country_logits_arr[idx];
+                }
+            }
+            softmax_inplace(masked, n_country);
+            std::memcpy(ksample_country_probs_all[0], masked,
+                        static_cast<size_t>(n_country) * sizeof(float));
+        }
+
+        ksample_effective_n_strat = (n_strat > 0) ? n_strat : 1;
+        if (raw.strategy_logits != nullptr && n_strat > 0) {
+            std::memcpy(ksample_strategy_logits_buf,
+                        raw.strategy_logits + batch_index * raw.strategy_stride,
+                        static_cast<size_t>(ksample_effective_n_strat) * sizeof(float));
+        }
+        std::memcpy(ksample_strategy_probs, ksample_strategy_logits_buf,
+                    static_cast<size_t>(ksample_effective_n_strat) * sizeof(float));
+        softmax_inplace(ksample_strategy_probs, ksample_effective_n_strat);
+    }
+
     double total_prior = 0.0;
     for (const auto& card : drafts) {
         float masked_mode[kMaxModeLogits];
@@ -736,52 +1137,194 @@ ExpansionResult expand_from_raw(
 
             const auto per_edge_prior = card_prob * mode_prob;
             for (const auto& edge : mode.edges) {
-                node->edges.push_back(MctsEdge{
-                    .action = edge,
-                    .prior = static_cast<float>(per_edge_prior),
-                });
-                node->children.emplace_back(nullptr);
                 // Resolve influence allocation using cached accessible countries
                 if (edge.mode == ActionMode::Influence && country_logits_ptr != nullptr && !cache.influence.empty()) {
                     const auto ops = effective_ops(edge.card_id, state.pub, state.pub.phasing);
-                    float masked[kMaxCountryLogits];
-                    std::fill(masked, masked + n_country, -std::numeric_limits<float>::infinity());
-                    for (const auto cid : cache.influence) {
-                        const int idx = static_cast<int>(cid);
-                        if (idx < n_country) masked[idx] = country_logits_arr[idx];
-                    }
-                    softmax_inplace(masked, n_country);
-                    // Proportional allocation
-                    const int n_acc = static_cast<int>(cache.influence.size());
-                    int alloc_i[kMaxCountryLogits];
-                    int floor_sum = 0;
-                    float alloc_f[kMaxCountryLogits];
-                    for (int i = 0; i < n_acc; ++i) {
-                        float p = masked[static_cast<int>(cache.influence[static_cast<size_t>(i)])];
-                        alloc_f[i] = p * static_cast<float>(ops);
-                        alloc_i[i] = static_cast<int>(std::floor(alloc_f[i]));
-                        floor_sum += alloc_i[i];
-                    }
-                    int remainder = ops - floor_sum;
-                    if (remainder > 0) {
-                        std::pair<float, int> order[kMaxCountryLogits];
-                        for (int i = 0; i < n_acc; ++i) {
-                            order[i] = {-(alloc_f[i] - static_cast<float>(alloc_i[i])), i};
+
+                    // Guard: use new K-sample path only when knobs are non-default.
+                    // At T_s=0, T_c=0, K=1: skip entirely → bit-identical to old code.
+                    if (use_ksample) {
+
+                        // --- K-sample influence allocation path ---
+                        auto ks_t0 = std::chrono::high_resolution_clock::now();
+                        const size_t edges_before = node->edges.size();
+                        // Bootstrap local RNG: main RNG advances by exactly 1 regardless of K.
+                        Pcg64Rng local_rng(rng.next_u64());
+
+                        const float T_s = config.influence_t_strategy;
+                        const float T_c = config.influence_t_country;
+                        const bool prop_first = config.influence_proportional_first;
+                        const int K = config.influence_samples;
+
+                        // Track which strategies have produced a proportional allocation
+                        bool strategy_has_proportional[kMaxStrategies] = {};
+
+                        // Helper: pick a strategy index
+                        auto pick_strategy = [&]() -> int {
+                            if (T_s == 0.0f) {
+                                // argmax
+                                int best = 0;
+                                for (int s = 1; s < ksample_effective_n_strat; ++s) {
+                                    if (ksample_strategy_logits_buf[s] > ksample_strategy_logits_buf[best]) best = s;
+                                }
+                                return best;
+                            }
+                            float temp_logits[kMaxStrategies];
+                            for (int s = 0; s < ksample_effective_n_strat; ++s) {
+                                temp_logits[s] = ksample_strategy_logits_buf[s] / T_s;
+                            }
+                            softmax_inplace(temp_logits, ksample_effective_n_strat);
+                            return categorical_sample(temp_logits, ksample_effective_n_strat, local_rng);
+                        };
+
+                        // Helper: generate one allocation for a given strategy
+                        auto make_allocation = [&](int strat) -> AllocationResult {
+                            bool use_proportional = (T_c == 0.0f) ||
+                                                    (prop_first && !strategy_has_proportional[strat]);
+                            if (use_proportional) {
+                                strategy_has_proportional[strat] = true;
+                                return proportional_allocation(
+                                    ksample_country_probs_all[strat], cache.influence, ops, n_country);
+                            }
+                            return multinomial_sample(
+                                ksample_country_probs_all[strat], cache.influence, ops, n_country, T_c, local_rng);
+                        };
+
+                        // Helper: compute model density for placement (marginalize over strategies)
+                        auto compute_density = [&](const std::vector<CountryId>& tgts) -> double {
+                            double density = 0.0;
+                            for (int s = 0; s < ksample_effective_n_strat; ++s) {
+                                density += static_cast<double>(ksample_strategy_probs[s]) *
+                                    multinomial_probability(tgts, ksample_country_probs_all[s],
+                                                           cache.influence, ops, n_country);
+                            }
+                            return density;
+                        };
+
+                        // --- Generate K allocations with dedup ---
+                        struct InfluenceAlloc {
+                            ActionEncoding action;
+                            double density;
+                            uint64_t hash;
+                        };
+                        std::vector<InfluenceAlloc> allocations;
+                        allocations.reserve(static_cast<size_t>(K));
+
+                        auto try_add = [&](AllocationResult&& ar) -> bool {
+                            for (const auto& alloc : allocations) {
+                                if (alloc.hash == ar.hash) {
+                                    return false;
+                                }
+                            }
+                            double dens = compute_density(ar.targets);
+                            ActionEncoding act{edge.card_id, ActionMode::Influence, std::move(ar.targets)};
+                            allocations.push_back(InfluenceAlloc{std::move(act), dens, ar.hash});
+                            return true;
+                        };
+
+                        if (T_s == 0.0f && T_c == 0.0f) {
+                            // All-deterministic fast path:
+                            // Edge 0: argmax strategy proportional
+                            int best_s = pick_strategy();
+                            try_add(make_allocation(best_s));
+
+                            // Per-strategy proportional for remaining strategies
+                            for (int s = 0; s < ksample_effective_n_strat &&
+                                 static_cast<int>(allocations.size()) < K; ++s) {
+                                if (s == best_s) continue;
+                                try_add(make_allocation(s));
+                            }
+
+                            // Fill remainder with T_c=1.0 multinomial
+                            const int max_retries = 3 * K;
+                            int retries = 0;
+                            while (static_cast<int>(allocations.size()) < K && retries++ < max_retries) {
+                                float uniform_logits[kMaxStrategies];
+                                std::memcpy(uniform_logits, ksample_strategy_logits_buf,
+                                            static_cast<size_t>(ksample_effective_n_strat) * sizeof(float));
+                                softmax_inplace(uniform_logits, ksample_effective_n_strat);
+                                int s = categorical_sample(uniform_logits, ksample_effective_n_strat, local_rng);
+                                auto ar = multinomial_sample(ksample_country_probs_all[s], cache.influence,
+                                                             ops, n_country, 1.0f, local_rng);
+                                try_add(std::move(ar));
+                            }
+                        } else {
+                            // General path (at least one T > 0)
+                            const int max_retries = 3 * K;
+                            int retries = 0;
+                            while (static_cast<int>(allocations.size()) < K && retries++ < max_retries) {
+                                int s = pick_strategy();
+                                auto ar = make_allocation(s);
+                                try_add(std::move(ar));
+                            }
                         }
-                        std::sort(order, order + n_acc);
-                        for (int i = 0; i < remainder && i < n_acc; ++i) alloc_i[order[i].second] += 1;
-                    }
-                    ActionEncoding resolved{.card_id = edge.card_id, .mode = edge.mode, .targets = {}};
-                    for (int i = 0; i < n_acc; ++i) {
-                        for (int j = 0; j < alloc_i[i]; ++j) {
-                            resolved.targets.push_back(cache.influence[static_cast<size_t>(i)]);
+
+                        // Fallback: if no allocations generated, use single proportional
+                        if (allocations.empty()) {
+                            int best_s = 0;
+                            for (int s = 1; s < ksample_effective_n_strat; ++s) {
+                                if (ksample_strategy_logits_buf[s] > ksample_strategy_logits_buf[best_s]) best_s = s;
+                            }
+                            auto ar = proportional_allocation(
+                                ksample_country_probs_all[best_s], cache.influence, ops, n_country);
+                            double dens = compute_density(ar.targets);
+                            ActionEncoding act{edge.card_id, ActionMode::Influence, std::move(ar.targets)};
+                            allocations.push_back(InfluenceAlloc{std::move(act), dens, ar.hash});
                         }
+
+                        // Normalize densities and add edges
+                        double density_sum = 0.0;
+                        for (const auto& alloc : allocations) density_sum += alloc.density;
+
+                        const double influence_total_prior = card_prob * mode_prob;
+                        for (auto& alloc : allocations) {
+                            double norm_prior = (density_sum > 0.0)
+                                ? influence_total_prior * alloc.density / density_sum
+                                : influence_total_prior / static_cast<double>(allocations.size());
+
+                            node->edges.push_back(MctsEdge{
+                                .action = edge,
+                                .prior = static_cast<float>(norm_prior),
+                            });
+                            node->children.emplace_back(nullptr);
+                            node->applied_actions.push_back(std::move(alloc.action));
+                            total_prior += norm_prior;
+                        }
+
+                        g_ksample_time += std::chrono::duration<double>(
+                            std::chrono::high_resolution_clock::now() - ks_t0).count();
+                        g_ksample_count++;
+                        g_ksample_edges_total += static_cast<int>(node->edges.size() - edges_before);
+
+                    } else {
+                        // --- Original single-allocation path (bit-identical at defaults) ---
+                        node->edges.push_back(MctsEdge{
+                            .action = edge,
+                            .prior = static_cast<float>(per_edge_prior),
+                        });
+                        node->children.emplace_back(nullptr);
+                        float masked[kMaxCountryLogits];
+                        std::fill(masked, masked + n_country, -std::numeric_limits<float>::infinity());
+                        for (const auto cid : cache.influence) {
+                            const int idx = static_cast<int>(cid);
+                            if (idx < n_country) masked[idx] = country_logits_arr[idx];
+                        }
+                        softmax_inplace(masked, n_country);
+                        auto resolved = proportional_allocation(masked, cache.influence, ops, n_country);
+                        ActionEncoding act{edge.card_id, edge.mode, std::move(resolved.targets)};
+                        node->applied_actions.push_back(std::move(act));
+                        total_prior += per_edge_prior;
                     }
-                    node->applied_actions.push_back(std::move(resolved));
                 } else {
+                    // Non-influence edge (or no country logits)
+                    node->edges.push_back(MctsEdge{
+                        .action = edge,
+                        .prior = static_cast<float>(per_edge_prior),
+                    });
+                    node->children.emplace_back(nullptr);
                     node->applied_actions.push_back(edge);
+                    total_prior += per_edge_prior;
                 }
-                total_prior += per_edge_prior;
             }
         }
     }
@@ -800,7 +1343,7 @@ ExpansionResult expand_from_raw(
             node->applied_actions.push_back(*fallback);
             return ExpansionResult{
                 .node = std::move(node),
-                .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config, rng),
+                .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config.mcts, rng),
             };
         }
 
@@ -821,10 +1364,264 @@ ExpansionResult expand_from_raw(
 
     g_expand_edges += std::chrono::duration<double>(XClock::now() - xt2).count();
     ++g_expand_count;
+    g_expand_total_edges += static_cast<int>(node->edges.size());
+    // Count mode composition
+    for (const auto& e : node->edges) {
+        switch (e.action.mode) {
+            case ActionMode::Influence: ++g_mode_influence; break;
+            case ActionMode::Coup:      ++g_mode_coup; break;
+            case ActionMode::Realign: ++g_mode_realign; break;
+            case ActionMode::Space:     ++g_mode_space; break;
+            case ActionMode::Event:     ++g_mode_event; break;
+            default:                    ++g_mode_other; break;
+        }
+    }
 
     return ExpansionResult{
         .node = std::move(node),
-        .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config, rng),
+        .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config.mcts, rng),
+    };
+}
+
+// Fast expansion path using compact legal card representation.
+// Avoids per-card/per-mode ActionEncoding vector allocations and uses compact
+// softmax (only over legal items). Falls back to expand_from_raw for K-sample.
+ExpansionResult expand_from_raw_fast(
+    const GameState& state,
+    const RawBatchOutputs& raw,
+    int batch_index,
+    const BatchedMctsConfig& config,
+    Pcg64Rng& rng
+) {
+    // K-sample path is complex — fall back to full draft expansion for it.
+    if (config.influence_samples > 1 ||
+        config.influence_t_strategy > 0.0f ||
+        config.influence_t_country > 0.0f) {
+        return expand_from_raw(state, raw, batch_index, config, rng);
+    }
+
+    // --- Compact legal card collection (no per-mode ActionEncoding vectors) ---
+    auto legal = collect_compact_legal_cards(state);
+    const auto& cards = legal.cards;
+    const auto& cache = legal.cache;
+
+    // --- Allocate node with exact capacity (no reallocations) ---
+    auto node = std::make_unique<MctsNode>();
+    node->side_to_move = state.pub.phasing;
+    const int reserved = exact_edge_count(legal);
+    node->edges.reserve(static_cast<size_t>(std::max(1, reserved)));
+    node->children.reserve(static_cast<size_t>(std::max(1, reserved)));
+    node->applied_actions.reserve(static_cast<size_t>(std::max(1, reserved)));
+
+    // --- Resolve logit pointers (no memcpy — point directly into batch output) ---
+    const float* card_logits = raw.card_logits + batch_index * raw.card_stride;
+    const int n_card = raw.n_card;
+    const float* mode_logits_ptr = raw.mode_logits + batch_index * raw.mode_stride;
+    const int n_mode = raw.n_mode;
+
+    const float* country_logits_ptr = nullptr;
+    int n_country = 0;
+    if (raw.strategy_logits != nullptr && raw.country_strategy_logits != nullptr &&
+        raw.cs_n_countries > 0 && raw.cs_n_strategies > 0) {
+        const float* sl = raw.strategy_logits + batch_index * raw.strategy_stride;
+        int best_strat = 0;
+        float best_val = sl[0];
+        for (int s = 1; s < raw.n_strategy; ++s) {
+            if (sl[s] > best_val) { best_val = sl[s]; best_strat = s; }
+        }
+        n_country = std::min(raw.cs_n_countries, kMaxCountryLogits);
+        country_logits_ptr = raw.country_strategy_logits +
+            batch_index * raw.cs_batch_stride + best_strat * raw.cs_n_countries;
+    } else if (raw.country_logits != nullptr) {
+        n_country = raw.n_country;
+        country_logits_ptr = raw.country_logits + batch_index * raw.country_stride;
+    }
+
+    // --- Compact card softmax (only over legal cards, not full 112-element array) ---
+    float card_probs[kMaxCardLogits];
+    const int n_legal_cards = static_cast<int>(cards.size());
+    for (int ci = 0; ci < n_legal_cards; ++ci) {
+        const int idx = static_cast<int>(cards[static_cast<size_t>(ci)].card_id) - 1;
+        card_probs[ci] = (idx >= 0 && idx < n_card) ? card_logits[idx] : 0.0f;
+    }
+    softmax_inplace(card_probs, n_legal_cards);
+
+    // --- Pre-compute country softmax ONCE outside card loop ---
+    // influence_probs[i] = softmax probability for cache.influence[i]
+    // military_probs[i]  = softmax probability for cache.coup[i] (same set as realign)
+    float influence_probs[kMaxCountryLogits];
+    int inf_count = 0;
+    float military_probs[kMaxCountryLogits];
+    int mil_count = 0;
+    if (country_logits_ptr != nullptr) {
+        for (const auto cid : cache.influence) {
+            const int idx = static_cast<int>(cid);
+            influence_probs[inf_count++] = (idx < n_country) ? country_logits_ptr[idx] : 0.0f;
+        }
+        softmax_inplace(influence_probs, inf_count);
+
+        for (const auto cid : cache.coup) {
+            const int idx = static_cast<int>(cid);
+            military_probs[mil_count++] = (idx < n_country) ? country_logits_ptr[idx] : 0.0f;
+        }
+        softmax_inplace(military_probs, mil_count);
+    }
+
+    double total_prior = 0.0;
+    for (int ci = 0; ci < n_legal_cards; ++ci) {
+        const auto& card = cards[static_cast<size_t>(ci)];
+        const double card_prob = static_cast<double>(card_probs[ci]);
+
+        // --- Compact mode softmax (only over legal modes for this card) ---
+        ActionMode mode_order[5];
+        float mode_prob_arr[5];
+        int mode_count = 0;
+
+        if (card.has_influence) {
+            mode_order[mode_count] = ActionMode::Influence;
+            const int midx = static_cast<int>(ActionMode::Influence);
+            mode_prob_arr[mode_count++] = (midx < n_mode) ? mode_logits_ptr[midx] : 0.0f;
+        }
+        if (card.has_coup) {
+            mode_order[mode_count] = ActionMode::Coup;
+            const int midx = static_cast<int>(ActionMode::Coup);
+            mode_prob_arr[mode_count++] = (midx < n_mode) ? mode_logits_ptr[midx] : 0.0f;
+        }
+        if (card.has_realign) {
+            mode_order[mode_count] = ActionMode::Realign;
+            const int midx = static_cast<int>(ActionMode::Realign);
+            mode_prob_arr[mode_count++] = (midx < n_mode) ? mode_logits_ptr[midx] : 0.0f;
+        }
+        if (card.has_space) {
+            mode_order[mode_count] = ActionMode::Space;
+            const int midx = static_cast<int>(ActionMode::Space);
+            mode_prob_arr[mode_count++] = (midx < n_mode) ? mode_logits_ptr[midx] : 0.0f;
+        }
+        if (card.has_event) {
+            mode_order[mode_count] = ActionMode::Event;
+            const int midx = static_cast<int>(ActionMode::Event);
+            mode_prob_arr[mode_count++] = (midx < n_mode) ? mode_logits_ptr[midx] : 0.0f;
+        }
+        if (mode_count <= 0) continue;
+        softmax_inplace(mode_prob_arr, mode_count);
+
+        for (int mi = 0; mi < mode_count; ++mi) {
+            const auto mode = mode_order[mi];
+            const double mode_prob = static_cast<double>(mode_prob_arr[mi]);
+            const double per_edge_prior = card_prob * mode_prob;
+
+            if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
+                const auto& military_targets =
+                    (mode == ActionMode::Coup) ? cache.coup : cache.realign;
+
+                if (country_logits_ptr != nullptr &&
+                    mil_count == static_cast<int>(military_targets.size()) &&
+                    mil_count > 0) {
+                    // Softmax already computed once outside card loop
+                    for (int i = 0; i < mil_count; ++i) {
+                        const ActionEncoding edge{
+                            .card_id = card.card_id,
+                            .mode = mode,
+                            .targets = {military_targets[static_cast<size_t>(i)]},
+                        };
+                        const double prior = per_edge_prior * static_cast<double>(military_probs[i]);
+                        node->edges.push_back(MctsEdge{.action = edge, .prior = static_cast<float>(prior)});
+                        node->children.emplace_back(nullptr);
+                        node->applied_actions.push_back(edge);
+                        total_prior += prior;
+                    }
+                } else {
+                    for (const auto country : military_targets) {
+                        const ActionEncoding edge{
+                            .card_id = card.card_id,
+                            .mode = mode,
+                            .targets = {country},
+                        };
+                        node->edges.push_back(MctsEdge{.action = edge, .prior = static_cast<float>(per_edge_prior)});
+                        node->children.emplace_back(nullptr);
+                        node->applied_actions.push_back(edge);
+                        total_prior += per_edge_prior;
+                    }
+                }
+                continue;
+            }
+
+            if (mode == ActionMode::Influence) {
+                ActionEncoding edge_tpl{.card_id = card.card_id, .mode = ActionMode::Influence, .targets = {}};
+                node->edges.push_back(MctsEdge{.action = edge_tpl, .prior = static_cast<float>(per_edge_prior)});
+                node->children.emplace_back(nullptr);
+
+                if (country_logits_ptr != nullptr && !cache.influence.empty() &&
+                    inf_count == static_cast<int>(cache.influence.size())) {
+                    auto resolved = proportional_allocation_compact(
+                        influence_probs, cache.influence, card.ops);
+                    ActionEncoding act{card.card_id, ActionMode::Influence, std::move(resolved)};
+                    node->applied_actions.push_back(std::move(act));
+                } else {
+                    node->applied_actions.push_back(edge_tpl);
+                }
+                total_prior += per_edge_prior;
+                continue;
+            }
+
+            // Space / Event
+            const ActionEncoding edge{.card_id = card.card_id, .mode = mode, .targets = {}};
+            node->edges.push_back(MctsEdge{.action = edge, .prior = static_cast<float>(per_edge_prior)});
+            node->children.emplace_back(nullptr);
+            node->applied_actions.push_back(edge);
+            total_prior += per_edge_prior;
+        }
+    }
+
+    if (node->edges.empty()) {
+        if (auto fallback = choose_action(
+                PolicyKind::MinimalHybrid,
+                state.pub,
+                state.hands[to_index(state.pub.phasing)],
+                holds_china_for(state, state.pub.phasing),
+                rng
+            );
+            fallback.has_value()) {
+            node->edges.push_back(MctsEdge{.action = *fallback, .prior = 1.0f});
+            node->children.emplace_back(nullptr);
+            node->applied_actions.push_back(*fallback);
+            return ExpansionResult{
+                .node = std::move(node),
+                .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config.mcts, rng),
+            };
+        }
+        node->is_terminal = true;
+        return ExpansionResult{.node = std::move(node), .leaf_value = 0.0};
+    }
+
+    if (total_prior > 0.0) {
+        for (auto& edge : node->edges) {
+            edge.prior = static_cast<float>(edge.prior / total_prior);
+        }
+    } else {
+        const auto uniform = 1.0f / static_cast<float>(node->edges.size());
+        for (auto& edge : node->edges) {
+            edge.prior = uniform;
+        }
+    }
+
+    // Maintain profiling counters
+    ++g_expand_count;
+    g_expand_total_edges += static_cast<int>(node->edges.size());
+    for (const auto& e : node->edges) {
+        switch (e.action.mode) {
+            case ActionMode::Influence: ++g_mode_influence; break;
+            case ActionMode::Coup:      ++g_mode_coup; break;
+            case ActionMode::Realign:   ++g_mode_realign; break;
+            case ActionMode::Space:     ++g_mode_space; break;
+            case ActionMode::Event:     ++g_mode_event; break;
+            default:                    ++g_mode_other; break;
+        }
+    }
+
+    return ExpansionResult{
+        .node = std::move(node),
+        .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config.mcts, rng),
     };
 }
 
@@ -960,14 +1757,16 @@ int best_root_edge_index(const MctsNode& root) {
     return best_index;
 }
 
-SearchResult build_search_result(const GameSlot& slot) {
+SearchResult build_search_result(const GameSlot& slot, bool include_root_edges) {
     SearchResult result;
     result.total_simulations = slot.sims_completed;
     if (slot.root == nullptr) {
         return result;
     }
 
-    result.root_edges = slot.root->edges;
+    if (include_root_edges) {
+        result.root_edges = slot.root->edges;
+    }
     result.root_value = mean_root_value(*slot.root);
     const auto best_index = best_root_edge_index(*slot.root);
     if (best_index >= 0) {
@@ -1078,6 +1877,7 @@ constexpr int kCacheVisitThreshold = 0;
 std::atomic<int64_t> g_cache_total_depth{0};    // sum of path.size() across selections
 std::atomic<int64_t> g_cache_saved_depth{0};    // sum of best_cached_depth (actions skipped)
 std::atomic<int64_t> g_cache_selections{0};     // number of selections
+std::atomic<int64_t> g_cache_max_depth{0};      // max path.size() seen
 std::atomic<int64_t> g_cache_hits{0};           // selections where best_cached_depth > 0
 
 // Inline replica of MctsNode::select_edge, defined locally so the compiler can
@@ -1153,6 +1953,11 @@ SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) 
     g_cache_selections.fetch_add(1, std::memory_order_relaxed);
     g_cache_total_depth.fetch_add(static_cast<int64_t>(pend.path.size()), std::memory_order_relaxed);
     g_cache_saved_depth.fetch_add(static_cast<int64_t>(best_cached_depth), std::memory_order_relaxed);
+    {   // Update max depth (relaxed atomic max)
+        int64_t d = static_cast<int64_t>(pend.path.size());
+        int64_t cur = g_cache_max_depth.load(std::memory_order_relaxed);
+        while (d > cur && !g_cache_max_depth.compare_exchange_weak(cur, d, std::memory_order_relaxed));
+    }
     if (best_cached_depth > 0) g_cache_hits.fetch_add(1, std::memory_order_relaxed);
 
     // Phase 2: Clone from the deepest cached state and apply only remaining actions.
@@ -1231,6 +2036,7 @@ void initialize_slot(GameSlot& slot, int game_index, uint32_t base_seed, const B
     const auto seed = base_seed + static_cast<uint32_t>(game_index);
     slot = GameSlot{};
     slot.active = true;
+    slot.record_history = config.record_rows;
     slot.root_state = reset_game(seed);
     slot.rng = Pcg64Rng(seed);
     // Run setup influence placement before MCTS begins.
@@ -1239,6 +2045,18 @@ void initialize_slot(GameSlot& slot, int game_index, uint32_t base_seed, const B
     slot.turn = 1;
     slot.stage = BatchedGameStage::TurnSetup;
     slot.sims_target = config.mcts.n_simulations;
+
+    // Derive per-game Nash temperature from this game's own seed so that
+    // game i always gets the same temperature regardless of batch size.
+    if (config.nash_temperatures && config.learned_side.has_value()) {
+        Pcg64Rng nash_rng(seed + 999999U);
+        const auto opponent = other_side(*config.learned_side);
+        slot.heuristic_temperature = (opponent == Side::USSR)
+            ? sample_nash_temperature(kNashUSSRTemps.data(),
+                  static_cast<int>(kNashUSSRTemps.size()), nash_rng)
+            : sample_nash_temperature(kNashUSTemps.data(),
+                  static_cast<int>(kNashUSTemps.size()), nash_rng);
+    }
 }
 
 void reset_move_search(GameSlot& slot, const BatchedMctsConfig& config) {
@@ -1446,7 +2264,11 @@ void finalize_headline_choices(GameSlot& slot) {
 }
 
 void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
+    int transitions = 0;
     while (slot.active && !slot.game_done && !slot.move_done && !slot.decision.has_value()) {
+        if (++transitions > 1024) {
+            throw std::runtime_error("advance_until_decision exceeded transition guard");
+        }
         switch (slot.stage) {
             case BatchedGameStage::TurnSetup: {
                 slot.root_state.pub.turn = slot.turn;
@@ -1496,24 +2318,26 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                 const auto defcon_before = slot.root_state.pub.defcon;
                 auto [new_pub, over, winner] = apply_action_live(slot.root_state, pending.action, pending.side, slot.rng);
                 (void)new_pub;
-                slot.traces.push_back(StepTrace{
-                    .turn = slot.root_state.pub.turn,
-                    .ar = 0,
-                    .side = pending.side,
-                    .holds_china = pending.holds_china,
-                    .pub_snapshot = pub_snapshot,
-                    .hand_snapshot = pending.hand_snapshot,
-                    .action = pending.action,
-                    .vp_before = vp_before,
-                    .vp_after = slot.root_state.pub.vp,
-                    .defcon_before = defcon_before,
-                    .defcon_after = slot.root_state.pub.defcon,
-                    .opp_hand_snapshot = slot.root_state.hands[to_index(pending.side == Side::USSR ? Side::US : Side::USSR)],
-                    .deck_snapshot = slot.root_state.deck,
-                    .ussr_holds_china_snapshot = slot.root_state.ussr_holds_china,
-                    .us_holds_china_snapshot = slot.root_state.us_holds_china,
-                });
-                slot.search_results.push_back(pending.search);
+                if (slot.record_history) {
+                    slot.traces.push_back(StepTrace{
+                        .turn = slot.root_state.pub.turn,
+                        .ar = 0,
+                        .side = pending.side,
+                        .holds_china = pending.holds_china,
+                        .pub_snapshot = pub_snapshot,
+                        .hand_snapshot = pending.hand_snapshot,
+                        .action = pending.action,
+                        .vp_before = vp_before,
+                        .vp_after = slot.root_state.pub.vp,
+                        .defcon_before = defcon_before,
+                        .defcon_after = slot.root_state.pub.defcon,
+                        .opp_hand_snapshot = slot.root_state.hands[to_index(pending.side == Side::USSR ? Side::US : Side::USSR)],
+                        .deck_snapshot = slot.root_state.deck,
+                        .ussr_holds_china_snapshot = slot.root_state.ussr_holds_china,
+                        .us_holds_china_snapshot = slot.root_state.us_holds_china,
+                    });
+                    slot.search_results.push_back(pending.search);
+                }
                 sync_china_flags(slot.root_state);
                 if (over) {
                     mark_game_done(slot, GameResult{
@@ -1640,7 +2464,16 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
         return;
     }
 
-    const auto search = build_search_result(slot);
+    // Collect edge utilization stats before tree is consumed (optional).
+    if (config.verbose_tree_stats && slot.root) {
+        collect_tree_edge_utilization(slot.root.get());
+    }
+
+    const float temp = effective_temperature(*slot.decision, config);
+    const bool need_root_edges = slot.record_history
+        || config.epsilon_greedy > 0.0f
+        || temp > 0.0f;
+    const auto search = build_search_result(slot, need_root_edges);
     ActionEncoding action;
 
     if (config.heuristic_teacher_mode) {
@@ -1672,7 +2505,6 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
             action = search.root_edges[idx].action;
         } else if (action.card_id != 0) {
             // Temperature-based sampling with piecewise schedule.
-            const float temp = effective_temperature(*slot.decision, config);
             if (const auto sampled = sample_action_by_visit_counts(search, temp, slot.rng); sampled.has_value()) {
                 action = *sampled;
             }
@@ -1719,7 +2551,7 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
             .holds_china = decision.holds_china,
             .hand_snapshot = decision.hand_snapshot,
             .action = action,
-            .search = search,
+            .search = slot.record_history ? search : SearchResult{},
         };
         if (decision.side == Side::USSR) {
             slot.stage = BatchedGameStage::HeadlineChoiceUS;
@@ -1738,24 +2570,26 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
     const auto defcon_before = slot.root_state.pub.defcon;
     auto [new_pub, over, winner] = apply_action_live(slot.root_state, action, decision.side, slot.rng);
     (void)new_pub;
-    slot.traces.push_back(StepTrace{
-        .turn = decision.turn,
-        .ar = decision.ar,
-        .side = decision.side,
-        .holds_china = decision.holds_china,
-        .pub_snapshot = decision.pub_snapshot,
-        .hand_snapshot = decision.hand_snapshot,
-        .action = action,
-        .vp_before = vp_before,
-        .vp_after = slot.root_state.pub.vp,
-        .defcon_before = defcon_before,
-        .defcon_after = slot.root_state.pub.defcon,
-        .opp_hand_snapshot = slot.root_state.hands[to_index(decision.side == Side::USSR ? Side::US : Side::USSR)],
-        .deck_snapshot = slot.root_state.deck,
-        .ussr_holds_china_snapshot = slot.root_state.ussr_holds_china,
-        .us_holds_china_snapshot = slot.root_state.us_holds_china,
-    });
-    slot.search_results.push_back(search);
+    if (slot.record_history) {
+        slot.traces.push_back(StepTrace{
+            .turn = decision.turn,
+            .ar = decision.ar,
+            .side = decision.side,
+            .holds_china = decision.holds_china,
+            .pub_snapshot = decision.pub_snapshot,
+            .hand_snapshot = decision.hand_snapshot,
+            .action = action,
+            .vp_before = vp_before,
+            .vp_after = slot.root_state.pub.vp,
+            .defcon_before = defcon_before,
+            .defcon_after = slot.root_state.pub.defcon,
+            .opp_hand_snapshot = slot.root_state.hands[to_index(decision.side == Side::USSR ? Side::US : Side::USSR)],
+            .deck_snapshot = slot.root_state.deck,
+            .ussr_holds_china_snapshot = slot.root_state.ussr_holds_china,
+            .us_holds_china_snapshot = slot.root_state.us_holds_china,
+        });
+        slot.search_results.push_back(search);
+    }
     sync_china_flags(slot.root_state);
 
     if (over) {
@@ -2019,6 +2853,15 @@ void collect_games_batched(
     g_cache_hits.store(0);
     g_cache_total_depth.store(0);
     g_cache_saved_depth.store(0);
+    g_cache_max_depth.store(0);
+    // Reset expand/K-sample profiling counters.
+    g_expand_total_edges = 0;
+    g_ksample_time = 0;
+    g_ksample_count = 0;
+    g_ksample_edges_total = 0;
+    g_mode_influence = g_mode_coup = g_mode_realign = g_mode_space = g_mode_event = g_mode_other = 0;
+    std::fill(std::begin(g_edge_util_histogram), std::end(g_edge_util_histogram), 0);
+    g_edge_util_nodes = 0;
 
     struct BatchEntry {
         GameSlot* slot = nullptr;
@@ -2087,16 +2930,15 @@ void collect_games_batched(
     }
 
     using Clock = std::chrono::high_resolution_clock;
-    double t_advance = 0, t_select = 0, t_nn = 0, t_expand = 0;
+    double t_advance = 0, t_commit = 0, t_select = 0, t_nn = 0, t_expand = 0;
     int n_batches = 0, total_batch_items = 0;
     int debug_iters = 0;
-    SpinBarrier barrier(n_threads);
+    PhaseBarrier barrier(n_threads);
     std::atomic<bool> stop_requested{false};
     int compacted_batch_size = 0;
     RawBatchOutputs raw_outputs;
-
-    // Separate RNG for Nash temperature sampling (matches collect_selfplay_rows_jsonl).
-    Pcg64Rng nash_rng(base_seed + 999999U);
+    const bool progress_debug = std::getenv("TS_MCTS_PROGRESS") != nullptr;
+    auto last_progress = Clock::now();
 
     auto worker_loop = [&](int tid) {
         auto& thread_state = thread_states[static_cast<size_t>(tid)];
@@ -2110,7 +2952,9 @@ void collect_games_batched(
                 auto t0_adv = Clock::now();
                 for (auto& slot : pool) {
                     if (slot.active && slot.game_done && !slot.emitted) {
-                        write_game_rows(slot, out_stream);
+                        if (slot.record_history) {
+                            write_game_rows(slot, out_stream);
+                        }
                         if (out_results) {
                             out_results->push_back(slot.result);
                         }
@@ -2120,14 +2964,6 @@ void collect_games_batched(
                     }
                     if (!slot.active && games_started < n_games) {
                         initialize_slot(slot, games_started, base_seed, config);
-                        if (config.nash_temperatures && config.learned_side.has_value()) {
-                            const auto opponent = other_side(*config.learned_side);
-                            slot.heuristic_temperature = (opponent == Side::USSR)
-                                ? sample_nash_temperature(kNashUSSRTemps.data(),
-                                      static_cast<int>(kNashUSSRTemps.size()), nash_rng)
-                                : sample_nash_temperature(kNashUSTemps.data(),
-                                      static_cast<int>(kNashUSTemps.size()), nash_rng);
-                        }
                         games_started += 1;
                     }
                 }
@@ -2157,7 +2993,11 @@ void collect_games_batched(
                 }
 
                 if (slot.move_done) {
+                    const auto t0_commit = tid == 0 ? Clock::now() : Clock::time_point{};
                     commit_best_action(slot, config);
+                    if (tid == 0) {
+                        t_commit += std::chrono::duration<double>(Clock::now() - t0_commit).count();
+                    }
                 }
                 advance_until_decision(slot, config);
                 if (slot.game_done || !slot.decision.has_value()) {
@@ -2287,18 +3127,18 @@ void collect_games_batched(
                     auto& slot = *entry.slot;
                     auto& pend = slot.pending[entry.pending_index];
                     if (pend.is_root_expansion) {
-                        auto expansion = expand_from_raw(
+                        auto expansion = expand_from_raw_fast(
                             pend.sim_state, raw_outputs, entry.batch_index,
-                            config.mcts, slot.rng);
+                            config, slot.rng);
                         slot.root = std::move(expansion.node);
                         apply_root_dirichlet_noise(*slot.root, config.mcts, slot.rng);
                         if (slot.sims_target == 0) {
                             slot.move_done = true;
                         }
                     } else {
-                        auto expansion = expand_from_raw(
+                        auto expansion = expand_from_raw_fast(
                             pend.sim_state, raw_outputs, entry.batch_index,
-                            config.mcts, slot.rng);
+                            config, slot.rng);
                         auto& [parent, edge_index] = pend.path.back();
                         if (parent->total_visits >= kCacheVisitThreshold) {
                             expansion.node->cached_state =
@@ -2327,6 +3167,18 @@ void collect_games_batched(
             barrier.wait();  // ── Barrier 4: all threads done expanding ──
             if (tid == 0) {
                 t_expand += std::chrono::duration<double>(Clock::now() - t0_exp).count();
+                if (progress_debug) {
+                    const auto now = Clock::now();
+                    const auto since_last = std::chrono::duration<double>(now - last_progress).count();
+                    if (since_last >= 5.0) {
+                        fprintf(stderr,
+                                "[MCTS progress] iters=%d emitted=%d/%d commit=%.3fs select=%.3fs nn=%.3fs expand=%.3fs batches=%d items=%d\n",
+                                debug_iters, games_emitted, n_games,
+                                t_commit, t_select, t_nn, t_expand,
+                                n_batches, total_batch_items);
+                        last_progress = now;
+                    }
+                }
             }
         }
     };
@@ -2342,24 +3194,59 @@ void collect_games_batched(
         worker.join();
     }
 
-    const double total = t_advance + t_select + t_nn + t_expand;
-    fprintf(stderr, "[MCTS profile] threads=%d advance=%.3fs select=%.3fs nn=%.3fs expand=%.3fs total=%.3fs\n",
-            n_threads, t_advance, t_select, t_nn, t_expand, total);
+    const double total = t_advance + t_commit + t_select + t_nn + t_expand;
+    fprintf(stderr, "[MCTS profile] threads=%d advance=%.3fs commit=%.3fs select=%.3fs nn=%.3fs expand=%.3fs total=%.3fs\n",
+            n_threads, t_advance, t_commit, t_select, t_nn, t_expand, total);
     fprintf(stderr, "[MCTS profile] batches=%d items=%d avg_batch=%.1f iters=%d\n",
             n_batches, total_batch_items, n_batches > 0 ? double(total_batch_items) / n_batches : 0.0, debug_iters);
-    fprintf(stderr, "[MCTS expand] alloc=%.3fs drafts=%.3fs edges=%.3fs count=%d\n",
-            g_expand_alloc, g_expand_drafts, g_expand_edges, g_expand_count);
+    fprintf(stderr, "[MCTS expand] alloc=%.3fs drafts=%.3fs edges=%.3fs count=%d total_edges=%d avg=%.1f\n",
+            g_expand_alloc, g_expand_drafts, g_expand_edges, g_expand_count,
+            g_expand_total_edges,
+            g_expand_count > 0 ? static_cast<double>(g_expand_total_edges) / g_expand_count : 0.0);
+    {
+        const int total_mode = g_mode_influence + g_mode_coup + g_mode_realign + g_mode_space + g_mode_event + g_mode_other;
+        if (total_mode > 0) {
+            fprintf(stderr, "[MCTS modes] inf=%d(%.0f%%) coup=%d(%.0f%%) realign=%d(%.0f%%) space=%d(%.0f%%) event=%d(%.0f%%) other=%d\n",
+                    g_mode_influence, 100.0 * g_mode_influence / total_mode,
+                    g_mode_coup, 100.0 * g_mode_coup / total_mode,
+                    g_mode_realign, 100.0 * g_mode_realign / total_mode,
+                    g_mode_space, 100.0 * g_mode_space / total_mode,
+                    g_mode_event, 100.0 * g_mode_event / total_mode,
+                    g_mode_other);
+        }
+    }
+    if (g_ksample_count > 0) {
+        fprintf(stderr, "[MCTS K-sample] calls=%d edges=%d avg_edges=%.1f time=%.3fs avg=%.1fus\n",
+                g_ksample_count, g_ksample_edges_total,
+                static_cast<double>(g_ksample_edges_total) / g_ksample_count,
+                g_ksample_time,
+                g_ksample_time / g_ksample_count * 1e6);
+    }
     const auto cs = g_cache_selections.load();
     const auto ch = g_cache_hits.load();
     const auto cd = g_cache_total_depth.load();
     const auto csd = g_cache_saved_depth.load();
     if (cs > 0) {
-        fprintf(stderr, "[MCTS cache] selections=%lld hits=%lld (%.1f%%) avg_depth=%.2f avg_saved=%.2f save_ratio=%.1f%%\n",
+        const auto md = g_cache_max_depth.load();
+        fprintf(stderr, "[MCTS cache] selections=%lld hits=%lld (%.1f%%) avg_depth=%.2f max_depth=%lld avg_saved=%.2f save_ratio=%.1f%%\n",
                 (long long)cs, (long long)ch,
                 100.0 * ch / cs,
                 (double)cd / cs,
+                (long long)md,
                 (double)csd / cs,
                 cd > 0 ? 100.0 * csd / cd : 0.0);
+    }
+    if (g_edge_util_nodes > 0) {
+        fprintf(stderr, "[MCTS edge-util] nodes=%d histogram(%%edges_visited):", g_edge_util_nodes);
+        for (int i = 0; i <= 10; ++i) {
+            if (g_edge_util_histogram[i] > 0) {
+                if (i < 10)
+                    fprintf(stderr, " %d-%d%%=%d", i*10, (i+1)*10, g_edge_util_histogram[i]);
+                else
+                    fprintf(stderr, " 100%%=%d", g_edge_util_histogram[i]);
+            }
+        }
+        fprintf(stderr, "\n");
     }
 }
 
@@ -2666,13 +3553,13 @@ std::vector<GameResult> benchmark_games_batched(
         pool_size = std::min(n_games, 64);
     }
 
-    // Separate RNG for Nash temperature sampling (matches collect_selfplay_rows_jsonl).
-    Pcg64Rng nash_rng(base_seed + 999999U);
-
     // Use a minimal MCTS config just for GameSlot initialization.
     BatchedMctsConfig config;
     config.pool_size = pool_size;
     config.mcts.n_simulations = 0;  // No tree search.
+    config.learned_side = learned_side;
+    config.nash_temperatures = nash_temperatures;
+    config.record_rows = false;
 
     std::vector<GameSlot> pool(static_cast<size_t>(pool_size));
     int games_started = 0;
@@ -2704,16 +3591,6 @@ std::vector<GameResult> benchmark_games_batched(
             }
             if (!slot.active && games_started < n_games) {
                 initialize_slot(slot, games_started, base_seed, config);
-                if (nash_temperatures) {
-                    // Sample per-game temperature from Nash mixed strategy
-                    // (same distribution used in training data collection).
-                    const auto side_temp = (learned_side == Side::USSR)
-                        ? sample_nash_temperature(kNashUSTemps.data(),
-                              static_cast<int>(kNashUSTemps.size()), nash_rng)
-                        : sample_nash_temperature(kNashUSSRTemps.data(),
-                              static_cast<int>(kNashUSSRTemps.size()), nash_rng);
-                    slot.heuristic_temperature = side_temp;
-                }
                 games_started += 1;
             }
         }
@@ -2832,18 +3709,29 @@ std::vector<GameResult> benchmark_mcts(
     bool nash_temperatures,
     int n_mcts_threads,
     int torch_intra_threads,
-    int torch_interop_threads
+    int torch_interop_threads,
+    int influence_samples,
+    float influence_t_strategy,
+    float influence_t_country,
+    bool influence_proportional_first
 ) {
     BatchedMctsConfig config;
+    const bool benchmark_k_sample_mode = influence_samples > 1;
     config.mcts.n_simulations = n_simulations;
     config.pool_size = pool_size;
     config.learned_side = learned_side;
     config.greedy_nn_opponent = greedy_nn_opponent;
     config.nash_temperatures = nash_temperatures;
     config.device = device;
-    config.n_mcts_threads = n_mcts_threads;
-    config.torch_intra_threads = torch_intra_threads;
-    config.torch_interop_threads = torch_interop_threads;
+    config.n_mcts_threads = (benchmark_k_sample_mode && n_mcts_threads == 0) ? 1 : n_mcts_threads;
+    config.torch_intra_threads = (benchmark_k_sample_mode && torch_intra_threads == 0) ? 1 : torch_intra_threads;
+    config.torch_interop_threads = (benchmark_k_sample_mode && torch_interop_threads == 0) ? 1 : torch_interop_threads;
+    config.influence_samples = influence_samples;
+    config.influence_t_strategy = influence_t_strategy;
+    config.influence_t_country = influence_t_country;
+    config.influence_proportional_first = influence_proportional_first;
+    config.verbose_tree_stats = false;
+    config.record_rows = false;
     config.max_pending = 8;
     config.virtual_loss_weight = 3;
     config.temperature = 0.0f;
