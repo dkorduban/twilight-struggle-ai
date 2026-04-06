@@ -21,7 +21,8 @@ void usage(const char* argv0) {
         << " [--temperature F] [--dir-alpha F] [--dir-epsilon F]"
         << " [--epsilon-greedy F] [--learned-side ussr|us]"
         << " [--heuristic-teacher-mode] [--game-id-prefix PREFIX]"
-        << " [--mcts-threads N] [--torch-intra-threads N] [--torch-interop-threads N]\n";
+        << " [--mcts-threads N] [--torch-intra-threads N] [--torch-interop-threads N]"
+        << " [--nash-temperatures] [--min-prior-threshold F]\n";
 }
 
 }  // namespace
@@ -47,6 +48,8 @@ int main(int argc, char** argv) {
         int mcts_threads = 0;
         int torch_intra_threads = 0;
         int torch_interop_threads = 0;
+        bool nash_temperatures = false;
+        float min_prior_threshold = 0.0f;
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -102,6 +105,10 @@ int main(int argc, char** argv) {
                 torch_intra_threads = std::stoi(std::string(require_value("--torch-intra-threads")));
             } else if (arg == "--torch-interop-threads") {
                 torch_interop_threads = std::stoi(std::string(require_value("--torch-interop-threads")));
+            } else if (arg == "--nash-temperatures") {
+                nash_temperatures = true;
+            } else if (arg == "--min-prior-threshold") {
+                min_prior_threshold = std::stof(std::string(require_value("--min-prior-threshold")));
             } else if (arg == "--help" || arg == "-h") {
                 usage(argv[0]);
                 return 0;
@@ -160,6 +167,8 @@ int main(int argc, char** argv) {
         config.n_mcts_threads = mcts_threads;
         config.torch_intra_threads = torch_intra_threads;
         config.torch_interop_threads = torch_interop_threads;
+        config.nash_temperatures = nash_temperatures;
+        config.min_prior_threshold = min_prior_threshold;
         // Default game_id_prefix to "selfplay" in heuristic_teacher_mode so produced
         // game_ids match existing heuristic dataset rows for teacher target joining.
         if (game_id_prefix.has_value()) {

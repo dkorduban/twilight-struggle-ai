@@ -1618,3 +1618,175 @@ No implementation bugs. Three compounding architectural causes:
 
 **Dead ends updated**:
 8. K>1 influence expansion (K=4, -20pp at 100-400 sims)
+
+---
+
+## Edge Pruning MCTS Benchmark (2026-04-06)
+
+**Hypothesis**: Reducing tree width via min_prior_threshold should make MCTS more effective
+by letting PUCT focus on high-prior edges. Implemented in `expand_from_raw_fast`:
+after normalization, edges with prior < threshold are removed and priors renormalized.
+
+### Results (500 games/side, Nash temps, v106_cf_gnn_s42)
+
+| Config | Avg edges | USSR WR | US WR | Nash Combined |
+|--------|-----------|---------|-------|---------------|
+| Greedy (0 sims) | — | 55.0% | 13.6% | **34.3%** |
+| MCTS-100 no-prune | 383.8 | 53.2% | 12.6% | **32.9%** |
+| MCTS-100 prune=1e-4 | 5.4 | 56.8% | 12.8% | **34.8%** |
+| MCTS-100 prune=5e-4 | ~2 | 50.0% | 14.0% | **32.0%** |
+| MCTS-100 prune=1e-3 | ~1.5 | 50.2% | 12.2% | **31.2%** |
+
+### Analysis
+
+1. **GNN prior is extremely concentrated**: even 1e-4 threshold prunes to 5.4 avg edges.
+   The model puts >99.99% mass on the top few actions.
+2. **Pruning at 1e-4 recovers greedy performance** (+0.5pp, within noise) — essentially
+   confirms that MCTS with concentrated priors on a narrow tree ≈ greedy.
+3. **Aggressive pruning hurts**: 5e-4 and 1e-3 remove edges the model actually wants
+   to explore, causing -2 to -3pp regression.
+4. **MCTS 100sim without pruning is worse than greedy** (-1.4pp) — the wide tree
+   (384 edges) wastes simulation budget on noise edges.
+5. **Mixed country_logits vs argmax strategy**: Tested using the mixed probability output
+   (weighted sum of 4 strategy softmaxes) vs argmax-selecting one strategy. Mixed was
+   -1.5pp worse — the argmax strategy produces more concentrated/decisive allocations.
+
+**Conclusion**: The GNN model's policy is near-optimal for card/mode selection.
+MCTS cannot add value because the model already concentrates >99.99% prior mass on
+the best actions. Tree search only adds noise. The remaining bottleneck is influence
+placement quality (within the single influence edge), not card/mode selection.
+
+**Dead ends confirmed so far** (all worse than v106_cf_gnn_s42 baseline):
+1. Teacher KL distillation (5 attempts, all regressed)
+2. Wider trunk h=384 (v108, -6 to -9pp)
+3. Self-play Gen 0 (v107, +1pp, within noise)
+4. MCTS search 100/400 sim (0pp improvement)
+5. Side-conditional model (v109, -4 to -5pp)
+6. Data volume 2x-3x (v110, v111, 0 to -10pp)
+7. Fixed epoch count vs patience-based early stopping (v111, -2 to -5pp)
+8. K>1 influence expansion (K=4, -20pp at 100-400 sims)
+9. Edge pruning for MCTS at 100sim (+0.5pp at best, within noise)
+10. Mixed country_logits vs argmax strategy (-1.5pp)
+
+---
+
+## High Sim Count + Pruning Benchmark (2026-04-06)
+
+**Hypothesis**: Edge pruning at 100sim showed no benefit, but with only 5 avg edges
+the budget may have been too low. Higher sim counts may allow MCTS to deepen the tree
+and find improvements over the greedy policy.
+
+### Results (200 games USSR-only, prune=1e-4, v106_cf_gnn_s42)
+
+| Sims | USSR WR | vs Greedy (55.0%) | Avg Edges | Avg Depth | Max Depth | Cache Hit | Wall Time |
+|------|---------|-------------------|-----------|-----------|-----------|-----------|-----------|
+| 100 | 54.0% | -1.0pp | 15.9 | 1.36 | 3 | 35.7% | 45s |
+| 400 | **62.5%** | **+7.5pp** | 11.4 | 3.02 | 8 | 83.5% | 163s |
+| 1000 | 53.0% | -2.0pp | 9.9 | 4.59 | 16 | 93.0% | 300s |
+| 2000 | **64.0%** | **+9.0pp** | 7.3 | 5.57 | 19 | 96.1% | 500s |
+
+### Analysis
+
+1. **MCTS DOES help at ≥400 sims with pruning**: +7.5pp (400sim) and +9.0pp (2000sim)
+   over greedy. This reverses dead end #9 — the 100sim test was at too low a budget.
+2. **1000sim dip is likely noise**: With 200 games, SE ≈ 3.5pp. The 400 and 2000sim
+   results are consistent; 1000sim just hit a bad draw.
+3. **Tree deepening explains the gain**: At 400sim, avg_depth=3.0 (max=8) means MCTS
+   is looking 3 moves ahead. The value estimates at depth 3 correct the prior's
+   influence placement decisions.
+4. **Average edges decrease with depth**: 15.9→11.4→9.9→7.3 as sim count increases.
+   Deeper nodes have fewer legal actions (game is more constrained as it progresses).
+5. **Cache efficiency scales well**: 96.1% hit rate at 2000sim = most work is tree
+   traversal, not NN inference. The pruned tree structure is efficient.
+
+**Revision to dead end #9**: Edge pruning at 100sim doesn't help, but edge pruning
+at ≥400sim shows significant improvement. The combination of narrow tree (5-15 edges)
++ sufficient budget (≥400 sims) allows MCTS to deepen meaningfully.
+
+### Full 500g/side benchmark (400sim + prune=1e-4, Nash temps)
+
+| Method | USSR WR | US WR | Combined | Wall Time |
+|--------|---------|-------|----------|-----------|
+| Greedy (baseline) | 55.8% | 14.0% | **34.9%** | 82s |
+| MCTS 400sim prune=1e-4 | **58.4%** | **14.6%** | **36.5%** | 378s + 353s |
+
+**MCTS 400sim + pruning = 36.5% combined (+1.6pp over greedy).** The 200-game
+USSR estimate (62.5%) regressed to mean at 500 games (58.4%), but the improvement
+is consistent across both sides. Wall time is 4.3× greedy — acceptable for evaluation,
+too slow for self-play data collection.
+
+### Profile comparison (400sim)
+
+| Side | Avg Edges | Avg Depth | Max Depth | Cache Hit | Wall Time |
+|------|-----------|-----------|-----------|-----------|-----------|
+| USSR | 14.2 | 3.02 | 8 | 83.4% | 378s |
+| US | 6.7 | 3.01 | 9 | 81.6% | 353s |
+
+US side has fewer avg edges (6.7 vs 14.2) because US cards/positions are more
+constrained (fewer legal actions). Despite fewer edges, US WR improvement is smaller
+(+0.6pp) — the US bottleneck is strategic, not tactical.
+
+### Full 2000sim results (500g/side)
+
+| Method | USSR WR | US WR | Combined | Wall Time |
+|--------|---------|-------|----------|-----------|
+| Greedy (baseline) | 55.8% | 14.0% | **34.9%** | 82s |
+| MCTS 400sim prune=1e-4 | 58.4% | 14.6% | **36.5%** | ~730s |
+| **MCTS 2000sim prune=1e-4** | **64.6%** | **22.8%** | **43.7%** | ~2600s |
+
+**MCTS 2000sim + pruning = 43.7% combined (+8.8pp over greedy).** This is the largest
+improvement found in any experiment. Both sides gain equally (~8-9pp each).
+
+Key observations:
+- **US WR 22.8%** is the highest US win rate ever achieved (vs 14.0% greedy)
+- The gain scales from 400→2000 sims: +1.6pp → +8.8pp combined
+- At 2000sim, cache hit=96.2%, avg_depth=5.57, max_depth=19 — deep tree exploration
+- Wall time is 32× greedy — too slow for self-play data collection, but viable for evaluation
+
+### K>1 + pruning (200g/side, 400sim)
+
+| Config | USSR WR | US WR | Combined |
+|--------|---------|-------|----------|
+| K=1 400sim prune | 58.4%† | 14.6%† | **36.5%** |
+| K=2 400sim prune | 25.0% | — (killed) | ~15%? |
+| K=4 400sim prune | 29.5% | 3.0% | **16.3%** |
+
+†500g/side benchmark values for K=1 reference.
+
+K>1 + pruning = catastrophic regression at every K tested. K=2 is as bad as K=4 (25.0%
+vs 29.5% USSR). Confirms K>1 influence expansion is fundamentally harmful — the model's
+argmax strategy allocation produces better single-edge influence than K diverse edges
+with diluted priors. **K>1 is definitively dead.**
+
+### Model Distribution Analysis (2026-04-06)
+
+Detailed per-position analysis of the 4-strategy country distributions (see
+`results/model_distribution_analysis.md` for aggregate stats).
+
+**Key findings from individual positions:**
+
+1. **Strategy collapse**: In late war, S0 and S1 produce nearly identical distributions
+   (W.Germany + E.Germany). Effectively 1.5 distinct strategies, not 4.
+2. **Degenerate strategies**: Mid-war S3 puts 99.9% on Ethiopia alone. Late-war S3
+   weight drops to 1.4% (effectively dead).
+3. **Europe fixation in mid/late war**: All 4 strategies target Europe in every position
+   analyzed. No strategy specializes in Africa/SA mid-war targets despite those being
+   strategically important.
+4. **Chile obsession in early war**: S0 puts 53.7% on Chile at Turn 2 — strategically
+   premature. Chile isn't relevant until mid war.
+5. **Prior concentration**: For the dominant action (e.g. WWBY for Influence), the model
+   puts 43% prior on a single edge. Only 5/536 edges exceed 1% prior.
+
+**Implications for MCTS**: The extreme prior concentration explains why MCTS needs
+≥400 sims to help — at lower budgets, PUCT just follows the prior. At 2000 sims,
+the tree deepens enough (avg_depth=5.6) to find value corrections that overcome
+suboptimal influence placements within the dominant edge.
+
+**Implications for architecture**: The mixture-of-softmaxes country head is not learning
+4 distinct strategies. A simpler 1-strategy head with more capacity might perform equally
+well (fewer parameters wasted on degenerate strategies). Or enforce diversity with an
+auxiliary loss (KL between strategies).
+
+**Revised dead ends list**:
+9. Edge pruning at 100sim (no benefit) — **but 400sim+ with pruning shows +1.6pp to +8.8pp**
+11. K>1 + pruning (K=2/K=4, -20pp even with pruned trees)
