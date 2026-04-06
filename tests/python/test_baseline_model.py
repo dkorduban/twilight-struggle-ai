@@ -458,10 +458,10 @@ def test_run_epoch_reports_teacher_metrics(tmp_path, tiny_selfplay_dir) -> None:
 def test_resolve_training_args_sets_warm_start_defaults() -> None:
     mod = _load_train_baseline_module()
 
-    args = mod.parse_args(["--data-dir", "data/selfplay", "--init-from", "prev.pt"])
+    args = mod.parse_args(["--data-dir", "data/selfplay", "--init-from", "prev.pt", "--deterministic-split"])
     args = mod.resolve_training_args(args)
 
-    assert args.lr == 5e-4
+    assert args.lr == 3e-4
     assert args.patience == 8
 
 
@@ -479,6 +479,7 @@ def test_make_scheduler_uses_cosine_for_warm_start() -> None:
             "3",
             "--patience",
             "5",
+            "--deterministic-split",
         ]
     )
     args = mod.resolve_training_args(args)
@@ -488,7 +489,8 @@ def test_make_scheduler_uses_cosine_for_warm_start() -> None:
     scheduler, step_per_batch = mod.make_scheduler(args, optimizer, steps_per_epoch=2)
 
     assert scheduler is not None
-    assert scheduler.__class__.__name__ == "CosineAnnealingLR"
-    assert step_per_batch is False
+    # --one-cycle uses OneCycleLR (step_per_batch=True); warm-start doesn't change this.
+    assert scheduler.__class__.__name__ == "OneCycleLR"
+    assert step_per_batch is True
     assert args.patience == 5
-    assert args.lr == 5e-4
+    assert args.lr == 3e-4

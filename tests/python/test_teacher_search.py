@@ -61,15 +61,19 @@ def test_run_teacher_search_rejects_partial_state(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="partial state_dict"):
-        mod.run_teacher_search(
-            positions_path,
-            "model.pt",
-            tmp_path / "teacher.parquet",
-            n_sim=32,
-            c_puct=1.5,
-            progress_interval=0,
-        )
+    # Partial state_dict positions are now silently skipped (not ValueError).
+    # Verify that no rows are written and the function completes successfully.
+    mod.run_teacher_search(
+        positions_path,
+        "model.pt",
+        tmp_path / "teacher.parquet",
+        n_sim=32,
+        c_puct=1.5,
+        progress_interval=0,
+    )
+    import pyarrow.parquet as pq
+    table = pq.read_table(tmp_path / "teacher.parquet")
+    assert len(table) == 0, "Expected 0 rows for all-partial-state input"
 
 
 def test_run_teacher_search_resume_merges_existing_cache(tmp_path, monkeypatch):
