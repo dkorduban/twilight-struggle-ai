@@ -3873,7 +3873,10 @@ std::vector<GameResult> benchmark_mcts(
     config.influence_proportional_first = influence_proportional_first;
     config.verbose_tree_stats = false;
     config.record_rows = false;
-    config.max_pending = 8;
+    // max_pending=64 maximises NN batch size (vs the old default of 8).
+    // The fast-replica README validated that 64–96 gives 4–5× throughput over 8
+    // with no change in MCTS correctness (it is a pure batching knob).
+    config.max_pending = 64;
     config.virtual_loss_weight = 3;
     config.temperature = 0.0f;
     config.mcts.dir_alpha = 0.3f;
