@@ -1735,6 +1735,54 @@ ExpansionResult expand_from_raw_fast(
         }
     }
 
+    // --- Edge pruning: drop low-prior edges to reduce tree width ---
+    if (config.min_prior_threshold > 0.0f && node->edges.size() > 1) {
+        // Find edges to keep (prior >= threshold)
+        std::vector<size_t> keep_indices;
+        keep_indices.reserve(node->edges.size());
+        for (size_t i = 0; i < node->edges.size(); ++i) {
+            if (node->edges[i].prior >= config.min_prior_threshold) {
+                keep_indices.push_back(i);
+            }
+        }
+        // Keep at least 1 edge (the best one)
+        if (keep_indices.empty()) {
+            size_t best = 0;
+            for (size_t i = 1; i < node->edges.size(); ++i) {
+                if (node->edges[i].prior > node->edges[best].prior) {
+                    best = i;
+                }
+            }
+            keep_indices.push_back(best);
+        }
+        if (keep_indices.size() < node->edges.size()) {
+            // Compact edges and children in-place
+            for (size_t dst = 0; dst < keep_indices.size(); ++dst) {
+                const size_t src = keep_indices[dst];
+                if (dst != src) {
+                    node->edges[dst] = std::move(node->edges[src]);
+                    node->children[dst] = std::move(node->children[src]);
+                }
+            }
+            node->edges.resize(keep_indices.size());
+            node->children.resize(keep_indices.size());
+            // Note: resolved_targets may have dangling entries but they're only
+            // accessed via edge.target_offset/target_count which remain valid.
+
+            // Renormalize priors
+            float pruned_total = 0.0f;
+            for (const auto& e : node->edges) {
+                pruned_total += e.prior;
+            }
+            if (pruned_total > 0.0f) {
+                const float inv = 1.0f / pruned_total;
+                for (auto& e : node->edges) {
+                    e.prior *= inv;
+                }
+            }
+        }
+    }
+
     // Maintain profiling counters
     ++g_expand_count;
     g_expand_total_edges += static_cast<int>(node->edges.size());
@@ -3854,7 +3902,8 @@ std::vector<GameResult> benchmark_mcts(
     int influence_samples,
     float influence_t_strategy,
     float influence_t_country,
-    bool influence_proportional_first
+    bool influence_proportional_first,
+    float min_prior_threshold
 ) {
     BatchedMctsConfig config;
     const bool benchmark_k_sample_mode = influence_samples > 1;
@@ -3871,6 +3920,7 @@ std::vector<GameResult> benchmark_mcts(
     config.influence_t_strategy = influence_t_strategy;
     config.influence_t_country = influence_t_country;
     config.influence_proportional_first = influence_proportional_first;
+    config.min_prior_threshold = min_prior_threshold;
     config.verbose_tree_stats = false;
     config.record_rows = false;
     // max_pending=64 maximises NN batch size (vs the old default of 8).

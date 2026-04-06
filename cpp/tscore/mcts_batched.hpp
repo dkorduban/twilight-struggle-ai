@@ -94,6 +94,9 @@ struct BatchedMctsConfig {
                                            // deterministic proportional when K>1.
     int influence_samples = 1;            // K: number of influence edges per (card, Influence).
                                            // 1 = single edge (current). >1 = K diverse edges.
+    float min_prior_threshold = 0.0f;     // After expansion, drop edges with prior < threshold
+                                           // and renormalize. 0 = keep all edges (default).
+                                           // Typical values: 0.001–0.01 to reduce tree width.
     bool verbose_tree_stats = false;      // When true, collect per-node edge utilization
                                            // histogram (requires tree walk — adds ~1% overhead).
     bool record_rows = true;              // When false, skip per-step trace/search recording
@@ -154,7 +157,8 @@ std::vector<GameResult> benchmark_mcts(
     int influence_samples = 1,
     float influence_t_strategy = 0.0f,
     float influence_t_country = 0.0f,
-    bool influence_proportional_first = true
+    bool influence_proportional_first = true,
+    float min_prior_threshold = 0.0f
 );
 
 }  // namespace ts

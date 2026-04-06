@@ -638,7 +638,7 @@ PYBIND11_MODULE(tscore, m) {
            bool greedy_nn_opponent, bool nash_temperatures,
            int n_mcts_threads, int torch_intra_threads, int torch_interop_threads,
            int influence_samples, float influence_t_strategy, float influence_t_country,
-           bool influence_proportional_first) {
+           bool influence_proportional_first, float min_prior_threshold) {
             torch::Device device(device_str);
             auto model = torch::jit::load(model_path, device);
             model.eval();
@@ -647,7 +647,7 @@ PYBIND11_MODULE(tscore, m) {
                 greedy_nn_opponent, nash_temperatures,
                 n_mcts_threads, torch_intra_threads, torch_interop_threads,
                 influence_samples, influence_t_strategy, influence_t_country,
-                influence_proportional_first);
+                influence_proportional_first, min_prior_threshold);
         },
         py::arg("model_path"),
         py::arg("learned_side"),
@@ -665,10 +665,12 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("influence_t_strategy") = 0.0f,
         py::arg("influence_t_country") = 0.0f,
         py::arg("influence_proportional_first") = true,
+        py::arg("min_prior_threshold") = 0.0f,
         "Run MCTS benchmark. Opponent is heuristic (default) or greedy NN.\n"
         "If nash_temperatures=true (default), the heuristic opponent samples\n"
         "per-game temperatures from the Nash mixed strategy.\n"
         "Thread params: 0 = auto. influence_samples: K edges per influence action.\n"
+        "min_prior_threshold: drop edges with prior < threshold after expansion.\n"
         "Returns list[GameResult]."
     );
 #endif
