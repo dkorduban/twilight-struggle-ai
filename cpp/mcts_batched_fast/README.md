@@ -253,6 +253,34 @@ Quick tuning notes after the compact-tree fix:
 - Increasing `max_pending` from `64` to `96` helped.
 - Increasing further to `128` regressed slightly from the `96` peak.
 
+Clean zero-sharing parallel follow-up:
+
+- The first in-process `mcts_workers=2` attempt was not viable:
+  - shared Torch/Python runtime state caused initialization and runtime problems
+  - even when forced past init, it was not the right zero-sharing design
+- I replaced it with an exec-based multiworker launcher in `bench_fast_mcts.cpp`:
+  - parent process handles load gating and telemetry
+  - each worker is a separate child process launched via `exec`
+  - each child loads its own model, owns its own trees/RNG/scratch, and writes a
+    binary `BenchResult` back through a pipe
+  - aggregate throughput is merged from child results without sharing the MCTS core
+
+Parallel scaling results:
+
+| Config | sims/s | Reference | Scaling |
+|---|---:|---:|---:|
+| Single worker, production-like shard: `games=32 n_sim=400 pool=32 max_pending=96 torch_threads=1` | `22973.8` | `1x` | `1.00x` |
+| Two zero-sharing workers: `games=64 n_sim=400 pool=64 max_pending=96 mcts_workers=2 torch_threads=1` | `41664.1` | same per-worker shape | `1.81x` |
+
+- The small sanity case showed similar behavior:
+  - single worker `games=16 n_sim=100 pool=16 max_pending=32 torch_threads=1`:
+    `21623.3 sims/s`
+  - two workers `games=16 n_sim=100 pool=16 max_pending=32 mcts_workers=2 torch_threads=1`:
+    `36865.1 sims/s`
+  - scaling: about `1.70x`
+- So the current clean parallel path is not perfectly linear, but it is meaningfully
+  closer to the requested zero-sharing design than the earlier in-process thread attempt.
+
 Build:
 
 ```bash

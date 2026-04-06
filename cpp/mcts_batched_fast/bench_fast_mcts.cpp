@@ -7,15 +7,20 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
+
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <torch/torch.h>
 
@@ -75,10 +80,81 @@ void usage(const char* argv0) {
         << " [--max-pending N] [--virtual-loss N] [--cache-visit-threshold N]"
         << " [--c-puct F] [--temperature F] [--epsilon-greedy F]"
         << " [--dir-alpha F] [--dir-epsilon F] [--learned-side both|ussr|us]"
-        << " [--seed N] [--torch-threads N] [--torch-interop N]"
+        << " [--seed N] [--mcts-workers N] [--torch-threads N] [--torch-interop N]"
         << " [--forward-worker] [--load-threshold N] [--load-sample-ms N]"
         << " [--load-wait-s N] [--warmup N] [--repeats N]"
         << " [--baseline-sims F] [--target-multiple F]\n";
+}
+
+int split_even(int total, int parts, int index) {
+    const int base = total / parts;
+    const int remainder = total % parts;
+    return base + (index < remainder ? 1 : 0);
+}
+
+ts::fastmcts::BenchResult merge_worker_results(
+    const std::vector<ts::fastmcts::BenchResult>& workers,
+    int n_games,
+    int pool_size,
+    int n_simulations,
+    double elapsed_s
+) {
+    ts::fastmcts::BenchResult merged;
+    merged.n_games = n_games;
+    merged.pool_size = pool_size;
+    merged.n_simulations = n_simulations;
+    merged.elapsed_s = elapsed_s;
+
+    for (const auto& worker : workers) {
+        merged.total_simulations += worker.total_simulations;
+        merged.mcts_decisions += worker.mcts_decisions;
+        merged.n_batches += worker.n_batches;
+        merged.total_batch_items += worker.total_batch_items;
+        merged.wins += worker.wins;
+        merged.losses += worker.losses;
+        merged.draws += worker.draws;
+        merged.t_advance += worker.t_advance;
+        merged.t_select += worker.t_select;
+        merged.t_nn += worker.t_nn;
+        merged.t_expand += worker.t_expand;
+        merged.t_commit += worker.t_commit;
+    }
+
+    merged.sims_per_s = elapsed_s > 0.0 ? static_cast<double>(merged.total_simulations) / elapsed_s : 0.0;
+    merged.avg_batch = merged.n_batches > 0
+        ? static_cast<double>(merged.total_batch_items) / static_cast<double>(merged.n_batches)
+        : 0.0;
+    return merged;
+}
+
+struct WorkerPipeMessage {
+    int ok = 0;
+    ts::fastmcts::BenchResult result{};
+    char error[256] = {};
+};
+
+void write_all_or_throw(int fd, const void* buffer, size_t size) {
+    const auto* bytes = static_cast<const char*>(buffer);
+    size_t written = 0;
+    while (written < size) {
+        const auto rc = ::write(fd, bytes + written, size - written);
+        if (rc <= 0) {
+            throw std::runtime_error("failed to write worker pipe");
+        }
+        written += static_cast<size_t>(rc);
+    }
+}
+
+void read_all_or_throw(int fd, void* buffer, size_t size) {
+    auto* bytes = static_cast<char*>(buffer);
+    size_t read_total = 0;
+    while (read_total < size) {
+        const auto rc = ::read(fd, bytes + read_total, size - read_total);
+        if (rc <= 0) {
+            throw std::runtime_error("failed to read worker pipe");
+        }
+        read_total += static_cast<size_t>(rc);
+    }
 }
 
 CpuTimes read_cpu_times() {
@@ -157,6 +233,7 @@ int main(int argc, char** argv) {
         float dir_epsilon = 0.25f;
         std::optional<ts::Side> learned_side = std::nullopt;
         uint32_t seed = 12345U;
+        int mcts_workers = 1;
         int torch_threads = 1;
         int torch_interop = 1;
         bool forward_worker = false;
@@ -167,6 +244,7 @@ int main(int argc, char** argv) {
         int repeats = 1;
         double baseline_sims = kWorkingBaselineSimsPerS;
         double target_multiple = kGoalMultiple;
+        int child_output_fd = -1;
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -214,6 +292,8 @@ int main(int argc, char** argv) {
                 }
             } else if (arg == "--seed") {
                 seed = static_cast<uint32_t>(std::stoul(std::string(require_value("--seed"))));
+            } else if (arg == "--mcts-workers") {
+                mcts_workers = std::stoi(std::string(require_value("--mcts-workers")));
             } else if (arg == "--torch-threads") {
                 torch_threads = std::stoi(std::string(require_value("--torch-threads")));
             } else if (arg == "--torch-interop") {
@@ -234,6 +314,8 @@ int main(int argc, char** argv) {
                 baseline_sims = std::stod(std::string(require_value("--baseline-sims")));
             } else if (arg == "--target-multiple") {
                 target_multiple = std::stod(std::string(require_value("--target-multiple")));
+            } else if (arg == "--child-output-fd") {
+                child_output_fd = std::stoi(std::string(require_value("--child-output-fd")));
             } else if (arg == "--help" || arg == "-h") {
                 usage(argv[0]);
                 return 0;
@@ -245,6 +327,7 @@ int main(int argc, char** argv) {
 
         if (games <= 0 || n_sim < 0 || pool_size <= 0 || max_pending <= 0 || virtual_loss <= 0 ||
             cache_visit_threshold < 0 || torch_threads <= 0 || torch_interop <= 0 ||
+            mcts_workers <= 0 ||
             warmup < 0 || repeats <= 0 || load_sample_ms <= 0 || load_wait_s < 0.0 || load_threshold <= 0.0 ||
             baseline_sims <= 0.0 || target_multiple <= 0.0) {
             throw std::invalid_argument("invalid non-positive argument");
@@ -252,9 +335,11 @@ int main(int argc, char** argv) {
 
         at::set_num_threads(torch_threads);
         at::set_num_interop_threads(torch_interop);
-
-        torch::jit::script::Module model = torch::jit::load(model_path, torch::kCPU);
-        model.eval();
+        std::unique_ptr<torch::jit::script::Module> single_worker_model;
+        if (mcts_workers == 1) {
+            single_worker_model = std::make_unique<torch::jit::script::Module>(torch::jit::load(model_path, torch::kCPU));
+            single_worker_model->eval();
+        }
 
         ts::fastmcts::BenchConfig config;
         config.mcts.n_simulations = n_sim;
@@ -270,12 +355,36 @@ int main(int argc, char** argv) {
         config.learned_side = learned_side;
         config.use_forward_worker = forward_worker;
 
+        if (child_output_fd >= 0) {
+            WorkerPipeMessage message;
+            try {
+                torch::jit::script::Module model = torch::jit::load(model_path, torch::kCPU);
+                model.eval();
+                message.ok = 1;
+                message.result = ts::fastmcts::benchmark_mcts_fast(
+                    games,
+                    model,
+                    config,
+                    seed,
+                    torch::kCPU
+                );
+            } catch (const std::exception& ex) {
+                message.ok = 0;
+                std::strncpy(message.error, ex.what(), sizeof(message.error) - 1);
+                message.error[sizeof(message.error) - 1] = '\0';
+            }
+            write_all_or_throw(child_output_fd, &message, sizeof(message));
+            ::close(child_output_fd);
+            return message.ok ? 0 : 1;
+        }
+
         std::cout << std::fixed << std::setprecision(3)
                   << "[config] model=" << model_path
                   << " games=" << games
                   << " n_sim=" << n_sim
                   << " pool=" << pool_size
                   << " max_pending=" << max_pending
+                  << " mcts_workers=" << mcts_workers
                   << " torch_threads=" << torch_threads
                   << " torch_interop=" << torch_interop
                   << " forward_worker=" << (forward_worker ? 1 : 0)
@@ -312,13 +421,118 @@ int main(int argc, char** argv) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 }
             });
-            const auto result = ts::fastmcts::benchmark_mcts_fast(
-                games,
-                model,
-                config,
-                seed + static_cast<uint32_t>(run * 100000U),
-                torch::kCPU
-            );
+            ts::fastmcts::BenchResult result;
+            try {
+                if (mcts_workers == 1) {
+                    result = ts::fastmcts::benchmark_mcts_fast(
+                        games,
+                        *single_worker_model,
+                        config,
+                        seed + static_cast<uint32_t>(run * 100000U),
+                        torch::kCPU
+                    );
+                } else {
+                struct WorkerProc {
+                    pid_t pid = -1;
+                    int result_fd = -1;
+                };
+
+                std::vector<WorkerProc> workers;
+                workers.reserve(static_cast<size_t>(mcts_workers));
+                for (int worker = 0; worker < mcts_workers; ++worker) {
+                    const int worker_games = split_even(games, mcts_workers, worker);
+                    const int worker_pool = std::max(1, split_even(pool_size, mcts_workers, worker));
+                    if (worker_games <= 0) {
+                        continue;
+                    }
+
+                    int result_pipe[2];
+                    if (::pipe(result_pipe) != 0) {
+                        throw std::runtime_error("failed to create worker result pipe");
+                    }
+
+                    const auto pid = ::fork();
+                    if (pid < 0) {
+                        throw std::runtime_error("failed to fork worker");
+                    }
+                    if (pid == 0) {
+                        ::close(result_pipe[0]);
+                        std::vector<std::string> child_args_storage = {
+                            argv[0],
+                            "--model", model_path,
+                            "--games", std::to_string(worker_games),
+                            "--n-sim", std::to_string(n_sim),
+                            "--pool-size", std::to_string(worker_pool),
+                            "--max-pending", std::to_string(max_pending),
+                            "--virtual-loss", std::to_string(virtual_loss),
+                            "--cache-visit-threshold", std::to_string(cache_visit_threshold),
+                            "--c-puct", std::to_string(c_puct),
+                            "--temperature", std::to_string(temperature),
+                            "--epsilon-greedy", std::to_string(epsilon_greedy),
+                            "--dir-alpha", std::to_string(dir_alpha),
+                            "--dir-epsilon", std::to_string(dir_epsilon),
+                            "--seed", std::to_string(seed + static_cast<uint32_t>(run * 100000U + worker * 1000U)),
+                            "--mcts-workers", "1",
+                            "--torch-threads", std::to_string(torch_threads),
+                            "--torch-interop", std::to_string(torch_interop),
+                            "--warmup", "0",
+                            "--repeats", "1",
+                            "--child-output-fd", std::to_string(result_pipe[1]),
+                        };
+                        if (forward_worker) {
+                            child_args_storage.push_back("--forward-worker");
+                        }
+                        if (learned_side == ts::Side::USSR) {
+                            child_args_storage.push_back("--learned-side");
+                            child_args_storage.push_back("ussr");
+                        } else if (learned_side == ts::Side::US) {
+                            child_args_storage.push_back("--learned-side");
+                            child_args_storage.push_back("us");
+                        }
+
+                        std::vector<char*> child_argv;
+                        child_argv.reserve(child_args_storage.size() + 1);
+                        for (auto& value : child_args_storage) {
+                            child_argv.push_back(value.data());
+                        }
+                        child_argv.push_back(nullptr);
+                        ::execvp(child_argv[0], child_argv.data());
+                        _exit(127);
+                    }
+
+                    ::close(result_pipe[1]);
+                    workers.push_back(WorkerProc{
+                        .pid = pid,
+                        .result_fd = result_pipe[0],
+                    });
+                }
+
+                std::vector<ts::fastmcts::BenchResult> worker_results;
+                worker_results.reserve(workers.size());
+                double max_elapsed_s = 0.0;
+                for (const auto& worker : workers) {
+                    WorkerPipeMessage message;
+                    read_all_or_throw(worker.result_fd, &message, sizeof(message));
+                    ::close(worker.result_fd);
+                    if (message.ok == 0) {
+                        throw std::runtime_error(std::string("worker failed: ") + message.error);
+                    }
+                    worker_results.push_back(message.result);
+                    max_elapsed_s = std::max(max_elapsed_s, message.result.elapsed_s);
+                }
+
+                for (const auto& worker : workers) {
+                    int status = 0;
+                    (void)::waitpid(worker.pid, &status, 0);
+                }
+
+                result = merge_worker_results(worker_results, games, pool_size, n_sim, max_elapsed_s);
+            }
+            } catch (...) {
+                stop_freq_sampler.store(true, std::memory_order_relaxed);
+                freq_sampler.join();
+                throw;
+            }
             stop_freq_sampler.store(true, std::memory_order_relaxed);
             freq_sampler.join();
             const auto load_after = sample_system_load(load_sample_ms);
