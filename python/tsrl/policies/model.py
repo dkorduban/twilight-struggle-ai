@@ -207,6 +207,23 @@ def _build_country_adjacency(spec_path: str | None = None) -> torch.Tensor:
 
 _COUNTRY_ADJACENCY: torch.Tensor = _build_country_adjacency()
 
+
+@torch.jit.script
+def _masked_mean_pool(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """TorchScript-friendly masked mean over the country dimension."""
+    mask_weight = mask.to(dtype=x.dtype).unsqueeze(0).unsqueeze(-1)
+    mask_count = mask_weight.sum().clamp(min=1.0)
+    return (x * mask_weight).sum(dim=1) / mask_count
+
+
+@torch.jit.script
+def _masked_mean_1d(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """TorchScript-friendly masked mean for per-country scalar features."""
+    mask_weight = mask.to(dtype=x.dtype).unsqueeze(0)
+    mask_count = mask_weight.sum().clamp(min=1.0)
+    return (x * mask_weight).sum(dim=1) / mask_count
+
+
 # ---------------------------------------------------------------------------
 # Shared trunk building blocks
 # ---------------------------------------------------------------------------
@@ -433,15 +450,7 @@ class CountryEmbedEncoder(nn.Module):
         region_pools = []
         for i in range(self._NUM_REGIONS):
             mask = self._region_mask(i)  # (86,) bool
-            if mask.any():
-                region_pool = per_country[:, mask, :].mean(dim=1)  # (B, D)
-            else:
-                # Fallback: zero pool if no countries in this region (should not happen)
-                region_pool = torch.zeros(
-                    per_country.shape[0], self._EMBED_DIM,
-                    device=per_country.device, dtype=per_country.dtype
-                )
-            region_pools.append(region_pool)
+            region_pools.append(_masked_mean_pool(per_country, mask))
 
         concat = torch.cat([global_pool] + region_pools, dim=-1)  # (B, 8*D)
         return torch.relu(self.out_proj(concat))  # (B, INFLUENCE_HIDDEN)
@@ -508,14 +517,7 @@ class CountryAttnEncoder(nn.Module):
         region_pools = []
         for i in range(self._NUM_REGIONS):
             mask = self._region_mask(i)  # (86,) bool
-            if mask.any():
-                region_pool = attn_out[:, mask, :].mean(dim=1)
-            else:
-                region_pool = torch.zeros(
-                    B, self._EMBED_DIM,
-                    device=attn_out.device, dtype=attn_out.dtype
-                )
-            region_pools.append(region_pool)
+            region_pools.append(_masked_mean_pool(attn_out, mask))
 
         concat = torch.cat([global_pool] + region_pools, dim=-1)  # (B, 8*D)
         return torch.relu(self.out_proj(concat))  # (B, INFLUENCE_HIDDEN)
@@ -1052,32 +1054,13 @@ class ControlFeatCountryEncoder(nn.Module):
             bg_mask = self._get_region_bg_mask(i)  # (86,) bool
             non_bg_mask = mask & ~bg_mask
 
-            if mask.any():
-                region_pool = per_country[:, mask, :].mean(dim=1)
-            else:
-                region_pool = torch.zeros(B, self._EMBED_DIM, device=influence.device)
-            region_pools.append(region_pool)
+            region_pools.append(_masked_mean_pool(per_country, mask))
 
             # Region scoring scalars: controlled BG and non-BG counts per side
-            n_bg = int(bg_mask.sum().item())
-            if n_bg < 1:
-                n_bg = 1
-            n_non_bg = int(non_bg_mask.sum().item())
-            if n_non_bg < 1:
-                n_non_bg = 1
-            zeros_b = torch.zeros(B, device=influence.device)
-            if bg_mask.any():
-                ussr_bg = ussr_controls[:, bg_mask].sum(dim=1) / n_bg
-                us_bg = us_controls[:, bg_mask].sum(dim=1) / n_bg
-            else:
-                ussr_bg = zeros_b
-                us_bg = zeros_b
-            if non_bg_mask.any():
-                ussr_non_bg = ussr_controls[:, non_bg_mask].sum(dim=1) / n_non_bg
-                us_non_bg = us_controls[:, non_bg_mask].sum(dim=1) / n_non_bg
-            else:
-                ussr_non_bg = zeros_b
-                us_non_bg = zeros_b
+            ussr_bg = _masked_mean_1d(ussr_controls, bg_mask)
+            us_bg = _masked_mean_1d(us_controls, bg_mask)
+            ussr_non_bg = _masked_mean_1d(ussr_controls, non_bg_mask)
+            us_non_bg = _masked_mean_1d(us_controls, non_bg_mask)
             region_scalars.append(ussr_bg)
             region_scalars.append(us_bg)
             region_scalars.append(ussr_non_bg)
@@ -1103,7 +1086,10 @@ class TSControlFeatModel(nn.Module):
     Input/output contract: same as TSBaselineModel.
     """
 
+    __constants__ = ['_REGION_SCALAR_DIM', '_NUM_STRATEGIES', '_NUM_COUNTRIES']
     _REGION_SCALAR_DIM = 28
+    _NUM_STRATEGIES = NUM_STRATEGIES
+    _NUM_COUNTRIES = NUM_COUNTRIES
 
     def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
         super().__init__()
@@ -1141,14 +1127,28 @@ class TSControlFeatModel(nn.Module):
         h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
 
         trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
-        return _forward_trunk_and_heads(
-            trunk_input,
-            self.trunk_proj, self.trunk_dropout,
-            self.trunk_block1, self.trunk_block2,
-            self.card_head, self.mode_head,
-            self.strategy_heads, self.strategy_mixer,
-            self.value_branch, self.value_head,
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(
+            hidden.shape[0], self._NUM_STRATEGIES, self._NUM_COUNTRIES
         )
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+        value = torch.tanh(self.value_head(torch.relu(self.value_branch(hidden))))
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+        }
 
 
 class ControlFeatGNNEncoder(nn.Module):
@@ -1257,31 +1257,12 @@ class ControlFeatGNNEncoder(nn.Module):
             bg_mask = self._get_region_bg_mask(i)
             non_bg_mask = mask & ~bg_mask
 
-            if mask.any():
-                region_pool = h[:, mask, :].mean(dim=1)
-            else:
-                region_pool = torch.zeros(B, self._EMBED_DIM, device=influence.device)
-            region_pools.append(region_pool)
+            region_pools.append(_masked_mean_pool(h, mask))
 
-            n_bg = int(bg_mask.sum().item())
-            if n_bg < 1:
-                n_bg = 1
-            n_non_bg = int(non_bg_mask.sum().item())
-            if n_non_bg < 1:
-                n_non_bg = 1
-            zeros_b = torch.zeros(B, device=influence.device)
-            if bg_mask.any():
-                ussr_bg = ussr_controls[:, bg_mask].sum(dim=1) / n_bg
-                us_bg = us_controls[:, bg_mask].sum(dim=1) / n_bg
-            else:
-                ussr_bg = zeros_b
-                us_bg = zeros_b
-            if non_bg_mask.any():
-                ussr_non_bg = ussr_controls[:, non_bg_mask].sum(dim=1) / n_non_bg
-                us_non_bg = us_controls[:, non_bg_mask].sum(dim=1) / n_non_bg
-            else:
-                ussr_non_bg = zeros_b
-                us_non_bg = zeros_b
+            ussr_bg = _masked_mean_1d(ussr_controls, bg_mask)
+            us_bg = _masked_mean_1d(us_controls, bg_mask)
+            ussr_non_bg = _masked_mean_1d(ussr_controls, non_bg_mask)
+            us_non_bg = _masked_mean_1d(us_controls, non_bg_mask)
             region_scalars.append(ussr_bg)
             region_scalars.append(us_bg)
             region_scalars.append(ussr_non_bg)
@@ -1304,7 +1285,9 @@ class TSControlFeatGNNModel(nn.Module):
     Input/output contract: same as TSBaselineModel.
     """
 
+    __constants__ = ['_REGION_SCALAR_DIM', '_NUM_COUNTRIES', 'num_strategies']
     _REGION_SCALAR_DIM = 28
+    _NUM_COUNTRIES = NUM_COUNTRIES
 
     def __init__(
         self,
@@ -1354,7 +1337,7 @@ class TSControlFeatGNNModel(nn.Module):
         card_logits = self.card_head(hidden)
         mode_logits = self.mode_head(hidden)
         country_strategy_logits = self.strategy_heads(hidden).view(
-            hidden.shape[0], self.num_strategies, NUM_COUNTRIES
+            hidden.shape[0], self.num_strategies, self._NUM_COUNTRIES
         )
         strategy_logits = self.strategy_mixer(hidden)
         mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)

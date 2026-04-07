@@ -499,12 +499,7 @@ def _recompute_log_probs_and_values(
     device: str,
     batch_size: int = 2048,
 ) -> None:
-    """Recompute old_log_prob and value for all steps using the PyTorch model.
-
-    Called after collect_rollout_batched to ensure old_log_probs are computed
-    by the identical model+code path used during the PPO update, preventing
-    spurious KL divergence from TorchScript trace branch-freezing.
-    """
+    """Fallback utility to recompute old_log_prob and value from the PyTorch model."""
     if not steps:
         return
     model.eval()
@@ -581,18 +576,11 @@ def collect_rollout_batched(
             card_idx=s["card_idx"],
             mode_idx=s["mode_idx"],
             country_targets=list(s["country_targets"]),
-            old_log_prob=float(s["log_prob"]),  # will be recomputed below
+            old_log_prob=float(s["log_prob"]),
             value=float(s["value"]),
             side_int=int(s["side_int"]),
         )
         all_steps.append(step)
-
-    # Recompute old_log_probs and values using the actual PyTorch model (not
-    # TorchScript).  The TorchScript model from jit.trace freezes data-dependent
-    # branches (e.g. `if bg_mask.any()`) as constants, so its log_probs can
-    # diverge from the PyTorch model's log_probs — causing spurious KL > max_kl
-    # and early stopping.  One batched forward pass over all steps fixes this.
-    _recompute_log_probs_and_values(all_steps, model, device)
 
     for i, result in enumerate(results):
         start = boundaries[i]
@@ -654,8 +642,6 @@ def collect_rollout_self_play_batched(
             side_int=int(s["side_int"]),
         )
         all_steps.append(step)
-
-    _recompute_log_probs_and_values(all_steps, model, device)
 
     for i, result in enumerate(results):
         start = boundaries[i]
