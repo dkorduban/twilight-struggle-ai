@@ -65,6 +65,34 @@ def build_matches(history: dict[str, float], games_per_match: int, anchor_name: 
     return matches
 
 
+def load_h2h_matches(path: Path) -> list[MatchResult]:
+    """Load head-to-head results from checkpoint_elo.json history.
+
+    Deduplicates by (model_a, model_b, seed) to avoid double-counting runs
+    with the same seed. Uses the filename stem as the player identifier so
+    results can be joined with vs-heuristic history.
+    """
+    raw = json.loads(path.read_text())
+    history_entries = raw.get("history", [])
+
+    seen: set[tuple[str, str, int]] = set()
+    matches: list[MatchResult] = []
+    for entry in history_entries:
+        a_name = Path(entry["model_a"]).stem
+        b_name = Path(entry["model_b"]).stem
+        seed = entry.get("seed", 0)
+        key = (a_name, b_name, seed)
+        if key in seen:
+            continue
+        seen.add(key)
+        wins_a = entry["model_a_wins"]
+        wins_b = entry["model_b_wins"]
+        if wins_a + wins_b == 0:
+            continue
+        matches.append(MatchResult(player_a=a_name, player_b=b_name, wins_a=wins_a, wins_b=wins_b))
+    return matches
+
+
 def invert_matrix(matrix: list[list[float]]) -> list[list[float]]:
     n = len(matrix)
     if n == 0:
@@ -197,17 +225,18 @@ def build_output(
     anchor_rating: float,
     games_per_match: int,
 ) -> dict[str, object]:
-    per_generation: dict[str, object] = {}
-    for match in matches:
-        lo, hi = ci[match.player_a]
-        per_generation[match.player_a] = {
-            "elo": round(ratings[match.player_a], 3),
+    per_player: dict[str, object] = {}
+    for player, elo in ratings.items():
+        if player == anchor_name:
+            continue
+        lo, hi = ci[player]
+        entry: dict = {
+            "elo": round(elo, 3),
             "ci95": [round(lo, 3), round(hi, 3)],
-            "win_pct": history[match.player_a],
-            "wins": match.wins_a,
-            "losses": match.wins_b,
-            "games": games_per_match,
         }
+        if player in history:
+            entry["win_pct"] = history[player]
+        per_player[player] = entry
 
     return {
         "anchor_player": anchor_name,
@@ -218,7 +247,7 @@ def build_output(
                 "elo": round(ratings[anchor_name], 3),
                 "ci95": [round(ci[anchor_name][0], 3), round(ci[anchor_name][1], 3)],
             },
-            **per_generation,
+            **per_player,
         },
     }
 
@@ -229,6 +258,12 @@ def parse_args() -> argparse.Namespace:
         "--benchmark-history",
         type=Path,
         default=Path("results/benchmark_history.json"),
+    )
+    parser.add_argument(
+        "--h2h-results",
+        type=Path,
+        default=None,
+        help="Path to checkpoint_elo.json with head-to-head match history (optional)",
     )
     parser.add_argument(
         "--out",
@@ -273,7 +308,14 @@ def main() -> None:
 
     history = load_history(args.benchmark_history)
     matches = build_matches(history, args.games_per_match, args.anchor_name)
-    players = sorted({args.anchor_name, *history.keys()}, key=generation_sort_key)
+
+    # Optionally incorporate head-to-head model-vs-model results
+    if args.h2h_results is not None and args.h2h_results.exists():
+        h2h = load_h2h_matches(args.h2h_results)
+        matches.extend(h2h)
+        print(f"Added {len(h2h)} H2H match results from {args.h2h_results}")
+
+    players = sorted({args.anchor_name, *(m.player_a for m in matches), *(m.player_b for m in matches)}, key=generation_sort_key)
     ratings = fit_bayes_elo_mm(
         players=players,
         matches=matches,

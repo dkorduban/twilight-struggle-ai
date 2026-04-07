@@ -337,6 +337,44 @@ Elo leaderboard after iter 80:
 Note: `elo_tracker.py` was fixed this session — normalized path keys + shuffled game order
 before per-game updates to remove block-structure asymmetry bias.
 
+### Iter 100 Benchmark
+
+**Iter 100 vs heuristic**: USSR=90.4%, US=74.2%, combined=82.3%
+
+v2b is matching PPO v1's best (83.2%) in just 100 iters of self-play (vs 200 iters vs heuristic).
+
+Heuristic WR progression: 73.6% → 77.8% → 79.4% → 79.5% → 82.3% (iters 20/40/60/80/100)
+
+Slope recovery: +2.8pp from iter80→100 after decelerating (+0.1pp at iter80).
+This suggests the self-play is producing genuine strategic improvement, not just noise.
+
+Training state at iter 100: rollout_wr~0.57, KL=0.044, entropy=2.27 — healthy progression.
+
+**Elo matchup iter100 vs iter80 (100 games)**: iter100 wins 53%, Elo: iter100=1577, iter80=1522
+
+### BayesElo/MM Leaderboard (anchored: heuristic=1500)
+
+BayesElo joint-fits all match results (vs-heuristic + H2H) simultaneously:
+
+| Elo | 95% CI | vs-Heuristic | Model |
+|-----|--------|-------------|-------|
+| 1771 | ±27 | 82.3% | v2b iter100 |
+| 1760 | ±24 | 79.5% | v2b iter80 |
+| 1744 | ±23 | 83.2% | v1_best (200-iter vs heuristic) |
+| 1741 | ±23 | 79.4% | v2b iter60 |
+| 1728 | ±22 | 77.8% | v2b iter40 |
+| 1727 | ±22 | 73.6% | v2b iter20 |
+| 1500 | — | — | heuristic (anchor) |
+
+Key insight: v1_best (83.2% WR) is rated BELOW v2b iter100 (82.3% WR) because iter80 beat
+v1_best 72% head-to-head. The H2H correction reveals that heuristic-WR alone overestimates
+v1_best strength — it exploits heuristic-specific patterns that don't generalize.
+
+BayesElo is now the primary strength metric. It:
+- Anchors all ratings to heuristic=1500 (no inflation)
+- Jointly fits vs-heuristic + head-to-head results
+- Provides proper confidence intervals
+
 ---
 
 ## Next Steps
