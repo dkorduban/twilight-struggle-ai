@@ -375,6 +375,16 @@ BayesElo is now the primary strength metric. It:
 - Jointly fits vs-heuristic + head-to-head results
 - Provides proper confidence intervals
 
+### Iter 120 Benchmark — NEW BEST
+
+**Iter 120 vs heuristic**: USSR=90.4%, US=78.8%, combined=84.6% — **new all-time best**
+
+Self-play has definitively surpassed PPO v1 (83.2%) at iteration 120.
+US WR: 74.2% (iter100) → 78.8% (iter120), a +4.6pp jump in 20 iters.
+
+Heuristic WR progression:
+73.6% → 77.8% → 79.4% → 79.5% → 82.3% → 84.6% (iters 20/40/60/80/100/120)
+
 ---
 
 ## Next Steps

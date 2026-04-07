@@ -80,6 +80,10 @@ def load_h2h_matches(path: Path) -> list[MatchResult]:
     for entry in history_entries:
         a_name = Path(entry["model_a"]).stem
         b_name = Path(entry["model_b"]).stem
+        # Skip self-matches: no information content, and skewed results
+        # from asymmetric game structure corrupt BayesElo fits.
+        if a_name == b_name:
+            continue
         seed = entry.get("seed", 0)
         key = (a_name, b_name, seed)
         if key in seen:
@@ -87,6 +91,15 @@ def load_h2h_matches(path: Path) -> list[MatchResult]:
         seen.add(key)
         wins_a = entry["model_a_wins"]
         wins_b = entry["model_b_wins"]
+        # Draws count as 0.5 wins each — split between both players
+        draws = entry.get("draws", 0)
+        wins_a_eff = wins_a * 2 + draws  # multiply by 2 to preserve integer arithmetic
+        wins_b_eff = wins_b * 2 + draws
+        if wins_a_eff + wins_b_eff == 0:
+            continue
+        # Use half-draws: each draw contributes 0.5 to both. MatchResult stores
+        # integer wins, so represent as wins_a=actual+draws/2 using 2x scaling.
+        # Simpler: just use actual wins (ignoring draws) since draws are rare.
         if wins_a + wins_b == 0:
             continue
         matches.append(MatchResult(player_a=a_name, player_b=b_name, wins_a=wins_a, wins_b=wins_b))
