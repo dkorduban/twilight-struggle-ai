@@ -980,7 +980,7 @@ def collect_policy_stats(
                 pool_size=min(n_games, 32),
                 seed=seed_base + (0 if side == tscore.Side.USSR else n_games),
                 device="cpu",
-                temperature=0.0,   # greedy — reproducible stats
+                temperature=1.0,   # training-representative stats
                 nash_temperatures=True,
             )
             for s in steps:
