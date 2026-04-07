@@ -681,6 +681,11 @@ def compute_gae(steps: list[Step], gamma: float = 0.99, lam: float = 0.95) -> No
     """Compute GAE advantages and returns in-place for a single game's steps.
 
     Assumes steps[-1].done is True and steps[-1].reward is the terminal reward.
+
+    Zero-sum flip: TS is a zero-sum game, so when consecutive steps alternate between
+    USSR and US (self-play), the next state's value must be NEGATED because it's from
+    the opponent's perspective. E.g., V_US(s) = 1 - V_USSR(s). Without this flip,
+    the bootstrap term from the opponent's step adds a spurious +gamma bias to advantages.
     """
     T = len(steps)
     gae = 0.0
@@ -689,8 +694,12 @@ def compute_gae(steps: list[Step], gamma: float = 0.99, lam: float = 0.95) -> No
             next_value = 0.0
             delta = steps[t].reward - steps[t].value
         else:
-            next_value = steps[t + 1].value
-            delta = steps[t].reward + gamma * next_value - steps[t].value
+            next_v = steps[t + 1].value
+            # Zero-sum flip: if the next step is the opponent's turn, negate their value
+            # (V_opponent = -V_self in a zero-sum game, so -V_opponent = V_self at that state)
+            if steps[t + 1].side_int != steps[t].side_int:
+                next_v = -next_v
+            delta = steps[t].reward + gamma * next_v - steps[t].value
         gae = delta + gamma * lam * (0.0 if steps[t].done else gae)
         steps[t].advantage = gae
         steps[t].returns = gae + steps[t].value
