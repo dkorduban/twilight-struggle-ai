@@ -60,8 +60,8 @@ def get_rating(data: dict, model_path: str) -> float:
 def cmd_matchup(args: argparse.Namespace) -> None:
     """Run a head-to-head matchup and update Elo ratings."""
     import sys
-    sys.path.insert(0, "build-ninja/bindings")
     sys.path.insert(0, "build/bindings")
+    sys.path.insert(0, "build-ninja/bindings")
     try:
         import tscore
     except ImportError:
