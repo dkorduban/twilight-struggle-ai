@@ -1,0 +1,151 @@
+# Experiment Log — Phase 2: Reinforcement Learning
+
+Started: 2026-04-07
+
+## Context
+
+Phase 1 (see `experiment_log_phase1.md`) established:
+- **BC ceiling**: ~33-35% Nash combined vs heuristic (v106_cf_gnn_s42 = 34.9%)
+- **13 dead ends** in BC: teacher KL, data volume, wider models, K>1 MCTS, etc.
+- **MCTS 2000sim + pruning**: 43.7% combined (+8.8pp over greedy) — too slow for training
+- **Architecture winner**: GNN adjacency (control_feat_gnn) with K=4 mixture country head
+
+Phase 2 explores RL (PPO) to break through the BC ceiling.
+
+---
+
+## PPO v1: vs Nash-temp Heuristic (2026-04-07)
+
+### Setup
+
+- **Base checkpoint**: v106_cf_gnn_s42 (BC, 34.9% Nash combined)
+- **Opponent**: MinimalHybrid with Nash temperature sampling (same as training data)
+- **Architecture**: TSControlFeatGNNModel, h=256, K=4 mixture country head
+- **Hyperparameters**:
+  ```
+  games_per_iter=200, ppo_epochs=4, clip_eps=0.2, lr=1e-4,
+  gamma=0.99, gae_lambda=0.95, ent_coef=0.01, vf_coef=0.5,
+  minibatch_size=2048, side=both, seed=99000
+  ```
+- **Reward**: Sparse ±1.0 on terminal step only (win/loss)
+- **Rollout**: C++ batched game pool (`rollout_games_batched`), ~24s/200 games
+- **Log_probs**: Recomputed in Python after C++ rollout (TorchScript trace bug workaround)
+
+### Benchmark Trajectory (500 games/side, Nash temps, seed=50000/50500)
+
+| Iter | USSR WR | US WR | Combined | Notes |
+|------|---------|-------|----------|-------|
+| 0 (BC) | 55.8% | 14.0% | 34.9% | v106_cf_gnn_s42 baseline |
+| 20 | 66.2% | 13.8% | 40.0% | |
+| 40 | 74.8% | 11.6% | 43.2% | US dips during USSR improvement |
+| 60 | 81.2% | 21.4% | 51.3% | US starts improving |
+| 80 | 86.6% | 29.0% | 57.8% | |
+| 100 | 85.6% | 50.4% | 68.0% | US breakthrough |
+| 120 | 84.0% | 67.2% | 75.6% | |
+| 140 | 91.8% | 68.0% | 79.9% | |
+| 160 | 90.6% | 74.2% | 82.4% | Current best |
+
+### Loss Trajectory (sampled milestones)
+
+| Iter | Rollout WR | Steps | Entropy | Value Loss | Policy Loss | Clip Frac | KL |
+|------|-----------|-------|---------|------------|-------------|-----------|-----|
+| 100 | 0.655 | 13,897 | 2.451 | 0.073 | -0.035 | 0.187 | 0.020 |
+| 120 | 0.685 | 13,445 | 2.300 | 0.083 | -0.033 | 0.175 | 0.022 |
+| 140 | 0.770 | 13,672 | 2.205 | 0.077 | -0.032 | 0.184 | 0.020 |
+| 160 | 0.790 | 13,481 | 2.166 | 0.074 | -0.026 | 0.185 | 0.021 |
+| 175 | 0.740 | 13,077 | 2.112 | 0.074 | -0.028 | 0.172 | 0.019 |
+
+### Key Observations
+
+1. **US WR is the real achievement**: 14% → 74% is extraordinary. BC never reached >14% US WR
+   despite 13 different approaches. PPO found US strategies that BC couldn't learn from
+   heuristic demonstrations.
+
+2. **Entropy is slowly declining**: 2.45 → 2.11 over 75 iters. Policy is sharpening but
+   not collapsed. Still exploring diverse actions.
+
+3. **Value loss plateaued at ~0.07**: Not improving despite higher WR. The value head
+   predicts the terminal outcome, and at 80%+ WR most games are wins — the value function
+   correctly predicts ~0.8 for most states but can't distinguish the remaining 20% losses.
+
+4. **Steps per iteration declining**: 14,500 → 13,100. Games are getting shorter as the
+   policy wins faster. Could indicate exploitation (quick DEFCON kills) or efficiency
+   (winning in fewer action rounds).
+
+5. **KL is healthy**: 0.017-0.025 consistently. No sudden policy jumps.
+
+### Overfitting Concern
+
+**At 82%+ combined WR, the model likely exploits heuristic-specific weaknesses.**
+
+Evidence for exploitation:
+- Games getting shorter (fewer steps/iter): faster wins may mean DEFCON exploitation
+- Heuristic plays a fixed mixed strategy — deterministic weaknesses can be memorized
+- No adversarial pressure — model has no incentive for robustness
+- Value loss flat at 0.07 despite WR climbing — wins are "easy" now
+
+Evidence against pure exploitation:
+- US WR 74% is remarkable — the heuristic as USSR is very strong (66% WR in self-play)
+- Entropy still at 2.1 (healthy diversity in action selection)
+- The improvement was gradual over 160 iters, not a sudden exploit discovery
+- Policy loss magnitude gradually decreasing — optimization is smooth
+
+**Likely reality**: Mix of both. The model learned genuinely better TS strategy (especially
+for US side) AND learned heuristic-specific patterns that won't transfer to stronger opponents.
+
+### Diagnostic experiments needed
+
+To distinguish real strength from heuristic exploitation:
+
+1. **PPO model vs itself**: Does it play coherent games? With +2 bid the game is balanced
+   in pro play (~50/50 ±2pp). Self-play WR should be near 50/50. If wildly asymmetric
+   (e.g. 90/10), the model has a degenerate strategy for one side.
+
+2. **PPO model vs MCTS 400sim (greedy policy)**: If PPO beats MCTS-augmented greedy,
+   the improvement is real. If PPO loses to MCTS, the improvement is exploitation.
+
+3. **PPO model vs different heuristic**: Test against a hand-crafted stronger opponent
+   or a different temperature schedule. If WR drops dramatically, exploitation is confirmed.
+
+4. **Game length analysis**: Check whether PPO wins are concentrated in early turns
+   (DEFCON exploits) or spread across the game (strategic improvement).
+
+### Infrastructure
+
+- **C++ batched rollout**: `rollout_games_batched()` in `mcts_batched.cpp`
+  - Records per-step features, masks, actions, log_probs, values
+  - 23× speedup over sequential Python callback (24s vs 560s per 200 games)
+
+- **TorchScript trace workaround**: `_recompute_log_probs_and_values()` in `train_ppo.py`
+  - `jit.trace` freezes data-dependent branches in GNN model
+  - Python recomputation adds ~5s but ensures log_prob consistency
+
+- **Rolling checkpoints**: Write-before-delete pattern, milestone preservation at
+  benchmark iterations (every 20)
+
+- **Per-side tracking**: W&B logs `rollout_wr_ussr` and `rollout_wr_us` separately
+
+### Crashes and Fixes
+
+1. **Country ID 64 crash (iter 48)**: Proportional allocation sampled country 64 which
+   has no spec. Fix: mask out ID 64 before sampling (`VALID_COUNTRY_IDS = range(86) - {64}`).
+
+2. **KL divergence early stop (iter 43)**: After switching to batched rollout, TorchScript
+   trace caused log_prob mismatch. Fix: recompute log_probs in Python post-rollout.
+
+### W&B
+
+Multiple runs due to restarts: korduban-ai/twilight-struggle-ai (PPO v1 runs).
+Restart points: iter 41 (ID 64 crash), iter 43 (KL mismatch), iter 78 (batched rollout switch).
+
+---
+
+## Next Steps
+
+See `docs/ppo_next_steps.md` for detailed plan. Summary:
+
+1. Self-play PPO (train against self, not fixed heuristic)
+2. League training (pool of past checkpoints)
+3. VP-scaled rewards + entropy scheduling
+4. MCTS-guided PPO (Expert Iteration)
+5. Allocation head architecture improvement

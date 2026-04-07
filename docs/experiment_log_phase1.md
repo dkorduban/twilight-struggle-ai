@@ -1910,7 +1910,7 @@ and optimal allocation patterns.
 
 **BC ceiling**: ~33-35% Nash combined. No BC variant has reliably exceeded this.
 
-**Dead ends (12 confirmed)**:
+**Dead ends (13 confirmed)**:
 1. Teacher KL distillation (6 attempts: v100, v101, v103, v105, v105b, v113 — all regressed)
 2. Wider trunk h=384 (v108, -6 to -9pp)
 3. Self-play Gen 0 (v107, +1pp, within noise)
@@ -1923,6 +1923,7 @@ and optimal allocation patterns.
 10. Mixed country_logits vs argmax strategy (-1.5pp)
 11. K>1 + pruning (K=2/K=4, -20pp even with pruned trees)
 12. Pure BC on MCTS-played games at 7% mix (v114, -1.7pp)
+13. K=1 single-softmax country head (v115, -7.8pp)
 
 **What works**:
 - GNN adjacency architecture: +4pp over MLP baseline
@@ -1930,3 +1931,37 @@ and optimal allocation patterns.
 - Nash temps benchmark: correct evaluation mode
 
 **Next step**: Phase 2c — allocation head + DP decoder. Write spec, delegate to Codex.
+
+---
+
+## v115: K=1 Single-Softmax Country Head (2026-04-06)
+
+**Hypothesis**: The K=4 mixture-of-softmaxes country head wastes parameters — distribution
+analysis showed effective K ≈ 1.5 in late game (strategies collapse). K=1 should be
+equivalent or better with fewer parameters.
+
+**Architecture**: TSControlFeatGNNModel with `num_strategies=1` (removes mixture weighting,
+strategy_heads outputs single 86-logit vector, strategy_mixer is a 1-unit linear layer).
+All other components identical to v106.
+
+**Training**: nash_c_only, seed=42, 95 epochs (patience=20), best at epoch 90.
+**Best val_loss**: 2.1125 (better than v106=2.57 — confirms val_loss and WR dissociate)
+
+| Model | Nash USSR | Nash US | Nash Combined | Notes |
+|-------|-----------|---------|---------------|-------|
+| v106_cf_gnn_s42 (K=4) | 55.8% | 14.0% | **34.9%** | baseline |
+| **v115_gnn_k1_s42 (K=1)** | **45.2%** | **9.0%** | **27.1%** | **-7.8pp regression** |
+
+**Result: K=1 is significantly WORSE than K=4 by -7.8pp Nash combined.**
+- USSR drops from 55.8% → 45.2% (-10.6pp)
+- US drops from 14.0% → 9.0% (-5.0pp)
+- val_loss improves (2.1125 vs 2.57) — another case of val_loss not predicting WR
+
+**Analysis**: The K=4 mixture-of-softmaxes, despite apparent strategy collapse in late game,
+encodes meaningful diversity that K=1 cannot replicate. The "effective K ≈ 1.5" observation
+from distribution analysis measured entropy at a few sample positions — the mixture's
+expressiveness may matter in early/mid game positions and edge cases not captured in the
+sample. Alternatively, the mixture architecture acts as a regularizer (implicit ensemble)
+that prevents the country head from collapsing to trivial single-target solutions.
+
+**Dead end confirmed**: K=1 simplification is harmful. Keep K=4 for country head.
