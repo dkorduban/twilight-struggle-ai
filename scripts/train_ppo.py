@@ -1209,6 +1209,53 @@ def collect_policy_stats(
     return stats
 
 
+def _save_rollout_parquet(steps: list[Step], out_dir: str, iteration: int) -> None:
+    """Save rollout steps to Parquet for BC bootstrapping.
+
+    Each row contains the raw feature tensors and action labels from a PPO step,
+    in the same format as the BC dataset (influence, cards, scalars, card_id, mode_id,
+    country_targets, side_int, reward). Saved to out_dir/rollout_iter_{N:04d}.parquet.
+
+    These files can be used to warm-start BC training from PPO data without
+    re-running games.
+    """
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError:
+        print("  [rollout-save] pyarrow not available, skipping Parquet save", flush=True)
+        return
+
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    out_path = Path(out_dir) / f"rollout_iter_{iteration:04d}.parquet"
+
+    inf_list = [s.influence[0].numpy().tolist() for s in steps]
+    cards_list = [s.cards[0].numpy().tolist() for s in steps]
+    scalars_list = [s.scalars[0].numpy().tolist() for s in steps]
+    card_ids = [s.card_idx + 1 for s in steps]           # 1-indexed card_id
+    mode_ids = [s.mode_idx for s in steps]
+    # country_targets: list of int (0-indexed). Store as list<int32>.
+    country_targets = [s.country_targets for s in steps]
+    side_ints = [s.side_int for s in steps]
+    rewards = [s.reward for s in steps]
+    values = [s.value for s in steps]
+
+    table = pa.table({
+        "influence": pa.array(inf_list, type=pa.list_(pa.float32())),
+        "cards": pa.array(cards_list, type=pa.list_(pa.float32())),
+        "scalars": pa.array(scalars_list, type=pa.list_(pa.float32())),
+        "card_id": pa.array(card_ids, type=pa.int32()),
+        "mode_id": pa.array(mode_ids, type=pa.int32()),
+        "country_targets": pa.array(country_targets, type=pa.list_(pa.int32())),
+        "side_int": pa.array(side_ints, type=pa.int8()),
+        "reward": pa.array(rewards, type=pa.float32()),
+        "value": pa.array(values, type=pa.float32()),
+        "iteration": pa.array([iteration] * len(steps), type=pa.int32()),
+    })
+    pq.write_table(table, out_path, compression="snappy")
+    print(f"  [rollout-save] {len(steps):,} steps → {out_path}", flush=True)
+
+
 def run_benchmark(
     checkpoint_path: str,
     n_games: int = 500,
@@ -1331,6 +1378,9 @@ def parse_args() -> argparse.Namespace:
                    help="Resume: start loop from this iteration (seeds offset accordingly)")
     p.add_argument("--best-combined", type=float, default=0.0,
                    help="Resume: best combined WR achieved so far (for checkpoint tracking)")
+    p.add_argument("--save-rollout-parquet", type=str, default=None,
+                   help="If set, save each iteration's rollout steps as Parquet to this directory "
+                        "(for BC bootstrapping from PPO data). One file per iteration.")
     return p.parse_args()
 
 
@@ -1465,6 +1515,10 @@ def main() -> None:
         if n_steps == 0:
             print(f"[iter {iteration}] No steps collected, skipping")
             continue
+
+        # Optionally save rollout steps as Parquet for BC bootstrapping
+        if args.save_rollout_parquet and all_steps:
+            _save_rollout_parquet(all_steps, args.save_rollout_parquet, iteration)
 
         # Compute GAE advantages
         compute_gae_batch(all_steps, gamma=args.gamma, lam=args.gae_lambda)
