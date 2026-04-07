@@ -648,6 +648,45 @@ PYBIND11_MODULE(tscore, m) {
         "feature/mask arrays plus sampled action metadata and log-probs."
     );
     m.def(
+        "rollout_self_play_batched",
+        [](const std::string& model_path, int n_games, int pool_size,
+           py::object seed_obj, const std::string& device_str, float temperature,
+           bool nash_temperatures) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            torch::Device device(device_str);
+            auto model = torch::jit::load(model_path, device);
+            model.eval();
+            auto rollout = ts::rollout_self_play_batched(
+                n_games,
+                model,
+                pool_size,
+                seed.value_or(std::random_device{}()),
+                device,
+                temperature,
+                nash_temperatures
+            );
+
+            py::list steps_out;
+            for (const auto& step : rollout.steps) {
+                steps_out.append(rollout_step_to_dict(step));
+            }
+            return py::make_tuple(rollout.results, steps_out, rollout.game_boundaries);
+        },
+        py::arg("model_path"),
+        py::arg("n_games"),
+        py::arg("pool_size") = 32,
+        py::arg("seed") = py::none(),
+        py::arg("device") = "cpu",
+        py::arg("temperature") = 1.0f,
+        py::arg("nash_temperatures") = true,
+        "Run batched stochastic self-play rollout for PPO collection.\n"
+        "Returns (results, steps, game_boundaries), where steps contains NumPy\n"
+        "feature/mask arrays plus sampled action metadata and log-probs."
+    );
+    m.def(
         "benchmark_ismcts",
         [](const std::string& model_path, ts::Side learned_side, int n_games,
            int n_determinizations, int n_simulations, py::object seed_obj, int pool_size,

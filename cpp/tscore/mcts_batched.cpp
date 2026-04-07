@@ -4261,6 +4261,132 @@ RolloutResult rollout_games_batched(
     return result;
 }
 
+RolloutResult rollout_self_play_batched(
+    int n_games,
+    torch::jit::script::Module& model,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device,
+    float temperature,
+    bool nash_temperatures
+) {
+    if (n_games <= 0) {
+        return {};
+    }
+    if (temperature <= 0.0f) {
+        throw std::invalid_argument("rollout_self_play_batched requires temperature > 0");
+    }
+    if (pool_size <= 0) {
+        pool_size = std::min(n_games, 64);
+    }
+
+    BatchedMctsConfig config;
+    config.pool_size = pool_size;
+    config.mcts.n_simulations = 0;
+    config.nash_temperatures = nash_temperatures;
+    config.record_rows = false;
+
+    std::vector<GameSlot> pool(static_cast<size_t>(pool_size));
+    int games_started = 0;
+    int games_finished = 0;
+    std::vector<std::optional<GameResult>> ordered_results(static_cast<size_t>(n_games));
+    std::vector<std::vector<RolloutStep>> steps_by_game(static_cast<size_t>(n_games));
+
+    nn::BatchInputs batch_inputs;
+    batch_inputs.allocate(pool_size, device);
+
+    std::vector<GameSlot*> batch_slots;
+    batch_slots.reserve(static_cast<size_t>(pool_size));
+
+    while (games_finished < n_games) {
+        batch_inputs.reset();
+        batch_slots.clear();
+
+        for (auto& slot : pool) {
+            if (slot.active && slot.game_done && !slot.emitted) {
+                ordered_results[static_cast<size_t>(slot.game_index)] = slot.result;
+                slot.emitted = true;
+                slot.active = false;
+                games_finished += 1;
+            }
+            if (!slot.active && games_started < n_games) {
+                initialize_slot(slot, games_started, base_seed, config);
+                games_started += 1;
+            }
+        }
+
+        for (auto& slot : pool) {
+            if (!slot.active || slot.game_done) {
+                continue;
+            }
+
+            advance_until_decision(slot, config);
+            if (slot.game_done || !slot.decision.has_value()) {
+                continue;
+            }
+
+            const auto batch_idx = batch_inputs.filled;
+            batch_inputs.fill_slot(
+                batch_idx,
+                slot.root_state.pub,
+                slot.root_state.hands[to_index(slot.decision->side)],
+                slot.decision->holds_china,
+                slot.decision->side
+            );
+            batch_slots.push_back(&slot);
+        }
+
+        if (!batch_slots.empty()) {
+            const auto outputs = nn::forward_model_batched(model, batch_inputs);
+            for (int batch_idx = 0; batch_idx < static_cast<int>(batch_slots.size()); ++batch_idx) {
+                auto* slot = batch_slots[static_cast<size_t>(batch_idx)];
+                auto [action, step] = rollout_action_from_outputs(
+                    slot->root_state,
+                    batch_inputs,
+                    outputs,
+                    static_cast<int64_t>(batch_idx),
+                    slot->rng,
+                    temperature,
+                    slot->game_index,
+                    device
+                );
+                if (step.card_idx >= 0) {
+                    steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
+                }
+                commit_greedy_action(*slot, action);
+            }
+        }
+    }
+
+    RolloutResult result;
+    result.results.reserve(static_cast<size_t>(n_games));
+    result.game_boundaries.reserve(static_cast<size_t>(n_games));
+
+    size_t total_steps = 0;
+    for (const auto& game_steps : steps_by_game) {
+        total_steps += game_steps.size();
+    }
+    result.steps.reserve(total_steps);
+
+    int offset = 0;
+    for (int game_index = 0; game_index < n_games; ++game_index) {
+        result.game_boundaries.push_back(offset);
+        const auto& maybe_result = ordered_results[static_cast<size_t>(game_index)];
+        if (!maybe_result.has_value()) {
+            throw std::runtime_error("rollout_self_play_batched missing ordered game result");
+        }
+        result.results.push_back(*maybe_result);
+
+        auto& game_steps = steps_by_game[static_cast<size_t>(game_index)];
+        offset += static_cast<int>(game_steps.size());
+        for (auto& step : game_steps) {
+            result.steps.push_back(std::move(step));
+        }
+    }
+
+    return result;
+}
+
 std::vector<GameResult> benchmark_mcts_vs_greedy(
     int n_games,
     torch::jit::script::Module& model,

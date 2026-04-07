@@ -31,9 +31,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # Bindings
-_bindings_dir = str(Path(__file__).resolve().parent.parent / "build-ninja" / "bindings")
-if _bindings_dir not in sys.path:
-    sys.path.insert(0, _bindings_dir)
+_repo_root = Path(__file__).resolve().parent.parent
+for _bindings_path in (
+    _repo_root / "build" / "bindings",
+    _repo_root / "build-ninja" / "bindings",
+):
+    _bindings_dir = str(_bindings_path)
+    if _bindings_path.exists() and _bindings_dir not in sys.path:
+        sys.path.insert(0, _bindings_dir)
+        break
 _py_dir = str(Path(__file__).resolve().parent.parent / "python")
 if _py_dir not in sys.path:
     sys.path.insert(0, _py_dir)
@@ -603,6 +609,71 @@ def collect_rollout_batched(
     return all_steps
 
 
+def collect_rollout_self_play_batched(
+    model: nn.Module,
+    n_games: int,
+    base_seed: int,
+    device: str,
+) -> list[Step]:
+    """Collect PPO rollout steps from self-play (both sides use learned model)."""
+    if not hasattr(tscore, "rollout_self_play_batched"):
+        raise RuntimeError("tscore.rollout_self_play_batched is not available")
+
+    script_path = _export_temp_model(model)
+    try:
+        results, steps, boundaries = tscore.rollout_self_play_batched(
+            model_path=script_path,
+            n_games=n_games,
+            pool_size=min(n_games, 64),
+            seed=base_seed,
+            device="cpu",
+            temperature=1.0,
+            nash_temperatures=True,
+        )
+    finally:
+        try:
+            os.remove(script_path)
+        except OSError:
+            pass
+
+    all_steps: list[Step] = []
+    for s in steps:
+        country_mask = torch.from_numpy(s["country_mask"])
+        step = Step(
+            influence=torch.from_numpy(s["influence"]).unsqueeze(0),
+            cards=torch.from_numpy(s["cards"]).unsqueeze(0),
+            scalars=torch.from_numpy(s["scalars"]).unsqueeze(0),
+            card_mask=torch.from_numpy(s["card_mask"]),
+            mode_mask=torch.from_numpy(s["mode_mask"]),
+            country_mask=country_mask if bool(country_mask.any()) else None,
+            card_idx=s["card_idx"],
+            mode_idx=s["mode_idx"],
+            country_targets=list(s["country_targets"]),
+            old_log_prob=float(s["log_prob"]),
+            value=float(s["value"]),
+            side_int=int(s["side_int"]),
+        )
+        all_steps.append(step)
+
+    _recompute_log_probs_and_values(all_steps, model, device)
+
+    for i, result in enumerate(results):
+        start = boundaries[i]
+        end = boundaries[i + 1] if i + 1 < len(boundaries) else len(all_steps)
+        if start >= end:
+            continue
+        for step_idx in range(start, end):
+            step = all_steps[step_idx]
+            if step_idx == end - 1:
+                if step.side_int == 0:
+                    step.reward = 1.0 if result.winner == tscore.Side.USSR else -1.0
+                else:
+                    step.reward = 1.0 if result.winner == tscore.Side.US else -1.0
+                step.done = True
+
+    return all_steps
+
+
 collect_rollout = collect_rollout_batched
 
 
@@ -1085,6 +1156,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--benchmark-every", type=int, default=20, help="Benchmark every N iterations")
     p.add_argument("--side", choices=["ussr", "us", "both"], default="both",
                    help="Which side to train as")
+    p.add_argument("--self-play", action="store_true",
+                   help="Train via self-play (both sides use learned model) instead of vs heuristic")
+    p.add_argument("--self-play-heuristic-mix", type=float, default=0.2,
+                   help="Fraction of games to play vs heuristic when --self-play is active (collapse anchor)")
     p.add_argument("--seed", type=int, default=99000, help="Base random seed")
     p.add_argument("--device", default="cuda", help="torch device")
     p.add_argument("--wandb", action="store_true", help="Enable W&B logging")
@@ -1169,6 +1244,8 @@ def main() -> None:
           f"{args.games_per_iter} games/iter, side={args.side}", flush=True)
     print(f"Device: {device}, lr={args.lr}, clip={args.clip_eps}, "
           f"ent={args.ent_coef}, vf={args.vf_coef}", flush=True)
+    if args.self_play:
+        print(f"Self-play enabled (heuristic mix={args.self_play_heuristic_mix:.3f})", flush=True)
     if args.start_iteration > 1:
         print(f"Resuming from iteration {args.start_iteration} "
               f"(best_combined={best_combined:.3f})", flush=True)
@@ -1180,14 +1257,31 @@ def main() -> None:
 
         # ── Rollout phase ────────────────────────────────────────────────────
         all_steps: list[Step] = []
-        for side in sides:
-            side_seed = args.seed + (iteration - 1) * args.games_per_iter
-            if side == tscore.Side.US:
-                side_seed += games_per_side
-            steps = collect_rollout_batched(
-                model, games_per_side, side, side_seed, device, card_specs
+        self_play_steps: list[Step] = []
+        if args.self_play:
+            seed = args.seed + (iteration - 1) * args.games_per_iter
+            self_play_steps = collect_rollout_self_play_batched(
+                model, args.games_per_iter, seed, device
             )
-            all_steps.extend(steps)
+            all_steps = list(self_play_steps)
+            if args.self_play_heuristic_mix > 0:
+                n_heur = max(1, int(args.games_per_iter * args.self_play_heuristic_mix))
+                heur_steps_ussr = collect_rollout_batched(
+                    model, n_heur // 2, tscore.Side.USSR, seed + 1000000, device, card_specs
+                )
+                heur_steps_us = collect_rollout_batched(
+                    model, n_heur // 2, tscore.Side.US, seed + 2000000, device, card_specs
+                )
+                all_steps = all_steps + heur_steps_ussr + heur_steps_us
+        else:
+            for side in sides:
+                side_seed = args.seed + (iteration - 1) * args.games_per_iter
+                if side == tscore.Side.US:
+                    side_seed += games_per_side
+                steps = collect_rollout_batched(
+                    model, games_per_side, side, side_seed, device, card_specs
+                )
+                all_steps.extend(steps)
 
         n_steps = len(all_steps)
         if n_steps == 0:
@@ -1207,6 +1301,14 @@ def main() -> None:
         us_done = [s for s in terminal_steps if s.side_int == 1]
         rollout_wr_ussr = sum(1 for s in ussr_done if s.reward > 0) / max(1, len(ussr_done))
         rollout_wr_us = sum(1 for s in us_done if s.reward > 0) / max(1, len(us_done))
+        sp_rollout_wr_ussr = 0.0
+        sp_rollout_wr_us = 0.0
+        if args.self_play:
+            terminal_sp_steps = [s for s in self_play_steps if s.done]
+            ussr_sp_steps = [s for s in terminal_sp_steps if s.side_int == 0]
+            us_sp_steps = [s for s in terminal_sp_steps if s.side_int == 1]
+            sp_rollout_wr_ussr = sum(1 for s in ussr_sp_steps if s.reward > 0) / max(1, len(ussr_sp_steps))
+            sp_rollout_wr_us = sum(1 for s in us_sp_steps if s.reward > 0) / max(1, len(us_sp_steps))
 
         # ── PPO update phase ──────────────────────────────────────────────────
         t_update_start = time.time()
@@ -1293,6 +1395,9 @@ def main() -> None:
                     "n_steps": n_steps,
                     "iter_time_s": t_iter,
                 })
+                if args.self_play:
+                    metrics["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
+                    metrics["sp_rollout_wr_us"] = sp_rollout_wr_us
                 wandb_run.log(metrics, step=iteration)
                 if "policy_stats" in bench and wandb_run and bench["policy_stats"]:
                     wandb_run.log(bench["policy_stats"], step=iteration)
@@ -1304,6 +1409,9 @@ def main() -> None:
                 log_dict["rollout_wr_us"] = rollout_wr_us
                 log_dict["n_steps"] = n_steps
                 log_dict["iter_time_s"] = t_iter
+                if args.self_play:
+                    log_dict["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
+                    log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
                 wandb_run.log(log_dict, step=iteration)
 
     # ── Final checkpoint + summary ────────────────────────────────────────────

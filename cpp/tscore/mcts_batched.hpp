@@ -169,6 +169,16 @@ RolloutResult rollout_games_batched(
     bool nash_temperatures = true
 );
 
+RolloutResult rollout_self_play_batched(
+    int n_games,
+    torch::jit::script::Module& model,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device = torch::kCPU,
+    float temperature = 1.0f,
+    bool nash_temperatures = true
+);
+
 /// Run MCTS (learned side) vs greedy NN (opponent) benchmark.
 /// Returns one GameResult per game.
 std::vector<GameResult> benchmark_mcts_vs_greedy(
