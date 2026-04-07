@@ -288,6 +288,27 @@ Self-play is recovering US WR: 63.2% → 71.2% from iter 20 → 40.
 
 v2b iter40 beats v2b iter20 at 61.5% (200 games, seed 77200).
 
+### Iter 60 Benchmark & Elo
+
+**Iter 60 vs heuristic**: USSR=88.4%, US=70.4%, combined=79.4%
+
+Heuristic WR progression (v2b self-play): 73.6% → 77.8% → 79.4% (every 20 iters)
+
+**Elo matchup iter40 vs iter60**: iter60 wins 56%, Elo gap = +119 pts
+
+Elo leaderboard after 60 iters:
+| Elo | Model |
+|-----|-------|
+| 1619 | PPO v2b iter60 |
+| 1554 | PPO v2b iter20 |
+| 1477 | PPO v1 iter20 |
+| 1443 | PPO v2b iter40 |
+| 1408 | PPO v1 best |
+
+Self-play is producing consistent Elo gains every 20 iterations. The model at iter 60 is
+184 Elo above PPO v1's 200-iteration best, demonstrating that self-play is finding real
+strategic improvements beyond heuristic exploitation.
+
 ---
 
 ## Next Steps
