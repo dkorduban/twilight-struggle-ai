@@ -320,3 +320,85 @@ cpp/mcts_batched_fast/build/ts_fast_mcts_bench \
   --torch-threads 8 \
   --torch-interop 1
 ```
+
+K-sample exact fast-path work:
+
+- Goal: make the production-like exact `K=4` influence-sampling path as close as
+  possible to the current `K=1` fast path, without changing the math.
+- Benchmark shape for all numbers below:
+  - `games=32`
+  - `n_sim=400`
+  - `pool=32`
+  - `max_pending=64` unless noted
+  - `torch_threads=2`
+  - `torch_interop=1`
+  - `warmup=0`
+  - `seed=12345`
+  - `nice -n 0`
+  - checkpoint/model: `data/checkpoints/v99_cf_1x95_s7/baseline_best_scripted.pt`
+
+What was optimized in the exact `K=4` path:
+
+- Added exact K-sample knobs to the standalone bench runner:
+  - `--influence-samples`
+  - `--influence-t-strategy`
+  - `--influence-t-country`
+  - `--influence-proportional-first`
+- Ported the exact K-sample influence expansion math from `cpp/tscore/mcts_batched.cpp`
+  into the local compact fast path.
+- Added per-node reusable deterministic prefix caching by `ops`:
+  - cache the exact proportional allocations once
+  - reuse their blob refs, hashes, and densities across cards with the same `ops`
+- Removed repeated deterministic work in the generic remainder path:
+  - use precomputed strategy softmax for the `T_s=0, T_c=0` remainder sampler
+  - special-case `temperature=1.0` multinomial sampling to skip redundant scaling
+  - precompute log-prob tables for density evaluation
+- Moved K-sample allocations and density-cache entries to compact fixed-size
+  influence blobs instead of tiny `std::vector` objects.
+
+Fresh clean results from the current code:
+
+| Variant | pre_load | post_load | run_max_mhz | elapsed | sims | sims/s |
+|---|---:|---:|---:|---:|---:|---:|
+| `K=1` | `154.8%` | `151.8%` | `2995.1` | `62.6s` | `1,903,600` | `30403.8` |
+| `K=4` | `171.6%` | `165.0%` | `2995.1` | `117.9s` | `1,878,000` | `15923.6` |
+
+Current `K=4 / K=1` ratio:
+
+- `15923.6 / 30403.8 = 0.524`
+- Current exact `K=4` reaches about `52.4%` of the current exact `K=1` fast path.
+- This is still below the target of `>= 90%`.
+
+Progress within this K-work alone:
+
+| K=4 exact path stage | pre_load | run_max_mhz | sims/s | expand time |
+|---|---:|---:|---:|---:|
+| Initial clean exact port | `704.3%` | `2995.1` | `8943.7` | `140.359s` |
+| After deterministic prefix cache | `178.6%` | `2995.1` | `13381.5` | `93.207s` |
+| After hot-math shortcuts + compact blobs | `171.6%` | `2995.1` | `15923.6` | `74.722s` |
+
+Current exact phase breakdown:
+
+- `K=1`
+  - `advance=0.002s`
+  - `select=11.811s`
+  - `nn=23.322s`
+  - `expand=26.031s`
+  - `commit=1.401s`
+- `K=4`
+  - `advance=0.002s`
+  - `select=13.814s`
+  - `nn=26.909s`
+  - `expand=74.722s`
+  - `commit=2.410s`
+
+Current verdict:
+
+- The exact `K=4` fast path is materially faster than where it started.
+- The dominant remaining gap is still `expand`.
+- The main residual cost is not “there are too many extra edges”; it is that the
+  exact `K=4` influence branch still has to do substantially more exact allocation
+  generation and density work than `K=1`.
+- `max_pending=96` did not beat `64` on the exact `K=4` production-like run:
+  - `max_pending=96` -> `15719.0 sims/s`
+  - `max_pending=64` -> `15923.6 sims/s`

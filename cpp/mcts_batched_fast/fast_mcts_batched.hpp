@@ -20,6 +20,10 @@ struct BenchConfig {
     int max_pending = 8;
     int virtual_loss_weight = 3;
     int cache_visit_threshold = 0;
+    float influence_t_strategy = 0.0f;
+    float influence_t_country = 0.0f;
+    bool influence_proportional_first = true;
+    int influence_samples = 1;
     float temperature = 0.0f;
     float epsilon_greedy = 0.0f;
     std::optional<Side> learned_side;

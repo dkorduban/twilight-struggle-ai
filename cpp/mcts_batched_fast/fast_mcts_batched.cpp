@@ -42,6 +42,7 @@ constexpr int kMaxCardLogits = 112;
 constexpr int kMaxModeLogits = 8;
 constexpr int kMaxCountryLogits = 86;
 constexpr int kMaxStrategies = 8;
+constexpr int kMaxInfluenceTargetsPerEdge = 8;
 constexpr bool kValidateCompactTree = false;
 constexpr std::array<int, 13> kDefconLoweringCards = {
     4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
@@ -61,6 +62,9 @@ struct ExpansionResult {
     std::unique_ptr<struct FastNode> node;
     double leaf_value = 0.0;
 };
+
+static thread_local int g_ksample_template_hits = 0;
+static thread_local int g_ksample_generic_calls = 0;
 
 struct SelectionResult {
     bool needs_batch = false;
@@ -132,10 +136,15 @@ struct FastEdge {
     double total_value = 0.0;
 };
 
+struct FastInfluenceTargets {
+    std::array<CountryId, kMaxInfluenceTargetsPerEdge> values = {};
+    int count = 0;
+};
+
 struct FastNode {
     std::vector<FastEdge> edges;
     std::vector<std::unique_ptr<FastNode>> children;
-    std::vector<CountryId> resolved_targets;
+    std::vector<FastInfluenceTargets> influence_targets;
     int total_visits = 0;
     bool is_terminal = false;
     double terminal_value = 0.0;
@@ -159,7 +168,7 @@ struct FastNode {
         " target_count=" + std::to_string(edge.target_count) +
         " edge_count=" + std::to_string(node.edges.size()) +
         " child_count=" + std::to_string(node.children.size()) +
-        " resolved_targets=" + std::to_string(node.resolved_targets.size())
+        " influence_targets=" + std::to_string(node.influence_targets.size())
     );
 }
 
@@ -181,7 +190,10 @@ struct FastNode {
             if (edge.target_count < 0 || edge.target_offset < 0) {
                 throw_compact_node_error(context, node, edge_index, edge);
             }
-            if (static_cast<size_t>(edge.target_offset + edge.target_count) > node.resolved_targets.size()) {
+            if (static_cast<size_t>(edge.target_offset) >= node.influence_targets.size()) {
+                throw_compact_node_error(context, node, edge_index, edge);
+            }
+            if (node.influence_targets[static_cast<size_t>(edge.target_offset)].count != edge.target_count) {
                 throw_compact_node_error(context, node, edge_index, edge);
             }
             continue;
@@ -567,6 +579,20 @@ struct CompactLegalCardsResult {
     AccessibleCache cache;
 };
 
+const std::array<uint64_t, 86> kInfluenceZobrist = [] {
+    std::array<uint64_t, 86> table{};
+    Pcg64Rng zobrist_rng(0xDEADBEEF42ULL);
+    for (int i = 0; i < 86; ++i) {
+        table[static_cast<size_t>(i)] = zobrist_rng.next_u64();
+    }
+    return table;
+}();
+
+struct InfluenceAllocation {
+    FastInfluenceTargets blob;
+    uint64_t hash = 0;
+};
+
 DraftsResult collect_card_drafts_cached(const GameState& state) {
     const auto side = state.pub.phasing;
     const auto holds_china = holds_china_for(state, side);
@@ -722,10 +748,17 @@ CompactLegalCardsResult collect_compact_legal_cards(const GameState& state) {
     };
 }
 
-int exact_edge_count(const CompactLegalCardsResult& legal) {
+bool use_ksample_influence(const BenchConfig& config) {
+    return config.influence_samples > 1 ||
+        config.influence_t_strategy > 0.0f ||
+        config.influence_t_country > 0.0f;
+}
+
+int exact_edge_count(const CompactLegalCardsResult& legal, const BenchConfig& config) {
+    const int influence_edge_count = std::max(1, config.influence_samples);
     int total = 0;
     for (const auto& card : legal.cards) {
-        total += card.has_influence ? 1 : 0;
+        total += card.has_influence ? (use_ksample_influence(config) ? influence_edge_count : 1) : 0;
         total += card.has_coup ? static_cast<int>(legal.cache.coup.size()) : 0;
         total += card.has_realign ? static_cast<int>(legal.cache.realign.size()) : 0;
         total += card.has_space ? 1 : 0;
@@ -833,14 +866,14 @@ int softmax_country_logits_for_accessible(
     return count;
 }
 
-ActionEncoding build_influence_action_from_probs(CardId card_id, int ops, const std::vector<CountryId>& accessible, const float* influence_probs) {
-    ActionEncoding resolved{
-        .card_id = card_id,
-        .mode = ActionMode::Influence,
-        .targets = {},
-    };
+std::vector<CountryId> build_influence_targets_from_probs(
+    int ops,
+    const std::vector<CountryId>& accessible,
+    const float* influence_probs
+) {
+    std::vector<CountryId> resolved_targets;
     if (accessible.empty() || ops <= 0) {
-        return resolved;
+        return resolved_targets;
     }
 
     const int n_acc = static_cast<int>(accessible.size());
@@ -865,13 +898,159 @@ ActionEncoding build_influence_action_from_probs(CardId card_id, int ops, const 
         }
     }
 
-    resolved.targets.reserve(static_cast<size_t>(ops));
+    resolved_targets.reserve(static_cast<size_t>(ops));
     for (int i = 0; i < n_acc; ++i) {
         for (int j = 0; j < alloc_i[i]; ++j) {
-            resolved.targets.push_back(accessible[static_cast<size_t>(i)]);
+            resolved_targets.push_back(accessible[static_cast<size_t>(i)]);
         }
     }
-    return resolved;
+    return resolved_targets;
+}
+
+InfluenceAllocation proportional_allocation_compact(
+    const float* compact_probs,
+    const std::vector<CountryId>& accessible,
+    int ops
+) {
+    const int n_acc = static_cast<int>(accessible.size());
+    int alloc_i[kMaxCountryLogits] = {};
+    float alloc_f[kMaxCountryLogits] = {};
+    int floor_sum = 0;
+    for (int i = 0; i < n_acc; ++i) {
+        alloc_f[i] = compact_probs[i] * static_cast<float>(ops);
+        alloc_i[i] = static_cast<int>(std::floor(alloc_f[i]));
+        floor_sum += alloc_i[i];
+    }
+    int remainder = ops - floor_sum;
+    if (remainder > 0) {
+        std::pair<float, int> order[kMaxCountryLogits];
+        for (int i = 0; i < n_acc; ++i) {
+            order[i] = {-(alloc_f[i] - static_cast<float>(alloc_i[i])), i};
+        }
+        std::sort(order, order + n_acc);
+        for (int i = 0; i < remainder && i < n_acc; ++i) {
+            alloc_i[order[i].second] += 1;
+        }
+    }
+
+    InfluenceAllocation result;
+    for (int i = 0; i < n_acc; ++i) {
+        if (alloc_i[i] <= 0) {
+            continue;
+        }
+        const auto cid = accessible[static_cast<size_t>(i)];
+        for (int j = 0; j < alloc_i[i]; ++j) {
+            result.blob.values[static_cast<size_t>(result.blob.count++)] = cid;
+        }
+        result.hash += static_cast<uint64_t>(alloc_i[i]) *
+            kInfluenceZobrist[static_cast<size_t>(static_cast<int>(cid))];
+    }
+    return result;
+}
+
+int categorical_sample(const float* probs, int n, Pcg64Rng& rng) {
+    const double u = static_cast<double>(rng.next_u32()) / 4294967296.0;
+    double cumulative = 0.0;
+    for (int i = 0; i < n - 1; ++i) {
+        cumulative += static_cast<double>(probs[i]);
+        if (u < cumulative) {
+            return i;
+        }
+    }
+    return std::max(0, n - 1);
+}
+
+InfluenceAllocation multinomial_sample_compact(
+    const float* compact_probs,
+    const std::vector<CountryId>& accessible,
+    int ops,
+    float temperature,
+    Pcg64Rng& rng
+) {
+    const int n_acc = static_cast<int>(accessible.size());
+    float scaled[kMaxCountryLogits] = {};
+    if (temperature == 1.0f) {
+        std::memcpy(scaled, compact_probs, static_cast<size_t>(n_acc) * sizeof(float));
+    } else {
+        float total = 0.0f;
+        const float inv_temperature = 1.0f / temperature;
+        for (int i = 0; i < n_acc; ++i) {
+            const float p = compact_probs[i];
+            const float scaled_p = p > 0.0f ? std::pow(p, inv_temperature) : 0.0f;
+            scaled[i] = scaled_p;
+            total += scaled_p;
+        }
+        if (total > 0.0f) {
+            const float inv_total = 1.0f / total;
+            for (int i = 0; i < n_acc; ++i) {
+                scaled[i] *= inv_total;
+            }
+        } else if (n_acc > 0) {
+            const float uniform = 1.0f / static_cast<float>(n_acc);
+            for (int i = 0; i < n_acc; ++i) {
+                scaled[i] = uniform;
+            }
+        }
+    }
+
+    int counts[kMaxCountryLogits] = {};
+    for (int op = 0; op < ops; ++op) {
+        counts[categorical_sample(scaled, n_acc, rng)] += 1;
+    }
+
+    InfluenceAllocation result;
+    for (int i = 0; i < n_acc; ++i) {
+        if (counts[i] <= 0) {
+            continue;
+        }
+        const auto cid = accessible[static_cast<size_t>(i)];
+        for (int j = 0; j < counts[i]; ++j) {
+            result.blob.values[static_cast<size_t>(result.blob.count++)] = cid;
+        }
+        result.hash += static_cast<uint64_t>(counts[i]) *
+            kInfluenceZobrist[static_cast<size_t>(static_cast<int>(cid))];
+    }
+    return result;
+}
+
+[[maybe_unused]] double multinomial_probability_compact(
+    const std::vector<CountryId>& targets,
+    const float* compact_probs,
+    const std::vector<CountryId>& accessible,
+    int ops
+) {
+    static const double log_factorial[6] = {
+        0.0,
+        0.0,
+        0.6931471805599453,
+        1.791759469228055,
+        3.1780538303479458,
+        4.787491742782046,
+    };
+
+    const int n_acc = static_cast<int>(accessible.size());
+    int counts[kMaxCountryLogits] = {};
+    for (const auto cid : targets) {
+        for (int i = 0; i < n_acc; ++i) {
+            if (accessible[static_cast<size_t>(i)] == cid) {
+                counts[i] += 1;
+                break;
+            }
+        }
+    }
+
+    double log_density = log_factorial[std::min(ops, 5)];
+    for (int i = 0; i < n_acc; ++i) {
+        if (counts[i] <= 0) {
+            continue;
+        }
+        log_density -= log_factorial[std::min(counts[i], 5)];
+        if (compact_probs[i] <= 0.0f) {
+            return 0.0;
+        }
+        log_density += static_cast<double>(counts[i]) * std::log(static_cast<double>(compact_probs[i]));
+    }
+    return std::exp(log_density);
 }
 
 ActionEncoding materialize_action(const FastNode& node, size_t edge_index) {
@@ -882,12 +1061,16 @@ ActionEncoding materialize_action(const FastNode& node, size_t edge_index) {
         .targets = {},
     };
     if (edge.mode == ActionMode::Influence && edge.target_count > 0) {
-        if (static_cast<size_t>(edge.target_offset + edge.target_count) > node.resolved_targets.size()) {
+        if (static_cast<size_t>(edge.target_offset) >= node.influence_targets.size()) {
             throw_compact_node_error("materialize_action influence range", node, edge_index, edge);
+        }
+        const auto& blob = node.influence_targets[static_cast<size_t>(edge.target_offset)];
+        if (blob.count != edge.target_count) {
+            throw_compact_node_error("materialize_action influence count", node, edge_index, edge);
         }
         action.targets.reserve(static_cast<size_t>(edge.target_count));
         for (int i = 0; i < edge.target_count; ++i) {
-            action.targets.push_back(node.resolved_targets[static_cast<size_t>(edge.target_offset + i)]);
+            action.targets.push_back(blob.values[static_cast<size_t>(i)]);
         }
     } else if ((edge.mode == ActionMode::Coup || edge.mode == ActionMode::Realign) && edge.country != 0) {
         action.targets.push_back(edge.country);
@@ -902,9 +1085,17 @@ void append_compact_edge(FastNode& node, const ActionEncoding& action, float pri
     int target_count = 0;
     CountryId country = 0;
     if (action.mode == ActionMode::Influence && !action.targets.empty()) {
-        target_offset = static_cast<int>(node.resolved_targets.size());
         target_count = static_cast<int>(action.targets.size());
-        node.resolved_targets.insert(node.resolved_targets.end(), action.targets.begin(), action.targets.end());
+        if (target_count > kMaxInfluenceTargetsPerEdge) {
+            throw std::runtime_error(std::string(context) + " influence target overflow");
+        }
+        target_offset = static_cast<int>(node.influence_targets.size());
+        FastInfluenceTargets blob;
+        blob.count = target_count;
+        for (int i = 0; i < target_count; ++i) {
+            blob.values[static_cast<size_t>(i)] = action.targets[static_cast<size_t>(i)];
+        }
+        node.influence_targets.push_back(blob);
     } else if ((action.mode == ActionMode::Coup || action.mode == ActionMode::Realign) && !action.targets.empty()) {
         country = action.targets.front();
     } else if (action.mode == ActionMode::Coup || action.mode == ActionMode::Realign) {
@@ -921,6 +1112,93 @@ void append_compact_edge(FastNode& node, const ActionEncoding& action, float pri
         .country = country,
         .target_offset = target_offset,
         .target_count = target_count,
+        .prior = prior,
+    });
+    node.children.emplace_back(nullptr);
+    if constexpr (kValidateCompactTree) {
+        validate_compact_node(node, context);
+    }
+}
+
+void append_compact_influence_targets(
+    FastNode& node,
+    CardId card_id,
+    const std::vector<CountryId>& targets,
+    float prior,
+    const char* context
+) {
+    const int target_count = static_cast<int>(targets.size());
+    if (target_count > kMaxInfluenceTargetsPerEdge) {
+        throw std::runtime_error(std::string(context) + " influence target overflow");
+    }
+    const int target_offset = static_cast<int>(node.influence_targets.size());
+    if (target_count > 0) {
+        FastInfluenceTargets blob;
+        blob.count = target_count;
+        for (int i = 0; i < target_count; ++i) {
+            blob.values[static_cast<size_t>(i)] = targets[static_cast<size_t>(i)];
+        }
+        node.influence_targets.push_back(blob);
+    }
+    node.edges.push_back(FastEdge{
+        .card_id = card_id,
+        .mode = ActionMode::Influence,
+        .country = 0,
+        .target_offset = target_offset,
+        .target_count = target_count,
+        .prior = prior,
+    });
+    node.children.emplace_back(nullptr);
+    if constexpr (kValidateCompactTree) {
+        validate_compact_node(node, context);
+    }
+}
+
+void append_compact_influence_blob_copy(
+    FastNode& node,
+    CardId card_id,
+    const FastInfluenceTargets& blob,
+    float prior,
+    const char* context
+) {
+    const int target_count = blob.count;
+    if (target_count > kMaxInfluenceTargetsPerEdge) {
+        throw std::runtime_error(std::string(context) + " influence target overflow");
+    }
+    const int target_offset = static_cast<int>(node.influence_targets.size());
+    if (target_count > 0) {
+        node.influence_targets.push_back(blob);
+    }
+    node.edges.push_back(FastEdge{
+        .card_id = card_id,
+        .mode = ActionMode::Influence,
+        .country = 0,
+        .target_offset = target_offset,
+        .target_count = target_count,
+        .prior = prior,
+    });
+    node.children.emplace_back(nullptr);
+    if constexpr (kValidateCompactTree) {
+        validate_compact_node(node, context);
+    }
+}
+
+void append_compact_influence_blob_ref(
+    FastNode& node,
+    CardId card_id,
+    int blob_index,
+    float prior,
+    const char* context
+) {
+    if (blob_index < 0 || static_cast<size_t>(blob_index) >= node.influence_targets.size()) {
+        throw std::runtime_error(std::string(context) + " influence blob index out of range");
+    }
+    node.edges.push_back(FastEdge{
+        .card_id = card_id,
+        .mode = ActionMode::Influence,
+        .country = 0,
+        .target_offset = blob_index,
+        .target_count = node.influence_targets[static_cast<size_t>(blob_index)].count,
         .prior = prior,
     });
     node.children.emplace_back(nullptr);
@@ -1038,6 +1316,7 @@ struct RawBatchOutputs {
     node->side_to_move = state.pub.phasing;
     node->edges.reserve(64);
     node->children.reserve(64);
+    node->influence_targets.reserve(64);
 
     auto [drafts, cache] = collect_card_drafts_cached(state);
 
@@ -1231,7 +1510,7 @@ ExpansionResult expand_from_raw_flat(
     const GameState& state,
     const RawBatchOutputs& raw,
     int batch_index,
-    const MctsConfig& config,
+    const BenchConfig& config,
     Pcg64Rng& rng
 ) {
     auto legal = collect_compact_legal_cards(state);
@@ -1240,10 +1519,10 @@ ExpansionResult expand_from_raw_flat(
 
     auto node = std::make_unique<FastNode>();
     node->side_to_move = state.pub.phasing;
-    const int reserved_edges = exact_edge_count(legal);
+    const int reserved_edges = exact_edge_count(legal, config);
     node->edges.reserve(static_cast<size_t>(std::max(1, reserved_edges)));
     node->children.reserve(static_cast<size_t>(std::max(1, reserved_edges)));
-    node->resolved_targets.reserve(static_cast<size_t>(std::max(8, reserved_edges * 2)));
+    node->influence_targets.reserve(static_cast<size_t>(std::max(1, reserved_edges)));
 
     const float* card_logits = raw.card_logits + batch_index * raw.card_stride;
     const int n_card = raw.n_card;
@@ -1273,6 +1552,10 @@ ExpansionResult expand_from_raw_flat(
         country_logits_ptr = raw.country_logits + batch_index * raw.country_stride;
     }
 
+    const bool use_ksample = country_logits_ptr != nullptr &&
+        !cache.influence.empty() &&
+        use_ksample_influence(config);
+
     float card_probs[kMaxCardLogits];
     int card_prob_count = 0;
     for (const auto& card : cards) {
@@ -1287,7 +1570,9 @@ ExpansionResult expand_from_raw_flat(
     int influence_prob_count = 0;
     float military_probs[kMaxCountryLogits];
     int military_prob_count = 0;
+    int influence_count = 0;
     if (country_logits_ptr != nullptr) {
+        influence_count = static_cast<int>(cache.influence.size());
         if (!cache.influence.empty()) {
             influence_prob_count =
                 softmax_country_logits_for_accessible(cache.influence, country_logits_ptr, n_country, influence_probs);
@@ -1297,6 +1582,170 @@ ExpansionResult expand_from_raw_flat(
                 softmax_country_logits_for_accessible(cache.coup, country_logits_ptr, n_country, military_probs);
         }
     }
+
+    int ksample_effective_n_strat = 0;
+    float ksample_country_probs_all[kMaxStrategies][kMaxCountryLogits] = {};
+    double ksample_country_log_probs_all[kMaxStrategies][kMaxCountryLogits] = {};
+    float ksample_strategy_logits_buf[kMaxStrategies] = {};
+    float ksample_strategy_probs[kMaxStrategies] = {};
+    int influence_pos_by_country[kMaxCountryLogits];
+    std::fill(std::begin(influence_pos_by_country), std::end(influence_pos_by_country), -1);
+    if (use_ksample) {
+        for (int i = 0; i < influence_count; ++i) {
+            const int cid = static_cast<int>(cache.influence[static_cast<size_t>(i)]);
+            if (cid >= 0 && cid < kMaxCountryLogits) {
+                influence_pos_by_country[cid] = i;
+            }
+        }
+        const int n_strat = (raw.strategy_logits != nullptr &&
+                             raw.country_strategy_logits != nullptr &&
+                             raw.cs_n_strategies > 0)
+            ? std::min(raw.cs_n_strategies, kMaxStrategies)
+            : 0;
+
+        if (n_strat > 0) {
+            for (int s = 0; s < n_strat; ++s) {
+                const float* cs_row = raw.country_strategy_logits +
+                    batch_index * raw.cs_batch_stride +
+                    s * raw.cs_n_countries;
+                for (int i = 0; i < influence_count; ++i) {
+                    const int idx = static_cast<int>(cache.influence[static_cast<size_t>(i)]);
+                    ksample_country_probs_all[s][i] = (idx >= 0 && idx < raw.cs_n_countries)
+                        ? cs_row[idx]
+                        : -std::numeric_limits<float>::infinity();
+                }
+                softmax_compact_inplace(ksample_country_probs_all[s], influence_count);
+            }
+        } else {
+            for (int i = 0; i < influence_count; ++i) {
+                const int idx = static_cast<int>(cache.influence[static_cast<size_t>(i)]);
+                ksample_country_probs_all[0][i] = (idx >= 0 && idx < n_country)
+                    ? country_logits_ptr[idx]
+                    : -std::numeric_limits<float>::infinity();
+            }
+            softmax_compact_inplace(ksample_country_probs_all[0], influence_count);
+        }
+
+        ksample_effective_n_strat = n_strat > 0 ? n_strat : 1;
+        if (raw.strategy_logits != nullptr && n_strat > 0) {
+            std::memcpy(
+                ksample_strategy_logits_buf,
+                raw.strategy_logits + batch_index * raw.strategy_stride,
+                static_cast<size_t>(ksample_effective_n_strat) * sizeof(float)
+            );
+        } else {
+            ksample_strategy_logits_buf[0] = 0.0f;
+        }
+        std::memcpy(
+            ksample_strategy_probs,
+            ksample_strategy_logits_buf,
+            static_cast<size_t>(ksample_effective_n_strat) * sizeof(float)
+        );
+        softmax_compact_inplace(ksample_strategy_probs, ksample_effective_n_strat);
+        for (int s = 0; s < ksample_effective_n_strat; ++s) {
+            for (int i = 0; i < influence_count; ++i) {
+                const double p = static_cast<double>(ksample_country_probs_all[s][i]);
+                ksample_country_log_probs_all[s][i] =
+                    p > 0.0 ? std::log(p) : -std::numeric_limits<double>::infinity();
+            }
+        }
+    }
+
+    struct CachedDensity {
+        int ops = 0;
+        uint64_t hash = 0;
+        FastInfluenceTargets blob;
+        double density = 0.0;
+    };
+    std::vector<CachedDensity> density_cache;
+    density_cache.reserve(32);
+
+    auto compute_density_cached = [&](int ops, const FastInfluenceTargets& blob, uint64_t hash) -> double {
+        for (const auto& cached : density_cache) {
+            if (cached.ops == ops &&
+                cached.hash == hash &&
+                cached.blob.count == blob.count &&
+                std::equal(
+                    cached.blob.values.begin(),
+                    cached.blob.values.begin() + cached.blob.count,
+                    blob.values.begin()
+                )) {
+                return cached.density;
+            }
+        }
+        double density = 0.0;
+        for (int s = 0; s < ksample_effective_n_strat; ++s) {
+            static const double log_factorial[6] = {
+                0.0,
+                0.0,
+                0.6931471805599453,
+                1.791759469228055,
+                3.1780538303479458,
+                4.787491742782046,
+            };
+            int used_indices[5] = {};
+            int used_counts[5] = {};
+            int used_count = 0;
+            bool invalid = false;
+            for (int target_i = 0; target_i < blob.count; ++target_i) {
+                const auto cid = blob.values[static_cast<size_t>(target_i)];
+                const int cid_int = static_cast<int>(cid);
+                const int pos =
+                    (cid_int < kMaxCountryLogits) ? influence_pos_by_country[cid_int] : -1;
+                if (pos < 0) {
+                    invalid = true;
+                    break;
+                }
+                int slot = -1;
+                for (int i = 0; i < used_count; ++i) {
+                    if (used_indices[i] == pos) {
+                        slot = i;
+                        break;
+                    }
+                }
+                if (slot < 0) {
+                    slot = used_count++;
+                    used_indices[slot] = pos;
+                    used_counts[slot] = 0;
+                }
+                used_counts[slot] += 1;
+            }
+            if (invalid) {
+                continue;
+            }
+            double log_density = log_factorial[std::min(ops, 5)];
+            bool zero_prob = false;
+            for (int i = 0; i < used_count; ++i) {
+                log_density -= log_factorial[std::min(used_counts[i], 5)];
+                const double log_prob = ksample_country_log_probs_all[s][used_indices[i]];
+                if (!std::isfinite(log_prob)) {
+                    zero_prob = true;
+                    break;
+                }
+                log_density += static_cast<double>(used_counts[i]) * log_prob;
+            }
+            if (!zero_prob) {
+                density += static_cast<double>(ksample_strategy_probs[s]) * std::exp(log_density);
+            }
+        }
+        density_cache.push_back(CachedDensity{
+            .ops = ops,
+            .hash = hash,
+            .blob = blob,
+            .density = density,
+        });
+        return density;
+    };
+
+    struct ReusableKSampleTemplate {
+        bool initialized = false;
+        bool reusable = false;
+        std::vector<int> blob_indices;
+        std::vector<double> densities;
+        std::vector<uint64_t> hashes;
+        double density_sum = 0.0;
+    };
+    std::array<ReusableKSampleTemplate, 8> reusable_templates = {};
 
     double total_prior = 0.0;
     for (int card_idx = 0; card_idx < static_cast<int>(cards.size()); ++card_idx) {
@@ -1381,18 +1830,261 @@ ExpansionResult expand_from_raw_flat(
                 .targets = {},
             };
             if (mode == ActionMode::Influence &&
+                use_ksample) {
+                const int ops = card.ops;
+                const uint64_t local_seed = rng.next_u64();
+                const float T_s = config.influence_t_strategy;
+                const float T_c = config.influence_t_country;
+                const bool prop_first = config.influence_proportional_first;
+                const int K = config.influence_samples;
+
+                if (T_s == 0.0f && T_c == 0.0f && ops >= 0 && ops < static_cast<int>(reusable_templates.size())) {
+                    auto& reusable = reusable_templates[static_cast<size_t>(ops)];
+                    if (!reusable.initialized) {
+                        reusable.initialized = true;
+                        std::vector<InfluenceAllocation> reusable_allocations;
+                        auto try_add_deterministic = [&](InfluenceAllocation&& allocation) {
+                            for (const auto& existing : reusable_allocations) {
+                                if (existing.hash == allocation.hash) {
+                                    return;
+                                }
+                            }
+                            reusable_allocations.push_back(std::move(allocation));
+                        };
+
+                        int best_strategy = 0;
+                        for (int s = 1; s < ksample_effective_n_strat; ++s) {
+                            if (ksample_strategy_logits_buf[s] > ksample_strategy_logits_buf[best_strategy]) {
+                                best_strategy = s;
+                            }
+                        }
+                        try_add_deterministic(proportional_allocation_compact(
+                            ksample_country_probs_all[best_strategy],
+                            cache.influence,
+                            ops
+                        ));
+                        for (int s = 0; s < ksample_effective_n_strat &&
+                             static_cast<int>(reusable_allocations.size()) < K; ++s) {
+                            if (s == best_strategy) {
+                                continue;
+                            }
+                            try_add_deterministic(proportional_allocation_compact(
+                                ksample_country_probs_all[s],
+                                cache.influence,
+                                ops
+                            ));
+                        }
+
+                        if (static_cast<int>(reusable_allocations.size()) == K) {
+                            reusable.reusable = true;
+                        }
+
+                            reusable.blob_indices.reserve(reusable_allocations.size());
+                        reusable.densities.reserve(reusable_allocations.size());
+                        reusable.hashes.reserve(reusable_allocations.size());
+                        for (const auto& allocation : reusable_allocations) {
+                            const int blob_index = static_cast<int>(node->influence_targets.size());
+                            node->influence_targets.push_back(allocation.blob);
+                            reusable.blob_indices.push_back(blob_index);
+                            reusable.hashes.push_back(allocation.hash);
+                            const double density = compute_density_cached(ops, allocation.blob, allocation.hash);
+                            reusable.densities.push_back(density);
+                            reusable.density_sum += density;
+                        }
+                    }
+                    if (reusable.reusable) {
+                        g_ksample_template_hits += 1;
+                        for (size_t i = 0; i < reusable.blob_indices.size(); ++i) {
+                            const double prior = reusable.density_sum > 0.0
+                                ? per_edge_prior * reusable.densities[i] / reusable.density_sum
+                                : per_edge_prior / static_cast<double>(reusable.blob_indices.size());
+                            append_compact_influence_blob_ref(
+                                *node,
+                                card.card_id,
+                                reusable.blob_indices[i],
+                                static_cast<float>(prior),
+                                "expand_from_raw_flat influence-ksample-template"
+                            );
+                            total_prior += prior;
+                        }
+                        continue;
+                    }
+                }
+
+                Pcg64Rng local_rng(local_seed);
+                g_ksample_generic_calls += 1;
+                bool strategy_has_proportional[kMaxStrategies] = {};
+
+                auto pick_strategy = [&]() -> int {
+                    if (T_s == 0.0f) {
+                        int best = 0;
+                        for (int s = 1; s < ksample_effective_n_strat; ++s) {
+                            if (ksample_strategy_logits_buf[s] > ksample_strategy_logits_buf[best]) {
+                                best = s;
+                            }
+                        }
+                        return best;
+                    }
+                    float temp_logits[kMaxStrategies];
+                    for (int s = 0; s < ksample_effective_n_strat; ++s) {
+                        temp_logits[s] = ksample_strategy_logits_buf[s] / T_s;
+                    }
+                    softmax_compact_inplace(temp_logits, ksample_effective_n_strat);
+                    return categorical_sample(temp_logits, ksample_effective_n_strat, local_rng);
+                };
+
+                auto make_allocation = [&](int strat) -> InfluenceAllocation {
+                    const bool use_proportional = (T_c == 0.0f) ||
+                        (prop_first && !strategy_has_proportional[strat]);
+                    if (use_proportional) {
+                        strategy_has_proportional[strat] = true;
+                        return proportional_allocation_compact(
+                            ksample_country_probs_all[strat],
+                            cache.influence,
+                            ops
+                        );
+                    }
+                    return multinomial_sample_compact(
+                        ksample_country_probs_all[strat],
+                        cache.influence,
+                        ops,
+                        T_c,
+                        local_rng
+                    );
+                };
+
+                struct InfluenceAllocDraft {
+                    int blob_index = -1;
+                    FastInfluenceTargets blob;
+                    double density = 0.0;
+                    uint64_t hash = 0;
+                };
+                std::vector<InfluenceAllocDraft> allocations;
+                allocations.reserve(static_cast<size_t>(K));
+
+                auto try_add = [&](InfluenceAllocation&& allocation) {
+                    for (const auto& existing : allocations) {
+                        if (existing.hash == allocation.hash) {
+                            return;
+                        }
+                    }
+                    const double density = compute_density_cached(ops, allocation.blob, allocation.hash);
+                    allocations.push_back(InfluenceAllocDraft{
+                        .blob = allocation.blob,
+                        .density = density,
+                        .hash = allocation.hash,
+                    });
+                };
+
+                if (T_s == 0.0f && T_c == 0.0f) {
+                    if (ops >= 0 && ops < static_cast<int>(reusable_templates.size())) {
+                        const auto& reusable = reusable_templates[static_cast<size_t>(ops)];
+                        for (size_t i = 0;
+                             i < reusable.blob_indices.size() &&
+                             static_cast<int>(allocations.size()) < K;
+                             ++i) {
+                            allocations.push_back(InfluenceAllocDraft{
+                                .blob_index = reusable.blob_indices[i],
+                                .blob = {},
+                                .density = reusable.densities[i],
+                                .hash = reusable.hashes[i],
+                            });
+                        }
+                    } else {
+                        const int best_strategy = pick_strategy();
+                        try_add(make_allocation(best_strategy));
+                        for (int s = 0; s < ksample_effective_n_strat &&
+                             static_cast<int>(allocations.size()) < K; ++s) {
+                            if (s == best_strategy) {
+                                continue;
+                            }
+                            try_add(make_allocation(s));
+                        }
+                    }
+                    const int max_retries = 3 * K;
+                    int retries = 0;
+                    while (static_cast<int>(allocations.size()) < K && retries++ < max_retries) {
+                        const int strategy =
+                            categorical_sample(ksample_strategy_probs, ksample_effective_n_strat, local_rng);
+                        try_add(multinomial_sample_compact(
+                            ksample_country_probs_all[strategy],
+                            cache.influence,
+                            ops,
+                            1.0f,
+                            local_rng
+                        ));
+                    }
+                } else {
+                    const int max_retries = 3 * K;
+                    int retries = 0;
+                    while (static_cast<int>(allocations.size()) < K && retries++ < max_retries) {
+                        const int strategy = pick_strategy();
+                        try_add(make_allocation(strategy));
+                    }
+                }
+
+                if (allocations.empty()) {
+                    int best_strategy = 0;
+                    for (int s = 1; s < ksample_effective_n_strat; ++s) {
+                        if (ksample_strategy_logits_buf[s] > ksample_strategy_logits_buf[best_strategy]) {
+                            best_strategy = s;
+                        }
+                    }
+                    auto fallback = proportional_allocation_compact(
+                        ksample_country_probs_all[best_strategy],
+                        cache.influence,
+                        ops
+                    );
+                    const double fallback_density = compute_density_cached(ops, fallback.blob, fallback.hash);
+                    allocations.push_back(InfluenceAllocDraft{
+                        .blob = fallback.blob,
+                        .density = fallback_density,
+                        .hash = fallback.hash,
+                    });
+                }
+
+                double density_sum = 0.0;
+                for (const auto& allocation : allocations) {
+                    density_sum += allocation.density;
+                }
+                for (auto& allocation : allocations) {
+                    const double prior = density_sum > 0.0
+                        ? per_edge_prior * allocation.density / density_sum
+                        : per_edge_prior / static_cast<double>(allocations.size());
+                    if (allocation.blob_index >= 0) {
+                        append_compact_influence_blob_ref(
+                            *node,
+                            card.card_id,
+                            allocation.blob_index,
+                            static_cast<float>(prior),
+                            "expand_from_raw_flat influence-ksample-prefix"
+                        );
+                    } else {
+                        append_compact_influence_blob_copy(
+                            *node,
+                            card.card_id,
+                            allocation.blob,
+                            static_cast<float>(prior),
+                            "expand_from_raw_flat influence-ksample"
+                        );
+                    }
+                    total_prior += prior;
+                }
+            } else if (mode == ActionMode::Influence &&
                 influence_prob_count == static_cast<int>(cache.influence.size()) &&
                 !cache.influence.empty()) {
-                append_compact_edge(
+                append_compact_influence_targets(
                     *node,
-                    build_influence_action_from_probs(card.card_id, card.ops, cache.influence, influence_probs),
+                    card.card_id,
+                    build_influence_targets_from_probs(card.ops, cache.influence, influence_probs),
                     static_cast<float>(per_edge_prior),
                     "expand_from_raw_flat influence-resolved"
                 );
+                total_prior += per_edge_prior;
             } else {
                 append_compact_edge(*node, edge, static_cast<float>(per_edge_prior), "expand_from_raw_flat generic");
+                total_prior += per_edge_prior;
             }
-            total_prior += per_edge_prior;
         }
     }
 
@@ -1408,7 +2100,7 @@ ExpansionResult expand_from_raw_flat(
             append_compact_edge(*node, *fallback, 1.0f, "expand_from_raw_flat fallback");
             return ExpansionResult{
                 .node = std::move(node),
-                .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config, rng),
+                .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config.mcts, rng),
             };
         }
 
@@ -1429,7 +2121,7 @@ ExpansionResult expand_from_raw_flat(
 
     return ExpansionResult{
         .node = std::move(node),
-        .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config, rng),
+        .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config.mcts, rng),
     };
 }
 
@@ -2265,6 +2957,9 @@ BenchResult benchmark_mcts_fast(
         throw std::invalid_argument("n_simulations must be non-negative");
     }
 
+    g_ksample_template_hits = 0;
+    g_ksample_generic_calls = 0;
+
     BenchResult result;
     result.n_games = n_games;
     result.pool_size = config.pool_size;
@@ -2433,7 +3128,7 @@ BenchResult benchmark_mcts_fast(
                         pending.sim_state,
                         raw,
                         entry.batch_index,
-                        config.mcts,
+                        config,
                         entry.slot->rng
                     );
                     entry.slot->root = std::move(expansion.node);
@@ -2446,7 +3141,7 @@ BenchResult benchmark_mcts_fast(
                         pending.sim_state,
                         raw,
                         entry.batch_index,
-                        config.mcts,
+                        config,
                         entry.slot->rng
                     );
                     auto& [parent, edge_index] = pending.path.back();
@@ -2484,6 +3179,10 @@ BenchResult benchmark_mcts_fast(
     result.sims_per_s = result.elapsed_s > 0.0
         ? static_cast<double>(result.total_simulations) / result.elapsed_s
         : 0.0;
+    if (use_ksample_influence(config)) {
+        std::cout << "[ksample] template_hits=" << g_ksample_template_hits
+                  << " generic_calls=" << g_ksample_generic_calls << "\n";
+    }
     return result;
 }
 

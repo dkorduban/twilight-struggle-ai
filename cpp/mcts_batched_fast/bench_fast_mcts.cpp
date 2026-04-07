@@ -82,6 +82,8 @@ void usage(const char* argv0) {
         << " [--c-puct F] [--temperature F] [--epsilon-greedy F]"
         << " [--dir-alpha F] [--dir-epsilon F] [--learned-side both|ussr|us]"
         << " [--seed N] [--mcts-workers N] [--torch-threads N] [--torch-interop N]"
+        << " [--influence-samples N] [--influence-t-strategy F] [--influence-t-country F]"
+        << " [--influence-proportional-first 0|1]"
         << " [--pin-workers] [--worker-core-span N]"
         << " [--forward-worker] [--load-threshold N] [--load-sample-ms N]"
         << " [--load-wait-s N] [--warmup N] [--repeats N]"
@@ -271,6 +273,10 @@ int main(int argc, char** argv) {
         int mcts_workers = 1;
         int torch_threads = 1;
         int torch_interop = 1;
+        int influence_samples = 1;
+        float influence_t_strategy = 0.0f;
+        float influence_t_country = 0.0f;
+        bool influence_proportional_first = true;
         bool pin_workers = false;
         int worker_core_span = 0;
         bool forward_worker = false;
@@ -337,6 +343,14 @@ int main(int argc, char** argv) {
                 torch_threads = std::stoi(std::string(require_value("--torch-threads")));
             } else if (arg == "--torch-interop") {
                 torch_interop = std::stoi(std::string(require_value("--torch-interop")));
+            } else if (arg == "--influence-samples") {
+                influence_samples = std::stoi(std::string(require_value("--influence-samples")));
+            } else if (arg == "--influence-t-strategy") {
+                influence_t_strategy = std::stof(std::string(require_value("--influence-t-strategy")));
+            } else if (arg == "--influence-t-country") {
+                influence_t_country = std::stof(std::string(require_value("--influence-t-country")));
+            } else if (arg == "--influence-proportional-first") {
+                influence_proportional_first = std::stoi(std::string(require_value("--influence-proportional-first"))) != 0;
             } else if (arg == "--pin-workers") {
                 pin_workers = true;
             } else if (arg == "--worker-core-span") {
@@ -374,7 +388,7 @@ int main(int argc, char** argv) {
 
         if (games <= 0 || n_sim < 0 || pool_size <= 0 || max_pending <= 0 || virtual_loss <= 0 ||
             cache_visit_threshold < 0 || torch_threads <= 0 || torch_interop <= 0 ||
-            mcts_workers <= 0 ||
+            mcts_workers <= 0 || influence_samples <= 0 ||
             worker_core_span < 0 || worker_total <= 0 ||
             warmup < 0 || repeats <= 0 || load_sample_ms <= 0 || load_wait_s < 0.0 || load_threshold <= 0.0 ||
             baseline_sims <= 0.0 || target_multiple <= 0.0) {
@@ -408,6 +422,10 @@ int main(int argc, char** argv) {
         config.max_pending = max_pending;
         config.virtual_loss_weight = virtual_loss;
         config.cache_visit_threshold = cache_visit_threshold;
+        config.influence_samples = influence_samples;
+        config.influence_t_strategy = influence_t_strategy;
+        config.influence_t_country = influence_t_country;
+        config.influence_proportional_first = influence_proportional_first;
         config.temperature = temperature;
         config.epsilon_greedy = epsilon_greedy;
         config.learned_side = learned_side;
@@ -445,6 +463,10 @@ int main(int argc, char** argv) {
                   << " mcts_workers=" << mcts_workers
                   << " torch_threads=" << torch_threads
                   << " torch_interop=" << torch_interop
+                  << " influence_samples=" << influence_samples
+                  << " influence_t_strategy=" << influence_t_strategy
+                  << " influence_t_country=" << influence_t_country
+                  << " influence_proportional_first=" << (influence_proportional_first ? 1 : 0)
                   << " pin_workers=" << (pin_workers ? 1 : 0)
                   << " worker_core_span=" << effective_core_span
                   << " forward_worker=" << (forward_worker ? 1 : 0)
@@ -535,6 +557,10 @@ int main(int argc, char** argv) {
                             "--mcts-workers", "1",
                             "--torch-threads", std::to_string(torch_threads),
                             "--torch-interop", std::to_string(torch_interop),
+                            "--influence-samples", std::to_string(influence_samples),
+                            "--influence-t-strategy", std::to_string(influence_t_strategy),
+                            "--influence-t-country", std::to_string(influence_t_country),
+                            "--influence-proportional-first", influence_proportional_first ? "1" : "0",
                             "--warmup", "0",
                             "--repeats", "1",
                             "--worker-index", std::to_string(worker),
