@@ -438,6 +438,24 @@ def _sample_action_and_step(
 
 
 # ---------------------------------------------------------------------------
+# Reward computation
+# ---------------------------------------------------------------------------
+
+def _compute_reward(result: "tscore.GameResult", side_int: int, vp_coef: float = 0.0) -> float:
+    """Terminal reward. side_int 0=USSR, 1=US. Optional VP-magnitude component."""
+    is_ussr = side_int == 0
+    won = result.winner == (tscore.Side.USSR if is_ussr else tscore.Side.US)
+    base = 1.0 if won else -1.0
+    if vp_coef <= 0.0:
+        return base
+    # final_vp is from USSR perspective: positive = USSR ahead
+    vp_scaled = max(-1.0, min(1.0, result.final_vp / 20.0))
+    if not is_ussr:
+        vp_scaled = -vp_scaled
+    return (1.0 - vp_coef) * base + vp_coef * vp_scaled
+
+
+# ---------------------------------------------------------------------------
 # Rollout: collect N games
 # ---------------------------------------------------------------------------
 
@@ -448,6 +466,7 @@ def collect_rollout_sequential(
     base_seed: int,
     device: str,
     card_specs: dict,
+    vp_reward_coef: float = 0.0,
 ) -> list[Step]:
     """Play n_games and return all collected steps with rewards assigned."""
     all_steps: list[Step] = []
@@ -478,11 +497,8 @@ def collect_rollout_sequential(
             continue
 
         result = results[0]
-        # Assign reward based on learned side's outcome
-        if learned_side == tscore.Side.USSR:
-            reward = 1.0 if result.winner == tscore.Side.USSR else -1.0
-        else:
-            reward = 1.0 if result.winner == tscore.Side.US else -1.0
+        side_int = 0 if learned_side == tscore.Side.USSR else 1
+        reward = _compute_reward(result, side_int, vp_reward_coef)
 
         if game_steps:
             game_steps[-1].reward = reward
@@ -538,6 +554,7 @@ def collect_rollout_batched(
     base_seed: int,
     device: str,
     card_specs: dict,
+    vp_reward_coef: float = 0.0,
 ) -> list[Step]:
     """Collect PPO rollout steps through the native batched C++ game pool."""
     if not hasattr(tscore, "rollout_games_batched"):
@@ -582,16 +599,13 @@ def collect_rollout_batched(
         )
         all_steps.append(step)
 
+    side_int = 0 if learned_side == tscore.Side.USSR else 1
     for i, result in enumerate(results):
         start = boundaries[i]
         end = boundaries[i + 1] if i + 1 < len(boundaries) else len(all_steps)
         if start >= end:
             continue
-        if learned_side == tscore.Side.USSR:
-            reward = 1.0 if result.winner == tscore.Side.USSR else -1.0
-        else:
-            reward = 1.0 if result.winner == tscore.Side.US else -1.0
-        all_steps[end - 1].reward = reward
+        all_steps[end - 1].reward = _compute_reward(result, side_int, vp_reward_coef)
         all_steps[end - 1].done = True
 
     return all_steps
@@ -602,6 +616,7 @@ def collect_rollout_self_play_batched(
     n_games: int,
     base_seed: int,
     device: str,
+    vp_reward_coef: float = 0.0,
 ) -> list[Step]:
     """Collect PPO rollout steps from self-play (both sides use learned model)."""
     if not hasattr(tscore, "rollout_self_play_batched"):
@@ -648,14 +663,9 @@ def collect_rollout_self_play_batched(
         end = boundaries[i + 1] if i + 1 < len(boundaries) else len(all_steps)
         if start >= end:
             continue
-        for step_idx in range(start, end):
-            step = all_steps[step_idx]
-            if step_idx == end - 1:
-                if step.side_int == 0:
-                    step.reward = 1.0 if result.winner == tscore.Side.USSR else -1.0
-                else:
-                    step.reward = 1.0 if result.winner == tscore.Side.US else -1.0
-                step.done = True
+        last = all_steps[end - 1]
+        last.reward = _compute_reward(result, last.side_int, vp_reward_coef)
+        last.done = True
 
     return all_steps
 
@@ -1136,7 +1146,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     p.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
     p.add_argument("--gae-lambda", type=float, default=0.95, help="GAE lambda")
-    p.add_argument("--ent-coef", type=float, default=0.01, help="Entropy coefficient")
+    p.add_argument("--ent-coef", type=float, default=0.01, help="Initial entropy coefficient")
+    p.add_argument("--ent-coef-final", type=float, default=None,
+                   help="Final entropy coefficient (linear decay). None = constant")
     p.add_argument("--vf-coef", type=float, default=0.5, help="Value function coefficient")
     p.add_argument("--minibatch-size", type=int, default=2048, help="PPO minibatch size")
     p.add_argument("--benchmark-every", type=int, default=20, help="Benchmark every N iterations")
@@ -1247,16 +1259,18 @@ def main() -> None:
         if args.self_play:
             seed = args.seed + (iteration - 1) * args.games_per_iter
             self_play_steps = collect_rollout_self_play_batched(
-                model, args.games_per_iter, seed, device
+                model, args.games_per_iter, seed, device, vp_reward_coef=args.vp_reward_coef
             )
             all_steps = list(self_play_steps)
             if args.self_play_heuristic_mix > 0:
                 n_heur = max(1, int(args.games_per_iter * args.self_play_heuristic_mix))
                 heur_steps_ussr = collect_rollout_batched(
-                    model, n_heur // 2, tscore.Side.USSR, seed + 1000000, device, card_specs
+                    model, n_heur // 2, tscore.Side.USSR, seed + 1000000, device, card_specs,
+                    vp_reward_coef=args.vp_reward_coef,
                 )
                 heur_steps_us = collect_rollout_batched(
-                    model, n_heur // 2, tscore.Side.US, seed + 2000000, device, card_specs
+                    model, n_heur // 2, tscore.Side.US, seed + 2000000, device, card_specs,
+                    vp_reward_coef=args.vp_reward_coef,
                 )
                 all_steps = all_steps + heur_steps_ussr + heur_steps_us
         else:
@@ -1265,7 +1279,8 @@ def main() -> None:
                 if side == tscore.Side.US:
                     side_seed += games_per_side
                 steps = collect_rollout_batched(
-                    model, games_per_side, side, side_seed, device, card_specs
+                    model, games_per_side, side, side_seed, device, card_specs,
+                    vp_reward_coef=args.vp_reward_coef,
                 )
                 all_steps.extend(steps)
 
@@ -1297,13 +1312,20 @@ def main() -> None:
             sp_rollout_wr_us = sum(1 for s in us_sp_steps if s.reward > 0) / max(1, len(us_sp_steps))
 
         # ── PPO update phase ──────────────────────────────────────────────────
+        # Entropy scheduling: linear decay from ent_coef to ent_coef_final
+        if args.ent_coef_final is not None:
+            t_frac = (iteration - 1) / max(1, args.n_iterations - 1)
+            current_ent_coef = args.ent_coef + t_frac * (args.ent_coef_final - args.ent_coef)
+        else:
+            current_ent_coef = args.ent_coef
+
         t_update_start = time.time()
         metrics = ppo_update(
             all_steps, model, optimizer, device,
             ppo_epochs=args.ppo_epochs,
             clip_eps=args.clip_eps,
             vf_coef=args.vf_coef,
-            ent_coef=args.ent_coef,
+            ent_coef=current_ent_coef,
             minibatch_size=args.minibatch_size,
         )
         t_update = time.time() - t_update_start
@@ -1395,6 +1417,7 @@ def main() -> None:
                 log_dict["rollout_wr_us"] = rollout_wr_us
                 log_dict["n_steps"] = n_steps
                 log_dict["iter_time_s"] = t_iter
+                log_dict["ent_coef"] = current_ent_coef
                 if args.self_play:
                     log_dict["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
                     log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
