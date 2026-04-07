@@ -400,6 +400,34 @@ BayesElo leaderboard (anchored heuristic=1500):
 Self-play is producing consistent BayesElo gains every 20 iters. The model is now definitively
 stronger than v1_best (1795 vs 1735 BayesElo), confirmed by both heuristic WR and H2H results.
 
+### Iter 140 Benchmark + Elo Matchup
+
+**Iter 140 vs heuristic**: USSR=89.0%, US=78.2%, combined=83.6%
+- No new best by heuristic WR (iter120=84.6% > 83.6%) — minor regression or variance
+
+**Elo matchup iter140 vs iter120 (200 games)**: iter140 wins **61.0%** (122/200, 8 draws)
+- iter140 is decisively stronger than iter120 despite lower heuristic WR
+- Confirms: heuristic WR is noisy; H2H Elo is the true strength metric
+
+Updated BayesElo leaderboard (anchored heuristic=1500):
+| BayesElo | ±95%CI | vs-Heuristic | Model |
+|----------|--------|-------------|-------|
+| **1841** | **±50** | 83.6% | **v2b iter140 ← new top** |
+| 1781 | ±39 | 79.5% | v2b iter80 |
+| 1776 | ±42 | 84.6% | v2b iter120 |
+| 1772 | ±41 | 82.3% | v2b iter100 |
+| 1753 | ±40 | 79.4% | v2b iter60 |
+| 1686 | ±38 | 83.2% | v1_best |
+| 1500 | — | — | heuristic (anchor) |
+
+Note: iter140's ±50 CI is wide (only 1 H2H match). Additional H2H matchups will tighten it.
+The wide CI doesn't change the conclusion: iter140's 61% H2H win vs iter120 is statistically
+decisive (200-game sample, p<0.001).
+
+Key lesson: **Heuristic WR can plateau while H2H strength continues improving.** This is
+exactly why BayesElo with H2H data is essential — the heuristic WR alone would incorrectly
+suggest a plateau at iter140.
+
 ---
 
 ## Next Steps
