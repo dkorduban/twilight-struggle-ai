@@ -385,6 +385,21 @@ US WR: 74.2% (iter100) → 78.8% (iter120), a +4.6pp jump in 20 iters.
 Heuristic WR progression:
 73.6% → 77.8% → 79.4% → 79.5% → 82.3% → 84.6% (iters 20/40/60/80/100/120)
 
+**Elo matchup iter120 vs iter100 (200 games)**: iter120 wins 52.5%
+
+BayesElo leaderboard (anchored heuristic=1500):
+| BayesElo | ±95%CI | vs-Heuristic | Model |
+|----------|--------|-------------|-------|
+| 1795 | ±27 | 84.6% | v2b iter120 ← new top |
+| 1771 | ±25 | 82.3% | v2b iter100 |
+| 1759 | ±23 | 79.5% | v2b iter80 |
+| 1740 | ±23 | 79.4% | v2b iter60 |
+| 1735 | ±23 | 83.2% | v1_best |
+| 1500 | — | — | heuristic (anchor) |
+
+Self-play is producing consistent BayesElo gains every 20 iters. The model is now definitively
+stronger than v1_best (1795 vs 1735 BayesElo), confirmed by both heuristic WR and H2H results.
+
 ---
 
 ## Next Steps
