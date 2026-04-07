@@ -97,6 +97,10 @@ struct BatchedMctsConfig {
     float min_prior_threshold = 0.0f;     // After expansion, drop edges with prior < threshold
                                            // and renormalize. 0 = keep all edges (default).
                                            // Typical values: 0.001–0.01 to reduce tree width.
+    float prior_t_card = 1.0f;            // Temperature for card logits before softmax.
+    float prior_t_mode = 1.0f;            // Temperature for mode logits before softmax.
+    float prior_t_country = 1.0f;         // Temperature for country logits before softmax.
+                                           // T<1 sharpens, T>1 flattens. 1.0 = no change.
     bool verbose_tree_stats = false;      // When true, collect per-node edge utilization
                                            // histogram (requires tree walk — adds ~1% overhead).
     bool record_rows = true;              // When false, skip per-step trace/search recording
@@ -158,7 +162,10 @@ std::vector<GameResult> benchmark_mcts(
     float influence_t_strategy = 0.0f,
     float influence_t_country = 0.0f,
     bool influence_proportional_first = true,
-    float min_prior_threshold = 0.0f
+    float min_prior_threshold = 0.0f,
+    float prior_t_card = 1.0f,
+    float prior_t_mode = 1.0f,
+    float prior_t_country = 1.0f
 );
 
 }  // namespace ts

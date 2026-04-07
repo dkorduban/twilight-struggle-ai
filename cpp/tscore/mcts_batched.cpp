@@ -1177,6 +1177,21 @@ ExpansionResult expand_from_raw(
         country_logits_ptr = country_logits_arr;
     }
 
+    // Apply per-head prior temperature scaling to logits before softmax.
+    // T<1 sharpens, T>1 flattens, 1.0 = identity.
+    if (config.prior_t_card != 1.0f && config.prior_t_card > 0.0f) {
+        const float inv_t = 1.0f / config.prior_t_card;
+        for (int i = 0; i < n_card; ++i) card_logits_arr[i] *= inv_t;
+    }
+    if (config.prior_t_mode != 1.0f && config.prior_t_mode > 0.0f) {
+        const float inv_t = 1.0f / config.prior_t_mode;
+        for (int i = 0; i < n_mode; ++i) mode_logits_arr[i] *= inv_t;
+    }
+    if (country_logits_ptr != nullptr && config.prior_t_country != 1.0f && config.prior_t_country > 0.0f) {
+        const float inv_t = 1.0f / config.prior_t_country;
+        for (int i = 0; i < n_country; ++i) country_logits_arr[i] *= inv_t;
+    }
+
     // --- Masked card softmax using raw arrays ---
     float masked_card[kMaxCardLogits];
     std::fill(masked_card, masked_card + n_card, -std::numeric_limits<float>::infinity());
@@ -3903,7 +3918,10 @@ std::vector<GameResult> benchmark_mcts(
     float influence_t_strategy,
     float influence_t_country,
     bool influence_proportional_first,
-    float min_prior_threshold
+    float min_prior_threshold,
+    float prior_t_card,
+    float prior_t_mode,
+    float prior_t_country
 ) {
     BatchedMctsConfig config;
     const bool benchmark_k_sample_mode = influence_samples > 1;
@@ -3921,6 +3939,9 @@ std::vector<GameResult> benchmark_mcts(
     config.influence_t_country = influence_t_country;
     config.influence_proportional_first = influence_proportional_first;
     config.min_prior_threshold = min_prior_threshold;
+    config.prior_t_card = prior_t_card;
+    config.prior_t_mode = prior_t_mode;
+    config.prior_t_country = prior_t_country;
     config.verbose_tree_stats = false;
     config.record_rows = false;
     // max_pending=64 maximises NN batch size (vs the old default of 8).

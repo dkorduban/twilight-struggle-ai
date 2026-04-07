@@ -1820,4 +1820,33 @@ with prune=1e-4. ~150K teacher rows covering ~10% of nash_c training positions.
 **If fails again**: Teacher KL may be fundamentally incompatible with this model,
 regardless of teacher quality. Would indicate the bottleneck is elsewhere.
 
-**Status**: Teacher collection running (~150K rows from 1000 games), pipeline queued.
+**Status**: DONE — FAILED
+
+**Result**: USSR 38.0% / US 7.2% / Combined 22.6% — **massive -12.3pp regression** from v106 (34.9%).
+This is the 6th consecutive teacher KL failure. Even with a genuinely strong teacher (+8.8pp over greedy),
+teacher KL regresses the model catastrophically.
+
+**Root cause hypothesis**: teacher_weight=0.5 with 5% coverage creates strong conflicting gradients.
+The teacher pulls mode/country distributions toward MCTS on 5% of positions; BC loss contradicts on 95%.
+The net effect is degraded BC quality without meaningful MCTS behavior transfer.
+
+**Definitive verdict**: **Teacher KL distillation is incompatible with this training setup, regardless of
+teacher quality or teacher coverage.** Adding teacher KL to BC training always hurts. Dead end confirmed.
+
+---
+
+## v114: Pure BC on MCTS-Played Games (2026-04-06)
+
+**Hypothesis**: Instead of teacher KL (which conflicts with BC loss), collect MCTS-played games and train
+pure BC on those MCTS decisions. The model learns to imitate MCTS behavior directly from game trajectories,
+with no conflicting losses. Mode distribution should naturally shift toward MCTS-balanced play.
+
+**Key difference from teacher KL**: No dual loss — just BC on higher-quality action labels.
+
+**Data plan**:
+- Collect 1000 MCTS USSR vs heuristic games (v106 + 400sim + prune=1e-4, seed=80000)
+- Convert to parquet → ~100K rows of MCTS-decided actions
+- Mix with nash_c (2.7M rows): 100K MCTS rows + 2.7M heuristic rows
+- Training: same v106 recipe, pure BC, no teacher targets
+
+**Success criteria**: v114 > v106 (34.9%) by >2pp combined.
