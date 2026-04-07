@@ -309,6 +309,34 @@ Self-play is producing consistent Elo gains every 20 iterations. The model at it
 184 Elo above PPO v1's 200-iteration best, demonstrating that self-play is finding real
 strategic improvements beyond heuristic exploitation.
 
+### Iter 80 Benchmark & Elo
+
+**Iter 80 vs heuristic**: USSR=87.6%, US=71.4%, combined=79.5% — new best
+
+Heuristic WR progression (v2b self-play): 73.6% → 77.8% → 79.4% → 79.5% (iters 20/40/60/80)
+
+Combined WR slope is decelerating (+4.2, +1.6, +0.1 pp per 20 iters). This is expected as
+heuristic WR approaches the ceiling. Elo (vs other models) remains the primary strength metric.
+
+Training state at iter 80: rollout_wr~0.55, KL=0.048, entropy=2.14 — healthy, no collapse.
+
+**Elo matchup results (100 games, corrected algorithm)**:
+- iter80 vs iter60: iter80 wins 57%, Elo: iter80=1581, iter60=1538 (iter60 was 1619)
+- iter80 vs v1_best: iter80 wins 72%, Elo: iter80=1599, v1_best=1389
+
+Elo leaderboard after iter 80:
+| Elo | Model |
+|-----|-------|
+| 1599 | PPO v2b iter80 |
+| 1554 | PPO v2b iter20 |
+| 1538 | PPO v2b iter60 |
+| 1477 | PPO v1 iter20 |
+| 1443 | PPO v2b iter40 |
+| 1389 | PPO v1 best |
+
+Note: `elo_tracker.py` was fixed this session — normalized path keys + shuffled game order
+before per-game updates to remove block-structure asymmetry bias.
+
 ---
 
 ## Next Steps
