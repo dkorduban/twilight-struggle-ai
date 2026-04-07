@@ -138,14 +138,103 @@ To distinguish real strength from heuristic exploitation:
 Multiple runs due to restarts: korduban-ai/twilight-struggle-ai (PPO v1 runs).
 Restart points: iter 41 (ID 64 crash), iter 43 (KL mismatch), iter 78 (batched rollout switch).
 
+### Final PPO v1 Result
+
+Ran to 200 iterations. Final benchmark (iter 200): **83.2% combined** (USSR=90.6%, US=74.2%).
+Best checkpoint: `data/checkpoints/ppo_v1_from_v106/ppo_best.pt`
+
+---
+
+## Infrastructure Improvements (2026-04-07)
+
+### jit.script GNN model fix
+
+**Problem**: `torch.jit.trace` freezes `if bg_mask.any(): x[:, bg_mask, :]` branches
+in `TSControlFeatGNNEncoder` as compile-time constants, causing log_prob divergence.
+
+**Fix**: Replaced all conditional boolean indexing with branch-free weighted-sum pooling:
+```python
+# BEFORE (breaks jit.script):
+if bg_mask.any():
+    bg_pooled = x[:, bg_mask, :].mean(dim=1)
+# AFTER (jit.script compatible):
+bg_weight = bg_mask.float().unsqueeze(0).unsqueeze(-1)
+bg_count = bg_weight.sum(dim=1).clamp(min=1.0)
+bg_pooled = (x * bg_weight).sum(dim=1) / bg_count
+```
+
+`torch.jit.script(TSControlFeatGNNModel())` now succeeds. Numerical outputs match within 1e-5.
+
+**Effect**: `_recompute_log_probs_and_values` no longer needed in rollout. Saves ~5s/iter.
+
+### Additional features added
+
+- **VP-scaled terminal reward**: `--vp-reward-coef` (default 0 = ±1 binary). Scales
+  terminal reward by final VP magnitude: `(1-coef)*±1 + coef*clip(final_vp/20, -1, 1)`
+- **Entropy scheduling**: `--ent-coef-final` for linear decay over training
+- **Self-play rollout**: `rollout_self_play_batched` C++ function + Python binding.
+  Records steps for both sides, assigns per-side rewards from same game outcome.
+- **Self-play PPO mode**: `--self-play` flag in `train_ppo.py`, with `--self-play-heuristic-mix`
+  (default 0.2) to anchor against heuristic collapse.
+
+---
+
+## PPO v2: Self-Play (2026-04-07)
+
+### Setup
+
+- **Base checkpoint**: ppo_v1_from_v106/ppo_best.pt (83.2% combined)
+- **Mode**: Self-play (both sides learned model) + 20% heuristic mix
+- **Hyperparameters**:
+  ```
+  games_per_iter=200, ppo_epochs=1, clip_eps=0.2, lr=5e-5, max_kl=0.2,
+  gamma=0.99, gae_lambda=0.95, ent_coef=0.01, vf_coef=0.5, seed=100000
+  ```
+- **Reward**: Sparse ±1.0 terminal (no VP scaling)
+- **Rollout**: ~30k steps/iter (both sides recorded; 2× vs v1's 13k)
+- **Log_probs**: TorchScript from C++ (jit.script fixed; no Python recomputation)
+
+### Rationale for reduced lr/epochs
+
+Self-play produces ~2.3× more steps per iteration (both sides recorded, ~30k vs 13k).
+PPO v2 crash at iter 1 with default settings (KL 0.24 >> 0.1). Fix: halved lr (1e-4→5e-5)
+and reduced ppo_epochs (4→1) to match effective gradient steps. max_kl raised to 0.2
+(self-play research typically uses larger KL thresholds).
+
+### Early Training Observations (iters 1-17)
+
+| Iter | Rollout WR | Steps | Entropy | Value Loss | Policy Loss | KL |
+|------|-----------|-------|---------|------------|-------------|-----|
+| 1 | 0.458 | 29,989 | 2.277 | 0.129 | 0.042 | 0.143 |
+| 5 | 0.492 | ~30k | 2.220 | 0.091 | 0.025 | 0.124 |
+| 13 | 0.512 | 30,518 | 2.034 | 0.073 | 0.020 | 0.105 |
+| 17 | 0.517 | 30,106 | 2.025 | 0.067 | 0.017 | 0.101 |
+
+- Rollout WR trending toward 0.5 as expected (self-play should equalize)
+- KL stabilizing around 0.10-0.11 (below 0.2 threshold)
+- Entropy declining: 2.28 → 2.02 (policy sharpening)
+- W&B run: korduban-ai/twilight-struggle-ai, run `f4j10b29`
+
+### Self-play WR interpretation
+
+`rollout_wr` aggregates heuristic mix games + self-play games. The USSR/US split
+(`rollout_wr_ussr=0.788, rollout_wr_us=0.441` at iter 17) includes heuristic games
+where model vs heuristic is very strong. Pure self-play WR tracked separately via
+`sp_rollout_wr_ussr` and `sp_rollout_wr_us` in W&B.
+
+### Next benchmark (iter 20)
+
+Cross-model Elo infrastructure being built in parallel. After iter 20, will compare
+PPO v2 (iter 20) vs PPO v1 best using `benchmark_model_vs_model_batched`.
+
 ---
 
 ## Next Steps
 
 See `docs/ppo_next_steps.md` for detailed plan. Summary:
 
-1. Self-play PPO (train against self, not fixed heuristic)
-2. League training (pool of past checkpoints)
-3. VP-scaled rewards + entropy scheduling
-4. MCTS-guided PPO (Expert Iteration)
-5. Allocation head architecture improvement
+1. ✅ Self-play PPO (running as PPO v2)
+2. Cross-checkpoint Elo (infrastructure in progress)
+3. League training (pool of past checkpoints)
+4. VP-scaled rewards + entropy scheduling (added, not yet used in v2)
+5. MCTS-guided PPO (Expert Iteration)
