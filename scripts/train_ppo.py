@@ -44,6 +44,24 @@ import tscore  # noqa: E402
 # Constants
 # ---------------------------------------------------------------------------
 
+
+def _load_country_region_map() -> dict[int, str]:
+    """Load country_id -> region string from data/spec/countries.csv."""
+    import csv as _csv
+
+    csv_path = Path(__file__).parent.parent / "data" / "spec" / "countries.csv"
+    mapping: dict[int, str] = {}
+    try:
+        with open(csv_path) as f:
+            for row in _csv.DictReader(r for r in f if not r.startswith("#")):
+                mapping[int(row["country_id"])] = row["region"]
+    except Exception:
+        pass
+    return mapping
+
+
+_COUNTRY_REGION: dict[int, str] = {}  # lazy-loaded once
+
 CARD_SLOTS = 112      # kMaxCardId(111) + 1; index 0 unused
 COUNTRY_SLOTS = 86    # country IDs 0..85
 SCALAR_DIM = 11
@@ -843,18 +861,147 @@ def ppo_update(
 # Benchmark via benchmark_batched (fast)
 # ---------------------------------------------------------------------------
 
+def collect_policy_stats(
+    script_path: str,
+    n_games: int = 100,
+    seed_base: int = 51000,
+) -> dict:
+    """
+    Run a small rollout batch and compute per-phase policy statistics.
+    Returns a flat dict of W&B-loggable scalars.
+
+    Phase labels: early=turns 1-3, mid=turns 4-7, late=turns 8-10.
+    Mode names: Influence, Event, Space, Coup, Realign.
+    """
+    global _COUNTRY_REGION
+    if not _COUNTRY_REGION:
+        _COUNTRY_REGION = _load_country_region_map()
+
+    MODE_NAMES = ["Influence", "Event", "Space", "Coup", "Realign"]
+    REGIONS = ["Europe", "Asia", "Middle East", "Africa", "Central America", "South America"]
+    PHASES = ["early", "mid", "late"]
+
+    def phase(turn: int) -> str:
+        if turn <= 3:
+            return "early"
+        if turn <= 7:
+            return "mid"
+        return "late"
+
+    def influence_split_label(targets: list[int]) -> str:
+        """Classify allocation as concentrated / split / dispersed."""
+        if not targets:
+            return "none"
+        from collections import Counter
+
+        counts = sorted(Counter(targets).values(), reverse=True)
+        total = sum(counts)
+        if counts[0] == total:
+            return "concentrated"   # all ops to one country
+        if counts[0] == 1:
+            return "dispersed"      # at most 1 op per country
+        return "split"              # mixed
+
+    # Collect steps for both sides
+    all_step_dicts: list[dict] = []
+    for side in [tscore.Side.USSR, tscore.Side.US]:
+        try:
+            _, steps, _ = tscore.rollout_games_batched(
+                model_path=script_path,
+                learned_side=side,
+                n_games=n_games,
+                pool_size=min(n_games, 32),
+                seed=seed_base + (0 if side == tscore.Side.USSR else n_games),
+                device="cpu",
+                temperature=0.0,   # greedy — reproducible stats
+                nash_temperatures=True,
+            )
+            for s in steps:
+                s["_side_name"] = "ussr" if side == tscore.Side.USSR else "us"
+            all_step_dicts.extend(steps)
+        except Exception as e:
+            print(f"  [stats] rollout failed for {side}: {e}", flush=True)
+            return {}
+
+    # Aggregate
+    from collections import defaultdict
+
+    mode_counts: dict[tuple, int] = defaultdict(int)       # (phase, side, mode_name)
+    region_counts: dict[tuple, int] = defaultdict(int)     # (phase, side, region)
+    split_counts: dict[tuple, int] = defaultdict(int)      # (phase, side, split_label)
+    total_counts: dict[tuple, int] = defaultdict(int)      # (phase, side)
+    inf_counts: dict[tuple, int] = defaultdict(int)        # (phase, side) influence-only total
+    defcon_sum: dict[tuple, float] = defaultdict(float)
+    vp_sum: dict[tuple, float] = defaultdict(float)
+
+    for s in all_step_dicts:
+        scalars = s["scalars"]           # numpy (11,)
+        turn = round(float(scalars[8]) * 10)
+        defcon = round(float(scalars[1]) * 4 + 1)
+        vp = round(float(scalars[0]) * 20)
+        mode_idx = int(s["mode_idx"])
+        targets = list(s["country_targets"])
+        side_name = s["_side_name"]
+        ph = phase(turn)
+        key = (ph, side_name)
+
+        mode_name = MODE_NAMES[mode_idx] if 0 <= mode_idx < len(MODE_NAMES) else "Unknown"
+        mode_counts[(ph, side_name, mode_name)] += 1
+        total_counts[key] += 1
+        defcon_sum[key] += defcon
+        vp_sum[key] += vp
+
+        if mode_idx == 0 and targets:  # Influence
+            # Region of first (top) target
+            region = _COUNTRY_REGION.get(targets[0], "Unknown")
+            region_counts[(ph, side_name, region)] += 1
+            split_counts[(ph, side_name, influence_split_label(targets))] += 1
+            inf_counts[key] += 1
+
+    # Build flat W&B dict
+    stats: dict[str, float] = {}
+    for ph in PHASES:
+        for side_name in ["ussr", "us"]:
+            key = (ph, side_name)
+            n = total_counts[key]
+            if n == 0:
+                continue
+            prefix = f"stats/{ph}/{side_name}"
+            # Mode fractions
+            for mn in MODE_NAMES:
+                stats[f"{prefix}/mode_{mn.lower()}_frac"] = mode_counts[(ph, side_name, mn)] / n
+            # Mean defcon and vp
+            stats[f"{prefix}/mean_defcon"] = defcon_sum[key] / n
+            stats[f"{prefix}/mean_vp"] = vp_sum[key] / n
+            # Influence sub-stats
+            n_inf = inf_counts[key]
+            if n_inf > 0:
+                for r in REGIONS:
+                    stats[f"{prefix}/region_{r.lower().replace(' ', '_')}_frac"] = (
+                        region_counts[(ph, side_name, r)] / n_inf
+                    )
+                for label in ["concentrated", "split", "dispersed"]:
+                    stats[f"{prefix}/split_{label}_frac"] = split_counts[(ph, side_name, label)] / n_inf
+    return stats
+
+
 def run_benchmark(
     checkpoint_path: str,
     n_games: int = 500,
     seed_base: int = 50000,
+    collect_stats: bool = False,
+    stats_n_games: int = 100,
 ) -> dict[str, float]:
     """Export current checkpoint and benchmark via tscore.benchmark_batched."""
+    script_path = checkpoint_path
+    if not script_path.endswith("_scripted.pt"):
+        script_path = checkpoint_path.replace(".pt", "_scripted.pt")
     ussr_results = tscore.benchmark_batched(
-        checkpoint_path, tscore.Side.USSR, n_games,
+        script_path, tscore.Side.USSR, n_games,
         pool_size=32, seed=seed_base, nash_temperatures=True,
     )
     us_results = tscore.benchmark_batched(
-        checkpoint_path, tscore.Side.US, n_games,
+        script_path, tscore.Side.US, n_games,
         pool_size=32, seed=seed_base + n_games, nash_temperatures=True,
     )
     ussr_wins = sum(1 for r in ussr_results if r.winner == tscore.Side.USSR)
@@ -862,7 +1009,16 @@ def run_benchmark(
     ussr_wr = ussr_wins / len(ussr_results) if ussr_results else 0.0
     us_wr = us_wins / len(us_results) if us_results else 0.0
     combined = (ussr_wins + us_wins) / (len(ussr_results) + len(us_results)) if (ussr_results and us_results) else 0.0
-    return {"ussr_wr": ussr_wr, "us_wr": us_wr, "combined_wr": combined}
+    result = {"ussr_wr": ussr_wr, "us_wr": us_wr, "combined_wr": combined}
+    if collect_stats:
+        try:
+            if os.path.exists(script_path):
+                result["policy_stats"] = collect_policy_stats(
+                    script_path, n_games=stats_n_games, seed_base=seed_base + 10000
+                )
+        except Exception as e:
+            print(f"  [stats] policy stats failed: {e}", flush=True)
+    return result
 
 
 def _export_torchscript_model(model: nn.Module, script_path: str, *, warn_only: bool = False) -> None:
@@ -1111,6 +1267,7 @@ def main() -> None:
             bench = run_benchmark(
                 ckpt_path.replace(".pt", "_scripted.pt"),
                 n_games=500, seed_base=50000,
+                collect_stats=True, stats_n_games=100,
             )
             t_bench = time.time() - t_bench_start
             print(
@@ -1137,6 +1294,8 @@ def main() -> None:
                     "iter_time_s": t_iter,
                 })
                 wandb_run.log(metrics, step=iteration)
+                if "policy_stats" in bench and wandb_run and bench["policy_stats"]:
+                    wandb_run.log(bench["policy_stats"], step=iteration)
         else:
             if wandb_run is not None:
                 log_dict = dict(metrics)
