@@ -25,9 +25,33 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-RATINGS_FILE = Path("results/checkpoint_elo.json")
+# Resolve RATINGS_FILE relative to the repo root (two levels up from this script)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+RATINGS_FILE = _REPO_ROOT / "results" / "checkpoint_elo.json"
 INITIAL_ELO = 1500.0
+# K factor per matchup (not per individual game).
+# With aggregate updates (one update per N-game matchup), K=32 gives reasonable
+# Elo drift per matchup: +/- up to 32 points per head-to-head contest.
+# This avoids the order-dependency problems of per-game updates with K=32.
 K = 32.0
+
+
+def _normalize_path(model_path: str) -> str:
+    """Normalize model path to a repo-relative string for stable dictionary keys.
+
+    Handles both absolute paths and relative paths, resolving them relative to
+    the repo root so that the same checkpoint always maps to the same key.
+    """
+    p = Path(model_path)
+    if not p.is_absolute():
+        p = (_REPO_ROOT / p).resolve()
+    else:
+        p = p.resolve()
+    try:
+        return str(p.relative_to(_REPO_ROOT))
+    except ValueError:
+        # Outside repo — use the absolute path as-is
+        return str(p)
 
 
 def load_ratings() -> dict:
@@ -54,7 +78,7 @@ def update_elo(rating_a: float, rating_b: float, score_a: float) -> tuple[float,
 
 
 def get_rating(data: dict, model_path: str) -> float:
-    return data["ratings"].get(model_path, INITIAL_ELO)
+    return data["ratings"].get(_normalize_path(model_path), INITIAL_ELO)
 
 
 def cmd_matchup(args: argparse.Namespace) -> None:
@@ -72,17 +96,19 @@ def cmd_matchup(args: argparse.Namespace) -> None:
         print("ERROR: tscore.benchmark_model_vs_model_batched not available. Rebuild with new C++.")
         sys.exit(1)
 
-    model_a = args.model_a
-    model_b = args.model_b
+    model_a = _normalize_path(args.model_a)
+    model_b = _normalize_path(args.model_b)
     n_games = args.n_games
     seed = args.seed
     pool_size = min(n_games, 64)
 
-    # Verify files exist
-    if not Path(model_a).exists():
+    # Verify files exist (check both repo-relative and absolute)
+    model_a_abs = _REPO_ROOT / model_a if not Path(model_a).is_absolute() else Path(model_a)
+    model_b_abs = _REPO_ROOT / model_b if not Path(model_b).is_absolute() else Path(model_b)
+    if not model_a_abs.exists():
         print(f"ERROR: model_a not found: {model_a}")
         sys.exit(1)
-    if not Path(model_b).exists():
+    if not model_b_abs.exists():
         print(f"ERROR: model_b not found: {model_b}")
         sys.exit(1)
 
@@ -91,8 +117,8 @@ def cmd_matchup(args: argparse.Namespace) -> None:
     print(f"  B: {model_b}")
 
     results = tscore.benchmark_model_vs_model_batched(
-        model_a_path=model_a,
-        model_b_path=model_b,
+        model_a_path=str(model_a_abs),
+        model_b_path=str(model_b_abs),
         n_games=n_games,
         pool_size=pool_size,
         seed=seed,
@@ -129,10 +155,26 @@ def cmd_matchup(args: argparse.Namespace) -> None:
     rating_a_before = get_rating(data, model_a)
     rating_b_before = get_rating(data, model_b)
 
-    # Apply per-game Elo updates (more accurate than aggregate)
+    # Per-game Elo updates with shuffled order.
+    #
+    # NOTE: Results from benchmark_model_vs_model_batched come in two blocks:
+    #   first n/2 games with model_a=USSR, then n/2 games with model_a=US.
+    # In an asymmetric game like Twilight Struggle, USSR wins ~60% even between
+    # equal models. This block structure causes ORDER-DEPENDENT Elo updates:
+    # the first block inflates the stronger model's Elo then the second block
+    # crashes it, producing nonsensical results (e.g., A wins 57% but LOSES Elo).
+    #
+    # Shuffling (i, result) pairs randomizes the order while preserving the
+    # side assignment for each result (determined by whether i < half).
+    # This removes the systematic block-structure bias without changing the
+    # game count or outcomes.
+    import random as _random
+    indexed = list(enumerate(results))
+    _random.shuffle(indexed)
+
     rating_a = rating_a_before
     rating_b = rating_b_before
-    for i, r in enumerate(results):
+    for i, r in indexed:
         if r.winner is None:
             score_a = 0.5
         elif i < half:
