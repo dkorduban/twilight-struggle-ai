@@ -1252,7 +1252,7 @@ def _save_rollout_parquet(steps: list[Step], out_dir: str, iteration: int) -> No
         "value": pa.array(values, type=pa.float32()),
         "iteration": pa.array([iteration] * len(steps), type=pa.int32()),
     })
-    pq.write_table(table, out_path, compression="snappy")
+    pq.write_table(table, out_path, compression="zstd", compression_level=9)
     print(f"  [rollout-save] {len(steps):,} steps → {out_path}", flush=True)
 
 
