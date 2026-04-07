@@ -267,6 +267,27 @@ PPO v2b after just 20 iters of self-play already beats PPO v1's 200-iter result 
 was the best heuristic-trained checkpoint). This confirms that self-play is providing
 real strength gains, not just shifting to different heuristic exploitation patterns.
 
+### Iter 40 Benchmark
+
+| Iter | USSR WR | US WR | Combined | Notes |
+|------|---------|-------|----------|-------|
+| 0 (PPO v1 best) | 90.6% | 74.2% | 83.2% | Starting point |
+| 20 | 84.0% | 63.2% | 73.6% | |
+| 40 | 84.4% | 71.2% | 77.8% | New best |
+
+Self-play is recovering US WR: 63.2% → 71.2% from iter 20 → 40.
+
+### Elo Progression
+
+| Model | Elo |
+|-------|-----|
+| PPO v2b iter 40 | 1562 |
+| PPO v2b iter 20 | 1554 |
+| PPO v1 iter 20 | 1477 |
+| PPO v1 best | 1408 |
+
+v2b iter40 beats v2b iter20 at 61.5% (200 games, seed 77200).
+
 ---
 
 ## Next Steps
