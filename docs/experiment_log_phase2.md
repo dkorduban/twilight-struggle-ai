@@ -428,6 +428,29 @@ Key lesson: **Heuristic WR can plateau while H2H strength continues improving.**
 exactly why BayesElo with H2H data is essential — the heuristic WR alone would incorrectly
 suggest a plateau at iter140.
 
+### Iter 160 Benchmark + Elo Matchup — PLATEAU
+
+**Iter 160 vs heuristic**: USSR=93.0%, US=73.6%, combined=83.3% (below iter120/140)
+
+**Elo matchup iter160 vs iter140 (200 games)**: iter160 wins **50.5%** (101/200, 2 draws)
+- Essentially tied — not statistically significant (within noise at n=200)
+- **Plateau confirmed**: model has reached ceiling for this v2b configuration
+
+Updated BayesElo leaderboard (anchored heuristic=1500):
+| BayesElo | ±95%CI | vs-Heuristic | Model |
+|----------|--------|-------------|-------|
+| **1823** | **±42** | 83.6% | **v2b iter140 ← top** |
+| 1813 | ±49 | 83.3% | v2b iter160 (≈ iter140) |
+| 1779 | ±39 | 79.5% | v2b iter80 |
+| 1768 | ±39 | 84.6% | v2b iter120 |
+| 1767 | ±40 | 82.3% | v2b iter100 |
+| 1686 | ±38 | 83.2% | v1_best |
+| 1500 | — | — | heuristic (anchor) |
+
+**Plateau analysis**: Self-play with 20% heuristic anchor has converged. The opponent
+mixture (80% self, 20% heuristic) is no longer diverse enough to drive further improvement.
+League training (PPO v3) will inject adversarial diversity via past checkpoint pool.
+
 ---
 
 ## Next Steps
@@ -435,7 +458,10 @@ suggest a plateau at iter140.
 See `docs/ppo_next_steps.md` for detailed plan. Summary:
 
 1. ✅ Self-play PPO (running as PPO v2b with fixed GAE)
-2. ✅ Cross-checkpoint Elo (infrastructure complete, first matchup done)
-3. League training (pool of past checkpoints) — spec in `.claude/plan/league-training.md`
-4. VP-scaled rewards + entropy scheduling (added to train_ppo.py, not yet used in v2b)
-5. MCTS-guided PPO (Expert Iteration)
+2. ✅ Cross-checkpoint Elo (infrastructure complete, matchups through iter160)
+3. ✅ **PPO v3 league training queued** — auto-starts when v2b finishes iter 200
+   - `--league data/checkpoints/league_v3 --league-save-every 20`
+   - `--vp-reward-coef 0.1 --ent-coef-final 0.001 --lr 3e-5`
+   - `--save-rollout-parquet data/ppo_v3_rollouts/` (for BC bootstrapping)
+4. VP-scaled rewards + entropy scheduling (added to v3 command)
+5. MCTS-guided PPO (Expert Iteration) — post-v3
