@@ -1850,3 +1850,83 @@ with no conflicting losses. Mode distribution should naturally shift toward MCTS
 - Training: same v106 recipe, pure BC, no teacher targets
 
 **Success criteria**: v114 > v106 (34.9%) by >2pp combined.
+
+**Status**: DONE — FAILED
+
+**Result** (500 games/side, Nash temps, seeds 50000/50500):
+
+| Model | USSR WR | US WR | Combined | Notes |
+|-------|---------|-------|----------|-------|
+| v106_cf_gnn_s42 (baseline) | 55.8% | 14.0% | **34.9%** | pure heuristic BC |
+| v114_mcts_bc_s42 | 54.0% | 12.4% | **33.2%** | 7% MCTS data mixed in |
+| Delta | -1.8pp | -1.6pp | **-1.7pp** | regression |
+
+**Root cause**: Same as all BC self-play experiments — small fraction of "better" data
+(7% MCTS, 93% heuristic) cannot shift model behavior. The heuristic BC loss dominates
+and the MCTS data fraction is insufficient to change mode or placement distributions.
+The influence placement quality from proportional allocation is identical in both
+heuristic and MCTS-played games (single collapsed edge per card×mode, no search over
+country targets). No new information in the MCTS trajectories for the aspects the model
+can learn from BC.
+
+**Dead ends updated**:
+12. Pure BC on MCTS-played games at low mixing ratio (v114, -1.7pp, within noise)
+
+---
+
+## Phase 2c: Allocation Head + DP Decoder (PENDING)
+
+**Background**: All BC-level improvements have plateaued at ~33-35% Nash combined.
+MCTS at 2000sim+pruning reaches 43.7% (+8.8pp) but is too slow for training.
+The identified bottleneck is **influence placement quality** — the model uses a single
+proportional allocation per card×mode edge, and tree search cannot improve country-level
+decisions within that single edge.
+
+**Hypothesis**: Replace the mixture-of-4-softmaxes country head with a budget-aware
+per-country marginal allocation head decoded by a small DP. This allows the model to
+explicitly reason about stacking (multiple ops into one country), budget constraints,
+and optimal allocation patterns.
+
+**Architecture**:
+- `AllocationHead(budget, country_features)` → `gain[c, t]` for c in countries, t=1..budget
+- DP decoder: fill budget greedily by marginal gains → exact allocation
+- Training target: canonical sorted multi-hot over countries (existing format compatible)
+
+**Why this might help**:
+- Current mixture-of-softmaxes can't represent stacking (all ops to 1 country)
+- K=4 diverse edges failed (-20pp) — the issue is the model's distribution, not tree search
+- A DP decoder with marginal gains can learn budget-aware allocation natively
+
+**Implementation complexity**: Medium (2-3 days)
+- `python/tsrl/policies/model.py`: AllocationHead class
+- Training targets: existing format works (sorted country list maps to DP output)
+- May need dataset changes if ops count not already in features
+
+**Priority**: Highest remaining architectural lever. Delegate to Codex via spec.
+
+---
+
+## Current State Summary (2026-04-06)
+
+**BC ceiling**: ~33-35% Nash combined. No BC variant has reliably exceeded this.
+
+**Dead ends (12 confirmed)**:
+1. Teacher KL distillation (6 attempts: v100, v101, v103, v105, v105b, v113 — all regressed)
+2. Wider trunk h=384 (v108, -6 to -9pp)
+3. Self-play Gen 0 (v107, +1pp, within noise)
+4. MCTS 100/400 sim (0pp improvement over greedy)
+5. Side-conditional model (v109, -4 to -5pp)
+6. Data volume 2x-3x (v110, v111, 0 to -10pp)
+7. Fixed epoch count vs patience-based early stopping (-2 to -5pp)
+8. K>1 influence expansion (K=4, -20pp)
+9. Edge pruning at 100sim (no benefit)
+10. Mixed country_logits vs argmax strategy (-1.5pp)
+11. K>1 + pruning (K=2/K=4, -20pp even with pruned trees)
+12. Pure BC on MCTS-played games at 7% mix (v114, -1.7pp)
+
+**What works**:
+- GNN adjacency architecture: +4pp over MLP baseline
+- MCTS 2000sim + pruning: +8.8pp (43.7%) — too slow for training
+- Nash temps benchmark: correct evaluation mode
+
+**Next step**: Phase 2c — allocation head + DP decoder. Write spec, delegate to Codex.

@@ -220,6 +220,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Model architecture variant (default: baseline)",
     )
     p.add_argument(
+        "--num-strategies",
+        type=int,
+        default=4,
+        help="Number of country-allocation mixture strategies (default 4; use 1 for simple softmax)",
+    )
+    p.add_argument(
         "--val-fraction",
         type=float,
         default=0.1,
@@ -955,10 +961,13 @@ def main() -> None:
         "control_feat_gnn": TSControlFeatGNNModel,
         "control_feat_gnn_side": TSControlFeatGNNSideModel,
     }
-    model = _MODEL_REGISTRY[args.model_type](
-        dropout=args.dropout,
-        hidden_dim=args.hidden_dim,
-    ).to(device)
+    model_kwargs: dict = {
+        "dropout": args.dropout,
+        "hidden_dim": args.hidden_dim,
+    }
+    if args.model_type in ("control_feat_gnn", "control_feat_gnn_side") and args.num_strategies != 4:
+        model_kwargs["num_strategies"] = args.num_strategies
+    model = _MODEL_REGISTRY[args.model_type](**model_kwargs).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model parameters: {n_params:,}")
     if args.compile:

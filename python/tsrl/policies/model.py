@@ -1306,8 +1306,15 @@ class TSControlFeatGNNModel(nn.Module):
 
     _REGION_SCALAR_DIM = 28
 
-    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+    def __init__(
+        self,
+        dropout: float = 0.1,
+        hidden_dim: int = TRUNK_HIDDEN,
+        num_strategies: int = NUM_STRATEGIES,
+    ) -> None:
         super().__init__()
+
+        self.num_strategies = num_strategies
 
         self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.influence_encoder_embed = ControlFeatGNNEncoder()
@@ -1321,8 +1328,8 @@ class TSControlFeatGNNModel(nn.Module):
 
         self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
         self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
-        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
-        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+        self.strategy_heads = nn.Linear(hidden_dim, self.num_strategies * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, self.num_strategies)
 
         self.value_branch = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
         self.value_head = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
@@ -1347,7 +1354,7 @@ class TSControlFeatGNNModel(nn.Module):
         card_logits = self.card_head(hidden)
         mode_logits = self.mode_head(hidden)
         country_strategy_logits = self.strategy_heads(hidden).view(
-            hidden.shape[0], 4, 86
+            hidden.shape[0], self.num_strategies, NUM_COUNTRIES
         )
         strategy_logits = self.strategy_mixer(hidden)
         mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
