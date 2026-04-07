@@ -1209,15 +1209,26 @@ def collect_policy_stats(
     return stats
 
 
-def _save_rollout_parquet(steps: list[Step], out_dir: str, iteration: int) -> None:
+def _save_rollout_parquet(
+    steps: list[Step],
+    out_dir: str,
+    iteration: int,
+    base_seed: int = 0,
+    checkpoint_path: str = "",
+) -> None:
     """Save rollout steps to Parquet for BC bootstrapping.
 
     Each row contains the raw feature tensors and action labels from a PPO step,
     in the same format as the BC dataset (influence, cards, scalars, card_id, mode_id,
     country_targets, side_int, reward). Saved to out_dir/rollout_iter_{N:04d}.parquet.
 
-    These files can be used to warm-start BC training from PPO data without
-    re-running games.
+    For future re-encoding with different features: game seeds are deterministic as
+    base_seed + game_index. With the checkpoint and seeds, any game can be replayed
+    using collect_selfplay_rows_jsonl to get full JSONL → re-encode to any feature format.
+    The out_dir/rollout_iter_{N:04d}.meta.json file records base_seed and checkpoint_path
+    for this purpose.
+
+    These files can be used to warm-start BC training from PPO data without re-running games.
     """
     try:
         import pyarrow as pa
@@ -1228,6 +1239,7 @@ def _save_rollout_parquet(steps: list[Step], out_dir: str, iteration: int) -> No
 
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     out_path = Path(out_dir) / f"rollout_iter_{iteration:04d}.parquet"
+    meta_path = Path(out_dir) / f"rollout_iter_{iteration:04d}.meta.json"
 
     inf_list = [s.influence[0].numpy().tolist() for s in steps]
     cards_list = [s.cards[0].numpy().tolist() for s in steps]
@@ -1253,7 +1265,22 @@ def _save_rollout_parquet(steps: list[Step], out_dir: str, iteration: int) -> No
         "iteration": pa.array([iteration] * len(steps), type=pa.int32()),
     })
     pq.write_table(table, out_path, compression="zstd", compression_level=9)
-    print(f"  [rollout-save] {len(steps):,} steps → {out_path}", flush=True)
+
+    # Save replay metadata: checkpoint + seed allows exact game reconstruction
+    # via: collect_selfplay_rows_jsonl --model checkpoint --seed base_seed+game_index
+    meta = {
+        "iteration": iteration,
+        "n_steps": len(steps),
+        "base_seed": base_seed,
+        "checkpoint_path": checkpoint_path,
+        "replay_note": (
+            "To re-encode with new features: replay games using "
+            "collect_selfplay_rows_jsonl with checkpoint_path and seeds "
+            "[base_seed, base_seed+1, ..., base_seed+n_games-1]"
+        ),
+    }
+    meta_path.write_text(json.dumps(meta, indent=2))
+    print(f"  [rollout-save] {len(steps):,} steps → {out_path} (meta: {meta_path.name})", flush=True)
 
 
 def run_benchmark(
@@ -1518,7 +1545,13 @@ def main() -> None:
 
         # Optionally save rollout steps as Parquet for BC bootstrapping
         if args.save_rollout_parquet and all_steps:
-            _save_rollout_parquet(all_steps, args.save_rollout_parquet, iteration)
+            # base_seed is deterministic: args.seed + (iteration - 1) * args.games_per_iter
+            _rollout_base_seed = args.seed + (iteration - 1) * args.games_per_iter
+            _save_rollout_parquet(
+                all_steps, args.save_rollout_parquet, iteration,
+                base_seed=_rollout_base_seed,
+                checkpoint_path=args.checkpoint,
+            )
 
         # Compute GAE advantages
         compute_gae_batch(all_steps, gamma=args.gamma, lam=args.gae_lambda)
