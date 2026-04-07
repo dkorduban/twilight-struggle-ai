@@ -4266,6 +4266,183 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
     return results;
 }
 
+RolloutResult rollout_model_vs_model_batched(
+    int n_games,
+    torch::jit::script::Module& model_a,
+    torch::jit::script::Module& model_b,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device,
+    float temperature,
+    bool nash_temperatures
+) {
+    if (n_games <= 0) {
+        return {};
+    }
+    if (temperature <= 0.0f) {
+        throw std::invalid_argument("rollout_model_vs_model_batched requires temperature > 0");
+    }
+    if (pool_size <= 0) {
+        pool_size = std::min(n_games, 64);
+    }
+
+    // game_index [0, half) => model_a plays USSR, model_b plays US.
+    // game_index [half, n_games) => model_a plays US, model_b plays USSR.
+    const int half = n_games / 2;
+    auto a_is_ussr = [&](int game_index) -> bool { return game_index < half; };
+
+    BatchedMctsConfig config;
+    config.pool_size = pool_size;
+    config.mcts.n_simulations = 0;
+    config.nash_temperatures = nash_temperatures;
+    config.record_rows = false;
+
+    std::vector<GameSlot> pool(static_cast<size_t>(pool_size));
+    int games_started = 0;
+    int games_finished = 0;
+    std::vector<std::optional<GameResult>> ordered_results(static_cast<size_t>(n_games));
+    std::vector<std::vector<RolloutStep>> steps_by_game(static_cast<size_t>(n_games));
+
+    // Separate batch buffers: model_a batch (steps recorded) and model_b batch (greedy only).
+    nn::BatchInputs batch_a;
+    batch_a.allocate(pool_size, device);
+    nn::BatchInputs batch_b;
+    batch_b.allocate(pool_size, device);
+
+    struct BatchEntry {
+        GameSlot* slot = nullptr;
+        int game_index = -1;
+    };
+    std::vector<BatchEntry> entries_a;
+    std::vector<BatchEntry> entries_b;
+    entries_a.reserve(static_cast<size_t>(pool_size));
+    entries_b.reserve(static_cast<size_t>(pool_size));
+
+    while (games_finished < n_games) {
+        batch_a.reset();
+        batch_b.reset();
+        entries_a.clear();
+        entries_b.clear();
+
+        for (auto& slot : pool) {
+            if (slot.active && slot.game_done && !slot.emitted) {
+                ordered_results[static_cast<size_t>(slot.game_index)] = slot.result;
+                slot.emitted = true;
+                slot.active = false;
+                games_finished += 1;
+            }
+            if (!slot.active && games_started < n_games) {
+                initialize_slot(slot, games_started, base_seed, config);
+                games_started += 1;
+            }
+        }
+
+        for (auto& slot : pool) {
+            if (!slot.active || slot.game_done) {
+                continue;
+            }
+
+            advance_until_decision(slot, config);
+            if (slot.game_done || !slot.decision.has_value()) {
+                continue;
+            }
+
+            const auto decision_side = slot.decision->side;
+            // Determine whether model_a is acting this decision.
+            const bool a_acts =
+                a_is_ussr(slot.game_index)
+                    ? (decision_side == Side::USSR)
+                    : (decision_side == Side::US);
+
+            if (a_acts) {
+                batch_a.fill_slot(
+                    batch_a.filled,
+                    slot.root_state.pub,
+                    slot.root_state.hands[to_index(decision_side)],
+                    slot.decision->holds_china,
+                    decision_side
+                );
+                entries_a.push_back(BatchEntry{&slot, slot.game_index});
+            } else {
+                batch_b.fill_slot(
+                    batch_b.filled,
+                    slot.root_state.pub,
+                    slot.root_state.hands[to_index(decision_side)],
+                    slot.decision->holds_china,
+                    decision_side
+                );
+                entries_b.push_back(BatchEntry{&slot, slot.game_index});
+            }
+        }
+
+        // model_a batch: rollout_action_from_outputs records steps.
+        if (!entries_a.empty()) {
+            const auto outputs_a = nn::forward_model_batched(model_a, batch_a);
+            for (int batch_idx = 0; batch_idx < static_cast<int>(entries_a.size()); ++batch_idx) {
+                auto& entry = entries_a[static_cast<size_t>(batch_idx)];
+                auto [action, step] = rollout_action_from_outputs(
+                    entry.slot->root_state,
+                    batch_a,
+                    outputs_a,
+                    static_cast<int64_t>(batch_idx),
+                    entry.slot->rng,
+                    temperature,
+                    entry.game_index,
+                    device
+                );
+                if (step.card_idx >= 0) {
+                    steps_by_game[static_cast<size_t>(entry.game_index)].push_back(std::move(step));
+                }
+                commit_greedy_action(*entry.slot, action);
+            }
+        }
+
+        // model_b batch: greedy_action_from_outputs, no step recording.
+        if (!entries_b.empty()) {
+            const auto outputs_b = nn::forward_model_batched(model_b, batch_b);
+            for (int batch_idx = 0; batch_idx < static_cast<int>(entries_b.size()); ++batch_idx) {
+                auto& entry = entries_b[static_cast<size_t>(batch_idx)];
+                auto action = greedy_action_from_outputs(
+                    entry.slot->root_state,
+                    outputs_b,
+                    static_cast<int64_t>(batch_idx),
+                    entry.slot->rng,
+                    temperature
+                );
+                commit_greedy_action(*entry.slot, action);
+            }
+        }
+    }
+
+    RolloutResult result;
+    result.results.reserve(static_cast<size_t>(n_games));
+    result.game_boundaries.reserve(static_cast<size_t>(n_games));
+
+    size_t total_steps = 0;
+    for (const auto& game_steps : steps_by_game) {
+        total_steps += game_steps.size();
+    }
+    result.steps.reserve(total_steps);
+
+    int offset = 0;
+    for (int game_index = 0; game_index < n_games; ++game_index) {
+        result.game_boundaries.push_back(offset);
+        const auto& maybe_result = ordered_results[static_cast<size_t>(game_index)];
+        if (!maybe_result.has_value()) {
+            throw std::runtime_error("rollout_model_vs_model_batched missing ordered game result");
+        }
+        result.results.push_back(*maybe_result);
+
+        auto& game_steps = steps_by_game[static_cast<size_t>(game_index)];
+        offset += static_cast<int>(game_steps.size());
+        for (auto& step : game_steps) {
+            result.steps.push_back(std::move(step));
+        }
+    }
+
+    return result;
+}
+
 RolloutResult rollout_games_batched(
     int n_games,
     torch::jit::script::Module& model,

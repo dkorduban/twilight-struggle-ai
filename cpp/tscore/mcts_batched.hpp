@@ -231,6 +231,21 @@ std::vector<GameResult> benchmark_mcts(
     float prior_t_country = 1.0f
 );
 
+/// Run model_a (learning model, steps recorded) vs model_b (opponent, no steps).
+/// game_index [0, half) => model_a plays USSR, model_b plays US.
+/// game_index [half, n_games) => model_a plays US, model_b plays USSR.
+/// Returns RolloutResult with steps only for model_a decisions.
+RolloutResult rollout_model_vs_model_batched(
+    int n_games,
+    torch::jit::script::Module& model_a,
+    torch::jit::script::Module& model_b,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device = torch::kCPU,
+    float temperature = 1.0f,
+    bool nash_temperatures = false
+);
+
 }  // namespace ts
 
 #endif

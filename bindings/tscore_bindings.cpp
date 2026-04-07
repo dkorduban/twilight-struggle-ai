@@ -719,6 +719,51 @@ PYBIND11_MODULE(tscore, m) {
         "feature/mask arrays plus sampled action metadata and log-probs."
     );
     m.def(
+        "rollout_model_vs_model_batched",
+        [](const std::string& model_a_path, const std::string& model_b_path,
+           int n_games, int pool_size, py::object seed_obj,
+           const std::string& device_str, float temperature, bool nash_temperatures) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            torch::Device device(device_str);
+            auto model_a = torch::jit::load(model_a_path, device);
+            model_a.eval();
+            auto model_b = torch::jit::load(model_b_path, device);
+            model_b.eval();
+            auto rollout = ts::rollout_model_vs_model_batched(
+                n_games,
+                model_a,
+                model_b,
+                pool_size,
+                seed.value_or(std::random_device{}()),
+                device,
+                temperature,
+                nash_temperatures
+            );
+
+            py::list steps_out;
+            for (const auto& step : rollout.steps) {
+                steps_out.append(rollout_step_to_dict(step));
+            }
+            return py::make_tuple(rollout.results, steps_out, rollout.game_boundaries);
+        },
+        py::arg("model_a_path"),
+        py::arg("model_b_path"),
+        py::arg("n_games"),
+        py::arg("pool_size") = 32,
+        py::arg("seed") = py::none(),
+        py::arg("device") = "cpu",
+        py::arg("temperature") = 1.0f,
+        py::arg("nash_temperatures") = false,
+        "Run model_a (learning model) vs model_b (opponent) batched rollout.\n"
+        "game_index [0, n_games/2) => model_a plays USSR, model_b plays US.\n"
+        "game_index [n_games/2, n_games) => model_a plays US, model_b plays USSR.\n"
+        "Steps are recorded ONLY for model_a decisions.\n"
+        "Returns (results, steps, game_boundaries)."
+    );
+    m.def(
         "benchmark_ismcts",
         [](const std::string& model_path, ts::Side learned_side, int n_games,
            int n_determinizations, int n_simulations, py::object seed_obj, int pool_size,
