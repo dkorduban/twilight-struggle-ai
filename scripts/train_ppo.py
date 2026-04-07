@@ -678,14 +678,10 @@ collect_rollout = collect_rollout_batched
 # ---------------------------------------------------------------------------
 
 def compute_gae(steps: list[Step], gamma: float = 0.99, lam: float = 0.95) -> None:
-    """Compute GAE advantages and returns in-place for a single game's steps.
+    """Compute GAE advantages and returns in-place for a single-side episode.
 
+    Assumes all steps are from the same side (e.g., heuristic-mode training).
     Assumes steps[-1].done is True and steps[-1].reward is the terminal reward.
-
-    Zero-sum flip: TS is a zero-sum game, so when consecutive steps alternate between
-    USSR and US (self-play), the next state's value must be NEGATED because it's from
-    the opponent's perspective. E.g., V_US(s) = 1 - V_USSR(s). Without this flip,
-    the bootstrap term from the opponent's step adds a spurious +gamma bias to advantages.
     """
     T = len(steps)
     gae = 0.0
@@ -694,21 +690,62 @@ def compute_gae(steps: list[Step], gamma: float = 0.99, lam: float = 0.95) -> No
             next_value = 0.0
             delta = steps[t].reward - steps[t].value
         else:
-            next_v = steps[t + 1].value
-            # Zero-sum flip: if the next step is the opponent's turn, negate their value
-            # (V_opponent = -V_self in a zero-sum game, so -V_opponent = V_self at that state)
-            if steps[t + 1].side_int != steps[t].side_int:
-                next_v = -next_v
-            delta = steps[t].reward + gamma * next_v - steps[t].value
+            next_value = steps[t + 1].value
+            delta = steps[t].reward + gamma * next_value - steps[t].value
         gae = delta + gamma * lam * (0.0 if steps[t].done else gae)
         steps[t].advantage = gae
         steps[t].returns = gae + steps[t].value
 
 
+def _compute_gae_per_side(seg: list[Step], gamma: float, lam: float) -> None:
+    """GAE computed independently for each side's steps in a self-play game.
+
+    In zero-sum self-play, steps alternate between USSR and US. Computing GAE on
+    the interleaved sequence would mix perspectives (V_USSR and V_US). Instead,
+    we compute GAE on each side's steps independently, bootstrapping only from
+    same-side values.
+
+    Terminal reward for each side is assigned from game outcome:
+    - The side that took the last action gets the assigned reward (done=True step)
+    - The other side gets the negation (zero-sum)
+    """
+    if not seg:
+        return
+
+    terminal = seg[-1]
+    terminal_side = terminal.side_int
+    terminal_reward = terminal.reward
+
+    for target_side in [0, 1]:
+        side_steps = [s for s in seg if s.side_int == target_side]
+        if not side_steps:
+            continue
+
+        # Terminal reward from this side's perspective
+        reward = terminal_reward if target_side == terminal_side else -terminal_reward
+
+        T = len(side_steps)
+        gae = 0.0
+        for t in reversed(range(T)):
+            if t == T - 1:
+                # Last step for this side: bootstrap from terminal outcome
+                delta = reward - side_steps[t].value
+                next_value = 0.0
+            else:
+                # Bootstrap from next same-side step's value
+                next_value = side_steps[t + 1].value
+                delta = gamma * next_value - side_steps[t].value  # non-terminal r=0
+            gae = delta + gamma * lam * gae
+            side_steps[t].advantage = gae
+            side_steps[t].returns = gae + side_steps[t].value
+
+
 def compute_gae_batch(all_steps: list[Step], gamma: float = 0.99, lam: float = 0.95) -> None:
     """Compute GAE for all games in the flat steps list.
 
-    Game boundaries are detected by the `done` flag.
+    Game boundaries are detected by the `done` flag. For self-play games (mixed
+    side_ints), per-side GAE is used. For single-side games (heuristic mode),
+    standard GAE is used.
     """
     # Split into per-game segments
     game_segments: list[list[Step]] = []
@@ -722,7 +759,13 @@ def compute_gae_batch(all_steps: list[Step], gamma: float = 0.99, lam: float = 0
         game_segments.append(current)
 
     for seg in game_segments:
-        compute_gae(seg, gamma=gamma, lam=lam)
+        sides = {s.side_int for s in seg}
+        if len(sides) > 1:
+            # Self-play: compute GAE per side to avoid mixing perspectives
+            _compute_gae_per_side(seg, gamma=gamma, lam=lam)
+        else:
+            # Heuristic mode: all steps same side, standard GAE
+            compute_gae(seg, gamma=gamma, lam=lam)
 
 
 # ---------------------------------------------------------------------------
