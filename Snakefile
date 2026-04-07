@@ -23,9 +23,9 @@ with open("experiments.yaml") as _f:
 _defaults = _cfg["defaults"]
 _bench = _cfg["benchmark"]
 
-# name → (data_dir, seed)
+# name → (data_dir, seed, extra_args)
 EXPERIMENTS = {
-    name: (exp["data_dir"], exp["seed"])
+    name: (exp["data_dir"], exp["seed"], exp.get("extra_args", ""))
     for name, exp in _cfg["experiments"].items()
 }
 
@@ -63,7 +63,8 @@ rule train:
     params:
         data_dir=lambda wc: EXPERIMENTS[wc.name][0],
         seed=lambda wc: EXPERIMENTS[wc.name][1],
-        train_args=TRAIN_ARGS
+        train_args=TRAIN_ARGS,
+        extra_args=lambda wc: EXPERIMENTS[wc.name][2]
     resources:
         gpu=1
     log:
@@ -75,6 +76,7 @@ rule train:
             --out-dir data/checkpoints/{wildcards.name} \
             --seed {params.seed} \
             {params.train_args} \
+            {params.extra_args} \
             2>&1 | tee {log}
         """
 

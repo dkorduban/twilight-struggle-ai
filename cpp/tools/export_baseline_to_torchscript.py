@@ -48,8 +48,14 @@ def load_model(checkpoint_path: Path) -> torch.nn.Module:
     hidden_dim = ckpt_args.get("hidden_dim", 256)
     model_type = ckpt_args.get("model_type", "baseline")
     dropout = ckpt_args.get("dropout", 0.1)
+    num_strategies = ckpt_args.get("num_strategies", 4)
     cls = _MODEL_REGISTRY.get(model_type, TSBaselineModel)
-    model = cls(hidden_dim=hidden_dim, dropout=dropout)
+    import inspect
+    init_params = inspect.signature(cls.__init__).parameters
+    kwargs: dict = {"hidden_dim": hidden_dim, "dropout": dropout}
+    if "num_strategies" in init_params:
+        kwargs["num_strategies"] = num_strategies
+    model = cls(**kwargs)
     model.load_state_dict(state_dict, strict=False)
     model.eval()
     return model
