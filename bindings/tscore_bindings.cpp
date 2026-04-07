@@ -607,6 +607,38 @@ PYBIND11_MODULE(tscore, m) {
         "Returns list[GameResult]."
     );
     m.def(
+        "benchmark_model_vs_model_batched",
+        [](const std::string& model_a_path, const std::string& model_b_path,
+           int n_games, int pool_size, py::object seed_obj, const std::string& device_str,
+           float temperature, bool nash_temperatures) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            torch::Device device(device_str);
+            auto model_a = torch::jit::load(model_a_path, device);
+            model_a.eval();
+            auto model_b = torch::jit::load(model_b_path, device);
+            model_b.eval();
+            return ts::benchmark_model_vs_model_batched(
+                n_games, model_a, model_b, pool_size,
+                seed.value_or(std::random_device{}()), device, temperature, nash_temperatures);
+        },
+        py::arg("model_a_path"),
+        py::arg("model_b_path"),
+        py::arg("n_games") = 100,
+        py::arg("pool_size") = 64,
+        py::arg("seed") = py::none(),
+        py::arg("device") = "cpu",
+        py::arg("temperature") = 0.0f,
+        py::arg("nash_temperatures") = false,
+        "Run model-vs-model benchmark using batched greedy (argmax) inference.\n"
+        "Half the games assign model_a=USSR, model_b=US; the other half swap.\n"
+        "Both models use argmax action selection (temperature=0) by default.\n"
+        "Returns list[GameResult] ordered as: first n_games//2 with model_a=USSR,\n"
+        "then n_games//2 with model_a=US."
+    );
+    m.def(
         "rollout_games_batched",
         [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size,
            py::object seed_obj, const std::string& device_str, float temperature,

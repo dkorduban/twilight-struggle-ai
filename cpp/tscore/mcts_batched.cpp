@@ -4110,6 +4110,162 @@ std::vector<GameResult> benchmark_games_batched(
     return results;
 }
 
+std::vector<GameResult> benchmark_model_vs_model_batched(
+    int n_games,
+    torch::jit::script::Module& model_a,
+    torch::jit::script::Module& model_b,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device,
+    float temperature,
+    bool nash_temperatures
+) {
+    if (n_games <= 0) {
+        return {};
+    }
+    // n_games must be even — split into first half (a=USSR) and second half (a=US).
+    const int half = n_games / 2;
+    const int total = half * 2;
+
+    if (pool_size <= 0) {
+        pool_size = std::min(total, 64);
+    }
+
+    // game_index [0, half) => model_a plays USSR, model_b plays US
+    // game_index [half, total) => model_a plays US,  model_b plays USSR
+    auto a_is_ussr = [&](int game_index) -> bool {
+        return game_index < half;
+    };
+
+    BatchedMctsConfig config;
+    config.pool_size = pool_size;
+    config.mcts.n_simulations = 0;
+    config.learned_side = std::nullopt;  // Both sides use NN.
+    config.nash_temperatures = false;    // No heuristic opponent.
+    config.record_rows = false;
+
+    std::vector<GameSlot> pool(static_cast<size_t>(pool_size));
+    int games_started = 0;
+    // Maintain ordered results — allocate slots for all games upfront.
+    std::vector<GameResult> results(static_cast<size_t>(total));
+    std::vector<bool> result_filled(static_cast<size_t>(total), false);
+    int games_finished = 0;
+
+    // Two separate batch input buffers — one per model.
+    nn::BatchInputs batch_a, batch_b;
+    batch_a.allocate(pool_size, device);
+    batch_b.allocate(pool_size, device);
+
+    struct BatchEntry {
+        GameSlot* slot = nullptr;
+        bool is_model_a = false;
+    };
+    std::vector<BatchEntry> entries_a, entries_b;
+    entries_a.reserve(static_cast<size_t>(pool_size));
+    entries_b.reserve(static_cast<size_t>(pool_size));
+
+    while (games_finished < total) {
+        batch_a.reset();
+        batch_b.reset();
+        entries_a.clear();
+        entries_b.clear();
+
+        // Collect completed games, start new ones.
+        for (auto& slot : pool) {
+            if (slot.active && slot.game_done && !slot.emitted) {
+                const int gi = slot.game_index;
+                results[static_cast<size_t>(gi)] = slot.result;
+                result_filled[static_cast<size_t>(gi)] = true;
+                slot.emitted = true;
+                slot.active = false;
+                games_finished += 1;
+            }
+            if (!slot.active && games_started < total) {
+                initialize_slot(slot, games_started, base_seed, config);
+                games_started += 1;
+            }
+        }
+
+        // Advance each active game until it needs a decision.
+        for (auto& slot : pool) {
+            if (!slot.active || slot.game_done) {
+                continue;
+            }
+
+            advance_until_decision(slot, config);
+            if (slot.game_done || !slot.decision.has_value()) {
+                continue;
+            }
+
+            const auto decision_side = slot.decision->side;
+            // Which model acts for this decision?
+            // If a_is_ussr(game_index): model_a=USSR, so model_a acts when side==USSR.
+            // If !a_is_ussr(game_index): model_a=US, so model_a acts when side==US.
+            const bool a_acts = (a_is_ussr(slot.game_index))
+                                    ? (decision_side == Side::USSR)
+                                    : (decision_side == Side::US);
+
+            if (a_acts) {
+                const auto batch_idx = batch_a.filled;
+                batch_a.fill_slot(
+                    batch_idx,
+                    slot.root_state.pub,
+                    slot.root_state.hands[to_index(decision_side)],
+                    slot.decision->holds_china,
+                    decision_side
+                );
+                entries_a.push_back(BatchEntry{&slot, true});
+            } else {
+                const auto batch_idx = batch_b.filled;
+                batch_b.fill_slot(
+                    batch_idx,
+                    slot.root_state.pub,
+                    slot.root_state.hands[to_index(decision_side)],
+                    slot.decision->holds_china,
+                    decision_side
+                );
+                entries_b.push_back(BatchEntry{&slot, false});
+            }
+        }
+
+        // Run batched NN inference for model_a decisions.
+        if (!entries_a.empty()) {
+            const auto outputs = nn::forward_model_batched(model_a, batch_a);
+            int batch_idx = 0;
+            for (auto& entry : entries_a) {
+                auto action = greedy_action_from_outputs(
+                    entry.slot->root_state,
+                    outputs,
+                    static_cast<int64_t>(batch_idx),
+                    entry.slot->rng,
+                    temperature
+                );
+                commit_greedy_action(*entry.slot, action);
+                batch_idx += 1;
+            }
+        }
+
+        // Run batched NN inference for model_b decisions.
+        if (!entries_b.empty()) {
+            const auto outputs = nn::forward_model_batched(model_b, batch_b);
+            int batch_idx = 0;
+            for (auto& entry : entries_b) {
+                auto action = greedy_action_from_outputs(
+                    entry.slot->root_state,
+                    outputs,
+                    static_cast<int64_t>(batch_idx),
+                    entry.slot->rng,
+                    temperature
+                );
+                commit_greedy_action(*entry.slot, action);
+                batch_idx += 1;
+            }
+        }
+    }
+
+    return results;
+}
+
 RolloutResult rollout_games_batched(
     int n_games,
     torch::jit::script::Module& model,

@@ -191,6 +191,22 @@ std::vector<GameResult> benchmark_mcts_vs_greedy(
     torch::Device device = torch::kCPU
 );
 
+/// Run model-vs-model benchmark using batched greedy (argmax) inference.
+/// Half the games assign model_a=USSR, model_b=US; the other half swap.
+/// Both models use argmax action selection (no heuristic, no tree search).
+/// Returns one GameResult per game ordered as: first n_games/2 with model_a=USSR,
+/// then n_games/2 with model_a=US.
+std::vector<GameResult> benchmark_model_vs_model_batched(
+    int n_games,
+    torch::jit::script::Module& model_a,
+    torch::jit::script::Module& model_b,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device = torch::kCPU,
+    float temperature = 0.0f,
+    bool nash_temperatures = false
+);
+
 /// Run MCTS benchmark. Opponent is heuristic (default) or greedy NN.
 std::vector<GameResult> benchmark_mcts(
     int n_games,
