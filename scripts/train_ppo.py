@@ -670,6 +670,111 @@ def collect_rollout_self_play_batched(
     return all_steps
 
 
+# ---------------------------------------------------------------------------
+# League training helpers
+# ---------------------------------------------------------------------------
+
+def sample_league_opponent(league_dir: str) -> Optional[str]:
+    """Sample an opponent from the league pool.
+
+    Returns None → use heuristic opponent.
+    Distribution: 20% heuristic (always anchor), 50% latest checkpoint,
+    30% uniformly random from all checkpoints.
+    """
+    import random
+
+    pts = sorted(Path(league_dir).glob("iter_*.pt"))
+    if not pts:
+        return None  # empty pool → heuristic
+    r = random.random()
+    if r < 0.20:
+        return None           # 20%: heuristic anchor
+    elif r < 0.70:
+        return str(pts[-1])   # 50%: most recent checkpoint
+    else:
+        return str(random.choice(pts))  # 30%: random past checkpoint
+
+
+def collect_rollout_league_batched(
+    model: nn.Module,
+    league_dir: str,
+    n_games: int,
+    base_seed: int,
+    device: str,
+    vp_reward_coef: float = 0.0,
+) -> list[Step]:
+    """Collect rollout steps against a league-sampled opponent.
+
+    When a model opponent is sampled, uses rollout_model_vs_model_batched:
+    steps are recorded only for model_a (the learning model). When the heuristic
+    is sampled, falls back to collect_rollout_batched for both sides.
+    """
+    opponent_path = sample_league_opponent(league_dir)
+
+    if opponent_path is None or not hasattr(tscore, "rollout_model_vs_model_batched"):
+        # Heuristic fallback (also used when rollout_model_vs_model_batched unavailable)
+        n_half = n_games // 2
+        steps_ussr = collect_rollout_batched(
+            model, n_half, tscore.Side.USSR, base_seed, device, {}, vp_reward_coef
+        )
+        steps_us = collect_rollout_batched(
+            model, n_half, tscore.Side.US, base_seed + n_half, device, {}, vp_reward_coef
+        )
+        return steps_ussr + steps_us
+
+    script_path = _export_temp_model(model)
+    try:
+        results, steps, boundaries = tscore.rollout_model_vs_model_batched(
+            model_a_path=script_path,
+            model_b_path=opponent_path,
+            n_games=n_games,
+            pool_size=min(n_games, 64),
+            seed=base_seed,
+            device="cpu",
+            temperature=1.0,
+            nash_temperatures=False,
+        )
+    finally:
+        try:
+            os.remove(script_path)
+        except OSError:
+            pass
+
+    all_steps: list[Step] = []
+    for s in steps:
+        country_mask = torch.from_numpy(s["country_mask"])
+        step = Step(
+            influence=torch.from_numpy(s["influence"]).unsqueeze(0),
+            cards=torch.from_numpy(s["cards"]).unsqueeze(0),
+            scalars=torch.from_numpy(s["scalars"]).unsqueeze(0),
+            card_mask=torch.from_numpy(s["card_mask"]),
+            mode_mask=torch.from_numpy(s["mode_mask"]),
+            country_mask=country_mask if bool(country_mask.any()) else None,
+            card_idx=s["card_idx"],
+            mode_idx=s["mode_idx"],
+            country_targets=list(s["country_targets"]),
+            old_log_prob=float(s["log_prob"]),
+            value=float(s["value"]),
+            side_int=int(s["side_int"]),
+        )
+        all_steps.append(step)
+
+    # Assign terminal rewards for model_a steps only.
+    # Game assignments: first n_games//2 → model_a=USSR; second half → model_a=US.
+    half = n_games // 2
+    for i, result in enumerate(results):
+        start = boundaries[i]
+        end = boundaries[i + 1] if i + 1 < len(boundaries) else len(all_steps)
+        if start >= end:
+            continue
+        model_a_side_int = 0 if i < half else 1  # 0=USSR, 1=US
+        last = all_steps[end - 1]
+        last.reward = _compute_reward(result, model_a_side_int, vp_reward_coef)
+        last.done = True
+
+    return all_steps
+
+
 collect_rollout = collect_rollout_batched
 
 
@@ -1218,6 +1323,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-kl", type=float, default=0.1, help="Early stop if KL > this")
     p.add_argument("--vp-reward-coef", type=float, default=0.0,
                    help="VP delta reward shaping coefficient (0 = disabled)")
+    p.add_argument("--league", type=str, default=None,
+                   help="League directory for checkpoint pool self-play (enables league training)")
+    p.add_argument("--league-save-every", type=int, default=20,
+                   help="Save model to league pool every N iterations (default: 20)")
     p.add_argument("--start-iteration", type=int, default=1,
                    help="Resume: start loop from this iteration (seeds offset accordingly)")
     p.add_argument("--best-combined", type=float, default=0.0,
@@ -1294,7 +1403,9 @@ def main() -> None:
           f"{args.games_per_iter} games/iter, side={args.side}", flush=True)
     print(f"Device: {device}, lr={args.lr}, clip={args.clip_eps}, "
           f"ent={args.ent_coef}, vf={args.vf_coef}", flush=True)
-    if args.self_play:
+    if args.league:
+        print(f"League training enabled (pool: {args.league}, save-every={args.league_save_every})", flush=True)
+    elif args.self_play:
         print(f"Self-play enabled (heuristic mix={args.self_play_heuristic_mix:.3f})", flush=True)
     if args.start_iteration > 1:
         print(f"Resuming from iteration {args.start_iteration} "
@@ -1308,7 +1419,21 @@ def main() -> None:
         # ── Rollout phase ────────────────────────────────────────────────────
         all_steps: list[Step] = []
         self_play_steps: list[Step] = []
-        if args.self_play:
+        if args.league:
+            seed = args.seed + (iteration - 1) * args.games_per_iter
+            # Save current checkpoint to league pool before rollout.
+            # Add at iteration 1 (so iter 2+ has at least one checkpoint to play against)
+            # and every league_save_every iterations.
+            if iteration == 1 or iteration % args.league_save_every == 0:
+                Path(args.league).mkdir(parents=True, exist_ok=True)
+                pool_path = str(Path(args.league) / f"iter_{iteration:04d}.pt")
+                _export_torchscript_model(model, pool_path, warn_only=True)
+                print(f"  Saved to league pool: {pool_path}", flush=True)
+            all_steps = collect_rollout_league_batched(
+                model, args.league, args.games_per_iter, seed, device,
+                vp_reward_coef=args.vp_reward_coef,
+            )
+        elif args.self_play:
             seed = args.seed + (iteration - 1) * args.games_per_iter
             self_play_steps = collect_rollout_self_play_batched(
                 model, args.games_per_iter, seed, device, vp_reward_coef=args.vp_reward_coef
