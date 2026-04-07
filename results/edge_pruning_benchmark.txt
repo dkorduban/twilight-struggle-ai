@@ -1,0 +1,49 @@
+Edge Pruning MCTS Benchmark (500g/side, Nash temps, v106_cf_gnn_s42)
+================================================================================
+Greedy                         | USSR 55.0% | US 13.6% | Combined 34.3%
+[MCTS profile] threads=20 advance=0.022s commit=2.697s select=12.126s nn=67.964s expand=15.327s total=98.137s
+[MCTS profile] batches=4585 items=3557924 avg_batch=776.0 iters=4611
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=222987 total_edges=85576009 avg=383.8
+[MCTS modes] inf=1107535(1%) coup=27648909(32%) realign=54923403(64%) space=835602(1%) event=1060560(1%) other=0
+[MCTS cache] selections=3569300 hits=1116151 (31.3%) avg_depth=1.31 max_depth=3 avg_saved=0.31 save_ratio=23.8%
+[MCTS profile] threads=20 advance=0.022s commit=2.474s select=11.893s nn=65.224s expand=13.148s total=92.762s
+[MCTS profile] batches=4563 items=3454607 avg_batch=757.1 iters=4577
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=443146 total_edges=67383221 avg=152.1
+[MCTS modes] inf=961380(1%) coup=20760837(31%) realign=44032228(65%) space=711334(1%) event=917442(1%) other=0
+[MCTS cache] selections=3546300 hits=467578 (13.2%) avg_depth=1.13 max_depth=4 avg_saved=0.13 save_ratio=11.6%
+MCTS-100                       | USSR 53.2% | US 12.6% | Combined 32.9%
+[MCTS profile] threads=20 advance=0.021s commit=2.517s select=11.966s nn=72.646s expand=16.046s total=103.197s
+[MCTS profile] batches=4589 items=3555734 avg_batch=774.8 iters=4620
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=664130 total_edges=3558052 avg=5.4
+[MCTS modes] inf=789971(22%) coup=859143(24%) realign=1125197(32%) space=295239(8%) event=488502(14%) other=0
+[MCTS cache] selections=3578900 hits=1276171 (35.7%) avg_depth=1.36 max_depth=3 avg_saved=0.36 save_ratio=26.3%
+[MCTS profile] threads=20 advance=0.021s commit=2.391s select=12.084s nn=73.904s expand=15.029s total=103.430s
+[MCTS profile] batches=4541 items=3436623 avg_batch=756.8 iters=4551
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=878194 total_edges=3076208 avg=3.5
+[MCTS modes] inf=629564(20%) coup=849048(28%) realign=932792(30%) space=237221(8%) event=427583(14%) other=0
+[MCTS cache] selections=3538800 hits=1235054 (34.9%) avg_depth=1.35 max_depth=3 avg_saved=0.35 save_ratio=25.8%
+MCTS-100 prune=1e-4            | USSR 56.8% | US 12.8% | Combined 34.8%
+[MCTS profile] threads=20 advance=0.023s commit=2.625s select=12.774s nn=91.070s expand=17.924s total=124.416s
+[MCTS profile] batches=4593 items=3535211 avg_batch=769.7 iters=4611
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=1095552 total_edges=2156795 avg=2.0
+[MCTS modes] inf=531626(25%) coup=454370(21%) realign=608641(28%) space=226174(10%) event=335984(16%) other=0
+[MCTS cache] selections=3558400 hits=1269047 (35.7%) avg_depth=1.36 max_depth=3 avg_saved=0.36 save_ratio=26.3%
+[MCTS profile] threads=20 advance=0.025s commit=2.689s select=13.699s nn=111.668s expand=18.144s total=146.225s
+[MCTS profile] batches=4546 items=3433868 avg_batch=755.4 iters=4559
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=1316223 total_edges=2103692 avg=1.6
+[MCTS modes] inf=500505(24%) coup=492666(23%) realign=585956(28%) space=208793(10%) event=315772(15%) other=0
+[MCTS cache] selections=3538800 hits=1233469 (34.9%) avg_depth=1.35 max_depth=3 avg_saved=0.35 save_ratio=25.8%
+MCTS-100 prune=5e-4            | USSR 50.0% | US 14.0% | Combined 32.0%
+[MCTS profile] threads=20 advance=0.026s commit=2.838s select=13.854s nn=116.159s expand=20.551s total=153.428s
+[MCTS profile] batches=4584 items=3542102 avg_batch=772.7 iters=4607
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=1542818 total_edges=1901319 avg=1.2
+[MCTS modes] inf=466652(25%) coup=412733(22%) realign=489196(26%) space=222961(12%) event=309777(16%) other=0
+[MCTS cache] selections=3567200 hits=1270680 (35.6%) avg_depth=1.36 max_depth=4 avg_saved=0.36 save_ratio=26.2%
+[MCTS profile] threads=20 advance=0.026s commit=2.589s select=13.836s nn=116.396s expand=18.642s total=151.489s
+[MCTS profile] batches=4618 items=3503213 avg_batch=758.6 iters=4629
+[MCTS expand] alloc=0.000s drafts=0.000s edges=0.000s count=1762333 total_edges=1721656 avg=1.0
+[MCTS modes] inf=439398(26%) coup=343826(20%) realign=455381(26%) space=199498(12%) event=283553(16%) other=0
+[MCTS cache] selections=3608700 hits=1258602 (34.9%) avg_depth=1.35 max_depth=3 avg_saved=0.35 save_ratio=25.8%
+MCTS-100 prune=1e-3            | USSR 50.2% | US 12.2% | Combined 31.2%
+
+Done.

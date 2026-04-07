@@ -1,0 +1,26 @@
+v115 K=1 (num_strategies=1) Benchmark Results
+=============================================
+Model: data/checkpoints/v115_gnn_k1_s42/baseline_best_scripted.pt
+Architecture: TSControlFeatGNNModel, hidden_dim=256, num_strategies=1
+Training: data/nash_c_only, seed=42, 95 epochs (patience=20, best at epoch 90)
+Best val_loss: 2.1125 (epoch 90)
+Seeds: USSR=50000, US=50500 (canonical), 500 games/side, nash_temperatures=True
+
+Results:
+  v115 K=1 USSR: 226/500 (45.2%)
+  v115 K=1 US:    45/500  (9.0%)
+  Nash combined:  (45.2% + 9.0%) / 2 = 27.1%
+
+Comparison vs v106 baseline (K=4, seed=42):
+  v106 Nash USSR: 55.8%
+  v106 Nash US:   14.0%
+  v106 Nash combined: 34.9%
+
+Verdict: K=1 REGRESSES vs K=4 by -7.8pp Nash combined (27.1% vs 34.9%).
+  - USSR drops from 55.8% → 45.2% (-10.6pp)
+  - US drops from 14.0% → 9.0% (-5.0pp)
+  - The mixture-of-softmaxes (K=4) is important for play quality on both sides
+  - K=1 does NOT simplify equally; the collapse confirms K=4 strategies encode
+    meaningful distinct behaviors even if effective K ≈ 1.5 in late-game analysis
+  - val_loss at best epoch (2.1125) is better than v106 (2.57), confirming that
+    val_loss improvement without WR improvement is a known recurring pattern here
