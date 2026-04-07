@@ -107,6 +107,32 @@ struct BatchedMctsConfig {
                                            // and JSONL emission (benchmark mode).
 };
 
+struct RolloutStep {
+    torch::Tensor influence;     // (172,) float32 on CPU
+    torch::Tensor cards;         // (448,) float32 on CPU
+    torch::Tensor scalars;       // (11,) float32 on CPU
+
+    torch::Tensor card_mask;     // (111,) bool
+    torch::Tensor mode_mask;     // (5,) bool
+    torch::Tensor country_mask;  // (86,) bool; all-false for EVENT/SPACE
+
+    int card_idx = -1;           // 0-indexed (card_id - 1)
+    int mode_idx = -1;           // 0-4
+    std::vector<int> country_targets;
+
+    float log_prob = 0.0f;
+    float value = 0.0f;
+
+    int side_int = 0;            // 0=USSR, 1=US
+    int game_index = -1;         // 0-based game index
+};
+
+struct RolloutResult {
+    std::vector<GameResult> results;   // one per game, ordered by game index
+    std::vector<RolloutStep> steps;    // flat, grouped by game index
+    std::vector<int> game_boundaries;  // first step offset for each game
+};
+
 void collect_games_batched(
     int n_games,
     torch::jit::script::Module& model,
@@ -129,6 +155,17 @@ std::vector<GameResult> benchmark_games_batched(
     torch::Device device = torch::kCPU,
     bool greedy_opponent = false,
     float temperature = 0.0f,
+    bool nash_temperatures = true
+);
+
+RolloutResult rollout_games_batched(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device = torch::kCPU,
+    float temperature = 1.0f,
     bool nash_temperatures = true
 );
 

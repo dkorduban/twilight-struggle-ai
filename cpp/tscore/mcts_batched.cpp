@@ -177,6 +177,7 @@ struct GameSlot {
     bool active = false;
     Pcg64Rng rng;
 
+    int game_index = -1;
     std::string game_id;
     std::vector<StepTrace> traces;
     std::vector<SearchResult> search_results;
@@ -2240,6 +2241,7 @@ void initialize_slot(GameSlot& slot, int game_index, uint32_t base_seed, const B
     const auto seed = base_seed + static_cast<uint32_t>(game_index);
     slot = GameSlot{};
     slot.active = true;
+    slot.game_index = game_index;
     slot.record_history = config.record_rows;
     slot.root_state = reset_game(seed);
     slot.rng = Pcg64Rng(seed);
@@ -3474,6 +3476,226 @@ CardId sample_from_masked_logits(torch::Tensor masked, float temperature, Pcg64R
     return static_cast<CardId>(sampled_idx + 1);
 }
 
+std::pair<int64_t, float> sample_index_from_masked_logits(
+    const torch::Tensor& masked,
+    float temperature
+) {
+    auto scaled = masked / temperature;
+    auto probs = torch::softmax(scaled, 0);
+    const auto sampled_idx = torch::multinomial(probs, 1).item<int64_t>();
+    const auto log_prob = torch::log_softmax(scaled, 0).index({sampled_idx}).item<float>();
+    return {sampled_idx, log_prob};
+}
+
+void populate_rollout_features(
+    RolloutStep& step,
+    const nn::BatchInputs& inputs,
+    int64_t batch_index
+) {
+    step.influence = inputs.influence.index({batch_index}).cpu().clone();
+    step.cards = inputs.cards.index({batch_index}).cpu().clone();
+    step.scalars = inputs.scalars.index({batch_index}).cpu().clone();
+}
+
+std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
+    const GameState& state,
+    const nn::BatchInputs& inputs,
+    const nn::BatchOutputs& outputs,
+    int64_t batch_index,
+    Pcg64Rng& rng,
+    float temperature,
+    int game_index,
+    torch::Device input_device
+) {
+    (void)input_device;
+
+    const auto& pub = state.pub;
+    const auto side = pub.phasing;
+    const auto holds_china = holds_china_for(state, side);
+    const auto& hand = state.hands[to_index(side)];
+
+    RolloutStep step;
+    step.card_mask = torch::zeros({kMaxCardId}, torch::TensorOptions().dtype(torch::kBool));
+    step.mode_mask = torch::zeros({5}, torch::TensorOptions().dtype(torch::kBool));
+    step.country_mask = torch::zeros({kCountrySlots}, torch::TensorOptions().dtype(torch::kBool));
+    step.value = outputs.value.index({batch_index, 0}).item<float>();
+    step.side_int = to_index(side);
+    step.game_index = game_index;
+
+    auto heuristic_fallback = [&]() -> std::pair<ActionEncoding, RolloutStep> {
+        auto action = choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+            .value_or(ActionEncoding{});
+        step.card_idx = -1;
+        step.mode_idx = -1;
+        return {action, std::move(step)};
+    };
+
+    auto playable = legal_cards(hand, pub, side, holds_china);
+    if (playable.empty()) {
+        return heuristic_fallback();
+    }
+
+    const auto card_logits = outputs.card_logits.index({batch_index});
+    const auto mode_logits = outputs.mode_logits.index({batch_index});
+    const auto country_logits_raw = outputs.country_logits.defined()
+        ? outputs.country_logits.index({batch_index}) : torch::Tensor{};
+    const auto strategy_logits_raw = outputs.strategy_logits.defined()
+        ? outputs.strategy_logits.index({batch_index}) : torch::Tensor{};
+    const auto country_strategy_logits_raw = outputs.country_strategy_logits.defined()
+        ? outputs.country_strategy_logits.index({batch_index}) : torch::Tensor{};
+
+    auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
+    for (const auto card_id : playable) {
+        if (is_defcon_lowering_card(card_id)) {
+            const auto& ci = card_spec(card_id);
+            const bool is_opp = (ci.side != side && ci.side != Side::Neutral);
+            const bool is_neutral = (ci.side == Side::Neutral);
+            if (is_opp) {
+                if (pub.defcon <= 2) continue;
+                if (pub.defcon == 3 && pub.ar == 0) continue;
+            }
+            if (is_neutral && pub.ar == 0 && pub.defcon <= 3) continue;
+        }
+        const auto index = static_cast<int64_t>(card_id - 1);
+        step.card_mask.index_put_({index}, true);
+        masked_card.index_put_({index}, tensor_at(card_logits, index));
+    }
+
+    if (!step.card_mask.any().item<bool>()) {
+        return heuristic_fallback();
+    }
+
+    const auto [card_idx, log_prob_card] = sample_index_from_masked_logits(masked_card, temperature);
+    const auto sampled_card_id = static_cast<CardId>(card_idx + 1);
+    step.card_idx = static_cast<int>(card_idx);
+
+    auto modes = legal_modes(sampled_card_id, pub, side);
+    if (pub.defcon <= 2) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
+        if (is_defcon_lowering_card(sampled_card_id)) {
+            modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
+        }
+    }
+    if (modes.empty()) {
+        return heuristic_fallback();
+    }
+
+    auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+    for (const auto mode : modes) {
+        const auto index = static_cast<int64_t>(static_cast<int>(mode));
+        step.mode_mask.index_put_({index}, true);
+        masked_mode.index_put_({index}, tensor_at(mode_logits, index));
+    }
+
+    const auto [mode_idx, log_prob_mode] = sample_index_from_masked_logits(masked_mode, temperature);
+    const auto mode = static_cast<ActionMode>(mode_idx);
+    step.mode_idx = static_cast<int>(mode_idx);
+
+    if (pub.defcon <= 2 && is_defcon_lowering_card(sampled_card_id)) {
+        const auto& ci = card_spec(sampled_card_id);
+        const bool event_fires_for_any_mode = (ci.side != side && ci.side != Side::Neutral);
+        const bool event_fires_for_event_space =
+            (mode == ActionMode::Event) ||
+            (mode == ActionMode::Space && event_fires_for_any_mode);
+        if (event_fires_for_any_mode || event_fires_for_event_space) {
+            return heuristic_fallback();
+        }
+    }
+
+    populate_rollout_features(step, inputs, batch_index);
+
+    if (mode == ActionMode::Event || mode == ActionMode::Space) {
+        step.log_prob = log_prob_card + log_prob_mode;
+        return {
+            ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {}},
+            std::move(step),
+        };
+    }
+
+    const auto accessible = accessible_countries_filtered(pub, side, sampled_card_id, mode);
+    if (accessible.empty()) {
+        return heuristic_fallback();
+    }
+    for (const auto cid : accessible) {
+        step.country_mask.index_put_({static_cast<int64_t>(cid)}, true);
+    }
+
+    auto source_logits = country_logits_raw.defined()
+        ? country_logits_raw
+        : torch::zeros({kCountrySlots}, torch::TensorOptions().dtype(torch::kFloat32));
+    if (strategy_logits_raw.defined() && country_strategy_logits_raw.defined()) {
+        const auto strategy_index = strategy_logits_raw.argmax(/*dim=*/0).item<int64_t>();
+        source_logits = country_strategy_logits_raw.index({strategy_index});
+    }
+
+    auto masked_country = torch::full_like(source_logits, -std::numeric_limits<float>::infinity());
+    for (const auto cid : accessible) {
+        const auto index = static_cast<int64_t>(cid);
+        masked_country.index_put_({index}, tensor_at(source_logits, index));
+    }
+    const auto scaled_country = masked_country / temperature;
+    const auto country_probs = torch::softmax(scaled_country, 0);
+    const auto country_log_probs = torch::log_softmax(scaled_country, 0);
+
+    ActionEncoding action{.card_id = sampled_card_id, .mode = mode, .targets = {}};
+    float log_prob_country = 0.0f;
+
+    if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
+        const auto target = static_cast<CountryId>(torch::multinomial(country_probs, 1).item<int64_t>());
+        action.targets.push_back(target);
+        step.country_targets.push_back(static_cast<int>(target));
+        log_prob_country = country_log_probs.index({static_cast<int64_t>(target)}).item<float>();
+    } else {
+        const auto ops = effective_ops(sampled_card_id, pub, side);
+        const auto accessible_indices = torch::tensor(
+            std::vector<int64_t>(accessible.begin(), accessible.end()),
+            torch::TensorOptions().dtype(torch::kInt64)
+        );
+        auto accessible_probs = country_probs.index({accessible_indices});
+        auto alloc = accessible_probs * static_cast<double>(ops);
+        auto floor_alloc = torch::floor(alloc).to(torch::kInt64);
+        auto remainder = ops - static_cast<int>(floor_alloc.sum().item<int64_t>());
+        if (remainder > 0) {
+            auto fractional = alloc - floor_alloc.to(torch::kFloat32);
+            std::vector<std::pair<float, CountryId>> order;
+            order.reserve(accessible.size());
+            for (size_t i = 0; i < accessible.size(); ++i) {
+                const auto index = static_cast<int64_t>(i);
+                order.emplace_back(-tensor_at(fractional, index).item<float>(), accessible[i]);
+            }
+            std::sort(order.begin(), order.end());
+            for (int i = 0; i < remainder && i < static_cast<int>(order.size()); ++i) {
+                const auto target = order[static_cast<size_t>(i)].second;
+                const auto pos = static_cast<long long>(
+                    std::find(accessible.begin(), accessible.end(), target) - accessible.begin()
+                );
+                const auto pos64 = static_cast<int64_t>(pos);
+                floor_alloc.index_put_(
+                    {pos64},
+                    tensor_at(floor_alloc, pos64).item<int64_t>() + 1
+                );
+            }
+        }
+
+        for (size_t i = 0; i < accessible.size(); ++i) {
+            const auto index = static_cast<int64_t>(i);
+            const auto count = tensor_at(floor_alloc, index).item<int64_t>();
+            for (int64_t j = 0; j < count; ++j) {
+                action.targets.push_back(accessible[i]);
+                step.country_targets.push_back(static_cast<int>(accessible[i]));
+                log_prob_country += country_log_probs.index({static_cast<int64_t>(accessible[i])}).item<float>();
+            }
+        }
+    }
+
+    if (action.targets.empty()) {
+        return heuristic_fallback();
+    }
+
+    step.log_prob = log_prob_card + log_prob_mode + log_prob_country;
+    return {action, std::move(step)};
+}
+
 ActionEncoding greedy_action_from_outputs(
     const GameState& state,
     const nn::BatchOutputs& outputs,
@@ -3886,6 +4108,157 @@ std::vector<GameResult> benchmark_games_batched(
     }
 
     return results;
+}
+
+RolloutResult rollout_games_batched(
+    int n_games,
+    torch::jit::script::Module& model,
+    Side learned_side,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device,
+    float temperature,
+    bool nash_temperatures
+) {
+    if (n_games <= 0) {
+        return {};
+    }
+    if (temperature <= 0.0f) {
+        throw std::invalid_argument("rollout_games_batched requires temperature > 0");
+    }
+    if (pool_size <= 0) {
+        pool_size = std::min(n_games, 64);
+    }
+
+    BatchedMctsConfig config;
+    config.pool_size = pool_size;
+    config.mcts.n_simulations = 0;
+    config.learned_side = learned_side;
+    config.nash_temperatures = nash_temperatures;
+    config.record_rows = false;
+
+    std::vector<GameSlot> pool(static_cast<size_t>(pool_size));
+    int games_started = 0;
+    int games_finished = 0;
+    std::vector<std::optional<GameResult>> ordered_results(static_cast<size_t>(n_games));
+    std::vector<std::vector<RolloutStep>> steps_by_game(static_cast<size_t>(n_games));
+
+    nn::BatchInputs batch_inputs;
+    batch_inputs.allocate(pool_size, device);
+
+    std::vector<GameSlot*> batch_slots;
+    batch_slots.reserve(static_cast<size_t>(pool_size));
+
+    while (games_finished < n_games) {
+        batch_inputs.reset();
+        batch_slots.clear();
+
+        for (auto& slot : pool) {
+            if (slot.active && slot.game_done && !slot.emitted) {
+                ordered_results[static_cast<size_t>(slot.game_index)] = slot.result;
+                slot.emitted = true;
+                slot.active = false;
+                games_finished += 1;
+            }
+            if (!slot.active && games_started < n_games) {
+                initialize_slot(slot, games_started, base_seed, config);
+                games_started += 1;
+            }
+        }
+
+        for (auto& slot : pool) {
+            if (!slot.active || slot.game_done) {
+                continue;
+            }
+
+            advance_until_decision(slot, config);
+            if (slot.game_done || !slot.decision.has_value()) {
+                continue;
+            }
+
+            const auto decision_side = slot.decision->side;
+            if (decision_side == learned_side) {
+                const auto batch_idx = batch_inputs.filled;
+                batch_inputs.fill_slot(
+                    batch_idx,
+                    slot.root_state.pub,
+                    slot.root_state.hands[to_index(decision_side)],
+                    slot.decision->holds_china,
+                    decision_side
+                );
+                batch_slots.push_back(&slot);
+            } else {
+                std::optional<ActionEncoding> heuristic_action;
+                if (slot.heuristic_temperature > 0.0f) {
+                    heuristic_action = choose_minimal_hybrid_sampled(
+                        slot.decision->pub_snapshot,
+                        slot.decision->hand_snapshot,
+                        slot.decision->holds_china,
+                        slot.heuristic_temperature,
+                        slot.rng
+                    );
+                } else {
+                    heuristic_action = choose_action(
+                        PolicyKind::MinimalHybrid,
+                        slot.decision->pub_snapshot,
+                        slot.decision->hand_snapshot,
+                        slot.decision->holds_china,
+                        slot.rng
+                    );
+                }
+                commit_greedy_action(slot, heuristic_action.value_or(ActionEncoding{}));
+            }
+        }
+
+        if (!batch_slots.empty()) {
+            const auto outputs = nn::forward_model_batched(model, batch_inputs);
+            for (int batch_idx = 0; batch_idx < static_cast<int>(batch_slots.size()); ++batch_idx) {
+                auto* slot = batch_slots[static_cast<size_t>(batch_idx)];
+                auto [action, step] = rollout_action_from_outputs(
+                    slot->root_state,
+                    batch_inputs,
+                    outputs,
+                    static_cast<int64_t>(batch_idx),
+                    slot->rng,
+                    temperature,
+                    slot->game_index,
+                    device
+                );
+                if (step.card_idx >= 0) {
+                    steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
+                }
+                commit_greedy_action(*slot, action);
+            }
+        }
+    }
+
+    RolloutResult result;
+    result.results.reserve(static_cast<size_t>(n_games));
+    result.game_boundaries.reserve(static_cast<size_t>(n_games));
+
+    size_t total_steps = 0;
+    for (const auto& game_steps : steps_by_game) {
+        total_steps += game_steps.size();
+    }
+    result.steps.reserve(total_steps);
+
+    int offset = 0;
+    for (int game_index = 0; game_index < n_games; ++game_index) {
+        result.game_boundaries.push_back(offset);
+        const auto& maybe_result = ordered_results[static_cast<size_t>(game_index)];
+        if (!maybe_result.has_value()) {
+            throw std::runtime_error("rollout_games_batched missing ordered game result");
+        }
+        result.results.push_back(*maybe_result);
+
+        auto& game_steps = steps_by_game[static_cast<size_t>(game_index)];
+        offset += static_cast<int>(game_steps.size());
+        for (auto& step : game_steps) {
+            result.steps.push_back(std::move(step));
+        }
+    }
+
+    return result;
 }
 
 std::vector<GameResult> benchmark_mcts_vs_greedy(

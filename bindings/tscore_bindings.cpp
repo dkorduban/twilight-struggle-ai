@@ -1,9 +1,12 @@
 #include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <optional>
+#include <random>
 
 #include "game_loop.hpp"
 #include "game_state.hpp"
@@ -219,6 +222,41 @@ torch::jit::script::Module& get_or_load_model(const std::string& model_path) {
         cached_model_path = model_path;
     }
     return *cached_model;
+}
+
+template <typename T>
+py::array_t<T> tensor_to_numpy(const torch::Tensor& tensor) {
+    auto contiguous = tensor.detach().cpu().contiguous();
+    std::vector<py::ssize_t> shape;
+    shape.reserve(static_cast<size_t>(contiguous.dim()));
+    for (const auto size : contiguous.sizes()) {
+        shape.push_back(static_cast<py::ssize_t>(size));
+    }
+    py::array_t<T> array(shape);
+    std::memcpy(
+        array.mutable_data(),
+        contiguous.data_ptr<T>(),
+        static_cast<size_t>(contiguous.numel()) * sizeof(T)
+    );
+    return array;
+}
+
+py::dict rollout_step_to_dict(const ts::RolloutStep& step) {
+    py::dict out;
+    out["influence"] = tensor_to_numpy<float>(step.influence);
+    out["cards"] = tensor_to_numpy<float>(step.cards);
+    out["scalars"] = tensor_to_numpy<float>(step.scalars);
+    out["card_mask"] = tensor_to_numpy<bool>(step.card_mask);
+    out["mode_mask"] = tensor_to_numpy<bool>(step.mode_mask);
+    out["country_mask"] = tensor_to_numpy<bool>(step.country_mask);
+    out["card_idx"] = step.card_idx;
+    out["mode_idx"] = step.mode_idx;
+    out["country_targets"] = step.country_targets;
+    out["log_prob"] = step.log_prob;
+    out["value"] = step.value;
+    out["side_int"] = step.side_int;
+    out["game_index"] = step.game_index;
+    return out;
 }
 
 py::dict run_mcts_search_from_state(
@@ -567,6 +605,47 @@ PYBIND11_MODULE(tscore, m) {
         "If nash_temperatures=true (default), the heuristic opponent samples\n"
         "per-game temperatures from the Nash mixed strategy (matching training data).\n"
         "Returns list[GameResult]."
+    );
+    m.def(
+        "rollout_games_batched",
+        [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size,
+           py::object seed_obj, const std::string& device_str, float temperature,
+           bool nash_temperatures) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            torch::Device device(device_str);
+            auto model = torch::jit::load(model_path, device);
+            model.eval();
+            auto rollout = ts::rollout_games_batched(
+                n_games,
+                model,
+                learned_side,
+                pool_size,
+                seed.value_or(std::random_device{}()),
+                device,
+                temperature,
+                nash_temperatures
+            );
+
+            py::list steps_out;
+            for (const auto& step : rollout.steps) {
+                steps_out.append(rollout_step_to_dict(step));
+            }
+            return py::make_tuple(rollout.results, steps_out, rollout.game_boundaries);
+        },
+        py::arg("model_path"),
+        py::arg("learned_side"),
+        py::arg("n_games"),
+        py::arg("pool_size") = 32,
+        py::arg("seed") = py::none(),
+        py::arg("device") = "cpu",
+        py::arg("temperature") = 1.0f,
+        py::arg("nash_temperatures") = true,
+        "Run batched stochastic rollout for PPO collection.\n"
+        "Returns (results, steps, game_boundaries), where steps contains NumPy\n"
+        "feature/mask arrays plus sampled action metadata and log-probs."
     );
     m.def(
         "benchmark_ismcts",
