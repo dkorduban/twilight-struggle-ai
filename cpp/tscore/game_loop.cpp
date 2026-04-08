@@ -720,9 +720,12 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(
     return std::tuple{gs.pub, over, winner};
 }
 
-std::string end_reason(const PublicState& pub, std::optional<Side> winner) {
+std::string end_reason(const PublicState& pub, std::optional<Side> winner, int card_id = -1) {
     if (pub.defcon <= 1) {
         return "defcon1";
+    }
+    if (card_id == 103) {
+        return "wargames";
     }
     if (winner.has_value()) {
         return "europe_control";
@@ -842,7 +845,7 @@ std::optional<GameResult> run_headline_phase(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason(gs.pub, winner),
+                .end_reason = end_reason(gs.pub, winner, action.card_id),
             };
         }
     }
@@ -935,7 +938,7 @@ std::optional<GameResult> run_action_rounds(
                     .winner = winner,
                     .final_vp = gs.pub.vp,
                     .end_turn = gs.pub.turn,
-                    .end_reason = end_reason(gs.pub, winner),
+                    .end_reason = end_reason(gs.pub, winner, action->card_id),
                 };
             }
             if (side == Side::USSR && gs.pub.norad_active && gs.pub.defcon == 2) {

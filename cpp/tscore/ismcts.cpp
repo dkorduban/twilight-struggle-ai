@@ -840,9 +840,12 @@ void run_setup_influence_heuristic(GameState& gs, Pcg64Rng& rng) {
     gs.phase = GamePhase::Headline;
 }
 
-std::string end_reason(const PublicState& pub, std::optional<Side> winner) {
+std::string end_reason(const PublicState& pub, std::optional<Side> winner, int card_id = -1) {
     if (pub.defcon <= 1) {
         return "defcon1";
+    }
+    if (card_id == 103) {
+        return "wargames";
     }
     if (winner.has_value()) {
         return "europe_control";

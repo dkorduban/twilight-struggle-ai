@@ -2289,9 +2289,12 @@ void mark_game_done(GameSlot& slot, GameResult result) {
     slot.root.reset();
 }
 
-std::string end_reason(const PublicState& pub, std::optional<Side> winner) {
+std::string end_reason(const PublicState& pub, std::optional<Side> winner, int card_id = -1) {
     if (pub.defcon <= 1) {
         return "defcon1";
+    }
+    if (card_id == 103) {
+        return "wargames";
     }
     if (winner.has_value()) {
         return "europe_control";
@@ -2550,7 +2553,7 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                         .winner = winner,
                         .final_vp = slot.root_state.pub.vp,
                         .end_turn = slot.root_state.pub.turn,
-                        .end_reason = end_reason(slot.root_state.pub, winner),
+                        .end_reason = end_reason(slot.root_state.pub, winner, pending.action.card_id),
                     });
                 }
                 break;
@@ -3928,7 +3931,7 @@ void commit_greedy_action(GameSlot& slot, const ActionEncoding& action) {
             .winner = winner,
             .final_vp = slot.root_state.pub.vp,
             .end_turn = slot.root_state.pub.turn,
-            .end_reason = end_reason(slot.root_state.pub, winner),
+            .end_reason = end_reason(slot.root_state.pub, winner, resolved.card_id),
         });
         return;
     }

@@ -453,16 +453,33 @@ def _sample_action_and_step(
 # ---------------------------------------------------------------------------
 
 def _compute_reward(result: "tscore.GameResult", side_int: int, vp_coef: float = 0.0) -> float:
-    """Terminal reward. side_int 0=USSR, 1=US. Optional VP-magnitude component."""
+    """Terminal reward. side_int 0=USSR, 1=US. Optional VP-magnitude component.
+
+    VP shaping uses the pre-transfer VP for Wargames (card 103 gives +6 to opponent
+    before checking winner, so final_vp understates the actual margin) and uses
+    max-margin for Europe control (instant win regardless of VP board).
+    """
     is_ussr = side_int == 0
     won = result.winner == (tscore.Side.USSR if is_ussr else tscore.Side.US)
     base = 1.0 if won else -1.0
     if vp_coef <= 0.0:
         return base
-    # final_vp is from USSR perspective: positive = USSR ahead
-    vp_scaled = max(-1.0, min(1.0, result.final_vp / 20.0))
-    if not is_ussr:
-        vp_scaled = -vp_scaled
+    end_reason = getattr(result, "end_reason", "")
+    if end_reason == "europe_control":
+        # Instant win: treat as full VP margin regardless of board state.
+        vp_scaled = 1.0 if won else -1.0
+    elif end_reason == "wargames":
+        # final_vp is post-transfer (opponent already received +6).
+        # Recover pre-transfer margin: winner's margin was |final_vp| + 6.
+        pre_vp = result.final_vp + (6 if result.final_vp > 0 else -6)
+        vp_scaled = max(-1.0, min(1.0, pre_vp / 20.0))
+        if not is_ussr:
+            vp_scaled = -vp_scaled
+    else:
+        # final_vp is from USSR perspective: positive = USSR ahead
+        vp_scaled = max(-1.0, min(1.0, result.final_vp / 20.0))
+        if not is_ussr:
+            vp_scaled = -vp_scaled
     return (1.0 - vp_coef) * base + vp_coef * vp_scaled
 
 
