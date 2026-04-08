@@ -125,6 +125,26 @@ struct RolloutStep {
 
     int side_int = 0;            // 0=USSR, 1=US
     int game_index = -1;         // 0-based game index
+
+    // Raw game state for future re-encoding (added 2026-04-07).
+    // Stored alongside the NN features so rollouts can be re-encoded with
+    // future feature representations without replaying games.
+    //
+    // Influence: pub.influence[side][country_id] for country_id in 0..85.
+    // InfluenceBlock is int16_t so we store as int16_t directly.
+    std::array<int16_t, 86> raw_ussr_influence = {};  // pub.influence[0][c]
+    std::array<int16_t, 86> raw_us_influence = {};    // pub.influence[1][c]
+
+    // Scalar game state at the time the action was taken.
+    int raw_turn = 0;     // 1-10
+    int raw_ar = 0;       // 0-8
+    int raw_defcon = 5;   // 1-5
+    int raw_vp = 0;       // negative = USSR ahead, positive = US ahead
+    std::array<int, 2> raw_milops = {0, 0};  // [USSR, US]
+    std::array<int, 2> raw_space = {0, 0};   // [USSR, US]
+
+    // Card IDs (1-indexed) in the deciding side's known_in_hand bitset.
+    std::vector<int> hand_card_ids;
 };
 
 struct RolloutResult {

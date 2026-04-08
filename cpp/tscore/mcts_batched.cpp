@@ -4391,6 +4391,26 @@ RolloutResult rollout_model_vs_model_batched(
                     device
                 );
                 if (step.card_idx >= 0) {
+                    // Populate raw game state for future re-encoding.
+                    const auto& pub = entry.slot->root_state.pub;
+                    step.raw_turn   = pub.turn;
+                    step.raw_ar     = pub.ar;
+                    step.raw_defcon = pub.defcon;
+                    step.raw_vp     = pub.vp;
+                    step.raw_milops = {pub.milops[0], pub.milops[1]};
+                    step.raw_space  = {pub.space[0], pub.space[1]};
+                    for (int c = 0; c < kCountrySlots; ++c) {
+                        step.raw_ussr_influence[static_cast<size_t>(c)] = pub.influence[0][c];
+                        step.raw_us_influence[static_cast<size_t>(c)]   = pub.influence[1][c];
+                    }
+                    const auto& hand =
+                        entry.slot->root_state.hands[to_index(entry.slot->decision->side)];
+                    step.hand_card_ids.clear();
+                    for (int card = 1; card <= kMaxCardId; ++card) {
+                        if (hand.test(static_cast<size_t>(card))) {
+                            step.hand_card_ids.push_back(card);
+                        }
+                    }
                     steps_by_game[static_cast<size_t>(entry.game_index)].push_back(std::move(step));
                 }
                 commit_greedy_action(*entry.slot, action);
@@ -4558,6 +4578,26 @@ RolloutResult rollout_games_batched(
                     device
                 );
                 if (step.card_idx >= 0) {
+                    // Populate raw game state for future re-encoding.
+                    const auto& pub = slot->root_state.pub;
+                    step.raw_turn   = pub.turn;
+                    step.raw_ar     = pub.ar;
+                    step.raw_defcon = pub.defcon;
+                    step.raw_vp     = pub.vp;
+                    step.raw_milops = {pub.milops[0], pub.milops[1]};
+                    step.raw_space  = {pub.space[0], pub.space[1]};
+                    for (int c = 0; c < kCountrySlots; ++c) {
+                        step.raw_ussr_influence[static_cast<size_t>(c)] = pub.influence[0][c];
+                        step.raw_us_influence[static_cast<size_t>(c)]   = pub.influence[1][c];
+                    }
+                    const auto& hand =
+                        slot->root_state.hands[to_index(slot->decision->side)];
+                    step.hand_card_ids.clear();
+                    for (int card = 1; card <= kMaxCardId; ++card) {
+                        if (hand.test(static_cast<size_t>(card))) {
+                            step.hand_card_ids.push_back(card);
+                        }
+                    }
                     steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
                 }
                 commit_greedy_action(*slot, action);
@@ -4684,6 +4724,26 @@ RolloutResult rollout_self_play_batched(
                     device
                 );
                 if (step.card_idx >= 0) {
+                    // Populate raw game state for future re-encoding.
+                    const auto& pub = slot->root_state.pub;
+                    step.raw_turn   = pub.turn;
+                    step.raw_ar     = pub.ar;
+                    step.raw_defcon = pub.defcon;
+                    step.raw_vp     = pub.vp;
+                    step.raw_milops = {pub.milops[0], pub.milops[1]};
+                    step.raw_space  = {pub.space[0], pub.space[1]};
+                    for (int c = 0; c < kCountrySlots; ++c) {
+                        step.raw_ussr_influence[static_cast<size_t>(c)] = pub.influence[0][c];
+                        step.raw_us_influence[static_cast<size_t>(c)]   = pub.influence[1][c];
+                    }
+                    const auto& hand =
+                        slot->root_state.hands[to_index(slot->decision->side)];
+                    step.hand_card_ids.clear();
+                    for (int card = 1; card <= kMaxCardId; ++card) {
+                        if (hand.test(static_cast<size_t>(card))) {
+                            step.hand_card_ids.push_back(card);
+                        }
+                    }
                     steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
                 }
                 commit_greedy_action(*slot, action);

@@ -168,6 +168,17 @@ class Step:
     done: bool = False
     advantage: float = 0.0
     returns: float = 0.0
+    # Raw game state for future re-encoding (added 2026-04-07).
+    # All fields are None when the step was not collected via rollout_self_play_batched.
+    raw_ussr_influence: Optional[list] = None  # list of 86 int16 values
+    raw_us_influence: Optional[list] = None    # list of 86 int16 values
+    raw_turn: Optional[int] = None
+    raw_ar: Optional[int] = None
+    raw_defcon: Optional[int] = None
+    raw_vp: Optional[int] = None
+    raw_milops: Optional[list] = None    # [USSR, US]
+    raw_space: Optional[list] = None     # [USSR, US]
+    hand_card_ids: Optional[list] = None  # 1-indexed card IDs in deciding side's hand
 
 
 # ---------------------------------------------------------------------------
@@ -596,6 +607,15 @@ def collect_rollout_batched(
             old_log_prob=float(s["log_prob"]),
             value=float(s["value"]),
             side_int=int(s["side_int"]),
+            raw_ussr_influence=s["raw_ussr_influence"].tolist() if "raw_ussr_influence" in s else None,
+            raw_us_influence=s["raw_us_influence"].tolist() if "raw_us_influence" in s else None,
+            raw_turn=int(s["raw_turn"]) if "raw_turn" in s else None,
+            raw_ar=int(s["raw_ar"]) if "raw_ar" in s else None,
+            raw_defcon=int(s["raw_defcon"]) if "raw_defcon" in s else None,
+            raw_vp=int(s["raw_vp"]) if "raw_vp" in s else None,
+            raw_milops=list(s["raw_milops"]) if "raw_milops" in s else None,
+            raw_space=list(s["raw_space"]) if "raw_space" in s else None,
+            hand_card_ids=list(s["hand_card_ids"]) if "hand_card_ids" in s else None,
         )
         all_steps.append(step)
 
@@ -655,6 +675,15 @@ def collect_rollout_self_play_batched(
             old_log_prob=float(s["log_prob"]),
             value=float(s["value"]),
             side_int=int(s["side_int"]),
+            raw_ussr_influence=s["raw_ussr_influence"].tolist() if "raw_ussr_influence" in s else None,
+            raw_us_influence=s["raw_us_influence"].tolist() if "raw_us_influence" in s else None,
+            raw_turn=int(s["raw_turn"]) if "raw_turn" in s else None,
+            raw_ar=int(s["raw_ar"]) if "raw_ar" in s else None,
+            raw_defcon=int(s["raw_defcon"]) if "raw_defcon" in s else None,
+            raw_vp=int(s["raw_vp"]) if "raw_vp" in s else None,
+            raw_milops=list(s["raw_milops"]) if "raw_milops" in s else None,
+            raw_space=list(s["raw_space"]) if "raw_space" in s else None,
+            hand_card_ids=list(s["hand_card_ids"]) if "hand_card_ids" in s else None,
         )
         all_steps.append(step)
 
@@ -756,6 +785,15 @@ def collect_rollout_league_batched(
             old_log_prob=float(s["log_prob"]),
             value=float(s["value"]),
             side_int=int(s["side_int"]),
+            raw_ussr_influence=s["raw_ussr_influence"].tolist() if "raw_ussr_influence" in s else None,
+            raw_us_influence=s["raw_us_influence"].tolist() if "raw_us_influence" in s else None,
+            raw_turn=int(s["raw_turn"]) if "raw_turn" in s else None,
+            raw_ar=int(s["raw_ar"]) if "raw_ar" in s else None,
+            raw_defcon=int(s["raw_defcon"]) if "raw_defcon" in s else None,
+            raw_vp=int(s["raw_vp"]) if "raw_vp" in s else None,
+            raw_milops=list(s["raw_milops"]) if "raw_milops" in s else None,
+            raw_space=list(s["raw_space"]) if "raw_space" in s else None,
+            hand_card_ids=list(s["hand_card_ids"]) if "hand_card_ids" in s else None,
         )
         all_steps.append(step)
 
@@ -1252,7 +1290,10 @@ def _save_rollout_parquet(
     rewards = [s.reward for s in steps]
     values = [s.value for s in steps]
 
-    table = pa.table({
+    # Raw game state columns — present when steps were collected with raw state support.
+    has_raw = steps[0].raw_ussr_influence is not None if steps else False
+
+    table_dict: dict = {
         "influence": pa.array(inf_list, type=pa.list_(pa.float32())),
         "cards": pa.array(cards_list, type=pa.list_(pa.float32())),
         "scalars": pa.array(scalars_list, type=pa.list_(pa.float32())),
@@ -1263,7 +1304,23 @@ def _save_rollout_parquet(
         "reward": pa.array(rewards, type=pa.float32()),
         "value": pa.array(values, type=pa.float32()),
         "iteration": pa.array([iteration] * len(steps), type=pa.int32()),
-    })
+    }
+    if has_raw:
+        table_dict["raw_ussr_influence"] = pa.array(
+            [s.raw_ussr_influence for s in steps], type=pa.list_(pa.int16()))
+        table_dict["raw_us_influence"] = pa.array(
+            [s.raw_us_influence for s in steps], type=pa.list_(pa.int16()))
+        table_dict["raw_turn"]   = pa.array([s.raw_turn for s in steps],   type=pa.int8())
+        table_dict["raw_ar"]     = pa.array([s.raw_ar for s in steps],     type=pa.int8())
+        table_dict["raw_defcon"] = pa.array([s.raw_defcon for s in steps], type=pa.int8())
+        table_dict["raw_vp"]     = pa.array([s.raw_vp for s in steps],     type=pa.int16())
+        table_dict["raw_milops"] = pa.array(
+            [s.raw_milops for s in steps], type=pa.list_(pa.int8()))
+        table_dict["raw_space"]  = pa.array(
+            [s.raw_space for s in steps], type=pa.list_(pa.int8()))
+        table_dict["hand_card_ids"] = pa.array(
+            [s.hand_card_ids for s in steps], type=pa.list_(pa.int16()))
+    table = pa.table(table_dict)
     pq.write_table(table, out_path, compression="zstd", compression_level=9)
 
     # Save replay metadata: checkpoint + seed allows exact game reconstruction

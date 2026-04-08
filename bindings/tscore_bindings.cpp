@@ -256,6 +256,28 @@ py::dict rollout_step_to_dict(const ts::RolloutStep& step) {
     out["value"] = step.value;
     out["side_int"] = step.side_int;
     out["game_index"] = step.game_index;
+    // Raw game state fields for future re-encoding (added 2026-04-07).
+    {
+        auto t = torch::tensor(
+            std::vector<int16_t>(step.raw_ussr_influence.begin(), step.raw_ussr_influence.end()),
+            torch::kInt16);
+        out["raw_ussr_influence"] = tensor_to_numpy<int16_t>(t);
+    }
+    {
+        auto t = torch::tensor(
+            std::vector<int16_t>(step.raw_us_influence.begin(), step.raw_us_influence.end()),
+            torch::kInt16);
+        out["raw_us_influence"] = tensor_to_numpy<int16_t>(t);
+    }
+    out["raw_turn"]   = step.raw_turn;
+    out["raw_ar"]     = step.raw_ar;
+    out["raw_defcon"] = step.raw_defcon;
+    out["raw_vp"]     = step.raw_vp;
+    out["raw_milops"] = py::list(py::cast(
+        std::vector<int>(step.raw_milops.begin(), step.raw_milops.end())));
+    out["raw_space"]  = py::list(py::cast(
+        std::vector<int>(step.raw_space.begin(), step.raw_space.end())));
+    out["hand_card_ids"] = py::list(py::cast(step.hand_card_ids));
     return out;
 }
 
