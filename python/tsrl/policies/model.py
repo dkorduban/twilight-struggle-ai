@@ -42,6 +42,8 @@ NUM_PLAYABLE_CARDS = 111  # card IDs 1..111
 NUM_MODES = 5
 INFLUENCE_DIM = NUM_COUNTRIES * 2        # 172
 CARD_DIM = NUM_CARDS * 4                 # 448
+# TODO(2026-04-07): bump to 32 once PPO v3 finishes — see nn_features.cpp fill_scalars.
+# The C++ fill_scalars() already writes 32 values when kScalarDim=32 is active.
 SCALAR_DIM = 11
 INFLUENCE_HIDDEN = 128
 CARD_HIDDEN = 128

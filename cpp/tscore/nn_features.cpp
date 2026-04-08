@@ -10,6 +10,10 @@
 namespace ts::nn {
 namespace {
 
+// Active-effect features are ready in fill_scalars() below (indices 11-31),
+// but kScalarDim stays at 11 until PPO v3 finishes so existing checkpoints keep
+// working. After v3 completes, bump to 32 and train a new BC from scratch.
+// TODO(2026-04-07): bump to 32 after PPO v3 completes.
 constexpr int kScalarDim = 11;
 constexpr int kCardMaskLen = kCardSlots;
 constexpr int kCountryMaskLen = kCountrySlots;
@@ -37,6 +41,7 @@ void fill_cards(float* ptr, const PublicState& pub, const CardSet& hand) {
 }
 
 void fill_scalars(float* ptr, const PublicState& pub, bool holds_china, Side side) {
+    // [0-10] Core game state (unchanged)
     ptr[0] = static_cast<float>(pub.vp) / 20.0f;
     ptr[1] = static_cast<float>(pub.defcon - 1) / 4.0f;
     ptr[2] = static_cast<float>(pub.milops[to_index(Side::USSR)]) / 6.0f;
@@ -48,6 +53,33 @@ void fill_scalars(float* ptr, const PublicState& pub, bool holds_china, Side sid
     ptr[8] = static_cast<float>(pub.turn) / 10.0f;
     ptr[9] = static_cast<float>(pub.ar) / 8.0f;
     ptr[10] = static_cast<float>(to_index(side));
+    // [11-21] Trap / constraint effects — highest strategic impact
+    ptr[11] = pub.bear_trap_active ? 1.0f : 0.0f;
+    ptr[12] = pub.quagmire_active ? 1.0f : 0.0f;
+    ptr[13] = pub.cuban_missile_crisis_active ? 1.0f : 0.0f;
+    ptr[14] = pub.iran_hostage_crisis_active ? 1.0f : 0.0f;
+    ptr[15] = pub.norad_active ? 1.0f : 0.0f;
+    ptr[16] = pub.shuttle_diplomacy_active ? 1.0f : 0.0f;
+    ptr[17] = pub.salt_active ? 1.0f : 0.0f;
+    ptr[18] = pub.flower_power_active ? 1.0f : 0.0f;
+    ptr[19] = pub.flower_power_cancelled ? 1.0f : 0.0f;
+    ptr[20] = pub.vietnam_revolts_active ? 1.0f : 0.0f;
+    ptr[21] = pub.north_sea_oil_extra_ar ? 1.0f : 0.0f;
+    // [22-28] Board-modifying effects
+    ptr[22] = pub.glasnost_extra_ar ? 1.0f : 0.0f;
+    ptr[23] = pub.nato_active ? 1.0f : 0.0f;
+    ptr[24] = pub.de_gaulle_active ? 1.0f : 0.0f;
+    ptr[25] = pub.nuclear_subs_active ? 1.0f : 0.0f;
+    ptr[26] = pub.formosan_active ? 1.0f : 0.0f;
+    ptr[27] = pub.awacs_active ? 1.0f : 0.0f;
+    // [28-29] Chernobyl: active flag + which region (0-6) normalized to 0..1
+    ptr[28] = pub.chernobyl_blocked_region.has_value() ? 1.0f : 0.0f;
+    ptr[29] = pub.chernobyl_blocked_region.has_value()
+                  ? static_cast<float>(static_cast<uint8_t>(*pub.chernobyl_blocked_region)) / 6.0f
+                  : 0.0f;
+    // [30-31] Per-side ops modifier (Red Scare/Purge: -1; rarely +1)
+    ptr[30] = static_cast<float>(pub.ops_modifier[to_index(Side::USSR)]) / 3.0f;
+    ptr[31] = static_cast<float>(pub.ops_modifier[to_index(Side::US)]) / 3.0f;
 }
 
 torch::Tensor influence_array(const PublicState& pub, Side side) {

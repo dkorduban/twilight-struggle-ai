@@ -70,7 +70,7 @@ _COUNTRY_REGION: dict[int, str] = {}  # lazy-loaded once
 
 CARD_SLOTS = 112      # kMaxCardId(111) + 1; index 0 unused
 COUNTRY_SLOTS = 86    # country IDs 0..85
-SCALAR_DIM = 11
+SCALAR_DIM = 11  # TODO(2026-04-07): bump to 32 after PPO v3 finishes
 CARD_DIM = CARD_SLOTS * 4   # 448
 INFLUENCE_DIM = COUNTRY_SLOTS * 2  # 172
 

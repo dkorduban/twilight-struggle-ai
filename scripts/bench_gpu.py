@@ -36,7 +36,7 @@ import tscore  # noqa: E402
 # ── Constants matching C++ nn_features.cpp ──────────────────────────────────
 CARD_SLOTS = 112    # kMaxCardId(111) + 1; index 0 unused
 COUNTRY_SLOTS = 86  # kMaxCountryId(85) + 1; IDs 0..85
-SCALAR_DIM = 11
+SCALAR_DIM = 11  # TODO(2026-04-07): bump to 32 after PPO v3 finishes
 
 # DEFCON-lowering cards (must stay in sync with C++ learned_policy.cpp)
 DEFCON_LOWERING_CARDS = frozenset({
