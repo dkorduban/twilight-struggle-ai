@@ -2365,6 +2365,8 @@ def main() -> None:
         print(f"Resuming from iteration {args.start_iteration}", flush=True)
 
     t_start = time.time()
+    best_combined = 0.0
+    best_ckpt_path = os.path.join(args.out_dir, "ppo_best.pt")
 
     for iteration in range(args.start_iteration, args.n_iterations + 1):
         t_iter_start = time.time()
@@ -2636,7 +2638,6 @@ def main() -> None:
 
     # ppo_best.pt = latest (final) iteration. No heuristic-WR selection.
     import shutil
-    best_ckpt_path = os.path.join(args.out_dir, "ppo_best.pt")
     shutil.copy2(final_path, best_ckpt_path)
     final_scripted = final_path.replace(".pt", "_scripted.pt")
     best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
