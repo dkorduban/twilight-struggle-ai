@@ -4282,7 +4282,9 @@ RolloutResult rollout_model_vs_model_batched(
     uint32_t base_seed,
     torch::Device device,
     float temperature,
-    bool nash_temperatures
+    bool nash_temperatures,
+    float dir_alpha,
+    float dir_epsilon
 ) {
     if (n_games <= 0) {
         return {};
@@ -4304,6 +4306,8 @@ RolloutResult rollout_model_vs_model_batched(
     config.mcts.n_simulations = 0;
     config.nash_temperatures = nash_temperatures;
     config.record_rows = false;
+    config.mcts.dir_alpha = dir_alpha;
+    config.mcts.dir_epsilon = dir_epsilon;
 
     std::vector<GameSlot> pool(static_cast<size_t>(pool_size));
     int games_started = 0;
@@ -4479,7 +4483,9 @@ RolloutResult rollout_games_batched(
     uint32_t base_seed,
     torch::Device device,
     float temperature,
-    bool nash_temperatures
+    bool nash_temperatures,
+    float dir_alpha,
+    float dir_epsilon
 ) {
     if (n_games <= 0) {
         return {};
@@ -4497,6 +4503,8 @@ RolloutResult rollout_games_batched(
     config.learned_side = learned_side;
     config.nash_temperatures = nash_temperatures;
     config.record_rows = false;
+    config.mcts.dir_alpha = dir_alpha;
+    config.mcts.dir_epsilon = dir_epsilon;
 
     std::vector<GameSlot> pool(static_cast<size_t>(pool_size));
     int games_started = 0;

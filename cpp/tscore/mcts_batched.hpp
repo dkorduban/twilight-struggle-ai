@@ -186,7 +186,9 @@ RolloutResult rollout_games_batched(
     uint32_t base_seed,
     torch::Device device = torch::kCPU,
     float temperature = 1.0f,
-    bool nash_temperatures = true
+    bool nash_temperatures = true,
+    float dir_alpha = 0.0f,
+    float dir_epsilon = 0.0f
 );
 
 RolloutResult rollout_self_play_batched(
@@ -263,7 +265,9 @@ RolloutResult rollout_model_vs_model_batched(
     uint32_t base_seed,
     torch::Device device = torch::kCPU,
     float temperature = 1.0f,
-    bool nash_temperatures = false
+    bool nash_temperatures = false,
+    float dir_alpha = 0.0f,
+    float dir_epsilon = 0.0f
 );
 
 }  // namespace ts

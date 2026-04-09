@@ -704,7 +704,7 @@ PYBIND11_MODULE(tscore, m) {
         "rollout_games_batched",
         [](const std::string& model_path, ts::Side learned_side, int n_games, int pool_size,
            py::object seed_obj, const std::string& device_str, float temperature,
-           bool nash_temperatures) {
+           bool nash_temperatures, float dir_alpha, float dir_epsilon) {
             std::optional<uint32_t> seed;
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
@@ -720,7 +720,9 @@ PYBIND11_MODULE(tscore, m) {
                 seed.value_or(std::random_device{}()),
                 device,
                 temperature,
-                nash_temperatures
+                nash_temperatures,
+                dir_alpha,
+                dir_epsilon
             );
 
             py::list steps_out;
@@ -737,9 +739,12 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("device") = "cpu",
         py::arg("temperature") = 1.0f,
         py::arg("nash_temperatures") = true,
+        py::arg("dir_alpha") = 0.0f,
+        py::arg("dir_epsilon") = 0.0f,
         "Run batched stochastic rollout for PPO collection.\n"
         "Returns (results, steps, game_boundaries), where steps contains NumPy\n"
-        "feature/mask arrays plus sampled action metadata and log-probs."
+        "feature/mask arrays plus sampled action metadata and log-probs.\n"
+        "dir_alpha/dir_epsilon: Dirichlet noise at root (0=disabled)."
     );
     m.def(
         "rollout_self_play_batched",
@@ -784,7 +789,8 @@ PYBIND11_MODULE(tscore, m) {
         "rollout_model_vs_model_batched",
         [](const std::string& model_a_path, const std::string& model_b_path,
            int n_games, int pool_size, py::object seed_obj,
-           const std::string& device_str, float temperature, bool nash_temperatures) {
+           const std::string& device_str, float temperature, bool nash_temperatures,
+           float dir_alpha, float dir_epsilon) {
             std::optional<uint32_t> seed;
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
@@ -802,7 +808,9 @@ PYBIND11_MODULE(tscore, m) {
                 seed.value_or(std::random_device{}()),
                 device,
                 temperature,
-                nash_temperatures
+                nash_temperatures,
+                dir_alpha,
+                dir_epsilon
             );
 
             py::list steps_out;
@@ -819,11 +827,14 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("device") = "cpu",
         py::arg("temperature") = 1.0f,
         py::arg("nash_temperatures") = false,
+        py::arg("dir_alpha") = 0.0f,
+        py::arg("dir_epsilon") = 0.0f,
         "Run model_a (learning model) vs model_b (opponent) batched rollout.\n"
         "game_index [0, n_games/2) => model_a plays USSR, model_b plays US.\n"
         "game_index [n_games/2, n_games) => model_a plays US, model_b plays USSR.\n"
         "Steps are recorded ONLY for model_a decisions.\n"
-        "Returns (results, steps, game_boundaries)."
+        "Returns (results, steps, game_boundaries).\n"
+        "dir_alpha/dir_epsilon: Dirichlet noise at root for model_a (0=disabled)."
     );
     m.def(
         "benchmark_ismcts",

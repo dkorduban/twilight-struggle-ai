@@ -153,6 +153,14 @@ if [ "$PLATEAU_COUNT" -ge 3 ]; then
     >> results/autonomous_decisions.log
 fi
 
+# --- UPGO: enable after first plateau ---
+UPGO_FLAG=""
+if [ "$PLATEAU_COUNT" -ge 1 ]; then
+  UPGO_FLAG="--upgo"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] UPGO enabled for $NEXT (consecutive_plateaus=$PLATEAU_COUNT)" \
+    >> results/autonomous_decisions.log
+fi
+
 # --- Launch next PPO run ---
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from ${FINISHED} ppo_final.pt" \
   >> results/autonomous_decisions.log
@@ -178,6 +186,7 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
   --pfsp-exponent 1.0 \
   --dir-alpha 0.3 \
   --dir-epsilon 0.25 \
+  $UPGO_FLAG \
   --eval-every 20 \
   --eval-opponent "$FINISHED_SCRIPTED" \
   --rollout-workers 1 \

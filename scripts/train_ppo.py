@@ -1300,6 +1300,58 @@ def compute_gae_batch(all_steps: list[Step], gamma: float = 0.99, lam: float = 0
 
 
 # ---------------------------------------------------------------------------
+# UPGO — Upgoing Policy Update (AlphaStar)
+# ---------------------------------------------------------------------------
+
+def apply_upgo_advantages(all_steps: list[Step], gamma: float = 0.99) -> None:
+    """Override `advantage` field with UPGO estimates, in-place.
+
+    UPGO return: G_t = r_t + γ * max(V(s_{t+1}), G_{t+1})
+    Only propagates returns upward when they exceed the value estimate,
+    filtering out bad-luck outcomes from the policy gradient signal.
+
+    `returns` (used for value function training) is left unchanged — it
+    keeps the GAE return so the critic stays well-calibrated. Only the
+    policy gradient uses the UPGO advantage.
+
+    Must be called AFTER compute_gae_batch (which populates `returns`).
+    """
+    # Split into per-game segments by `done` flag
+    game_segments: list[list[Step]] = []
+    current: list[Step] = []
+    for step in all_steps:
+        current.append(step)
+        if step.done:
+            game_segments.append(current)
+            current = []
+    if current:
+        game_segments.append(current)
+
+    for seg in game_segments:
+        # Per-side UPGO for self-play; single-side for league/heuristic
+        sides = {s.side_int for s in seg}
+        if len(sides) > 1:
+            for target_side in [0, 1]:
+                side_steps = [s for s in seg if s.side_int == target_side]
+                _apply_upgo_to_segment(side_steps, gamma)
+        else:
+            _apply_upgo_to_segment(seg, gamma)
+
+
+def _apply_upgo_to_segment(seg: list[Step], gamma: float) -> None:
+    """UPGO on a single-side segment."""
+    if not seg:
+        return
+    T = len(seg)
+    upgo_g = 0.0
+    for t in reversed(range(T)):
+        r = seg[t].reward
+        v_next = seg[t + 1].value if t + 1 < T else 0.0
+        upgo_g = r + gamma * max(v_next, upgo_g)
+        seg[t].advantage = upgo_g - seg[t].value
+
+
+# ---------------------------------------------------------------------------
 # PPO update — vectorized (no per-step Python loop)
 # ---------------------------------------------------------------------------
 
@@ -2242,6 +2294,9 @@ def parse_args() -> argparse.Namespace:
                         "Silently no-ops if C++ binding does not support it yet.")
     p.add_argument("--dir-epsilon", type=float, default=0.25,
                    help="Dirichlet noise mixing weight (default 0.25, only active when --dir-alpha > 0).")
+    p.add_argument("--upgo", action="store_true", default=False,
+                   help="Enable UPGO (Upgoing Policy Update): G_t = r_t + γ*max(V(s+1), G(t+1)). "
+                        "Overrides GAE advantages; leaves `returns` unchanged for value function.")
     p.add_argument("--start-iteration", type=int, default=1,
                    help="Resume: start loop from this iteration (seeds offset accordingly)")
     p.add_argument("--best-combined", type=float, default=0.0,
@@ -2437,6 +2492,10 @@ def main() -> None:
 
         # Compute GAE advantages — must come BEFORE saving parquet so s.returns is populated
         compute_gae_batch(all_steps, gamma=args.gamma, lam=args.gae_lambda)
+
+        # Optionally override GAE advantages with UPGO (leaves `returns` for value fn)
+        if args.upgo:
+            apply_upgo_advantages(all_steps, gamma=args.gamma)
 
         # Optionally save rollout steps as Parquet for BC/KL-distillation
         # Saved after GAE so gae_return column is correct.
