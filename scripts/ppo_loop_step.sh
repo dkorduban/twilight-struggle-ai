@@ -172,6 +172,9 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
     "$WEAKEST_FIXTURE" \
     "$MID_FIXTURE" \
     "$FRONTIER_FIXTURE" \
+  --league-recency-tau 20 \
+  --league-fixture-fadeout 50 \
+  --league-heuristic-pct 0.10 \
   --eval-every 20 \
   --eval-opponent "$FINISHED_SCRIPTED" \
   --rollout-workers 1 \
