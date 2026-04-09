@@ -3486,7 +3486,11 @@ std::pair<int64_t, float> sample_index_from_masked_logits(
     auto scaled = masked / temperature;
     auto probs = torch::softmax(scaled, 0);
     const auto sampled_idx = torch::multinomial(probs, 1).item<int64_t>();
-    const auto log_prob = torch::log_softmax(scaled, 0).index({sampled_idx}).item<float>();
+    // Store log_prob under the UNSCALED distribution (T=1.0) so that the Python
+    // PPO update's recomputed log_prob matches (it uses raw logits, no temperature).
+    // Using the temperature-scaled log_prob here creates wrong importance ratios
+    // when T != 1.0, causing systematic bias toward higher entropy (v23 collapse).
+    const auto log_prob = torch::log_softmax(masked, 0).index({sampled_idx}).item<float>();
     return {sampled_idx, log_prob};
 }
 
@@ -3638,7 +3642,8 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
     }
     const auto scaled_country = masked_country / temperature;
     const auto country_probs = torch::softmax(scaled_country, 0);
-    const auto country_log_probs = torch::log_softmax(scaled_country, 0);
+    // Use unscaled logits for log_prob to match Python PPO's recomputation at T=1.0.
+    const auto country_log_probs = torch::log_softmax(masked_country, 0);
 
     ActionEncoding action{.card_id = sampled_card_id, .mode = mode, .targets = {}};
     float log_prob_country = 0.0f;
