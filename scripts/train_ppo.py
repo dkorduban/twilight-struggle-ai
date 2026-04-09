@@ -66,7 +66,33 @@ def _load_country_region_map() -> dict[int, str]:
     return mapping
 
 
-_COUNTRY_REGION: dict[int, str] = {}  # lazy-loaded once
+_REGION_NAMES = [
+    "Europe",
+    "Asia",
+    "MiddleEast",
+    "Africa",
+    "CentralAmerica",
+    "SouthAmerica",
+    "SoutheastAsia",
+]
+_REGION_KEY = {
+    "Europe": "europe",
+    "Asia": "asia",
+    "MiddleEast": "middle_east",
+    "Africa": "africa",
+    "CentralAmerica": "central_america",
+    "SouthAmerica": "south_america",
+    "SoutheastAsia": "southeast_asia",
+}
+_COUNTRY_REGION: dict[int, str] = _load_country_region_map()
+_REGION_COUNTRY_IDS: dict[str, tuple[int, ...]] = {
+    region: tuple(
+        country_id
+        for country_id, country_region in sorted(_COUNTRY_REGION.items())
+        if country_region == region
+    )
+    for region in _REGION_NAMES
+}
 
 CARD_SLOTS = 112      # kMaxCardId(111) + 1; index 0 unused
 COUNTRY_SLOTS = 86    # country IDs 0..85
@@ -1189,12 +1215,7 @@ def collect_policy_stats(
     Phase labels: early=turns 1-3, mid=turns 4-7, late=turns 8-10.
     Mode names: Influence, Event, Space, Coup, Realign.
     """
-    global _COUNTRY_REGION
-    if not _COUNTRY_REGION:
-        _COUNTRY_REGION = _load_country_region_map()
-
     MODE_NAMES = ["Influence", "Event", "Space", "Coup", "Realign"]
-    REGIONS = ["Europe", "Asia", "MiddleEast", "Africa", "CentralAmerica", "SouthAmerica"]
     PHASES = ["early", "mid", "late"]
 
     def phase(turn: int) -> str:
@@ -1246,7 +1267,8 @@ def collect_policy_stats(
     region_counts: dict[tuple, int] = defaultdict(int)     # (phase, side, region)
     split_counts: dict[tuple, int] = defaultdict(int)      # (phase, side, split_label)
     total_counts: dict[tuple, int] = defaultdict(int)      # (phase, side)
-    inf_counts: dict[tuple, int] = defaultdict(int)        # (phase, side) influence-only total
+    inf_action_counts: dict[tuple, int] = defaultdict(int) # (phase, side) influence-only actions
+    region_op_counts: dict[tuple, int] = defaultdict(int)  # (phase, side) influence ops
     defcon_sum: dict[tuple, float] = defaultdict(float)
     vp_sum: dict[tuple, float] = defaultdict(float)
 
@@ -1268,11 +1290,12 @@ def collect_policy_stats(
         vp_sum[key] += vp
 
         if mode_idx == 0 and targets:  # Influence
-            # Region of first (top) target
-            region = _COUNTRY_REGION.get(targets[0], "Unknown")
-            region_counts[(ph, side_name, region)] += 1
+            for target in targets:
+                region = _COUNTRY_REGION.get(target, "Unknown")
+                region_counts[(ph, side_name, region)] += 1
             split_counts[(ph, side_name, influence_split_label(targets))] += 1
-            inf_counts[key] += 1
+            inf_action_counts[key] += 1
+            region_op_counts[key] += len(targets)
 
     # Build flat W&B dict
     stats: dict[str, float] = {}
@@ -1290,20 +1313,48 @@ def collect_policy_stats(
             stats[f"{prefix}/mean_defcon"] = defcon_sum[key] / n
             stats[f"{prefix}/mean_vp"] = vp_sum[key] / n
             # Influence sub-stats
-            n_inf = inf_counts[key]
-            if n_inf > 0:
-                _REGION_KEY = {
-                    "Europe": "europe", "Asia": "asia", "MiddleEast": "middle_east",
-                    "Africa": "africa", "CentralAmerica": "central_america",
-                    "SouthAmerica": "south_america", "SoutheastAsia": "southeast_asia",
-                }
-                for r in REGIONS:
+            n_region_ops = region_op_counts[key]
+            if n_region_ops > 0:
+                for r in _REGION_NAMES:
                     stats[f"{prefix}/region_{_REGION_KEY.get(r, r.lower())}_frac"] = (
-                        region_counts[(ph, side_name, r)] / n_inf
+                        region_counts[(ph, side_name, r)] / n_region_ops
                     )
+            n_inf_actions = inf_action_counts[key]
+            if n_inf_actions > 0:
                 for label in ["concentrated", "split", "dispersed"]:
-                    stats[f"{prefix}/split_{label}_frac"] = split_counts[(ph, side_name, label)] / n_inf
+                    stats[f"{prefix}/split_{label}_frac"] = (
+                        split_counts[(ph, side_name, label)] / n_inf_actions
+                    )
     return stats
+
+
+def _add_region_net_delta_stats(terminal_steps: list[Step], log_dict: dict) -> None:
+    """Add mean terminal regional influence deltas to log_dict."""
+    if not _COUNTRY_REGION:
+        return
+
+    totals = {region: 0.0 for region in _REGION_NAMES}
+    n_terminal = 0
+    for step in terminal_steps:
+        if step.raw_ussr_influence is None or step.raw_us_influence is None:
+            continue
+
+        if step.side_int == 0:
+            model_inf = step.raw_ussr_influence
+            opp_inf = step.raw_us_influence
+        else:
+            model_inf = step.raw_us_influence
+            opp_inf = step.raw_ussr_influence
+
+        for region, country_ids in _REGION_COUNTRY_IDS.items():
+            totals[region] += sum(model_inf[cid] - opp_inf[cid] for cid in country_ids)
+        n_terminal += 1
+
+    if n_terminal == 0:
+        return
+
+    for region in _REGION_NAMES:
+        log_dict[f"stats/region_{_REGION_KEY[region]}_net_delta"] = totals[region] / n_terminal
 
 
 def _add_scalar_weight_norms(model: nn.Module, log_dict: dict) -> None:
@@ -1566,6 +1617,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--save-rollout-parquet", type=str, default=None,
                    help="If set, save each iteration's rollout steps as Parquet to this directory "
                         "(for BC bootstrapping from PPO data). One file per iteration.")
+    p.add_argument("--probe-set", type=str, default=None,
+                   help="Path to probe_positions.parquet for JSD evaluation")
+    p.add_argument("--probe-every", type=int, default=10,
+                   help="Compute JSD probe every N iterations (0=disabled)")
+    p.add_argument("--probe-bc-checkpoint", type=str, default=None,
+                   help="BC baseline checkpoint for JSD comparison")
     return p.parse_args()
 
 
@@ -1602,6 +1659,15 @@ def main() -> None:
 
     print(f"Loading checkpoint: {args.checkpoint}")
     model, model_type, ckpt_args = load_model(args.checkpoint, device)
+    probe_eval = None
+    probe_bc_model = None
+    if args.probe_set and args.probe_every > 0 and Path(args.probe_set).exists():
+        from tsrl.policies.jsd_probe import ProbeEvaluator
+
+        probe_eval = ProbeEvaluator(args.probe_set, device=device)
+        if args.probe_bc_checkpoint and Path(args.probe_bc_checkpoint).exists():
+            probe_bc_model, _, _ = load_model(args.probe_bc_checkpoint, device=device)
+            probe_bc_model.eval()
 
     # Keep a copy of BC checkpoint args for saving
     ckpt_meta = dict(ckpt_args)
@@ -1786,6 +1852,47 @@ def main() -> None:
             flush=True,
         )
 
+        log_dict = dict(metrics)
+        log_dict["rollout_wr"] = rollout_wr
+        log_dict["rollout_wr_ussr"] = rollout_wr_ussr
+        log_dict["rollout_wr_us"] = rollout_wr_us
+        log_dict["n_steps"] = n_steps
+        log_dict["iter_time_s"] = t_iter
+        log_dict["ent_coef"] = current_ent_coef
+        if args.self_play:
+            log_dict["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
+            log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
+        _add_scalar_weight_norms(model, log_dict)
+        _add_region_net_delta_stats(terminal_steps, log_dict)
+
+        if probe_eval is not None and args.probe_every > 0 and iteration % args.probe_every == 0:
+            was_training = model.training
+            model.eval()
+            with torch.no_grad():
+                if last_rolling_ckpt and Path(last_rolling_ckpt).exists():
+                    prev_model, _, _ = load_model(last_rolling_ckpt, device=device)
+                    prev_model.eval()
+                    m = probe_eval.compare(model, prev_model)
+                    log_dict.update({
+                        "probe/card_jsd_vs_prev": m.card_jsd,
+                        "probe/mode_jsd_vs_prev": m.mode_jsd,
+                        "probe/country_jsd_vs_prev": m.country_jsd,
+                        "probe/value_mae_vs_prev": m.value_mae,
+                        "probe/top1_card_agree_vs_prev": m.top1_card_agree,
+                        "probe/card_jsd_early_vs_prev": m.card_jsd_early,
+                        "probe/card_jsd_mid_vs_prev": m.card_jsd_mid,
+                        "probe/card_jsd_late_vs_prev": m.card_jsd_late,
+                    })
+                    del prev_model
+                if probe_bc_model is not None:
+                    m_bc = probe_eval.compare(model, probe_bc_model)
+                    log_dict.update({
+                        "probe/card_jsd_vs_bc": m_bc.card_jsd,
+                        "probe/mode_jsd_vs_bc": m_bc.mode_jsd,
+                        "probe/value_mae_vs_bc": m_bc.value_mae,
+                    })
+            model.train(was_training)
+
         # ── Rolling checkpoint (every iteration) ─────────────────────────────
         # Write new checkpoint first, then delete the previous non-milestone one.
         # This ensures we always have the latest weights even after a crash.
@@ -1829,36 +1936,17 @@ def main() -> None:
                 print(f"  New best: combined={best_combined:.3f}")
 
             if wandb_run is not None:
-                metrics.update({
+                bench_log_dict = dict(log_dict)
+                bench_log_dict.update({
                     "ussr_wr": bench["ussr_wr"],
                     "us_wr": bench["us_wr"],
                     "combined_wr": bench["combined_wr"],
-                    "rollout_wr": rollout_wr,
-                    "rollout_wr_ussr": rollout_wr_ussr,
-                    "rollout_wr_us": rollout_wr_us,
-                    "n_steps": n_steps,
-                    "iter_time_s": t_iter,
                 })
-                if args.self_play:
-                    metrics["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
-                    metrics["sp_rollout_wr_us"] = sp_rollout_wr_us
-                _add_scalar_weight_norms(model, metrics)
-                wandb_run.log(metrics, step=iteration)
+                wandb_run.log(bench_log_dict, step=iteration)
                 if "policy_stats" in bench and wandb_run and bench["policy_stats"]:
                     wandb_run.log(bench["policy_stats"], step=iteration)
         else:
             if wandb_run is not None:
-                log_dict = dict(metrics)
-                log_dict["rollout_wr"] = rollout_wr
-                log_dict["rollout_wr_ussr"] = rollout_wr_ussr
-                log_dict["rollout_wr_us"] = rollout_wr_us
-                log_dict["n_steps"] = n_steps
-                log_dict["iter_time_s"] = t_iter
-                log_dict["ent_coef"] = current_ent_coef
-                if args.self_play:
-                    log_dict["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
-                    log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
-                _add_scalar_weight_norms(model, log_dict)
                 wandb_run.log(log_dict, step=iteration)
 
     # ── Final checkpoint + summary ────────────────────────────────────────────
