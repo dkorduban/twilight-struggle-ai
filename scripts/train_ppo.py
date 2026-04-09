@@ -2323,21 +2323,13 @@ def main() -> None:
                     except OSError:
                         pass
 
-            if bench["combined_wr"] > best_combined:
-                best_combined = bench["combined_wr"]
+            if h2h["h2h_combined_wr"] > best_combined:
+                best_combined = h2h["h2h_combined_wr"]
                 export_checkpoint(model, best_ckpt_path, ckpt_meta)
                 print(f"  New best: combined={best_combined:.3f}")
 
             if wandb_run is not None:
-                bench_log_dict = dict(log_dict)
-                bench_log_dict.update({
-                    "ussr_wr": bench["ussr_wr"],
-                    "us_wr": bench["us_wr"],
-                    "combined_wr": bench["combined_wr"],
-                })
-                wandb_run.log(bench_log_dict, step=iteration)
-                if "policy_stats" in bench and wandb_run and bench["policy_stats"]:
-                    wandb_run.log(bench["policy_stats"], step=iteration)
+                wandb_run.log(log_dict, step=iteration)
         else:
             if wandb_run is not None:
                 wandb_run.log(log_dict, step=iteration)
