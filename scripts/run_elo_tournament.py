@@ -436,15 +436,15 @@ def main():
                 wins_a_us=wins_a_us, wins_b_us=wins_b_us,
             )
             draws = entry.get("draws", args.games - wins_a - wins_b)
-            decisive = wins_a + wins_b
-            wr_a = wins_a / decisive if decisive > 0 else 0.0
+            n_games = entry.get("n_games", args.games)
+            wr_a = (wins_a + 0.5 * draws) / n_games if n_games > 0 else 0.0
             print(f"  [reuse] {name_a} {wins_a}({wins_a_ussr}u/{wins_a_us}s) "
-                  f"- {wins_b}({wins_b_ussr}u/{wins_b_us}s) {name_b}  "
+                  f"- {wins_b}({wins_b_ussr}u/{wins_b_us}s) {name_b}  draws={draws}  "
                   f"WR={wr_a:.3f}", flush=True)
             matches.append(m)
             match_log.append({
                 "model_a": name_a, "model_b": name_b,
-                "n_games": entry.get("n_games", args.games),
+                "n_games": n_games,
                 "seed": entry.get("seed", -1),
                 "wins_a": wins_a, "wins_b": wins_b, "draws": draws,
                 "wins_a_ussr": wins_a_ussr, "wins_b_ussr": wins_b_ussr,
@@ -467,8 +467,7 @@ def main():
             )
             draws = args.games - m.wins_a - m.wins_b
             elapsed = time.time() - t0
-            decisive = m.wins_a + m.wins_b
-            wr_a = m.wins_a / decisive if decisive > 0 else 0.0
+            wr_a = (m.wins_a + 0.5 * draws) / args.games if args.games > 0 else 0.0
             print(
                 f"  {name_a}: {m.wins_a}({m.wins_a_ussr}u/{m.wins_a_us}s)  "
                 f"{name_b}: {m.wins_b}({m.wins_b_ussr}u/{m.wins_b_us}s)  "
