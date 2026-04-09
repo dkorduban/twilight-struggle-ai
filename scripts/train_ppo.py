@@ -817,7 +817,11 @@ def collect_rollout_self_play_batched(
 # ---------------------------------------------------------------------------
 
 def _load_wr_table(wr_table_path: str | None) -> dict[str, dict]:
-    """Load per-opponent WR table from JSON. Returns empty dict on miss/error."""
+    """Load per-opponent, per-side WR table from JSON. Returns empty dict on miss/error.
+
+    Schema: {opponent_key: {wins_ussr, total_ussr, wins_us, total_us}}
+    Migrates old flat format {wins, total} by splitting evenly across both sides.
+    """
     if not wr_table_path:
         return {}
     try:
@@ -828,7 +832,28 @@ def _load_wr_table(wr_table_path: str | None) -> dict[str, dict]:
     except json.JSONDecodeError as e:
         print(f"  [league] WR table decode failed at {wr_table_path}: {e}; starting empty", flush=True)
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    # Migrate old flat schema (wins/total) → per-side schema
+    migrated: dict[str, dict] = {}
+    needs_migration = False
+    for key, val in data.items():
+        if "wins_ussr" in val:
+            migrated[key] = val
+        else:
+            # Old format: split evenly (best-effort; data will refine over time)
+            old_wins = int(val.get("wins", 0))
+            old_total = int(val.get("total", 0))
+            migrated[key] = {
+                "wins_ussr": old_wins // 2,
+                "total_ussr": old_total // 2,
+                "wins_us": old_wins - old_wins // 2,
+                "total_us": old_total - old_total // 2,
+            }
+            needs_migration = True
+    if needs_migration:
+        print(f"  [league] WR table migrated to per-side schema at {wr_table_path}", flush=True)
+    return migrated
 
 
 def _save_json_atomic(path: str, payload: dict) -> None:
@@ -852,12 +877,24 @@ def _save_json_atomic(path: str, payload: dict) -> None:
 
 
 def _pfsp_weight(opponent_key: str, wr_table: dict[str, dict], pfsp_exponent: float) -> float:
-    """Return (1 - WR)^pfsp_exponent for an opponent. Defaults to 0.5 until 20 games played."""
+    """Return average of per-side (1 - WR)^pfsp_exponent.
+
+    Each side defaults to 0.5 until >= 10 games played on that side.
+    Averaging the two sides ensures PFSP responds to asymmetric difficulty
+    (e.g. model dominates as USSR but struggles as US against a given opponent).
+    """
     wr_info = wr_table.get(opponent_key, {})
-    wins = int(wr_info.get("wins", 0))
-    total = int(wr_info.get("total", 0))
-    wr = wins / total if total >= 20 else 0.5
-    return max(0.01, (1.0 - wr)) ** pfsp_exponent
+    MIN_GAMES = 10
+
+    def _side_weight(wins_key: str, total_key: str) -> float:
+        wins = int(wr_info.get(wins_key, 0))
+        total = int(wr_info.get(total_key, 0))
+        wr = wins / total if total >= MIN_GAMES else 0.5
+        return max(0.01, (1.0 - wr)) ** pfsp_exponent
+
+    w_ussr = _side_weight("wins_ussr", "total_ussr")
+    w_us = _side_weight("wins_us", "total_us")
+    return (w_ussr + w_us) / 2.0
 
 
 def _update_wr_table_from_steps(
@@ -865,14 +902,26 @@ def _update_wr_table_from_steps(
     opponent_path: str | None,
     steps: list,
 ) -> None:
-    """Update WR table in-place from terminal steps of one rollout batch."""
+    """Update per-side WR table in-place from terminal steps of one rollout batch.
+
+    Schema: {wins_ussr, total_ussr, wins_us, total_us}
+    side_int=0 → model played USSR; side_int=1 → model played US.
+    """
     terminal_steps = [s for s in steps if s.done]
     if not terminal_steps:
         return
     key = "heuristic" if opponent_path is None else Path(opponent_path).stem
-    entry = wr_table.setdefault(key, {"wins": 0, "total": 0})
-    entry["wins"] = int(entry.get("wins", 0)) + sum(1 for s in terminal_steps if s.reward > 0)
-    entry["total"] = int(entry.get("total", 0)) + len(terminal_steps)
+    entry = wr_table.setdefault(key, {
+        "wins_ussr": 0, "total_ussr": 0,
+        "wins_us": 0, "total_us": 0,
+    })
+    for s in terminal_steps:
+        if s.side_int == 0:  # model played USSR
+            entry["wins_ussr"] = int(entry.get("wins_ussr", 0)) + (1 if s.reward > 0 else 0)
+            entry["total_ussr"] = int(entry.get("total_ussr", 0)) + 1
+        else:  # model played US
+            entry["wins_us"] = int(entry.get("wins_us", 0)) + (1 if s.reward > 0 else 0)
+            entry["total_us"] = int(entry.get("total_us", 0)) + 1
 
 
 def sample_K_league_opponents(
