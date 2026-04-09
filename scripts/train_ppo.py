@@ -1586,14 +1586,21 @@ def ppo_update_packed(
 # ---------------------------------------------------------------------------
 
 def collect_policy_stats(
-    script_path: str,
+    script_path: str | None = None,
     n_games: int = 100,
     seed_base: int = 51000,
+    steps: list | None = None,
 ) -> dict:
-    """
-    Run a small rollout batch and compute per-phase policy statistics.
-    Returns a flat dict of W&B-loggable scalars.
+    """Compute per-phase policy statistics (mode/region/split fractions).
 
+    Preferred: pass `steps` (Step objects from the current training rollout) to
+    avoid a redundant 100-game heuristic rollout. The training rollout already
+    covers league opponents which are more representative than heuristic.
+
+    Fallback: if steps is None and script_path is provided, runs n_games vs
+    the built-in heuristic (legacy behaviour, kept for standalone use).
+
+    Returns a flat dict of W&B-loggable scalars.
     Phase labels: early=turns 1-3, mid=turns 4-7, late=turns 8-10.
     Mode names: Influence, Event, Space, Coup, Realign.
     """
@@ -1621,26 +1628,43 @@ def collect_policy_stats(
             return "dispersed"      # at most 1 op per country
         return "split"              # mixed
 
-    # Collect steps for both sides
+    # Build step dicts either from provided Step objects or fresh heuristic rollout
     all_step_dicts: list[dict] = []
-    for side in [tscore.Side.USSR, tscore.Side.US]:
-        try:
-            _, steps, _ = tscore.rollout_games_batched(
-                model_path=script_path,
-                learned_side=side,
-                n_games=n_games,
-                pool_size=min(n_games, 32),
-                seed=seed_base + (0 if side == tscore.Side.USSR else n_games),
-                device="cpu",
-                temperature=1.0,   # training-representative stats
-                nash_temperatures=True,
-            )
-            for s in steps:
-                s["_side_name"] = "ussr" if side == tscore.Side.USSR else "us"
-            all_step_dicts.extend(steps)
-        except Exception as e:
-            print(f"  [stats] rollout failed for {side}: {e}", flush=True)
+    if steps is not None:
+        # Use training rollout steps directly — more representative than heuristic
+        for step in steps:
+            d: dict = {
+                "scalars": step.scalars.squeeze(0).numpy() if hasattr(step.scalars, "numpy") else step.scalars,
+                "mode_idx": step.mode_idx,
+                "country_targets": step.country_targets or [],
+                "_side_name": "ussr" if step.side_int == 0 else "us",
+            }
+            # raw_turn from step if available, else decode from scalars
+            if step.raw_turn is not None:
+                d["_raw_turn"] = step.raw_turn
+            all_step_dicts.append(d)
+    else:
+        # Legacy: run fresh games vs heuristic (only used for standalone calls)
+        if script_path is None:
             return {}
+        for side in [tscore.Side.USSR, tscore.Side.US]:
+            try:
+                _, raw_steps, _ = tscore.rollout_games_batched(
+                    model_path=script_path,
+                    learned_side=side,
+                    n_games=n_games,
+                    pool_size=min(n_games, 32),
+                    seed=seed_base + (0 if side == tscore.Side.USSR else n_games),
+                    device="cpu",
+                    temperature=1.0,
+                    nash_temperatures=True,
+                )
+                for s in raw_steps:
+                    s["_side_name"] = "ussr" if side == tscore.Side.USSR else "us"
+                all_step_dicts.extend(raw_steps)
+            except Exception as e:
+                print(f"  [stats] rollout failed for {side}: {e}", flush=True)
+                return {}
 
     # Aggregate
     from collections import defaultdict
@@ -1656,7 +1680,8 @@ def collect_policy_stats(
 
     for s in all_step_dicts:
         scalars = s["scalars"]           # numpy (11,)
-        turn = round(float(scalars[8]) * 10)
+        # _raw_turn is set directly when building from Step objects; fallback decodes from scalar
+        turn = int(s["_raw_turn"]) if "_raw_turn" in s else round(float(scalars[8]) * 10)
         defcon = round(float(scalars[1]) * 4 + 1)
         vp = round(float(scalars[0]) * 20)
         mode_idx = int(s["mode_idx"])
@@ -2387,22 +2412,12 @@ def main() -> None:
                 flush=True,
             )
             log_dict.update(h2h)
-            # Also collect policy stats (region/mode distributions) at milestones
+            # Collect policy stats from the current iteration's rollout steps
             try:
-                fd, tmp_script = tempfile.mkstemp(prefix="ppo_stats_", suffix="_scripted.pt")
-                os.close(fd)
-                _export_torchscript_model(model, tmp_script, warn_only=True)
-                policy_stats = collect_policy_stats(tmp_script, n_games=100,
-                                                    seed_base=70000 + iteration * 200 + 10000)
+                policy_stats = collect_policy_stats(steps=all_steps)
                 log_dict.update(policy_stats)
             except Exception as e:
                 print(f"  [stats] policy stats failed: {e}", flush=True)
-            finally:
-                for _p in (tmp_script, tmp_script.replace(".pt", "_scripted.pt")):
-                    try:
-                        os.remove(_p)
-                    except OSError:
-                        pass
 
             if h2h["h2h_combined_wr"] > best_combined:
                 best_combined = h2h["h2h_combined_wr"]
