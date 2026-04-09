@@ -910,7 +910,12 @@ def _update_wr_table_from_steps(
     terminal_steps = [s for s in steps if s.done]
     if not terminal_steps:
         return
-    key = "heuristic" if opponent_path is None else Path(opponent_path).stem
+    if opponent_path is None:
+        key = "heuristic"
+    elif opponent_path == "__self__":
+        key = "__self__"
+    else:
+        key = Path(opponent_path).stem
     entry = wr_table.setdefault(key, {
         "wins_ussr": 0, "total_ussr": 0,
         "wins_us": 0, "total_us": 0,
@@ -1218,7 +1223,9 @@ def collect_rollout_league_batched(
 
     try:
         opp_labels = [
-            "heuristic" if opp is None else Path(opp).stem
+            "heuristic" if opp is None
+            else "self" if opp == script_path
+            else Path(opp).stem
             for opp in opponents
         ]
         print(f"  [league] opponents: {opp_labels}", flush=True)
@@ -1236,7 +1243,12 @@ def collect_rollout_league_batched(
             for f, opp in futures_with_opps:
                 batch = f.result()
                 if wr_table_path:
-                    _update_wr_table_from_steps(wr_table, opp, batch)
+                    # Self-slot uses the temp script_path — canonicalize to "self"
+                    # so WR accumulates under one stable key instead of 1 entry/iter.
+                    wr_key = opp
+                    if opp is not None and opp == script_path:
+                        wr_key = "__self__"
+                    _update_wr_table_from_steps(wr_table, wr_key, batch)
                 all_steps.extend(batch)
 
         if wr_table_path:
