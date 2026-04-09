@@ -151,12 +151,29 @@ class TS_SelfPlayDataset(Dataset):
         data_dir: str,
         value_target_mode: str = "winner_side",
         teacher_targets_path: str | None = None,
+        exclude_game_ids: str | None = None,
     ) -> None:
+        """
+        exclude_game_ids: path to a file with one game_id per line to exclude
+            (e.g. EXCLUDE_GAME_IDS.txt written by build_proxy_eval.py).
+            Rows belonging to those games are removed before any splitting,
+            so they never appear in train or val — only in the proxy eval set.
+        """
         if value_target_mode not in ("winner_side", "final_vp", "actor_relative"):
             raise ValueError(
                 f"value_target_mode must be 'winner_side', 'final_vp', or 'actor_relative', "
                 f"got {value_target_mode!r}"
             )
+
+        # Load proxy-eval exclusion list (game_ids that belong to the held-out eval set)
+        _excluded_ids: set[str] = set()
+        if exclude_game_ids is not None:
+            with open(exclude_game_ids) as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if _line:
+                        _excluded_ids.add(_line)
+            print(f"[dataset] Excluding {len(_excluded_ids):,} proxy-eval game_ids from {exclude_game_ids}", flush=True)
 
         paths = sorted(glob.glob(os.path.join(data_dir, "*.parquet")))
         if not paths:
@@ -171,10 +188,18 @@ class TS_SelfPlayDataset(Dataset):
             "ussr_influence", "us_influence",
             # card features
             "actor_known_in", "actor_possible", "discard_mask", "removed_mask",
-            # scalars
+            # scalars [0-10]
             "vp", "defcon", "milops_ussr", "milops_us",
             "space_ussr", "space_us", "china_held_by", "actor_holds_china",
             "turn", "ar", "phasing",
+            # active-effect scalars [11-31] — present in v3+ data, zeroed if missing
+            "bear_trap_active", "quagmire_active", "cuban_missile_crisis_active",
+            "iran_hostage_crisis_active", "norad_active", "shuttle_diplomacy_active",
+            "salt_active", "flower_power_active", "flower_power_cancelled",
+            "vietnam_revolts_active", "north_sea_oil_extra_ar",
+            "glasnost_extra_ar", "nato_active", "de_gaulle_active",
+            "nuclear_subs_active", "formosan_active", "awacs_active",
+            "ops_modifier",  # List[Int64][2]: [USSR_modifier, US_modifier]
             # targets
             "action_card_id", "action_mode", "action_targets",
             # value targets
@@ -182,6 +207,16 @@ class TS_SelfPlayDataset(Dataset):
             # teacher join keys
             "game_id", "step_idx",
         }
+
+        # Boolean active-effect columns (indices 11-27). Zeroed if column missing.
+        _EFFECT_BOOL_COLS = [
+            "bear_trap_active", "quagmire_active", "cuban_missile_crisis_active",
+            "iran_hostage_crisis_active", "norad_active", "shuttle_diplomacy_active",
+            "salt_active", "flower_power_active", "flower_power_cancelled",
+            "vietnam_revolts_active", "north_sea_oil_extra_ar",
+            "glasnost_extra_ar", "nato_active", "de_gaulle_active",
+            "nuclear_subs_active", "formosan_active", "awacs_active",
+        ]  # 17 cols → indices 11-27
 
         def _read_slim(p: str) -> pl.DataFrame:
             """Read only needed columns from a parquet file."""
@@ -231,6 +266,13 @@ class TS_SelfPlayDataset(Dataset):
         df = pl.concat(frames, how="vertical_relaxed")
         del frames  # free individual frame memory
 
+        # Exclude proxy-eval games so they never appear in train or val.
+        if _excluded_ids and "game_id" in df.columns:
+            n_before = len(df)
+            df = df.filter(~pl.col("game_id").is_in(list(_excluded_ids)))
+            n_dropped = n_before - len(df)
+            print(f"[dataset] Removed {n_dropped:,} rows from {len(_excluded_ids):,} proxy-eval games", flush=True)
+
         # Filter out setup-influence rows (card_id=0) — these aren't card-play
         # decisions and would produce target=-1 after the card_id-1 transform.
         if "action_card_id" in df.columns:
@@ -265,23 +307,43 @@ class TS_SelfPlayDataset(Dataset):
         )  # (N, 448) uint8
         del known_in, possible, discard, removed
 
-        # --- scalars (11,) — np.stack with axis=1 on 1-D arrays gives (N, 11) ---
-        scalars = np.stack(
-            [
-                df["vp"].cast(pl.Float32).to_numpy() / 20.0,
-                (df["defcon"].cast(pl.Float32).to_numpy() - 1.0) / 4.0,
-                df["milops_ussr"].cast(pl.Float32).to_numpy() / 6.0,
-                df["milops_us"].cast(pl.Float32).to_numpy() / 6.0,
-                df["space_ussr"].cast(pl.Float32).to_numpy() / 9.0,
-                df["space_us"].cast(pl.Float32).to_numpy() / 9.0,
-                df["china_held_by"].cast(pl.Float32).to_numpy(),
-                df["actor_holds_china"].cast(pl.Float32).to_numpy(),
-                df["turn"].cast(pl.Float32).to_numpy() / 10.0,
-                df["ar"].cast(pl.Float32).to_numpy() / 8.0,
-                df["phasing"].cast(pl.Float32).to_numpy(),
-            ],
-            axis=1,
-        ).astype(np.float32)  # (N, 11)
+        # --- scalars (32,) — [0-10] core game state, [11-31] active effects ---
+        core_scalars = [
+            df["vp"].cast(pl.Float32).to_numpy() / 20.0,
+            (df["defcon"].cast(pl.Float32).to_numpy() - 1.0) / 4.0,
+            df["milops_ussr"].cast(pl.Float32).to_numpy() / 6.0,
+            df["milops_us"].cast(pl.Float32).to_numpy() / 6.0,
+            df["space_ussr"].cast(pl.Float32).to_numpy() / 9.0,
+            df["space_us"].cast(pl.Float32).to_numpy() / 9.0,
+            df["china_held_by"].cast(pl.Float32).to_numpy(),
+            df["actor_holds_china"].cast(pl.Float32).to_numpy(),
+            df["turn"].cast(pl.Float32).to_numpy() / 10.0,
+            df["ar"].cast(pl.Float32).to_numpy() / 8.0,
+            df["phasing"].cast(pl.Float32).to_numpy(),
+        ]  # 11 features
+
+        # [11-27] Active effect booleans — zero if column missing (old heuristic data)
+        for col in _EFFECT_BOOL_COLS:
+            if col in df.columns:
+                core_scalars.append(df[col].cast(pl.Float32).to_numpy())
+            else:
+                core_scalars.append(np.zeros(N, dtype=np.float32))
+
+        # [28-29] Chernobyl: active flag + blocked region (0-6 normalized)
+        # Not present in existing heuristic data; zero-filled.
+        core_scalars.append(np.zeros(N, dtype=np.float32))  # chernobyl_active
+        core_scalars.append(np.zeros(N, dtype=np.float32))  # chernobyl_blocked_region
+
+        # [30-31] Per-side ops modifier (Red Scare/Purge: -1; rarely +1) / 3.0
+        if "ops_modifier" in df.columns:
+            ops_mod = np.array(df["ops_modifier"].to_list(), dtype=np.float32)  # (N, 2)
+            core_scalars.append(ops_mod[:, 0] / 3.0)  # USSR
+            core_scalars.append(ops_mod[:, 1] / 3.0)  # US
+        else:
+            core_scalars.append(np.zeros(N, dtype=np.float32))
+            core_scalars.append(np.zeros(N, dtype=np.float32))
+
+        scalars = np.stack(core_scalars, axis=1).astype(np.float32)  # (N, 32)
         self._scalars = torch.from_numpy(scalars)
 
         # --- integer targets ---
@@ -306,12 +368,27 @@ class TS_SelfPlayDataset(Dataset):
         # --- value target (1,) ---
         winner_arr = df["winner_side"].cast(pl.Float32).to_numpy()  # (N,)
         if value_target_mode in ("final_vp", "actor_relative"):
-            final_vp_arr = np.clip(df["final_vp"].cast(pl.Float32).to_numpy() / 20.0, -1.0, 1.0)
-            end_reasons = df["end_reason"].to_list()
-            bad_end = np.array(
-                [er in ("defcon1", "europe_control") for er in end_reasons], dtype=bool
-            )
-            value_arr = np.where(bad_end, winner_arr, final_vp_arr).astype(np.float32)
+            raw_final_vp = df["final_vp"].cast(pl.Float32).to_numpy()
+            end_reasons = df["end_reason"].to_list() if "end_reason" in df.columns else [""] * N
+            end_reason_arr = np.array(end_reasons)
+
+            # Default: scale final_vp by 20
+            final_vp_arr = np.clip(raw_final_vp / 20.0, -1.0, 1.0)
+
+            # Europe control: instant win — use ±1 regardless of board VP
+            europe_mask = end_reason_arr == "europe_control"
+            final_vp_arr = np.where(europe_mask, winner_arr, final_vp_arr)
+
+            # Wargames: final_vp is post-transfer (loser received +6 VP).
+            # Use pre-transfer margin = |final_vp| + 6 to reflect actual advantage.
+            wargames_mask = end_reason_arr == "wargames"
+            pre_transfer_vp = np.where(raw_final_vp > 0, raw_final_vp + 6, raw_final_vp - 6)
+            wargames_scaled = np.clip(pre_transfer_vp / 20.0, -1.0, 1.0)
+            final_vp_arr = np.where(wargames_mask, wargames_scaled, final_vp_arr)
+
+            # DEFCON-1: use ±1 (no meaningful VP margin)
+            defcon1_mask = end_reason_arr == "defcon1"
+            value_arr = np.where(defcon1_mask, winner_arr, final_vp_arr).astype(np.float32)
             if value_target_mode == "actor_relative":
                 # phasing: 0=USSR, 1=US. For US rows, flip sign so value means
                 # "good for the acting side" not "good for USSR".
@@ -392,21 +469,33 @@ class TS_SelfPlayDataset(Dataset):
             flush=True,
         )
 
-    def deterministic_split(self, val_fraction: float = 0.05) -> tuple[list[int], list[int]]:
+    def deterministic_split(
+        self, val_fraction: float = 0.05, val_hash_salt: str = ""
+    ) -> tuple[list[int], list[int]]:
         """Split into train/val by hashing game_id — deterministic regardless of seed.
 
         Returns (train_indices, val_indices).  Every row from a given game goes
         entirely into train or entirely into val, so there is no cross-game leakage.
+
+        val_hash_salt: appended to game_id before hashing.  Use a non-empty salt
+            (e.g. "_val") when proxy eval has already claimed bucket 0 of the plain
+            hash — the salted hash is independent of the proxy-eval hash, so val
+            gets a uniformly distributed ~val_fraction of the remaining games rather
+            than a skewed 1/(denominator-1) share.
+
+            build_proxy_eval.py always uses salt="" (plain hash, bucket 0).
+            Training with --exclude-game-ids should use salt="_val" so the two
+            hashes are independent.
         """
         if self._game_ids is None:
             raise RuntimeError("Cannot split by game_id: column not in data")
         import hashlib
-        # Assign each unique game to val if hash(game_id) mod 1/fraction < 1
         denominator = max(1, round(1.0 / val_fraction))
         unique_ids = set(self._game_ids.tolist())
         val_games = set()
         for gid in unique_ids:
-            h = int(hashlib.md5(str(gid).encode()).hexdigest(), 16)
+            key = (str(gid) + val_hash_salt).encode()
+            h = int(hashlib.md5(key).hexdigest(), 16)
             if h % denominator == 0:
                 val_games.add(gid)
         train_idx = []

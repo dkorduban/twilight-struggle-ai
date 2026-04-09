@@ -36,7 +36,7 @@ import tscore  # noqa: E402
 # ── Constants matching C++ nn_features.cpp ──────────────────────────────────
 CARD_SLOTS = 112    # kMaxCardId(111) + 1; index 0 unused
 COUNTRY_SLOTS = 86  # kMaxCountryId(85) + 1; IDs 0..85
-SCALAR_DIM = 11  # TODO(2026-04-07): bump to 32 after PPO v3 finishes
+SCALAR_DIM = 32  # bumped from 11 after PPO v3; includes 21 active-effect features
 
 # DEFCON-lowering cards (must stay in sync with C++ learned_policy.cpp)
 DEFCON_LOWERING_CARDS = frozenset({
@@ -53,6 +53,7 @@ def load_model(checkpoint_path: str, device: str = "cuda"):
         TSControlFeatGNNSideModel,
         TSControlFeatModel,
         TSCountryAttnModel,
+        TSCountryAttnSideModel,
         TSCountryEmbedModel,
         TSDirectCountryModel,
         TSFullEmbedModel,
@@ -65,6 +66,7 @@ def load_model(checkpoint_path: str, device: str = "cuda"):
         "country_embed": TSCountryEmbedModel,
         "full_embed": TSFullEmbedModel,
         "country_attn": TSCountryAttnModel,
+        "country_attn_side": TSCountryAttnSideModel,
         "direct_country": TSDirectCountryModel,
         "marginal_value": TSMarginalValueModel,
         "control_feat": TSControlFeatModel,

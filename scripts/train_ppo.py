@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PPO fine-tuning of BC checkpoint for Twilight Struggle AI.
 
-Warms up from a BC checkpoint and runs PPO against the MinimalHybrid heuristic.
+Warms up from a BC checkpoint and runs PPO via league self-play.
 Uses batched C++ rollout collection and PyTorch for updates.
 
 Factorized log π(a|s) = log π_card(c|s) + log π_mode(m|s,c) + Σ log π_country(t_i|s,c,m)
@@ -339,6 +339,8 @@ def _sample_action_and_step(
     side_int: int,
     device: str,
     card_specs: dict,
+    explore_alpha: float = 0.0,
+    explore_eps: float = 0.0,
 ) -> tuple[dict, Step]:
     """Run model inference, sample action, return (action_dict, Step)."""
     if not hand:
@@ -394,10 +396,19 @@ def _sample_action_and_step(
     if not card_mask.any():
         return None, None
 
-    # Sample card from masked distribution
+    # Sample card from masked distribution (with optional Dirichlet exploration noise)
     masked_card_logits = card_logits.clone()
     masked_card_logits[~card_mask] = float("-inf")
     card_probs = torch.softmax(masked_card_logits, dim=0)
+    if explore_alpha > 0.0 and explore_eps > 0.0:
+        n_legal = int(card_mask.sum().item())
+        if n_legal > 1:
+            concentration = torch.full((n_legal,), explore_alpha, device=device)
+            noise = torch._standard_gamma(concentration)
+            noise = noise / (noise.sum() + 1e-10)
+            noise_full = torch.zeros(111, device=device)
+            noise_full[card_mask] = noise
+            card_probs = (1.0 - explore_eps) * card_probs + explore_eps * noise_full
     card_idx = int(torch.multinomial(card_probs, 1).item())
     card_id = card_idx + 1
 
@@ -641,6 +652,7 @@ def collect_rollout_batched(
     device: str,
     card_specs: dict,
     vp_reward_coef: float = 0.0,
+    rollout_temp: float = 1.0,
 ) -> list[Step]:
     """Collect PPO rollout steps through the native batched C++ game pool."""
     if not hasattr(tscore, "rollout_games_batched"):
@@ -657,7 +669,7 @@ def collect_rollout_batched(
             pool_size=min(n_games, 64),
             seed=base_seed,
             device="cpu",
-            temperature=1.0,
+            temperature=rollout_temp,
             nash_temperatures=True,
         )
     finally:
@@ -712,6 +724,7 @@ def collect_rollout_self_play_batched(
     base_seed: int,
     device: str,
     vp_reward_coef: float = 0.0,
+    rollout_temp: float = 1.0,
 ) -> list[Step]:
     """Collect PPO rollout steps from self-play (both sides use learned model)."""
     if not hasattr(tscore, "rollout_self_play_batched"):
@@ -725,7 +738,7 @@ def collect_rollout_self_play_batched(
             pool_size=min(n_games, 64),
             seed=base_seed,
             device="cpu",
-            temperature=1.0,
+            temperature=rollout_temp,
             nash_temperatures=True,
         )
     finally:
@@ -778,81 +791,37 @@ def collect_rollout_self_play_batched(
 # League training helpers
 # ---------------------------------------------------------------------------
 
-def sample_league_opponent(league_dir: str) -> Optional[str]:
-    """Sample an opponent from the league pool.
+def sample_K_league_opponents(
+    league_dir: str,
+    k: int,
+    fixtures: list[str],
+) -> list[Optional[str]]:
+    """Sample k opponents for mini-batch mixing. None = heuristic.
 
-    Returns None → use heuristic opponent.
-    Distribution: 15% heuristic (anchor), 55% latest checkpoint,
-    30% uniformly random from all checkpoints.
-
-    Rationale: 40% heuristic was a conservative fix for the v4 echo-chamber
-    regression; now that we use h2h Elo as primary metric (not heuristic WR),
-    15% heuristic is sufficient as a diversity anchor while allowing more
-    self-play signal. (v8 tuning 2026-04-08)
+    Pool = all iter_*.pt in league_dir (full pool, not top-N) + permanent fixtures.
+    Distribution: 10% heuristic, 90% uniform from full pool + fixtures.
+    If pool is empty, falls back to heuristic.
     """
     import random
 
-    pts = sorted(Path(league_dir).glob("iter_*.pt"))
-    if not pts:
-        return None  # empty pool → heuristic
-    r = random.random()
-    if r < 0.15:
-        return None           # 15%: heuristic anchor
-    elif r < 0.70:
-        return str(pts[-1])   # 55%: most recent checkpoint
-    else:
-        return str(random.choice(pts))  # 30%: random past checkpoint
+    pts = [str(p) for p in sorted(Path(league_dir).glob("iter_*.pt"))]
+    full_pool = pts + list(fixtures)
+
+    opponents: list[Optional[str]] = []
+    for _ in range(k):
+        if not full_pool or random.random() < 0.10:
+            opponents.append(None)  # heuristic
+        else:
+            opponents.append(random.choice(full_pool))
+    return opponents
 
 
-def collect_rollout_league_batched(
-    model: nn.Module,
-    league_dir: str,
-    n_games: int,
-    base_seed: int,
-    device: str,
-    vp_reward_coef: float = 0.0,
-) -> list[Step]:
-    """Collect rollout steps against a league-sampled opponent.
-
-    When a model opponent is sampled, uses rollout_model_vs_model_batched:
-    steps are recorded only for model_a (the learning model). When the heuristic
-    is sampled, falls back to collect_rollout_batched for both sides.
-    """
-    opponent_path = sample_league_opponent(league_dir)
-
-    if opponent_path is None or not hasattr(tscore, "rollout_model_vs_model_batched"):
-        # Heuristic fallback (also used when rollout_model_vs_model_batched unavailable)
-        n_half = n_games // 2
-        steps_ussr = collect_rollout_batched(
-            model, n_half, tscore.Side.USSR, base_seed, device, {}, vp_reward_coef
-        )
-        steps_us = collect_rollout_batched(
-            model, n_half, tscore.Side.US, base_seed + n_half, device, {}, vp_reward_coef
-        )
-        return steps_ussr + steps_us
-
-    script_path = _export_temp_model(model)
-    try:
-        results, steps, boundaries = tscore.rollout_model_vs_model_batched(
-            model_a_path=script_path,
-            model_b_path=opponent_path,
-            n_games=n_games,
-            pool_size=min(n_games, 64),
-            seed=base_seed,
-            device="cpu",
-            temperature=1.0,
-            nash_temperatures=False,
-        )
-    finally:
-        try:
-            os.remove(script_path)
-        except OSError:
-            pass
-
-    all_steps: list[Step] = []
-    for s in steps:
+def _steps_from_native(raw_steps: list) -> list[Step]:
+    """Convert a list of native rollout dicts into Step objects."""
+    out: list[Step] = []
+    for s in raw_steps:
         country_mask = torch.from_numpy(s["country_mask"])
-        step = Step(
+        out.append(Step(
             influence=torch.from_numpy(s["influence"]).unsqueeze(0),
             cards=torch.from_numpy(s["cards"]).unsqueeze(0),
             scalars=torch.from_numpy(s["scalars"]).unsqueeze(0),
@@ -874,23 +843,141 @@ def collect_rollout_league_batched(
             raw_milops=list(s["raw_milops"]) if "raw_milops" in s else None,
             raw_space=list(s["raw_space"]) if "raw_space" in s else None,
             hand_card_ids=list(s["hand_card_ids"]) if "hand_card_ids" in s else None,
-        )
-        all_steps.append(step)
+        ))
+    return out
 
-    # Assign terminal rewards for model_a steps only.
-    # Game assignments: first n_games//2 → model_a=USSR; second half → model_a=US.
+
+def _collect_heuristic_from_script(
+    script_path: str,
+    n_games: int,
+    base_seed: int,
+    vp_reward_coef: float,
+    rollout_temp: float = 1.0,
+) -> list[Step]:
+    """Collect n_games vs heuristic using an already-exported script."""
+    n_half = n_games // 2
+    all_steps: list[Step] = []
+    for side, seed_offset in [(tscore.Side.USSR, 0), (tscore.Side.US, n_half)]:
+        results, raw_steps, boundaries = tscore.rollout_games_batched(
+            model_path=script_path,
+            learned_side=side,
+            n_games=n_half,
+            pool_size=min(n_half, 64),
+            seed=base_seed + seed_offset,
+            device="cpu",
+            temperature=rollout_temp,
+            nash_temperatures=True,
+        )
+        steps = _steps_from_native(raw_steps)
+        side_int = 0 if side == tscore.Side.USSR else 1
+        for i, result in enumerate(results):
+            start = boundaries[i]
+            end = boundaries[i + 1] if i + 1 < len(boundaries) else len(steps)
+            if start < end:
+                steps[end - 1].reward = _compute_reward(result, side_int, vp_reward_coef)
+                steps[end - 1].done = True
+        all_steps.extend(steps)
+    return all_steps
+
+
+def _collect_vs_model_from_script(
+    our_script: str,
+    opp_script: str,
+    n_games: int,
+    base_seed: int,
+    vp_reward_coef: float,
+    rollout_temp: float = 1.0,
+) -> list[Step]:
+    """Collect n_games vs a scripted model opponent (half each side)."""
+    results, raw_steps, boundaries = tscore.rollout_model_vs_model_batched(
+        model_a_path=our_script,
+        model_b_path=opp_script,
+        n_games=n_games,
+        pool_size=min(n_games, 64),
+        seed=base_seed,
+        device="cpu",
+        temperature=rollout_temp,
+        nash_temperatures=False,
+    )
+    steps = _steps_from_native(raw_steps)
     half = n_games // 2
     for i, result in enumerate(results):
         start = boundaries[i]
-        end = boundaries[i + 1] if i + 1 < len(boundaries) else len(all_steps)
+        end = boundaries[i + 1] if i + 1 < len(boundaries) else len(steps)
         if start >= end:
             continue
-        model_a_side_int = 0 if i < half else 1  # 0=USSR, 1=US
-        last = all_steps[end - 1]
-        last.reward = _compute_reward(result, model_a_side_int, vp_reward_coef)
-        last.done = True
+        model_a_side_int = 0 if i < half else 1
+        steps[end - 1].reward = _compute_reward(result, model_a_side_int, vp_reward_coef)
+        steps[end - 1].done = True
+    return steps
 
-    return all_steps
+
+def collect_rollout_league_batched(
+    model: nn.Module,
+    league_dir: str,
+    n_games: int,
+    base_seed: int,
+    device: str,
+    vp_reward_coef: float = 0.0,
+    mix_k: int = 4,
+    fixtures: Optional[list[str]] = None,
+    n_workers: int = 4,
+    rollout_temp: float = 1.0,
+) -> list[Step]:
+    """Collect rollout steps against K opponents in parallel (ThreadPoolExecutor).
+
+    Exports the model once, splits n_games evenly across K opponents, and runs
+    each opponent's batch in a separate thread. The C++ rollout functions release
+    the GIL so threads run truly in parallel. Steps are concatenated in order
+    (no shuffle — PPO minibatch permutation handles randomization).
+
+    Pool = full iter_*.pt history + permanent fixtures. 10% heuristic.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    if fixtures is None:
+        fixtures = []
+    if mix_k < 1:
+        mix_k = 1
+
+    if not hasattr(tscore, "rollout_model_vs_model_batched"):
+        # Fallback: single heuristic opponent
+        n_half = n_games // 2
+        steps_ussr = collect_rollout_batched(model, n_half, tscore.Side.USSR, base_seed, device, {}, vp_reward_coef, rollout_temp)
+        steps_us = collect_rollout_batched(model, n_half, tscore.Side.US, base_seed + n_half, device, {}, vp_reward_coef, rollout_temp)
+        return steps_ussr + steps_us
+
+    opponents = sample_K_league_opponents(league_dir, mix_k, fixtures)
+    games_per_opp = max(2, n_games // mix_k)
+    games_per_opp = games_per_opp if games_per_opp % 2 == 0 else games_per_opp - 1
+
+    script_path = _export_temp_model(model)
+    try:
+        opp_labels = [
+            "heuristic" if opp is None else Path(opp).stem
+            for opp in opponents
+        ]
+        print(f"  [league] opponents: {opp_labels}", flush=True)
+
+        def _run_one(i: int, opp: Optional[str]) -> list[Step]:
+            seed = base_seed + i * games_per_opp
+            if opp is None:
+                return _collect_heuristic_from_script(script_path, games_per_opp, seed, vp_reward_coef, rollout_temp)
+            return _collect_vs_model_from_script(script_path, opp, games_per_opp, seed, vp_reward_coef, rollout_temp)
+
+        actual_workers = min(n_workers, mix_k)
+        with ThreadPoolExecutor(max_workers=actual_workers) as pool:
+            futures = [pool.submit(_run_one, i, opp) for i, opp in enumerate(opponents)]
+            all_steps: list[Step] = []
+            for f in futures:
+                all_steps.extend(f.result())
+
+        return all_steps
+    finally:
+        try:
+            os.remove(script_path)
+        except OSError:
+            pass
 
 
 collect_rollout = collect_rollout_batched
@@ -1200,6 +1287,234 @@ def ppo_update(
 
 
 # ---------------------------------------------------------------------------
+# Packed PPO update (ported from experimental/ppo/update.py)
+# Packs all rollout steps once into dense tensors, moves to device once,
+# then uses index_select for minibatches — ~12x faster than baseline update.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PackedSteps:
+    """Dense tensor representation of a rollout batch for fast PPO updates."""
+    influence: torch.Tensor
+    cards: torch.Tensor
+    scalars: torch.Tensor
+    card_masks: torch.Tensor
+    mode_masks: torch.Tensor
+    country_masks: torch.Tensor
+    card_indices: torch.Tensor
+    mode_indices: torch.Tensor
+    country_targets: torch.Tensor   # (N, max_targets) padded
+    country_valid: torch.Tensor     # (N, max_targets) bool validity mask
+    old_log_probs: torch.Tensor
+    advantages: torch.Tensor        # per-side normalized
+    returns: torch.Tensor
+
+    def to(self, device: str) -> "PackedSteps":
+        return PackedSteps(
+            influence=self.influence.to(device),
+            cards=self.cards.to(device),
+            scalars=self.scalars.to(device),
+            card_masks=self.card_masks.to(device),
+            mode_masks=self.mode_masks.to(device),
+            country_masks=self.country_masks.to(device),
+            card_indices=self.card_indices.to(device),
+            mode_indices=self.mode_indices.to(device),
+            country_targets=self.country_targets.to(device),
+            country_valid=self.country_valid.to(device),
+            old_log_probs=self.old_log_probs.to(device),
+            advantages=self.advantages.to(device),
+            returns=self.returns.to(device),
+        )
+
+
+def pack_steps(steps: list[Step]) -> PackedSteps:
+    """Pack rollout steps once. Performs per-side advantage normalization."""
+    if not steps:
+        raise ValueError("steps must be non-empty")
+
+    advantages = torch.tensor([s.advantage for s in steps], dtype=torch.float32)
+    returns = torch.tensor([s.returns for s in steps], dtype=torch.float32)
+
+    # NaN diagnostics (mirror ppo_update)
+    n_nan_adv = torch.isnan(advantages).sum().item()
+    n_nan_ret = torch.isnan(returns).sum().item()
+    if n_nan_adv > 0 or n_nan_ret > 0:
+        nan_vals = [(i, s.value, s.advantage, s.returns)
+                    for i, s in enumerate(steps)
+                    if s.value != s.value or s.advantage != s.advantage]
+        print(f"  [NaN] adv={n_nan_adv}/{len(steps)}, ret={n_nan_ret}/{len(steps)}, "
+              f"first NaN steps: {nan_vals[:3]}", flush=True)
+    advantages = advantages.nan_to_num(nan=0.0, posinf=10.0, neginf=-10.0)
+    returns = returns.nan_to_num(nan=0.0, posinf=10.0, neginf=-10.0)
+
+    side_ints = torch.tensor([s.side_int for s in steps], dtype=torch.long)
+    for side_val in (0, 1):
+        mask = side_ints == side_val
+        if int(mask.sum().item()) > 1:
+            mu = advantages[mask].mean()
+            sigma = advantages[mask].std()
+            advantages[mask] = (advantages[mask] - mu) / (sigma + 1e-8)
+
+    max_targets = max((len(s.country_targets) for s in steps), default=0)
+    target_pad = torch.zeros((len(steps), max(max_targets, 1)), dtype=torch.long)
+    target_valid = torch.zeros((len(steps), max(max_targets, 1)), dtype=torch.bool)
+    for row, step in enumerate(steps):
+        if step.country_targets:
+            t = torch.tensor(step.country_targets, dtype=torch.long)
+            target_pad[row, :len(t)] = t
+            target_valid[row, :len(t)] = True
+
+    return PackedSteps(
+        influence=torch.cat([s.influence for s in steps], dim=0),
+        cards=torch.cat([s.cards for s in steps], dim=0),
+        scalars=torch.cat([s.scalars for s in steps], dim=0),
+        card_masks=torch.stack([s.card_mask for s in steps]),
+        mode_masks=torch.stack([s.mode_mask for s in steps]),
+        country_masks=torch.stack([
+            s.country_mask if s.country_mask is not None
+            else torch.zeros(COUNTRY_SLOTS, dtype=torch.bool)
+            for s in steps
+        ]),
+        card_indices=torch.tensor([s.card_idx for s in steps], dtype=torch.long),
+        mode_indices=torch.tensor([s.mode_idx for s in steps], dtype=torch.long),
+        country_targets=target_pad,
+        country_valid=target_valid,
+        old_log_probs=torch.tensor([s.old_log_prob for s in steps], dtype=torch.float32),
+        advantages=advantages,
+        returns=returns,
+    )
+
+
+def ppo_update_packed(
+    packed_steps: PackedSteps,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    device: str,
+    ppo_epochs: int = 4,
+    clip_eps: float = 0.2,
+    vf_coef: float = 0.5,
+    ent_coef: float = 0.01,
+    minibatch_size: int = 2048,
+) -> dict[str, float]:
+    """PPO update with packed tensors — ~12x faster than baseline.
+
+    Packs the batch to device once, uses index_select for minibatches,
+    avoids per-minibatch Python tensor assembly. PPO math identical to ppo_update.
+    """
+    num_steps = packed_steps.influence.shape[0]
+    if num_steps == 0:
+        return {}
+
+    packed = packed_steps.to(device)
+    model.eval()
+
+    metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
+               "clip_fraction": 0.0, "approx_kl": 0.0}
+    n_updates = 0
+
+    for _ in range(ppo_epochs):
+        perm = torch.randperm(num_steps, device=device)
+        for start in range(0, num_steps, minibatch_size):
+            idx = perm[start:start + minibatch_size]
+
+            outputs = model(
+                packed.influence.index_select(0, idx),
+                packed.cards.index_select(0, idx),
+                packed.scalars.index_select(0, idx),
+            )
+            card_logits = outputs["card_logits"].nan_to_num(nan=0.0)
+            mode_logits = outputs["mode_logits"].nan_to_num(nan=0.0)
+            values = outputs["value"].squeeze(-1).nan_to_num(nan=0.0)
+            country_logits = outputs.get("country_logits")
+
+            # Diag on first minibatch
+            if n_updates == 0:
+                inf_b = packed.influence.index_select(0, idx)
+                sc_b = packed.scalars.index_select(0, idx)
+                print(f"  [diag] inf dtype={inf_b.dtype} shape={inf_b.shape} "
+                      f"nan={torch.isnan(inf_b).sum()} inf_vals={torch.isinf(inf_b).sum()} "
+                      f"range=[{inf_b.min():.2f},{inf_b.max():.2f}]", flush=True)
+                print(f"  [diag] scalar dtype={sc_b.dtype} nan={torch.isnan(sc_b).sum()} "
+                      f"range=[{sc_b.min():.3f},{sc_b.max():.3f}]", flush=True)
+                print(f"  [diag] card_logits nan={torch.isnan(card_logits).sum()} "
+                      f"range=[{card_logits.min():.2f},{card_logits.max():.2f}]", flush=True)
+                print(f"  [diag] values nan={torch.isnan(values).sum()} "
+                      f"range=[{values.min():.4f},{values.max():.4f}]", flush=True)
+
+            if country_logits is not None:
+                country_logits = country_logits.nan_to_num(nan=0.0)
+
+            card_masks = packed.card_masks.index_select(0, idx)
+            mode_masks = packed.mode_masks.index_select(0, idx)
+            country_masks = packed.country_masks.index_select(0, idx)
+            card_indices = packed.card_indices.index_select(0, idx)
+            mode_indices = packed.mode_indices.index_select(0, idx)
+            old_log_probs = packed.old_log_probs.index_select(0, idx)
+            advantages = packed.advantages.index_select(0, idx)
+            returns = packed.returns.index_select(0, idx)
+            country_targets = packed.country_targets.index_select(0, idx)
+            country_valid = packed.country_valid.index_select(0, idx)
+
+            masked_card = card_logits.masked_fill(~card_masks, float("-inf"))
+            masked_mode = mode_logits.masked_fill(~mode_masks, float("-inf"))
+
+            log_prob_card = F.log_softmax(masked_card, dim=1).gather(
+                1, card_indices.unsqueeze(1)).squeeze(1)
+            log_prob_mode = F.log_softmax(masked_mode, dim=1).gather(
+                1, mode_indices.unsqueeze(1)).squeeze(1)
+
+            log_prob_country = torch.zeros_like(log_prob_card)
+            ent_country = torch.zeros_like(log_prob_card)
+            if country_logits is not None:
+                country_probs = country_logits.masked_fill(~country_masks, 0.0)
+                country_probs = country_probs / (country_probs.sum(dim=1, keepdim=True) + 1e-10)
+                log_country = torch.log(country_probs + 1e-10)
+                ent_country = -(country_probs * log_country).sum(dim=1)
+                if country_targets.shape[1] > 0:
+                    gathered = log_country.gather(1, country_targets.clamp_min(0))
+                    log_prob_country = (gathered * country_valid.float()).sum(dim=1)
+
+            new_log_probs = log_prob_card + log_prob_mode + log_prob_country
+
+            log_p_card = F.log_softmax(masked_card, dim=1).clamp(min=-20)
+            log_p_mode = F.log_softmax(masked_mode, dim=1).clamp(min=-20)
+            ent_card = -(log_p_card.exp() * log_p_card).sum(dim=1)
+            ent_mode = -(log_p_mode.exp() * log_p_mode).sum(dim=1)
+            entropies = ent_card + ent_mode + ent_country
+
+            ratio = torch.exp(new_log_probs - old_log_probs)
+            clipped_ratio = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
+            policy_loss = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
+            value_loss = F.mse_loss(values, returns)
+            entropy_loss = -entropies.mean()
+            loss = policy_loss + vf_coef * value_loss + ent_coef * entropy_loss
+
+            if torch.isnan(loss):
+                continue
+
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
+            optimizer.step()
+
+            with torch.no_grad():
+                clip_frac = ((ratio - 1.0).abs() > clip_eps).float().mean().item()
+                approx_kl = ((ratio - 1.0) - (new_log_probs - old_log_probs)).mean().item()
+
+            metrics["policy_loss"] += float(policy_loss.item())
+            metrics["value_loss"] += float(value_loss.item())
+            metrics["entropy"] += float(entropies.mean().item())
+            metrics["clip_fraction"] += clip_frac
+            metrics["approx_kl"] += approx_kl
+            n_updates += 1
+
+    if n_updates > 0:
+        for key in metrics:
+            metrics[key] /= n_updates
+    return metrics
+
+
+# ---------------------------------------------------------------------------
 # Benchmark via benchmark_batched (fast)
 # ---------------------------------------------------------------------------
 
@@ -1488,40 +1803,55 @@ def _save_rollout_parquet(
     print(f"  [rollout-save] {len(steps):,} steps → {out_path} (meta: {meta_path.name})", flush=True)
 
 
-def run_benchmark(
-    checkpoint_path: str,
-    n_games: int = 500,
-    seed_base: int = 50000,
-    collect_stats: bool = False,
-    stats_n_games: int = 100,
+
+def run_h2h_eval(
+    model: nn.Module,
+    opponent_script: str,
+    n_games: int = 200,
+    seed: int = 70000,
 ) -> dict[str, float]:
-    """Export current checkpoint and benchmark via tscore.benchmark_batched."""
-    script_path = checkpoint_path
-    if not script_path.endswith("_scripted.pt"):
-        script_path = checkpoint_path.replace(".pt", "_scripted.pt")
-    ussr_results = tscore.benchmark_batched(
-        script_path, tscore.Side.USSR, n_games,
-        pool_size=32, seed=seed_base, nash_temperatures=True,
-    )
-    us_results = tscore.benchmark_batched(
-        script_path, tscore.Side.US, n_games,
-        pool_size=32, seed=seed_base + n_games, nash_temperatures=True,
-    )
-    ussr_wins = sum(1 for r in ussr_results if r.winner == tscore.Side.USSR)
-    us_wins = sum(1 for r in us_results if r.winner == tscore.Side.US)
-    ussr_wr = ussr_wins / len(ussr_results) if ussr_results else 0.0
-    us_wr = us_wins / len(us_results) if us_results else 0.0
-    combined = (ussr_wins + us_wins) / (len(ussr_results) + len(us_results)) if (ussr_results and us_results) else 0.0
-    result = {"ussr_wr": ussr_wr, "us_wr": us_wr, "combined_wr": combined}
-    if collect_stats:
-        try:
-            if os.path.exists(script_path):
-                result["policy_stats"] = collect_policy_stats(
-                    script_path, n_games=stats_n_games, seed_base=seed_base + 10000
-                )
-        except Exception as e:
-            print(f"  [stats] policy stats failed: {e}", flush=True)
-    return result
+    """Head-to-head eval: current model vs opponent scripted checkpoint.
+
+    Runs n_games total (half as USSR, half as US) using benchmark_model_vs_model_batched.
+    Returns win rates from the current model's perspective.
+    """
+    fd, our_script = tempfile.mkstemp(prefix="ppo_h2h_eval_", suffix="_scripted.pt")
+    os.close(fd)
+    try:
+        _export_torchscript_model(model, our_script, warn_only=False)
+        half = n_games // 2
+        # First half: our model = USSR
+        results_ussr = tscore.benchmark_model_vs_model_batched(
+            model_a_path=our_script,
+            model_b_path=opponent_script,
+            n_games=half,
+            pool_size=min(32, half),
+            seed=seed,
+            device="cpu",
+            temperature=0.0,
+        )
+        # Second half: our model = US
+        results_us = tscore.benchmark_model_vs_model_batched(
+            model_a_path=opponent_script,
+            model_b_path=our_script,
+            n_games=half,
+            pool_size=min(32, half),
+            seed=seed + half,
+            device="cpu",
+            temperature=0.0,
+        )
+        ussr_wins = sum(1 for r in results_ussr if r.winner == tscore.Side.USSR)
+        us_wins = sum(1 for r in results_us if r.winner == tscore.Side.US)
+        ussr_wr = ussr_wins / max(1, len(results_ussr))
+        us_wr = us_wins / max(1, len(results_us))
+        combined = (ussr_wins + us_wins) / max(1, len(results_ussr) + len(results_us))
+        return {"h2h_ussr_wr": ussr_wr, "h2h_us_wr": us_wr, "h2h_combined_wr": combined}
+    finally:
+        for p in (our_script, our_script.replace(".pt", "_scripted.pt")):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
 
 def _export_torchscript_model(model: nn.Module, script_path: str, *, warn_only: bool = False) -> None:
@@ -1559,9 +1889,16 @@ def _export_temp_model(model: nn.Module) -> str:
     return script_path
 
 
-def export_checkpoint(model: nn.Module, checkpoint_path: str, ckpt_meta: dict) -> None:
+def export_checkpoint(
+    model: nn.Module,
+    checkpoint_path: str,
+    ckpt_meta: dict,
+    optimizer: Optional[torch.optim.Optimizer] = None,
+) -> None:
     """Save model checkpoint in format compatible with benchmark_batched."""
     payload = {"model_state_dict": model.state_dict(), "args": ckpt_meta}
+    if optimizer is not None:
+        payload["optimizer_state_dict"] = optimizer.state_dict()
     torch.save(payload, checkpoint_path)
     script_path = checkpoint_path.replace(".pt", "_scripted.pt")
     _export_torchscript_model(model, script_path, warn_only=True)
@@ -1591,7 +1928,10 @@ def parse_args() -> argparse.Namespace:
                    help="Final entropy coefficient (linear decay). None = constant")
     p.add_argument("--vf-coef", type=float, default=0.5, help="Value function coefficient")
     p.add_argument("--minibatch-size", type=int, default=2048, help="PPO minibatch size")
-    p.add_argument("--benchmark-every", type=int, default=0, help="Benchmark vs heuristic every N iterations (0=disabled; use h2h Elo post-run instead)")
+    p.add_argument("--eval-opponent", type=str, default=None,
+                   help="Scripted .pt of previous run's final model to eval against every --eval-every iters")
+    p.add_argument("--eval-every", type=int, default=20,
+                   help="Run h2h eval vs --eval-opponent every N iterations (default: 20)")
     p.add_argument("--side", choices=["ussr", "us", "both"], default="both",
                    help="Which side to train as")
     p.add_argument("--self-play", action="store_true",
@@ -1608,12 +1948,19 @@ def parse_args() -> argparse.Namespace:
                    help="VP delta reward shaping coefficient (0 = disabled)")
     p.add_argument("--league", type=str, default=None,
                    help="League directory for checkpoint pool self-play (enables league training)")
-    p.add_argument("--league-save-every", type=int, default=20,
-                   help="Save model to league pool every N iterations (default: 20)")
+    p.add_argument("--league-save-every", type=int, default=10,
+                   help="Save model to league pool every N iterations (default: 10)")
+    p.add_argument("--league-mix-k", type=int, default=4,
+                   help="Number of distinct opponents to sample per iteration (default: 4)")
+    p.add_argument("--rollout-workers", type=int, default=1,
+                   help="Parallel threads for rollout collection (default: 1; >1 added overhead for vs-model rollout)")
+    p.add_argument("--league-fixtures", nargs="*", default=[],
+                   help="Permanent fixture scripted .pt paths always included in league pool "
+                        "(e.g. older-gen checkpoints for cross-run diversity)")
     p.add_argument("--start-iteration", type=int, default=1,
                    help="Resume: start loop from this iteration (seeds offset accordingly)")
     p.add_argument("--best-combined", type=float, default=0.0,
-                   help="Resume: best combined WR achieved so far (for checkpoint tracking)")
+                   help="(deprecated, ignored) best combined WR was used for heuristic-based selection")
     p.add_argument("--save-rollout-parquet", type=str, default=None,
                    help="If set, save each iteration's rollout steps as Parquet to this directory "
                         "(for BC bootstrapping from PPO data). One file per iteration.")
@@ -1623,6 +1970,15 @@ def parse_args() -> argparse.Namespace:
                    help="Compute JSD probe every N iterations (0=disabled)")
     p.add_argument("--probe-bc-checkpoint", type=str, default=None,
                    help="BC baseline checkpoint for JSD comparison")
+    p.add_argument("--rollout-temp", type=float, default=1.0,
+                   help="Softmax temperature for C++ batched rollouts (>1.0 = more exploration). "
+                        "Default 1.0. Recommended: 1.2 for exploration phase.")
+    p.add_argument("--explore-alpha", type=float, default=0.0,
+                   help="Dirichlet alpha for card-selection noise in sequential rollouts "
+                        "(0=disabled, 0.3=standard AlphaZero setting).")
+    p.add_argument("--explore-eps", type=float, default=0.0,
+                   help="Epsilon weight for Dirichlet noise mixing (0=disabled, 0.25=standard). "
+                        "Only active when --explore-alpha > 0.")
     return p.parse_args()
 
 
@@ -1678,6 +2034,20 @@ def main() -> None:
     card_specs = load_cards()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # Restore optimizer state if checkpoint contains it (PPO resume, not BC warm-start).
+    _opt_ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    if isinstance(_opt_ckpt, dict) and "optimizer_state_dict" in _opt_ckpt:
+        try:
+            optimizer.load_state_dict(_opt_ckpt["optimizer_state_dict"])
+            # Move optimizer state tensors to the training device.
+            for state in optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(device)
+            print("  Restored optimizer state from checkpoint.", flush=True)
+        except Exception as e:
+            print(f"  [warn] Could not restore optimizer state: {e}", flush=True)
+    del _opt_ckpt
 
     # Determine training sides
     if args.side == "ussr":
@@ -1689,18 +2059,13 @@ def main() -> None:
 
     games_per_side = args.games_per_iter // len(sides)
 
-    best_combined = args.best_combined
-    best_ckpt_path = os.path.join(args.out_dir, "ppo_best.pt")
-
     # Track the last rolling checkpoint path so we can delete it after the next
-    # successful save.  Milestone checkpoints (benchmark_every multiples and the
+    # successful save.  Milestone checkpoints (eval_every multiples and the
     # final iteration) are never deleted.
     last_rolling_ckpt: str | None = None
 
     def _is_milestone(it: int) -> bool:
-        if args.benchmark_every == 0:
-            return it == args.n_iterations
-        return it % args.benchmark_every == 0 or it == args.n_iterations
+        return it % args.eval_every == 0 or it == args.n_iterations
 
     print(f"\nStarting PPO training: {args.n_iterations} iterations × "
           f"{args.games_per_iter} games/iter, side={args.side}", flush=True)
@@ -1711,8 +2076,7 @@ def main() -> None:
     elif args.self_play:
         print(f"Self-play enabled (heuristic mix={args.self_play_heuristic_mix:.3f})", flush=True)
     if args.start_iteration > 1:
-        print(f"Resuming from iteration {args.start_iteration} "
-              f"(best_combined={best_combined:.3f})", flush=True)
+        print(f"Resuming from iteration {args.start_iteration}", flush=True)
 
     t_start = time.time()
 
@@ -1735,22 +2099,27 @@ def main() -> None:
             all_steps = collect_rollout_league_batched(
                 model, args.league, args.games_per_iter, seed, device,
                 vp_reward_coef=args.vp_reward_coef,
+                mix_k=args.league_mix_k,
+                fixtures=args.league_fixtures,
+                n_workers=args.rollout_workers,
+                rollout_temp=args.rollout_temp,
             )
         elif args.self_play:
             seed = args.seed + (iteration - 1) * args.games_per_iter
             self_play_steps = collect_rollout_self_play_batched(
-                model, args.games_per_iter, seed, device, vp_reward_coef=args.vp_reward_coef
+                model, args.games_per_iter, seed, device, vp_reward_coef=args.vp_reward_coef,
+                rollout_temp=args.rollout_temp,
             )
             all_steps = list(self_play_steps)
             if args.self_play_heuristic_mix > 0:
                 n_heur = max(1, int(args.games_per_iter * args.self_play_heuristic_mix))
                 heur_steps_ussr = collect_rollout_batched(
                     model, n_heur // 2, tscore.Side.USSR, seed + 1000000, device, card_specs,
-                    vp_reward_coef=args.vp_reward_coef,
+                    vp_reward_coef=args.vp_reward_coef, rollout_temp=args.rollout_temp,
                 )
                 heur_steps_us = collect_rollout_batched(
                     model, n_heur // 2, tscore.Side.US, seed + 2000000, device, card_specs,
-                    vp_reward_coef=args.vp_reward_coef,
+                    vp_reward_coef=args.vp_reward_coef, rollout_temp=args.rollout_temp,
                 )
                 all_steps = all_steps + heur_steps_ussr + heur_steps_us
         else:
@@ -1822,8 +2191,8 @@ def main() -> None:
             current_ent_coef = args.ent_coef
 
         t_update_start = time.time()
-        metrics = ppo_update(
-            all_steps, model, optimizer, device,
+        metrics = ppo_update_packed(
+            pack_steps(all_steps), model, optimizer, device,
             ppo_epochs=args.ppo_epochs,
             clip_eps=args.clip_eps,
             vf_coef=args.vf_coef,
@@ -1897,7 +2266,7 @@ def main() -> None:
         # Write new checkpoint first, then delete the previous non-milestone one.
         # This ensures we always have the latest weights even after a crash.
         new_ckpt_path = os.path.join(args.out_dir, f"ppo_iter{iteration:04d}.pt")
-        export_checkpoint(model, new_ckpt_path, ckpt_meta)
+        export_checkpoint(model, new_ckpt_path, ckpt_meta, optimizer=optimizer)
         # Delete previous rolling checkpoint if it was not a milestone.
         if last_rolling_ckpt is not None and not _is_milestone(
             int(os.path.basename(last_rolling_ckpt).removeprefix("ppo_iter").split(".")[0])
@@ -1911,24 +2280,48 @@ def main() -> None:
                 pass
         last_rolling_ckpt = new_ckpt_path
 
-        # ── Periodic benchmark ────────────────────────────────────────────────
-        if _is_milestone(iteration):
-            ckpt_path = new_ckpt_path
+        # ── Periodic h2h eval ─────────────────────────────────────────────────
+        log_dict = dict(metrics)
+        log_dict["rollout_wr"] = rollout_wr
+        log_dict["rollout_wr_ussr"] = rollout_wr_ussr
+        log_dict["rollout_wr_us"] = rollout_wr_us
+        log_dict["n_steps"] = n_steps
+        log_dict["iter_time_s"] = t_iter
+        log_dict["ent_coef"] = current_ent_coef
+        if args.self_play:
+            log_dict["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
+            log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
+        _add_scalar_weight_norms(model, log_dict)
 
-            print(f"  Running benchmark (500 games each side)...")
+        if _is_milestone(iteration) and args.eval_opponent:
             t_bench_start = time.time()
-            bench = run_benchmark(
-                ckpt_path.replace(".pt", "_scripted.pt"),
-                n_games=500, seed_base=50000,
-                collect_stats=True, stats_n_games=100,
-            )
+            print(f"  H2H eval vs {Path(args.eval_opponent).name} (200 games) ...", flush=True)
+            h2h = run_h2h_eval(model, args.eval_opponent, n_games=200, seed=70000 + iteration * 200)
             t_bench = time.time() - t_bench_start
             print(
-                f"  Benchmark: USSR={bench['ussr_wr']:.3f} "
-                f"US={bench['us_wr']:.3f} "
-                f"combined={bench['combined_wr']:.3f} "
-                f"({t_bench:.0f}s)"
+                f"  H2H: USSR={h2h['h2h_ussr_wr']:.3f} "
+                f"US={h2h['h2h_us_wr']:.3f} "
+                f"combined={h2h['h2h_combined_wr']:.3f} "
+                f"({t_bench:.0f}s)",
+                flush=True,
             )
+            log_dict.update(h2h)
+            # Also collect policy stats (region/mode distributions) at milestones
+            try:
+                fd, tmp_script = tempfile.mkstemp(prefix="ppo_stats_", suffix="_scripted.pt")
+                os.close(fd)
+                _export_torchscript_model(model, tmp_script, warn_only=True)
+                policy_stats = collect_policy_stats(tmp_script, n_games=100,
+                                                    seed_base=70000 + iteration * 200 + 10000)
+                log_dict.update(policy_stats)
+            except Exception as e:
+                print(f"  [stats] policy stats failed: {e}", flush=True)
+            finally:
+                for _p in (tmp_script, tmp_script.replace(".pt", "_scripted.pt")):
+                    try:
+                        os.remove(_p)
+                    except OSError:
+                        pass
 
             if bench["combined_wr"] > best_combined:
                 best_combined = bench["combined_wr"]
@@ -1953,19 +2346,17 @@ def main() -> None:
     final_path = os.path.join(args.out_dir, "ppo_final.pt")
     export_checkpoint(model, final_path, ckpt_meta)
 
-    # When benchmarking is disabled ppo_best.pt is never written; use final as best.
-    if args.benchmark_every == 0 and not os.path.exists(best_ckpt_path):
-        import shutil
-        shutil.copy2(final_path, best_ckpt_path)
-        final_scripted = final_path.replace(".pt", "_scripted.pt")
-        best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
-        if os.path.exists(final_scripted):
-            shutil.copy2(final_scripted, best_scripted)
-        print("  (benchmark_every=0: ppo_best.pt set to final checkpoint)")
+    # ppo_best.pt = latest (final) iteration. No heuristic-WR selection.
+    import shutil
+    best_ckpt_path = os.path.join(args.out_dir, "ppo_best.pt")
+    shutil.copy2(final_path, best_ckpt_path)
+    final_scripted = final_path.replace(".pt", "_scripted.pt")
+    best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
+    if os.path.exists(final_scripted):
+        shutil.copy2(final_scripted, best_scripted)
 
     t_total = time.time() - t_start
     print(f"\nTraining complete in {t_total/60:.1f} minutes")
-    print(f"Best combined WR: {best_combined:.3f}")
     print(f"Checkpoints in: {args.out_dir}")
 
     if wandb_run is not None:

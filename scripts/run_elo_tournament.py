@@ -4,14 +4,19 @@
 Exports checkpoints to TorchScript, runs head-to-head matches to form a
 connected graph, then fits BayesElo ratings anchored to a reference model.
 
-Usage:
+Usage (full tournament):
     uv run python scripts/run_elo_tournament.py \
-        --models v3:data/checkpoints/league_v4/iter_0200.pt \
-                 v4:data/checkpoints/ppo_v4_league/ppo_best.pt \
-                 v5:data/checkpoints/ppo_v5_league/ppo_best.pt \
-                 v6:data/checkpoints/ppo_v6_league/ppo_best.pt \
-                 v7:data/checkpoints/ppo_v7_league/ppo_best.pt \
-        --games 500 --anchor v3 --anchor-elo 1500 \
+        --models v12:data/checkpoints/ppo_v12_league/ppo_best.pt \
+                 v13:data/checkpoints/ppo_v13_league/ppo_final.pt \
+        --games 400 --anchor v12 --anchor-elo 2001 \
+        --schedule round_robin --out results/elo_ppo_ladder.json
+
+Usage (add new candidate, reuse existing results):
+    uv run python scripts/run_elo_tournament.py \
+        --models v12:... v13:... v14:data/checkpoints/ppo_v14_league/ppo_final.pt \
+        --games 400 --anchor v12 --anchor-elo 2001 \
+        --schedule round_robin \
+        --resume-from results/elo_ppo_ladder.json \
         --out results/elo_ppo_ladder.json
 """
 
@@ -145,8 +150,48 @@ def bayeselo_ci95(
 # Match running
 # ---------------------------------------------------------------------------
 
+HEURISTIC_SENTINEL = "heuristic"
+
+
+def _wins_from_heuristic_match(model_script: str, n_games: int, seed: int) -> tuple[int, int]:
+    """Benchmark model vs built-in heuristic. Returns (model_wins, heuristic_wins)."""
+    half = n_games // 2
+    ussr_results = tscore.benchmark_batched(
+        model_script, tscore.Side.USSR, half, pool_size=min(32, half), seed=seed,
+    )
+    us_results = tscore.benchmark_batched(
+        model_script, tscore.Side.US, half, pool_size=min(32, half), seed=seed + half,
+    )
+    model_wins = (
+        sum(1 for r in ussr_results if r.winner == tscore.Side.USSR)
+        + sum(1 for r in us_results if r.winner == tscore.Side.US)
+    )
+    heuristic_wins = (
+        sum(1 for r in ussr_results if r.winner == tscore.Side.US)   # heuristic=US when model=USSR
+        + sum(1 for r in us_results if r.winner == tscore.Side.USSR)  # heuristic=USSR when model=US
+    )
+    return model_wins, heuristic_wins
+
+
 def run_match(script_a: str, script_b: str, n_games: int, seed: int) -> MatchResult:
-    """Run n_games head-to-head (half each side) and return wins."""
+    """Run n_games head-to-head (half each side) and return wins.
+
+    Either script may be HEURISTIC_SENTINEL to use the built-in heuristic player.
+    """
+    half = n_games // 2
+
+    if script_a == HEURISTIC_SENTINEL and script_b == HEURISTIC_SENTINEL:
+        return MatchResult(player_a="", player_b="", wins_a=half, wins_b=half)
+
+    if script_a == HEURISTIC_SENTINEL:
+        model_wins, heuristic_wins = _wins_from_heuristic_match(script_b, n_games, seed)
+        return MatchResult(player_a="", player_b="", wins_a=heuristic_wins, wins_b=model_wins)
+
+    if script_b == HEURISTIC_SENTINEL:
+        model_wins, heuristic_wins = _wins_from_heuristic_match(script_a, n_games, seed)
+        return MatchResult(player_a="", player_b="", wins_a=model_wins, wins_b=heuristic_wins)
+
+    # Model vs model
     results = tscore.benchmark_model_vs_model_batched(
         model_a_path=script_a,
         model_b_path=script_b,
@@ -156,11 +201,6 @@ def run_match(script_a: str, script_b: str, n_games: int, seed: int) -> MatchRes
         device="cpu",
         temperature=0.0,
     )
-    wins_a = sum(1 for r in results if r.winner == tscore.Side.USSR and results.index(r) < n_games // 2
-                 or r.winner == tscore.Side.US and results.index(r) >= n_games // 2)
-    # Simpler: use the GameResult winner field directly
-    # First half: model_a=USSR wins if winner==USSR; second half: model_a=US wins if winner==US
-    half = n_games // 2
     wins_a = 0
     wins_b = 0
     for i, r in enumerate(results):
@@ -180,7 +220,13 @@ def run_match(script_a: str, script_b: str, n_games: int, seed: int) -> MatchRes
 
 
 def export_if_needed(checkpoint: Path, script_dir: Path, name: str) -> str:
-    """Export checkpoint to TorchScript if it's not already scripted."""
+    """Export checkpoint to TorchScript if it's not already scripted.
+
+    Returns HEURISTIC_SENTINEL unchanged if checkpoint is 'heuristic'.
+    """
+    if str(checkpoint) == HEURISTIC_SENTINEL:
+        print(f"  {name}: built-in heuristic (no export needed)", flush=True)
+        return HEURISTIC_SENTINEL
     out = script_dir / f"{name}_scripted.pt"
     if out.exists():
         return str(out)
@@ -232,18 +278,28 @@ def main():
     p.add_argument("--seed", type=int, default=88000)
     p.add_argument("--script-dir", type=Path, default=Path("data/checkpoints/scripted_for_elo"))
     p.add_argument("--out", type=Path, default=Path("results/elo_ppo_ladder.json"))
+    p.add_argument(
+        "--resume-from", type=Path, default=None,
+        help="JSON from a previous tournament run; reuse existing match results and only "
+             "play missing pairs. Typically --resume-from and --out point to the same file.",
+    )
     args = p.parse_args()
 
     if args.games % 2 != 0:
         p.error("--games must be even (half played each side)")
 
-    # Parse model name:path pairs
+    # Parse model name:path pairs.
+    # Special: bare "heuristic" or "name:heuristic" uses the built-in heuristic player.
     models: dict[str, Path] = {}
     ordered_names: list[str] = []
     for spec in args.models:
         name, _, path = spec.partition(":")
         if not path:
-            p.error(f"Invalid model spec {spec!r}, expected name:path")
+            # bare token: treat as name=token, path=heuristic
+            if name == HEURISTIC_SENTINEL:
+                path = HEURISTIC_SENTINEL
+            else:
+                p.error(f"Invalid model spec {spec!r}, expected name:path")
         models[name] = Path(path)
         ordered_names.append(name)
 
@@ -258,37 +314,78 @@ def main():
     for name, ckpt in models.items():
         scripts[name] = export_if_needed(ckpt, args.script_dir, name)
 
+    # Load prior match results when resuming
+    # Key: frozenset of the two player names → raw log dict (model_a/b, wins_a/b, ...)
+    prior_matches: dict[frozenset, dict] = {}
+    if args.resume_from is not None and args.resume_from.exists():
+        prev = json.loads(args.resume_from.read_text())
+        for entry in prev.get("matches", []):
+            key = frozenset([entry["model_a"], entry["model_b"]])
+            prior_matches[key] = entry
+        print(f"Loaded {len(prior_matches)} existing match results from {args.resume_from}", flush=True)
+
     # Build match schedule
     if args.schedule == "round_robin":
         schedule = round_robin_schedule(ordered_names)
     else:
         schedule = chain_schedule(ordered_names)
 
-    print(f"\nMatch schedule ({len(schedule)} matches × {args.games} games each):", flush=True)
+    new_count = sum(1 for a, b in schedule if frozenset([a, b]) not in prior_matches)
+    print(f"\nMatch schedule ({len(schedule)} total, {new_count} new, "
+          f"{len(schedule) - new_count} reused from prior run):", flush=True)
     for a, b in schedule:
-        print(f"  {a} vs {b}", flush=True)
+        tag = "" if frozenset([a, b]) not in prior_matches else "  [reuse]"
+        print(f"  {a} vs {b}{tag}", flush=True)
 
-    # Run matches
+    # Run matches (skip pairs already in prior_matches)
     matches: list[MatchResult] = []
     match_log = []
-    for i, (name_a, name_b) in enumerate(schedule):
-        seed = args.seed + i * args.games
-        t0 = time.time()
-        print(f"\n[{i+1}/{len(schedule)}] {name_a} vs {name_b} ({args.games} games, seed={seed}) ...", flush=True)
-        m = run_match(scripts[name_a], scripts[name_b], args.games, seed)
-        m = MatchResult(player_a=name_a, player_b=name_b, wins_a=m.wins_a, wins_b=m.wins_b)
-        draws = args.games - m.wins_a - m.wins_b
-        elapsed = time.time() - t0
-        wr_a = m.wins_a / args.games
-        print(f"  {name_a} wins: {m.wins_a}  {name_b} wins: {m.wins_b}  draws: {draws}  "
-              f"WR({name_a})={wr_a:.3f}  t={elapsed:.1f}s", flush=True)
-        matches.append(m)
-        match_log.append({
-            "model_a": name_a, "model_b": name_b,
-            "n_games": args.games, "seed": seed,
-            "wins_a": m.wins_a, "wins_b": m.wins_b, "draws": draws,
-            "wr_a": round(wr_a, 4),
-        })
+    new_idx = 0  # counter only for new matches, keeps seeds stable as ladder grows
+    for name_a, name_b in schedule:
+        pair_key = frozenset([name_a, name_b])
+        if pair_key in prior_matches:
+            # Restore from prior run; flip wins if stored in opposite order
+            entry = prior_matches[pair_key]
+            if entry["model_a"] == name_a:
+                wins_a, wins_b = entry["wins_a"], entry["wins_b"]
+            else:
+                wins_a, wins_b = entry["wins_b"], entry["wins_a"]
+            m = MatchResult(player_a=name_a, player_b=name_b, wins_a=wins_a, wins_b=wins_b)
+            draws = entry.get("draws", args.games - wins_a - wins_b)
+            decisive = wins_a + wins_b
+            wr_a = wins_a / decisive if decisive > 0 else 0.0  # draws excluded
+            print(f"  [reuse] {name_a} {wins_a} - {wins_b} {name_b}  "
+                  f"WR({name_a})={wr_a:.3f}", flush=True)
+            matches.append(m)
+            match_log.append({
+                "model_a": name_a, "model_b": name_b,
+                "n_games": entry.get("n_games", args.games),
+                "seed": entry.get("seed", -1),
+                "wins_a": wins_a, "wins_b": wins_b, "draws": draws,
+                "wr_a": round(wr_a, 4),
+                "reused": True,
+            })
+        else:
+            seed = args.seed + new_idx * args.games
+            new_idx += 1
+            t0 = time.time()
+            print(f"\n[new {new_idx}/{new_count}] {name_a} vs {name_b} "
+                  f"({args.games} games, seed={seed}) ...", flush=True)
+            m = run_match(scripts[name_a], scripts[name_b], args.games, seed)
+            m = MatchResult(player_a=name_a, player_b=name_b, wins_a=m.wins_a, wins_b=m.wins_b)
+            draws = args.games - m.wins_a - m.wins_b
+            elapsed = time.time() - t0
+            decisive = m.wins_a + m.wins_b
+            wr_a = m.wins_a / decisive if decisive > 0 else 0.0  # draws excluded
+            print(f"  {name_a} wins: {m.wins_a}  {name_b} wins: {m.wins_b}  draws: {draws}  "
+                  f"WR({name_a})={wr_a:.3f}  t={elapsed:.1f}s", flush=True)
+            matches.append(m)
+            match_log.append({
+                "model_a": name_a, "model_b": name_b,
+                "n_games": args.games, "seed": seed,
+                "wins_a": m.wins_a, "wins_b": m.wins_b, "draws": draws,
+                "wr_a": round(wr_a, 4),
+            })
 
     # Compute BayesElo
     print("\nFitting BayesElo ...", flush=True)

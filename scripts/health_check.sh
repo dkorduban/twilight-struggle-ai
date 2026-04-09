@@ -52,11 +52,12 @@ for AVAIL in "$RESULTS_AVAIL" "$DATA_AVAIL"; do
 done
 
 # 4. Recent log tail
-RECENT_LOG=$(find "$REPO/results" -name "*.log" -newer /dev/null 2>/dev/null | xargs ls -t 2>/dev/null | head -1 || true)
+RECENT_LOG=$(find "$REPO/results" -name "*.log" -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | awk '{print $2}' || true)
 if [ -n "$RECENT_LOG" ]; then
-    LAST_LINES=$(tail -3 "$RECENT_LOG" 2>/dev/null | tr '\n' '|' | sed 's/|$//')
-    LOG_STATUS="$RECENT_LOG: $LAST_LINES"
+    LAST_LINES=$(tail -10 "$RECENT_LOG" 2>/dev/null)
+    LOG_STATUS="$(basename "$RECENT_LOG")"
 else
+    LAST_LINES=""
     LOG_STATUS="no .log files found"
 fi
 
@@ -78,6 +79,9 @@ mkdir -p "$REPO/results"
     echo "disk: $DISK_STATUS"
     echo "oom: $OOM_STATUS"
     echo "log: $LOG_STATUS"
+    if [ -n "$LAST_LINES" ]; then
+        echo "$LAST_LINES" | sed 's/^/  /'
+    fi
     if [ ${#ALERTS[@]} -gt 0 ]; then
         for A in "${ALERTS[@]}"; do
             echo "ALERT: $A"

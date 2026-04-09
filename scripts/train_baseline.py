@@ -88,6 +88,7 @@ from tsrl.policies.model import (
     TSControlFeatGNNSideModel,
     TSControlFeatModel,
     TSCountryAttnModel,
+    TSCountryAttnSideModel,
     TSCountryEmbedModel,
     TSDirectCountryModel,
     TSFullEmbedModel,
@@ -195,6 +196,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--exclude-game-ids",
+        default=None,
+        help=(
+            "Path to a file with one game_id per line to exclude from training "
+            "(e.g. EXCLUDE_GAME_IDS.txt written by build_proxy_eval.py). "
+            "These rows are removed before any train/val split so they never "
+            "appear in either split — only in the external proxy eval set."
+        ),
+    )
+    p.add_argument(
+        "--val-hash-salt",
+        default=None,
+        help=(
+            "Salt appended to game_id before hashing for the train/val split. "
+            "Defaults to '_val' when --exclude-game-ids is set (so the val hash is "
+            "independent of the proxy-eval hash and val_fraction is accurate), "
+            "or '' otherwise (backward-compatible plain hash). "
+            "Override only if you need a specific split."
+        ),
+    )
+    p.add_argument(
         "--no-wandb",
         action="store_true",
         help=(
@@ -216,6 +238,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "control_feat",
             "control_feat_gnn",
             "control_feat_gnn_side",
+            "country_attn_side",
         ],
         help="Model architecture variant (default: baseline)",
     )
@@ -888,6 +911,7 @@ def main() -> None:
         args.data_dir,
         value_target_mode=args.value_target,
         teacher_targets_path=args.teacher_targets,
+        exclude_game_ids=args.exclude_game_ids,
     )
     n_total = len(full_dataset)
     n_val = max(1, int(n_total * args.val_fraction))
@@ -908,7 +932,12 @@ def main() -> None:
 
     generator = torch.Generator().manual_seed(args.seed)
     if args.deterministic_split:
-        train_idx, val_idx = full_dataset.deterministic_split(args.val_fraction)
+        # Auto-select salt: use "_val" when proxy-eval games are excluded so the
+        # two hashes are independent and val_fraction is accurate.
+        val_salt = args.val_hash_salt
+        if val_salt is None:
+            val_salt = "_val" if args.exclude_game_ids else ""
+        train_idx, val_idx = full_dataset.deterministic_split(args.val_fraction, val_hash_salt=val_salt)
         train_ds = Subset(full_dataset, train_idx)
         val_ds = Subset(full_dataset, val_idx)
         n_train, n_val = len(train_ds), len(val_ds)
@@ -955,6 +984,7 @@ def main() -> None:
         "country_embed": TSCountryEmbedModel,
         "full_embed": TSFullEmbedModel,
         "country_attn": TSCountryAttnModel,
+        "country_attn_side": TSCountryAttnSideModel,
         "direct_country": TSDirectCountryModel,
         "marginal_value": TSMarginalValueModel,
         "control_feat": TSControlFeatModel,

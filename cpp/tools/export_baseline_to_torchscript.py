@@ -15,12 +15,14 @@ from pathlib import Path
 import torch
 
 from tsrl.policies.model import (
+    SCALAR_DIM,
     TSBaselineModel,
     TSCardEmbedModel,
     TSControlFeatGNNModel,
     TSControlFeatGNNSideModel,
     TSControlFeatModel,
     TSCountryAttnModel,
+    TSCountryAttnSideModel,
     TSCountryEmbedModel,
     TSDirectCountryModel,
     TSFullEmbedModel,
@@ -33,6 +35,7 @@ _MODEL_REGISTRY = {
     "country_embed": TSCountryEmbedModel,
     "full_embed": TSFullEmbedModel,
     "country_attn": TSCountryAttnModel,
+    "country_attn_side": TSCountryAttnSideModel,
     "direct_country": TSDirectCountryModel,
     "marginal_value": TSMarginalValueModel,
     "control_feat": TSControlFeatModel,
@@ -69,7 +72,7 @@ def export_checkpoint(checkpoint_path: Path, output_path: Path) -> None:
         example_inputs = (
             torch.zeros((1, 172), dtype=torch.float32),
             torch.zeros((1, 448), dtype=torch.float32),
-            torch.zeros((1, 11), dtype=torch.float32),
+            torch.zeros((1, SCALAR_DIM), dtype=torch.float32),
         )
         scripted = torch.jit.trace(model, example_inputs, strict=False)
     output_path.parent.mkdir(parents=True, exist_ok=True)

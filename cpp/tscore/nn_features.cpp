@@ -10,11 +10,9 @@
 namespace ts::nn {
 namespace {
 
-// Active-effect features are ready in fill_scalars() below (indices 11-31),
-// but kScalarDim stays at 11 until PPO v3 finishes so existing checkpoints keep
-// working. After v3 completes, bump to 32 and train a new BC from scratch.
-// TODO(2026-04-07): bump to 32 after PPO v3 completes.
-constexpr int kScalarDim = 11;
+// Active-effect features at indices 11-31 are now active (PPO v3 complete).
+// BC must be retrained from scratch; existing PPO v1-v3 checkpoints are incompatible.
+constexpr int kScalarDim = 32;
 constexpr int kCardMaskLen = kCardSlots;
 constexpr int kCountryMaskLen = kCountrySlots;
 
