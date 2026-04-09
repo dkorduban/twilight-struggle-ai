@@ -157,6 +157,97 @@ Derived speedups:
 - Packed update speedup vs baseline update: `11.97x`
 - Estimated combined rollout + update speedup: `2.67x`
 
+## Packed Update Exactness
+
+After the speed benchmark, the next question was whether
+`ppo_update_packed()` is merely close to the live `ppo_update()` or whether it
+is actually performing the same update.
+
+To test that, an exactness checker was added in
+[`experimental/scripts/check_packed_update_equivalence.py`](/home/dkord/code/twilight-struggle-ai/experimental/scripts/check_packed_update_equivalence.py).
+
+What it does:
+
+1. Collect one rollout batch.
+2. Run live `compute_gae_batch`.
+3. Load two identical model/optimizer pairs from the same checkpoint.
+4. Seed Torch identically before each updater call.
+5. Run:
+   - live `ppo_update`
+   - experimental `ppo_update_packed`
+6. Compare:
+   - returned metrics
+   - full model `state_dict()`
+   - full optimizer tensor state
+
+One extra detail matters here: the live updater samples minibatch permutations
+on CPU. The packed updater now exposes an experimental `perm_device` knob so
+the equivalence test can force the packed path to use the same CPU-side
+permutation stream.
+
+### CPU exactness check
+
+Command:
+
+```bash
+uv run python experimental/scripts/check_packed_update_equivalence.py \
+  --device cpu \
+  --games 32 \
+  --ppo-epochs 2 \
+  --minibatch-size 1024 \
+  --json
+```
+
+Results:
+
+- steps: `4615`
+- model parameter max abs diff: `0.0`
+- optimizer tensor-state max abs diff: `0.0`
+- metric max abs diff: `1.12e-9`
+
+The only non-zero metric difference was `approx_kl`, at the `1e-9` level.
+
+### CUDA exactness check
+
+Command:
+
+```bash
+uv run python experimental/scripts/check_packed_update_equivalence.py \
+  --device cuda \
+  --games 32 \
+  --ppo-epochs 2 \
+  --minibatch-size 1024 \
+  --json
+```
+
+Results:
+
+- steps: `4505`
+- model parameter max abs diff: `0.0`
+- optimizer tensor-state max abs diff: `0.0`
+- metric max abs diff: `6.33e-9`
+
+Again, the only non-zero metric difference was `approx_kl`, and it remained in
+the low `1e-9` range.
+
+### Interpretation
+
+For the actual training update, packed and non-packed are equivalent in the
+meaningful sense established here:
+
+- same post-update parameters
+- same post-update optimizer state
+- same losses and PPO statistics up to tiny floating-point reporting noise
+
+The remaining `approx_kl` delta is expected because the two implementations use
+slightly different but mathematically equivalent formulas:
+
+- live updater: `((r - 1) - log(r + 1e-10))`
+- packed updater: `((r - 1) - (new_log_probs - old_log_probs))`
+
+Since `r = exp(new_log_probs - old_log_probs)`, both expressions represent the
+same quantity, but the final floating-point rounding path is not identical.
+
 ## Interpretation
 
 ### What worked
@@ -185,6 +276,11 @@ The baseline update loop repeatedly reconstructs minibatches from Python
 objects. The packed path pays the assembly cost once, then uses dense tensors
 for all PPO epochs. On the 200-game run this reduced update time from `6.36s`
 to `0.53s`.
+
+The equivalence check above also matters operationally: this speedup did not
+change the learned update in any meaningful way. On both CPU and CUDA, the
+experimental packed update produced identical model and optimizer states to the
+live updater when fed the same minibatch order.
 
 ### What did not work
 
@@ -272,6 +368,8 @@ Key pieces:
   - moves the packed batch to device once
   - uses `index_select` to form minibatches
   - keeps the same overall PPO objective shape as the live trainer
+  - exposes `perm_device` so the exactness checker can force the same CPU-side
+    minibatch permutations as the live updater
 
 Important implementation details:
 
@@ -303,6 +401,30 @@ Notable design choices:
 - combined speedup is only an estimate for one PPO iteration shape, not a claim
   about full training runs over many iterations
 
+## `experimental/scripts/check_packed_update_equivalence.py`
+
+Purpose:
+
+- verify that the packed updater is not just faster, but effectively the same
+  update as the live trainer
+
+Flow:
+
+1. collect one rollout batch
+2. compute GAE with the live helper
+3. load two identical model/optimizer pairs
+4. seed Torch identically before each updater
+5. compare metrics, model state, and optimizer state
+
+What to look at:
+
+- `param_diff.max_abs`
+- `optimizer_diff.max_abs`
+- `metric_diff.max_abs`
+
+In the current experiments, parameter and optimizer diffs were exactly `0.0` on
+both CPU and CUDA.
+
 ## Practical recommendation
 
 If these ideas were promoted later, the best first production candidate is:
@@ -322,3 +444,7 @@ I would not prioritize CUDA rollout inference based on these results.
   careful memory management at larger scales.
 - Sharded rollout returns steps to the parent process, so very large step
   volumes may start paying noticeable IPC and deserialization cost.
+- The exactness check forces the packed path to use CPU-side minibatch
+  permutations to match the live updater. If the packed path uses device-local
+  `randperm` in normal operation, exact step-for-step comparison is no longer
+  expected even though the algorithm is still the same.

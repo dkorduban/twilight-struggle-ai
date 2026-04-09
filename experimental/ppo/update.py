@@ -118,6 +118,7 @@ def ppo_update_packed(
     vf_coef: float = 0.5,
     ent_coef: float = 0.01,
     minibatch_size: int = 2048,
+    perm_device: str | None = None,
 ) -> dict[str, float]:
     """Packed PPO update with device-resident tensors and vectorized minibatches.
 
@@ -132,6 +133,7 @@ def ppo_update_packed(
 
     packed = packed_steps.to(device)
     model.eval()
+    perm_device = perm_device or device
 
     metrics = {
         "policy_loss": 0.0,
@@ -143,16 +145,20 @@ def ppo_update_packed(
     n_updates = 0
 
     for _ in range(ppo_epochs):
-        perm = torch.randperm(num_steps, device=device)
+        # The live trainer samples minibatch permutations on CPU. Keeping this
+        # configurable lets the equivalence check feed both implementations the
+        # same minibatch ordering even when model execution happens on CUDA.
+        perm = torch.randperm(num_steps, device=perm_device)
         for start in range(0, num_steps, minibatch_size):
             idx = perm[start:start + minibatch_size]
+            idx_dev = idx.to(device) if idx.device.type != packed.influence.device.type else idx
 
             # ``index_select`` avoids rebuilding tensors from Python lists on
             # every minibatch and every PPO epoch.
             outputs = model(
-                packed.influence.index_select(0, idx),
-                packed.cards.index_select(0, idx),
-                packed.scalars.index_select(0, idx),
+                packed.influence.index_select(0, idx_dev),
+                packed.cards.index_select(0, idx_dev),
+                packed.scalars.index_select(0, idx_dev),
             )
             card_logits = outputs["card_logits"].nan_to_num(nan=0.0)
             mode_logits = outputs["mode_logits"].nan_to_num(nan=0.0)
@@ -161,16 +167,16 @@ def ppo_update_packed(
             if country_logits is not None:
                 country_logits = country_logits.nan_to_num(nan=0.0)
 
-            card_masks = packed.card_masks.index_select(0, idx)
-            mode_masks = packed.mode_masks.index_select(0, idx)
-            country_masks = packed.country_masks.index_select(0, idx)
-            card_indices = packed.card_indices.index_select(0, idx)
-            mode_indices = packed.mode_indices.index_select(0, idx)
-            old_log_probs = packed.old_log_probs.index_select(0, idx)
-            advantages = packed.advantages.index_select(0, idx)
-            returns = packed.returns.index_select(0, idx)
-            country_targets = packed.country_targets.index_select(0, idx)
-            country_valid = packed.country_valid.index_select(0, idx)
+            card_masks = packed.card_masks.index_select(0, idx_dev)
+            mode_masks = packed.mode_masks.index_select(0, idx_dev)
+            country_masks = packed.country_masks.index_select(0, idx_dev)
+            card_indices = packed.card_indices.index_select(0, idx_dev)
+            mode_indices = packed.mode_indices.index_select(0, idx_dev)
+            old_log_probs = packed.old_log_probs.index_select(0, idx_dev)
+            advantages = packed.advantages.index_select(0, idx_dev)
+            returns = packed.returns.index_select(0, idx_dev)
+            country_targets = packed.country_targets.index_select(0, idx_dev)
+            country_valid = packed.country_valid.index_select(0, idx_dev)
 
             masked_card = card_logits.masked_fill(~card_masks, float("-inf"))
             masked_mode = mode_logits.masked_fill(~mode_masks, float("-inf"))

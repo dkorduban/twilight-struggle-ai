@@ -24,8 +24,10 @@ Current structure:
 
 Benchmark entrypoint:
 - `uv run python experimental/scripts/bench_ppo_speedups.py --games 200 --ppo-epochs 2 --minibatch-size 2048`
+- `uv run python experimental/scripts/check_packed_update_equivalence.py --device cpu --games 32 --ppo-epochs 2 --minibatch-size 1024`
 
 Suggested reading order:
 - Start with [`FINDINGS.md`](/home/dkord/code/twilight-struggle-ai/experimental/FINDINGS.md) for the results and rationale.
 - Then read [`experimental/scripts/bench_ppo_speedups.py`](/home/dkord/code/twilight-struggle-ai/experimental/scripts/bench_ppo_speedups.py) for the experiment driver.
+- Then read [`experimental/scripts/check_packed_update_equivalence.py`](/home/dkord/code/twilight-struggle-ai/experimental/scripts/check_packed_update_equivalence.py) for the exactness check between packed and live PPO update.
 - Then read [`experimental/ppo/rollout.py`](/home/dkord/code/twilight-struggle-ai/experimental/ppo/rollout.py) and [`experimental/ppo/update.py`](/home/dkord/code/twilight-struggle-ai/experimental/ppo/update.py) for the prototype implementations.
