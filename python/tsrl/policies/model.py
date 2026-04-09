@@ -42,9 +42,7 @@ NUM_PLAYABLE_CARDS = 111  # card IDs 1..111
 NUM_MODES = 5
 INFLUENCE_DIM = NUM_COUNTRIES * 2        # 172
 CARD_DIM = NUM_CARDS * 4                 # 448
-# TODO(2026-04-07): bump to 32 once PPO v3 finishes — see nn_features.cpp fill_scalars.
-# The C++ fill_scalars() already writes 32 values when kScalarDim=32 is active.
-SCALAR_DIM = 11
+SCALAR_DIM = 32  # bumped from 11 after PPO v3; includes 21 active-effect features
 INFLUENCE_HIDDEN = 128
 CARD_HIDDEN = 128
 SCALAR_HIDDEN = 64
@@ -62,6 +60,11 @@ DEFAULT_PLATT_B = 0.0
 
 # Region ordering for onehot encoding (must be stable)
 _REGIONS = ["Europe", "Asia", "MiddleEast", "Africa", "CentralAmerica", "SouthAmerica", "SoutheastAsia"]
+
+# Per-region BG and non-BG country counts (same order as _REGIONS).
+# Used to convert mean-pooled control fractions back to counts for scoring tier computation.
+_REGION_BG_COUNTS:    list[float] = [7.0, 5.0, 6.0, 7.0, 3.0, 4.0, 4.0]
+_REGION_NONBG_COUNTS: list[float] = [16.0, 2.0, 4.0, 11.0, 7.0, 6.0, 3.0]
 
 # ---------------------------------------------------------------------------
 # Static feature loaders
@@ -224,6 +227,48 @@ def _masked_mean_1d(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     mask_weight = mask.to(dtype=x.dtype).unsqueeze(0)
     mask_count = mask_weight.sum().clamp(min=1.0)
     return (x * mask_weight).sum(dim=1) / mask_count
+
+
+@torch.jit.script
+def _compute_scoring_tier(
+    side_bg_frac: torch.Tensor,
+    opp_bg_frac: torch.Tensor,
+    side_nonbg_frac: torch.Tensor,
+    opp_nonbg_frac: torch.Tensor,
+    n_bg: float,
+    n_nonbg: float,
+) -> torch.Tensor:
+    """Compute normalized scoring tier (0=none, 1/3=presence, 2/3=domination, 1=control).
+
+    Converts mean-pooled control fractions back to counts, then applies TS scoring rules:
+      Presence:   ≥1 country with influence (≥1 BG or non-BG controlled)
+      Domination: more BGs + more total + ≥1 BG controlled
+      Control:    all BGs + majority total
+
+    Returns (B,) tensor with values in {0, 1/3, 2/3, 1}.
+    """
+    side_bg = side_bg_frac * n_bg
+    opp_bg = opp_bg_frac * n_bg
+    side_nonbg = side_nonbg_frac * n_nonbg
+    opp_nonbg = opp_nonbg_frac * n_nonbg
+    side_total = side_bg + side_nonbg
+    opp_total = opp_bg + opp_nonbg
+
+    has_presence   = (side_total >= 0.5).to(dtype=side_bg_frac.dtype)
+    has_domination = (
+        (side_bg > opp_bg + 0.5)           # more BGs than opponent
+        & (side_total > opp_total + 0.5)   # more total than opponent
+        & (side_bg >= 0.5)                 # at least 1 BG controlled
+        & (side_nonbg >= 0.5)              # at least 1 non-BG controlled
+    ).to(dtype=side_bg_frac.dtype)
+    has_control = (
+        (side_bg >= n_bg - 0.5) & (side_total > opp_total + 0.5)
+    ).to(dtype=side_bg_frac.dtype)
+    # dom_or_ctrl ensures control (which may not imply domination in edge cases
+    # like all-BG-no-nonBG) still reaches 2/3 before adding has_control
+    dom_or_ctrl = torch.maximum(has_domination, has_control)
+
+    return (has_presence + dom_or_ctrl + has_control) / 3.0
 
 
 # ---------------------------------------------------------------------------
@@ -962,14 +1007,14 @@ class ControlFeatCountryEncoder(nn.Module):
       for features we treat it same as others (2 BG + 2 non-BG counts).
 
     Total per-country input: 2 (dynamic inf) + 11 (static) + 2 (control) = 15.
-    Total extra region scalars: 7 regions × 4 = 28 (normalized counts).
+    Total extra region scalars: 7 regions × 6 = 42 (4 control counts + 2 scoring tiers).
     """
 
     __constants__ = ['_NUM_REGIONS', '_EMBED_DIM', '_EXTRA_COUNTRY_DIM', '_REGION_SCALAR_DIM']
     _EMBED_DIM = 32
     _NUM_REGIONS = 7
     _EXTRA_COUNTRY_DIM = 2  # ussr_controls, us_controls
-    _REGION_SCALAR_DIM = 28  # 7 regions × 4 counts
+    _REGION_SCALAR_DIM = 42  # 7 regions × 6 (4 counts + 2 scoring tiers)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1027,7 +1072,7 @@ class ControlFeatCountryEncoder(nn.Module):
         """Returns (influence_hidden, region_scalars).
 
         influence_hidden: (B, INFLUENCE_HIDDEN)
-        region_scalars: (B, 28) — per-region control counts for scalar path
+        region_scalars: (B, 42) — per-region control counts + scoring tiers for scalar path
         """
         B = influence.shape[0]
         ussr_inf = influence[:, :86]         # (B, 86) raw
@@ -1067,10 +1112,15 @@ class ControlFeatCountryEncoder(nn.Module):
             region_scalars.append(us_bg)
             region_scalars.append(ussr_non_bg)
             region_scalars.append(us_non_bg)
+            # Explicit scoring tiers (0=none, 1/3=presence, 2/3=domination, 1=control)
+            n_bg_f: float = _REGION_BG_COUNTS[i]
+            n_nonbg_f: float = _REGION_NONBG_COUNTS[i]
+            region_scalars.append(_compute_scoring_tier(ussr_bg, us_bg, ussr_non_bg, us_non_bg, n_bg_f, n_nonbg_f))
+            region_scalars.append(_compute_scoring_tier(us_bg, ussr_bg, us_non_bg, ussr_non_bg, n_bg_f, n_nonbg_f))
 
         concat = torch.cat([global_pool] + region_pools, dim=-1)  # (B, 8*D)
         h_inf = torch.relu(self.out_proj(concat))  # (B, INFLUENCE_HIDDEN)
-        region_scalar_tensor = torch.stack(region_scalars, dim=-1)  # (B, 28)
+        region_scalar_tensor = torch.stack(region_scalars, dim=-1)  # (B, 42)
 
         return h_inf, region_scalar_tensor
 
@@ -1089,7 +1139,7 @@ class TSControlFeatModel(nn.Module):
     """
 
     __constants__ = ['_REGION_SCALAR_DIM', '_NUM_STRATEGIES', '_NUM_COUNTRIES']
-    _REGION_SCALAR_DIM = 28
+    _REGION_SCALAR_DIM = 42
     _NUM_STRATEGIES = NUM_STRATEGIES
     _NUM_COUNTRIES = NUM_COUNTRIES
 
@@ -1165,14 +1215,14 @@ class ControlFeatGNNEncoder(nn.Module):
     neighbors' features. Two rounds allows 2-hop information propagation.
 
     Output interface: same as ControlFeatCountryEncoder — returns
-    (influence_hidden: (B, INFLUENCE_HIDDEN), region_scalars: (B, 28)).
+    (influence_hidden: (B, INFLUENCE_HIDDEN), region_scalars: (B, 42)).
     """
 
     __constants__ = ['_NUM_REGIONS', '_EMBED_DIM', '_EXTRA_COUNTRY_DIM', '_REGION_SCALAR_DIM']
     _EMBED_DIM = 32
     _NUM_REGIONS = 7
     _EXTRA_COUNTRY_DIM = 2
-    _REGION_SCALAR_DIM = 28
+    _REGION_SCALAR_DIM = 42
 
     def __init__(self) -> None:
         super().__init__()
@@ -1269,10 +1319,15 @@ class ControlFeatGNNEncoder(nn.Module):
             region_scalars.append(us_bg)
             region_scalars.append(ussr_non_bg)
             region_scalars.append(us_non_bg)
+            # Explicit scoring tiers (0=none, 1/3=presence, 2/3=domination, 1=control)
+            n_bg_f: float = _REGION_BG_COUNTS[i]
+            n_nonbg_f: float = _REGION_NONBG_COUNTS[i]
+            region_scalars.append(_compute_scoring_tier(ussr_bg, us_bg, ussr_non_bg, us_non_bg, n_bg_f, n_nonbg_f))
+            region_scalars.append(_compute_scoring_tier(us_bg, ussr_bg, us_non_bg, ussr_non_bg, n_bg_f, n_nonbg_f))
 
         concat = torch.cat([global_pool] + region_pools, dim=-1)
         h_inf = torch.relu(self.out_proj(concat))
-        region_scalar_tensor = torch.stack(region_scalars, dim=-1)
+        region_scalar_tensor = torch.stack(region_scalars, dim=-1)  # (B, 42)
 
         return h_inf, region_scalar_tensor
 
@@ -1288,7 +1343,7 @@ class TSControlFeatGNNModel(nn.Module):
     """
 
     __constants__ = ['_REGION_SCALAR_DIM', '_NUM_COUNTRIES', 'num_strategies']
-    _REGION_SCALAR_DIM = 28
+    _REGION_SCALAR_DIM = 42
     _NUM_COUNTRIES = NUM_COUNTRIES
 
     def __init__(
@@ -1371,7 +1426,7 @@ class TSControlFeatGNNSideModel(nn.Module):
     Input/output contract: same as TSBaselineModel.
     """
 
-    _REGION_SCALAR_DIM = 28
+    _REGION_SCALAR_DIM = 42
     _SIDE_SCALAR_IDX = 10  # index into scalars tensor where side is encoded
 
     def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
@@ -1497,3 +1552,109 @@ class TSCountryAttnModel(nn.Module):
             self.strategy_heads, self.strategy_mixer,
             self.value_branch, self.value_head,
         )
+
+
+class TSCountryAttnSideModel(nn.Module):
+    """Fair attention comparison with TSControlFeatGNNSideModel.
+
+    Matches the GNN-side model's feature set exactly:
+    - Region scalars (28 dims) from ControlFeatGNNEncoder — same as GNN
+    - Learned side embedding (32 dims) — same as GNN
+    - Separate USSR/US value heads — same as GNN
+
+    The ONLY difference from TSControlFeatGNNSideModel:
+    - Country encoder: 4-head self-attention (CountryAttnEncoder)
+      instead of 2-hop GNN message passing (ControlFeatGNNEncoder)
+    - Card encoder: CardEmbedEncoder added (attention model specialty)
+
+    This isolates the adjacency message-passing vs self-attention question.
+    """
+
+    _REGION_SCALAR_DIM = 42
+    _SIDE_SCALAR_IDX = 10
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        # Attention-based country encoder (produces INFLUENCE_HIDDEN output)
+        self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.influence_encoder_embed = CountryAttnEncoder()
+
+        # Card encoder: same simple linear as GNN-side (fair comparison isolates country encoder only)
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+
+        # Region scalars from GNN encoder (used for features only, not graph pass)
+        # We reuse ControlFeatGNNEncoder but only take its region scalar output.
+        self.region_encoder = ControlFeatGNNEncoder()
+
+        # Scalar encoder: same input size as GNN-side (SCALAR_DIM + 42)
+        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+
+        # Side embedding: same as GNN-side
+        self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN + SIDE_EMBED_DIM, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+
+        # Separate value heads per side (same as GNN-side)
+        self.value_branch_ussr = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_ussr = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+        self.value_branch_us = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_us = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        # Country attention encoder
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + self.influence_encoder_embed(influence)
+
+        # Card encoder (simple linear, same as GNN-side for fair comparison)
+        h_card = torch.relu(self.card_encoder(cards))
+
+        # Region scalars from GNN encoder (graph pass output discarded, only region features kept)
+        _, region_scalars = self.region_encoder(influence)
+
+        # Scalar encoder with region scalars appended (same as GNN-side)
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+
+        # Side embedding from scalar index 10
+        side_idx = scalars[:, self._SIDE_SCALAR_IDX].long()
+        h_side = self.side_embed(side_idx)
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar, h_side], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(hidden.shape[0], 4, 86)
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+
+        # Side-conditional value
+        v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
+        v_us = torch.tanh(self.value_head_us(torch.relu(self.value_branch_us(hidden))))
+        is_us = side_idx.unsqueeze(1).float()
+        value = (1.0 - is_us) * v_ussr + is_us * v_us
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+        }
