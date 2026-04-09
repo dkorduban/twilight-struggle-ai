@@ -1632,6 +1632,8 @@ def main() -> None:
     last_rolling_ckpt: str | None = None
 
     def _is_milestone(it: int) -> bool:
+        if args.benchmark_every == 0:
+            return it == args.n_iterations
         return it % args.benchmark_every == 0 or it == args.n_iterations
 
     print(f"\nStarting PPO training: {args.n_iterations} iterations × "
