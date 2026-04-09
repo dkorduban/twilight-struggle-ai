@@ -453,15 +453,188 @@ League training (PPO v3) will inject adversarial diversity via past checkpoint p
 
 ---
 
+## PPO v4–v6: Architecture Upgrade + League Stability (2026-04-08)
+
+### Context
+
+v3 final checkpoint (`league_v4/iter_0200.pt`, referred to as "v3" for Elo anchoring)
+became the baseline. v4–v6 were GNN-side architecture models with 60-dim scalars
+(32 base + 28 region control fractions). Key changes vs v2b: league sampling, kScalarDim
+expanded to 32, region pooling scalars added.
+
+### Findings: v4–v6 Elo Plateau
+
+H2H round-robin tournament (400 games/match, anchored v3=1500):
+
+| Model | Elo | Notes |
+|-------|-----|-------|
+| v3 (anchor) | 1500 | league_v4/iter_0200.pt |
+| v4 | 1526 | GNN-side, 60-dim scalars |
+| v5 | 1516 | GNN-side |
+| v6 | 1512 | GNN-side |
+
+**v4–v6 were essentially equal** (26 Elo spread = noise). Heuristic WR gains (82→89%)
+were misleading — h2h reveals no real improvement. Root cause: heuristic WR is a poor
+discriminator once the model reliably beats the heuristic.
+
+**Key lesson confirmed**: Heuristic WR retired as primary metric. H2H Elo is the only
+reliable signal going forward.
+
+### League Sampling Bug (v4 postmortem)
+
+rollout_wr_us crashed in v4 due to league pool seeded with strong v3 opponents:
+- Old sampling: 20% heuristic / 50% latest / 30% random
+- pts[-1] = iter_0200 (strongest v3) selected 50% → US WR collapsed to 0.10–0.17
+- Fixed to 40/30/30 for v5–v6, later relaxed to 15/55/30 for v7+ once h2h Elo
+  confirmed the fix wasn't needed at that level
+
+---
+
+## PPO v7: Attention Architecture Breakthrough (2026-04-08)
+
+### Change
+
+Switched from `TSControlFeatGNNSideModel` to `TSCountryAttnSideModel` (4-head
+self-attention country encoder). Architecture sweep on v6 rollout data showed
+marginal +0.19pp card_top1 for Attn, but the real advantage emerged in PPO training.
+
+Config: `lr=1e-4, ent-coef=0.03, clip=0.15, 200 iters × 200 games`
+
+### Result
+
+H2H Elo vs v3–v6 (400 games/match, round-robin, anchored v3=1500):
+
+| Model | Elo |
+|-------|-----|
+| **v7 (Attn)** | **1704** (+204 over v3) |
+| v4 | 1526 |
+| v5 | 1516 |
+| v6 | 1512 |
+| v3 | 1500 |
+
+**+204 Elo** is the largest single-run gain in project history. The Attn architecture's
+global self-attention allows any country to attend to any other, bypassing the 2-hop
+locality limit of the GNN.
+
+On the old vs-heuristic scale: v7 ≈ **2036 Elo** (adding 332 to reconnect to old scale
+where v3=1832).
+
+---
+
+## PPO v8–v10: Scoring Tier Features + Region Metric Fix (2026-04-08)
+
+### Problem Identified
+
+Diagnostic rollout stats showed US influence fraction = 0% for Middle East, Central
+America, and South America across all previous runs. Two root causes:
+
+1. **Metrics bug**: `collect_policy_stats` used spaced region names ("Middle East") but
+   CSV stores compressed names ("MiddleEast") → all three regions always showed 0 in W&B.
+   Fixed by aligning names.
+
+2. **Missing input signal**: Model had 28 region control scalars (BG/non-BG count
+   fractions per region per side) but no explicit scoring tier. The model had to learn
+   the nonlinear domination threshold from raw counts — and failed to do so for neglected
+   regions.
+
+### Fix: Explicit Scoring Tier Features (14 new scalars)
+
+Added 2 scalars per region per side = 14 total, encoding scoring tier:
+- 0 = no presence (no controlled countries)
+- 1/3 = presence (≥1 country controlled)
+- 2/3 = domination (more BGs + more total + ≥1 BG + ≥1 non-BG)
+- 1 = control (all BGs + majority total)
+
+Rules verified from `cpp/tscore/scoring.cpp`. `scalar_encoder` expanded 60→74 dim
+with partial warm-start (first 60 cols preserved from v7, new 14 cols randomly init).
+
+Also added entropy annealing: `ent-coef 0.05→0.01` to force early exploration of
+neglected regions.
+
+### v8 Result
+
+- First run with scoring tier features + entropy annealing
+- Partial warm-start correctly preserved US-side capability (US WR iter-1 = 0.50 vs 0.08 with random init)
+- 200 iters completed
+
+### v9 Result
+
+H2H tournament (400 games/match, round-robin, anchored v7=1704):
+
+| Model | Elo | Δ vs v7 |
+|-------|-----|---------|
+| **v9** | **1918** | **+214** |
+| v8 | 1866 | +162 |
+| v7 | 1704 | anchor |
+
+Both v8 and v9 beat v7 decisively. Scoring tier features confirmed beneficial.
+
+### Human vs Model Region Analysis (v9, 500 games each side)
+
+Compared v9's influence placement distribution against 51 expert human games:
+
+**US Early War (% of influence actions):**
+
+| Region | Human | Model v9 | Δ |
+|--------|------:|--------:|--:|
+| Europe | 22% | 40% | +18pp over |
+| SE Asia | 23% | 4% | -19pp under |
+| Mid East | 22% | 5% | -17pp under |
+| Asia | 16% | 15% | ≈ |
+| Cent Am | 7% | 19% | +12pp over |
+| Africa | 10% | 5% | -5pp under |
+
+**USSR Early War (% of influence actions):**
+
+| Region | Human | Model v9 | Δ |
+|--------|------:|--------:|--:|
+| Asia | 34% | 64% | +30pp over |
+| Mid East | 26% | 6% | -20pp under |
+| SE Asia | 14% | 0% | -14pp under |
+| Europe | 12% | 17% | ≈ |
+
+**Mode rates (all phases, both sides):**
+- Humans coup 8–20%, model coups 12–23% (over-coups by 7-12pp)
+- Model under-places influence early, over-places late (backwards from human pattern)
+- SE Asia: 0% USSR throughout — systematic blind spot
+
+### v10 Status
+
+Running as of log update (iter ~190/200). H2H Elo tournament queued post-completion.
+
+---
+
+## Current Elo Ladder (anchored v3=1500, or v7=1704 for recent models)
+
+| Model | Elo (v3=1500 scale) | Notes |
+|-------|--------------------:|-------|
+| v9 | ~2250 | v7-scale +214, reconnected |
+| v8 | ~2198 | v7-scale +162, reconnected |
+| v7 | ~2036 | Attn arch breakthrough |
+| v4–v6 | ~1844–1858 | GNN plateau |
+| v3 | ~1832 | BC + league baseline |
+| Heuristic | 1500 | anchor (old scale) |
+
+*Note: v8/v9 Elo on old scale estimated by adding 332 (v7's offset from v3=1832 baseline)*
+
+---
+
+## Open Issues / Next Experiments
+
+1. **SE Asia blind spot**: USSR never places influence in SE Asia (0% throughout).
+   SE Asia has 4 BGs + fixed per-BG scoring. Needs explicit fix.
+2. **Over-couping**: 12–23% vs human 8–20%. Entropy alone won't fix this — consider
+   auxiliary mode distribution loss vs human baseline.
+3. **US Mid East**: 5% early war vs human 22%. Scoring tier features help value function
+   but policy still under-explores.
+4. **Coup target diversity**: Model needs Africa/CA/SA coup distribution matching humans
+   (Africa 35%, CA 22%, SA 18%) rather than over-focusing one region.
+5. **H2H Elo as sole metric**: Heuristic WR permanently retired. Future runs: no
+   `--benchmark-every`, post-run h2h tournament only.
+
 ## Next Steps
 
-See `docs/ppo_next_steps.md` for detailed plan. Summary:
-
-1. ✅ Self-play PPO (running as PPO v2b with fixed GAE)
-2. ✅ Cross-checkpoint Elo (infrastructure complete, matchups through iter160)
-3. ✅ **PPO v3 league training queued** — auto-starts when v2b finishes iter 200
-   - `--league data/checkpoints/league_v3 --league-save-every 20`
-   - `--vp-reward-coef 0.1 --ent-coef-final 0.001 --lr 3e-5`
-   - `--save-rollout-parquet data/ppo_v3_rollouts/` (for BC bootstrapping)
-4. VP-scaled rewards + entropy scheduling (added to v3 command)
-5. MCTS-guided PPO (Expert Iteration) — post-v3
+1. ✅ v10 running → h2h Elo tournament on completion
+2. Launch v11 from v10 best
+3. Investigate SE Asia / ME under-placement — consider human game data mixing
+4. Consider coup rate auxiliary loss
