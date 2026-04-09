@@ -816,6 +816,65 @@ def collect_rollout_self_play_batched(
 # League training helpers
 # ---------------------------------------------------------------------------
 
+def _load_wr_table(wr_table_path: str | None) -> dict[str, dict]:
+    """Load per-opponent WR table from JSON. Returns empty dict on miss/error."""
+    if not wr_table_path:
+        return {}
+    try:
+        with open(wr_table_path) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"  [league] WR table decode failed at {wr_table_path}: {e}; starting empty", flush=True)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_json_atomic(path: str, payload: dict) -> None:
+    """Write JSON atomically via temp file + rename."""
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=f".{Path(path).name}.", suffix=".tmp", dir=parent)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _pfsp_weight(opponent_key: str, wr_table: dict[str, dict], pfsp_exponent: float) -> float:
+    """Return (1 - WR)^pfsp_exponent for an opponent. Defaults to 0.5 until 20 games played."""
+    wr_info = wr_table.get(opponent_key, {})
+    wins = int(wr_info.get("wins", 0))
+    total = int(wr_info.get("total", 0))
+    wr = wins / total if total >= 20 else 0.5
+    return max(0.01, (1.0 - wr)) ** pfsp_exponent
+
+
+def _update_wr_table_from_steps(
+    wr_table: dict[str, dict],
+    opponent_path: str | None,
+    steps: list,
+) -> None:
+    """Update WR table in-place from terminal steps of one rollout batch."""
+    terminal_steps = [s for s in steps if s.done]
+    if not terminal_steps:
+        return
+    key = "heuristic" if opponent_path is None else Path(opponent_path).stem
+    entry = wr_table.setdefault(key, {"wins": 0, "total": 0})
+    entry["wins"] = int(entry.get("wins", 0)) + sum(1 for s in terminal_steps if s.reward > 0)
+    entry["total"] = int(entry.get("total", 0)) + len(terminal_steps)
+
+
 def sample_K_league_opponents(
     league_dir: str,
     k: int,
@@ -826,6 +885,8 @@ def sample_K_league_opponents(
     current_iter: int = 0,
     self_slot: bool = True,
     current_script: Optional[str] = None,
+    wr_table: dict[str, dict] | None = None,
+    pfsp_exponent: float = 1.0,
 ) -> list[Optional[str]]:
     """Sample k opponents for mini-batch mixing. None = heuristic.
 
@@ -835,6 +896,8 @@ def sample_K_league_opponents(
       exp(N/tau) times more likely than oldest. tau=20 → top checkpoint ~7x last-10th.
     - Fixture fadeout: fixtures hard-removed from pool at current_iter >= fixture_fadeout.
       They also naturally shrink as recency-weighted past-self grows.
+    - PFSP: each recency weight multiplied by (1 - WR_against_opponent)^pfsp_exponent.
+      Harder opponents get more training time. WR defaults to 0.5 until 20 games played.
     - Configurable heuristic_pct per non-self slot.
     """
     import random
@@ -848,12 +911,14 @@ def sample_K_league_opponents(
             iter_pts.append((int(m.group(1)), str(p)))
     iter_pts.sort(key=lambda x: x[0])
 
-    # Recency-weighted past-self pool
+    # Recency-weighted past-self pool, multiplied by PFSP factor
     past_self_paths: list[str] = []
     past_self_weights: list[float] = []
     for rank, (_, path) in enumerate(iter_pts):
+        recency_w = math.exp(rank / max(recency_tau, 1.0))
+        pfsp_w = _pfsp_weight(Path(path).stem, wr_table or {}, pfsp_exponent)
         past_self_paths.append(path)
-        past_self_weights.append(math.exp(rank / max(recency_tau, 1.0)))
+        past_self_weights.append(recency_w * pfsp_w)
     if past_self_weights:
         total = sum(past_self_weights)
         past_self_weights = [w / total for w in past_self_weights]
@@ -861,15 +926,19 @@ def sample_K_league_opponents(
     # Active fixtures (hard-removed after fixture_fadeout iterations)
     active_fixtures = [] if current_iter >= fixture_fadeout else list(fixtures)
 
-    # Combined pool: past-self (recency-weighted) + fixtures (uniform weight = 1/N each)
+    # Combined pool: past-self (recency*pfsp weighted) + fixtures (pfsp weighted, half past-self mass)
     combined_pool: list[str] = past_self_paths + active_fixtures
     if combined_pool:
-        fixture_w = (1.0 / len(active_fixtures)) if active_fixtures else 0.0
-        # Fixture total weight = same as 1 past-self entry at weight 1.0 (oldest), normalized
-        raw_fixture_w = fixture_w * len(active_fixtures)  # = 1.0 per fixture
         past_total = sum(past_self_weights) if past_self_weights else 0.0
-        fixture_each = (past_total / max(len(active_fixtures), 1)) * 0.5 if active_fixtures else 0.0
-        combined_weights = past_self_weights + [fixture_each] * len(active_fixtures)
+        fixture_pfsp_weights = [
+            _pfsp_weight(Path(f).stem, wr_table or {}, pfsp_exponent) for f in active_fixtures
+        ]
+        fixture_total = sum(fixture_pfsp_weights) or 1.0
+        fixture_each = [
+            (past_total / max(len(active_fixtures), 1)) * 0.5 * (w / fixture_total)
+            for w in fixture_pfsp_weights
+        ] if active_fixtures else []
+        combined_weights = past_self_weights + fixture_each
         total_w = sum(combined_weights) or 1.0
         combined_weights = [w / total_w for w in combined_weights]
     else:
@@ -881,7 +950,7 @@ def sample_K_league_opponents(
     if self_slot and current_script is not None:
         opponents.append(current_script)
 
-    # Remaining slots: heuristic_pct heuristic, else recency-weighted pool
+    # Remaining slots: heuristic_pct heuristic, else recency*pfsp-weighted pool
     for _ in range(k - len(opponents)):
         if not combined_pool or random.random() < heuristic_pct:
             opponents.append(None)  # heuristic
@@ -923,18 +992,54 @@ def _steps_from_native(raw_steps: list) -> list[Step]:
     return out
 
 
+_ROLLOUT_DIRICHLET_SUPPORT: dict[str, bool] = {}
+
+
+def _call_rollout_with_optional_dirichlet(fn_name: str, *, dir_alpha: float = 0.0, dir_epsilon: float = 0.0, **kwargs):
+    """Call a tscore rollout function, optionally adding Dirichlet noise kwargs.
+
+    Probes on first call whether the C++ binding accepts dir_alpha/dir_epsilon.
+    Falls back silently if not supported (bindings predate the feature).
+    """
+    fn = getattr(tscore, fn_name)
+    if dir_alpha <= 0.0 or dir_epsilon <= 0.0:
+        return fn(**kwargs)
+
+    cached = _ROLLOUT_DIRICHLET_SUPPORT.get(fn_name)
+    call_kwargs = dict(kwargs, dir_alpha=dir_alpha, dir_epsilon=dir_epsilon)
+    if cached is not False:
+        try:
+            result = fn(**call_kwargs)
+            _ROLLOUT_DIRICHLET_SUPPORT[fn_name] = True
+            return result
+        except TypeError as e:
+            msg = str(e)
+            if "dir_alpha" in msg or "dir_epsilon" in msg or "incompatible function arguments" in msg:
+                _ROLLOUT_DIRICHLET_SUPPORT[fn_name] = False
+                print(f"  [rollout] {fn_name}: dir noise not supported by bindings, continuing without", flush=True)
+            else:
+                raise
+    return fn(**kwargs)
+
+
 def _collect_heuristic_from_script(
     script_path: str,
     n_games: int,
     base_seed: int,
     vp_reward_coef: float,
     rollout_temp: float = 1.0,
+    dir_alpha: float = 0.0,
+    dir_epsilon: float = 0.0,
 ) -> list[Step]:
     """Collect n_games vs heuristic using an already-exported script."""
+    # TODO: add per-move temperature schedule when C++ bindings expose it
     n_half = n_games // 2
     all_steps: list[Step] = []
     for side, seed_offset in [(tscore.Side.USSR, 0), (tscore.Side.US, n_half)]:
-        results, raw_steps, boundaries = tscore.rollout_games_batched(
+        results, raw_steps, boundaries = _call_rollout_with_optional_dirichlet(
+            "rollout_games_batched",
+            dir_alpha=dir_alpha,
+            dir_epsilon=dir_epsilon,
             model_path=script_path,
             learned_side=side,
             n_games=n_half,
@@ -963,9 +1068,14 @@ def _collect_vs_model_from_script(
     base_seed: int,
     vp_reward_coef: float,
     rollout_temp: float = 1.0,
+    dir_alpha: float = 0.0,
+    dir_epsilon: float = 0.0,
 ) -> list[Step]:
     """Collect n_games vs a scripted model opponent (half each side)."""
-    results, raw_steps, boundaries = tscore.rollout_model_vs_model_batched(
+    results, raw_steps, boundaries = _call_rollout_with_optional_dirichlet(
+        "rollout_model_vs_model_batched",
+        dir_alpha=dir_alpha,
+        dir_epsilon=dir_epsilon,
         model_a_path=our_script,
         model_b_path=opp_script,
         n_games=n_games,
@@ -1004,6 +1114,10 @@ def collect_rollout_league_batched(
     fixture_fadeout: int = 50,
     current_iter: int = 0,
     self_slot: bool = True,
+    wr_table_path: str | None = None,
+    pfsp_exponent: float = 1.0,
+    dir_alpha: float = 0.0,
+    dir_epsilon: float = 0.0,
 ) -> list[Step]:
     """Collect rollout steps against K opponents in parallel (ThreadPoolExecutor).
 
@@ -1014,8 +1128,9 @@ def collect_rollout_league_batched(
 
     Opponent sampling (see sample_K_league_opponents):
     - Slot 0: always current model (self_slot=True); true self-play gradient signal.
-    - Remaining slots: recency-weighted past-self + fixtures (faded out after fixture_fadeout iters).
+    - Remaining slots: recency*PFSP-weighted past-self + fixtures (faded out after fixture_fadeout iters).
     - heuristic_pct chance per non-self slot of playing vs heuristic.
+    - PFSP: opponents the model currently struggles against get more training time.
     """
     from concurrent.futures import ThreadPoolExecutor
 
@@ -1024,12 +1139,18 @@ def collect_rollout_league_batched(
     if mix_k < 1:
         mix_k = 1
 
+    wr_table = _load_wr_table(wr_table_path)
+
     if not hasattr(tscore, "rollout_model_vs_model_batched"):
         # Fallback: single heuristic opponent
         n_half = n_games // 2
         steps_ussr = collect_rollout_batched(model, n_half, tscore.Side.USSR, base_seed, device, {}, vp_reward_coef, rollout_temp)
         steps_us = collect_rollout_batched(model, n_half, tscore.Side.US, base_seed + n_half, device, {}, vp_reward_coef, rollout_temp)
-        return steps_ussr + steps_us
+        all_steps = steps_ussr + steps_us
+        if wr_table_path:
+            _update_wr_table_from_steps(wr_table, None, all_steps)
+            _save_json_atomic(wr_table_path, wr_table)
+        return all_steps
 
     script_path = _export_temp_model(model)
     opponents = sample_K_league_opponents(
@@ -1040,6 +1161,8 @@ def collect_rollout_league_batched(
         current_iter=current_iter,
         self_slot=self_slot,
         current_script=script_path,
+        wr_table=wr_table,
+        pfsp_exponent=pfsp_exponent,
     )
     games_per_opp = max(2, n_games // mix_k)
     games_per_opp = games_per_opp if games_per_opp % 2 == 0 else games_per_opp - 1
@@ -1054,15 +1177,21 @@ def collect_rollout_league_batched(
         def _run_one(i: int, opp: Optional[str]) -> list[Step]:
             seed = base_seed + i * games_per_opp
             if opp is None:
-                return _collect_heuristic_from_script(script_path, games_per_opp, seed, vp_reward_coef, rollout_temp)
-            return _collect_vs_model_from_script(script_path, opp, games_per_opp, seed, vp_reward_coef, rollout_temp)
+                return _collect_heuristic_from_script(script_path, games_per_opp, seed, vp_reward_coef, rollout_temp, dir_alpha, dir_epsilon)
+            return _collect_vs_model_from_script(script_path, opp, games_per_opp, seed, vp_reward_coef, rollout_temp, dir_alpha, dir_epsilon)
 
         actual_workers = min(n_workers, mix_k)
         with ThreadPoolExecutor(max_workers=actual_workers) as pool:
-            futures = [pool.submit(_run_one, i, opp) for i, opp in enumerate(opponents)]
+            futures_with_opps = [(pool.submit(_run_one, i, opp), opp) for i, opp in enumerate(opponents)]
             all_steps: list[Step] = []
-            for f in futures:
-                all_steps.extend(f.result())
+            for f, opp in futures_with_opps:
+                batch = f.result()
+                if wr_table_path:
+                    _update_wr_table_from_steps(wr_table, opp, batch)
+                all_steps.extend(batch)
+
+        if wr_table_path:
+            _save_json_atomic(wr_table_path, wr_table)
 
         return all_steps
     finally:
@@ -2061,6 +2190,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ent-coef", type=float, default=0.01, help="Initial entropy coefficient")
     p.add_argument("--ent-coef-final", type=float, default=None,
                    help="Final entropy coefficient (linear decay). None = constant")
+    p.add_argument("--global-ent-decay-start", type=int, default=400,
+                   help="Global total iteration where entropy decay begins (across all chained runs)")
+    p.add_argument("--global-ent-decay-end", type=int, default=2000,
+                   help="Global total iteration where entropy reaches ent_coef_final")
     p.add_argument("--vf-coef", type=float, default=0.5, help="Value function coefficient")
     p.add_argument("--minibatch-size", type=int, default=2048, help="PPO minibatch size")
     p.add_argument("--eval-opponent", type=str, default=None,
@@ -2101,6 +2234,14 @@ def parse_args() -> argparse.Namespace:
                    help="Hard-remove fixtures from pool after this many iterations (default: 50)")
     p.add_argument("--league-self-slot", action=argparse.BooleanOptionalAction, default=True,
                    help="Reserve slot 0 for current model (true self-play). --no-league-self-slot to disable.")
+    p.add_argument("--pfsp-exponent", type=float, default=1.0,
+                   help="PFSP exponent: opponent sampling weight = (1-WR)^p. 1.0=linear, 2.0=squared. "
+                        "Defaults to 0.5 WR until 20 games played vs that opponent.")
+    p.add_argument("--dir-alpha", type=float, default=0.0,
+                   help="Dirichlet noise alpha at C++ rollout root (0=disabled, 0.3=AlphaZero default). "
+                        "Silently no-ops if C++ binding does not support it yet.")
+    p.add_argument("--dir-epsilon", type=float, default=0.25,
+                   help="Dirichlet noise mixing weight (default 0.25, only active when --dir-alpha > 0).")
     p.add_argument("--start-iteration", type=int, default=1,
                    help="Resume: start loop from this iteration (seeds offset accordingly)")
     p.add_argument("--best-combined", type=float, default=0.0,
@@ -2159,6 +2300,7 @@ def main() -> None:
 
     print(f"Loading checkpoint: {args.checkpoint}")
     model, model_type, ckpt_args = load_model(args.checkpoint, device)
+    global_iter_offset = int(ckpt_args.get("total_iters", 0))
     probe_eval = None
     probe_bc_model = None
     if args.probe_set and args.probe_every > 0 and Path(args.probe_set).exists():
@@ -2252,6 +2394,10 @@ def main() -> None:
                 fixture_fadeout=args.league_fixture_fadeout,
                 current_iter=iteration,
                 self_slot=args.league_self_slot,
+                wr_table_path=os.path.join(args.league, "wr_table.json"),
+                pfsp_exponent=args.pfsp_exponent,
+                dir_alpha=args.dir_alpha,
+                dir_epsilon=args.dir_epsilon,
             )
         elif args.self_play:
             seed = args.seed + (iteration - 1) * args.games_per_iter
@@ -2332,10 +2478,19 @@ def main() -> None:
             for pg in optimizer.param_groups:
                 pg["lr"] = args.lr  # restore full LR after warmup
 
-        # Entropy scheduling: linear decay from ent_coef to ent_coef_final
+        # Global entropy schedule: decays based on total iterations across all chained runs,
+        # not per-run iteration. Prevents entropy from resetting to high on each new run.
         if args.ent_coef_final is not None:
-            t_frac = (iteration - 1) / max(1, args.n_iterations - 1)
-            current_ent_coef = args.ent_coef + t_frac * (args.ent_coef_final - args.ent_coef)
+            global_iter = global_iter_offset + iteration
+            if global_iter <= args.global_ent_decay_start:
+                current_ent_coef = args.ent_coef
+            elif global_iter >= args.global_ent_decay_end:
+                current_ent_coef = args.ent_coef_final
+            else:
+                t_frac = (global_iter - args.global_ent_decay_start) / max(
+                    1, args.global_ent_decay_end - args.global_ent_decay_start
+                )
+                current_ent_coef = args.ent_coef + t_frac * (args.ent_coef_final - args.ent_coef)
         else:
             current_ent_coef = args.ent_coef
 
@@ -2415,6 +2570,7 @@ def main() -> None:
         # Write new checkpoint first, then delete the previous non-milestone one.
         # This ensures we always have the latest weights even after a crash.
         new_ckpt_path = os.path.join(args.out_dir, f"ppo_iter{iteration:04d}.pt")
+        ckpt_meta["total_iters"] = global_iter_offset + iteration
         export_checkpoint(model, new_ckpt_path, ckpt_meta, optimizer=optimizer)
         # Delete previous rolling checkpoint if it was not a milestone.
         if last_rolling_ckpt is not None and not _is_milestone(
@@ -2475,6 +2631,7 @@ def main() -> None:
 
     # ── Final checkpoint + summary ────────────────────────────────────────────
     final_path = os.path.join(args.out_dir, "ppo_final.pt")
+    ckpt_meta["total_iters"] = global_iter_offset + args.n_iterations
     export_checkpoint(model, final_path, ckpt_meta)
 
     # ppo_best.pt = latest (final) iteration. No heuristic-WR selection.
