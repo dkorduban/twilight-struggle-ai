@@ -70,7 +70,7 @@ _COUNTRY_REGION: dict[int, str] = {}  # lazy-loaded once
 
 CARD_SLOTS = 112      # kMaxCardId(111) + 1; index 0 unused
 COUNTRY_SLOTS = 86    # country IDs 0..85
-SCALAR_DIM = 11  # TODO(2026-04-07): bump to 32 after PPO v3 finishes
+SCALAR_DIM = 32  # bumped from 11 after PPO v3; includes 21 active-effect features
 CARD_DIM = CARD_SLOTS * 4   # 448
 INFLUENCE_DIM = COUNTRY_SLOTS * 2  # 172
 
@@ -154,7 +154,7 @@ def extract_features(
 class Step:
     influence: torch.Tensor      # (1, 172) CPU
     cards: torch.Tensor          # (1, 448) CPU
-    scalars: torch.Tensor        # (1, 11) CPU
+    scalars: torch.Tensor        # (1, SCALAR_DIM) CPU — 32-dim base + 28 region = 60 for GNN-side
     card_mask: torch.Tensor      # (111,) bool - True = legal
     mode_mask: torch.Tensor      # (5,) bool
     country_mask: Optional[torch.Tensor]  # (86,) bool or None for SPACE/EVENT
@@ -167,7 +167,7 @@ class Step:
     reward: float = 0.0
     done: bool = False
     advantage: float = 0.0
-    returns: float = 0.0
+    returns: float = 0.0         # GAE return target (filled after rollout by _compute_gae_per_side)
     # Raw game state for future re-encoding (added 2026-04-07).
     # All fields are None when the step was not collected via rollout_self_play_batched.
     raw_ussr_influence: Optional[list] = None  # list of 86 int16 values
@@ -179,6 +179,12 @@ class Step:
     raw_milops: Optional[list] = None    # [USSR, US]
     raw_space: Optional[list] = None     # [USSR, US]
     hand_card_ids: Optional[list] = None  # 1-indexed card IDs in deciding side's hand
+    # Policy logits for KL-distillation in arch sweep (added 2026-04-08).
+    # Stored as plain Python lists (CPU) to avoid holding GPU tensors across iterations.
+    # None when collected via C++ batched rollout (logits not returned by tscore).
+    card_logits: Optional[list] = None    # (111,) raw pre-mask logits
+    mode_logits: Optional[list] = None    # (5,) raw pre-mask logits
+    country_logits: Optional[list] = None # (86,) probability mixture from model
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +200,7 @@ def load_model(checkpoint_path: str, device: str = "cuda") -> nn.Module:
         TSControlFeatGNNSideModel,
         TSControlFeatModel,
         TSCountryAttnModel,
+        TSCountryAttnSideModel,
         TSCountryEmbedModel,
         TSDirectCountryModel,
         TSFullEmbedModel,
@@ -205,6 +212,7 @@ def load_model(checkpoint_path: str, device: str = "cuda") -> nn.Module:
         "country_embed": TSCountryEmbedModel,
         "full_embed": TSFullEmbedModel,
         "country_attn": TSCountryAttnModel,
+        "country_attn_side": TSCountryAttnSideModel,
         "direct_country": TSDirectCountryModel,
         "marginal_value": TSMarginalValueModel,
         "control_feat": TSControlFeatModel,
@@ -225,7 +233,25 @@ def load_model(checkpoint_path: str, device: str = "cuda") -> nn.Module:
         model = cls(hidden_dim=hidden_dim, dropout=dropout, num_strategies=num_strategies)
     else:
         model = cls(hidden_dim=hidden_dim, dropout=dropout)
-    model.load_state_dict(state_dict, strict=False)
+    # Load compatible weights; for size-mismatched keys (e.g. scalar_encoder after
+    # region scalar dim expansion) copy the old columns and leave new cols at init values.
+    model_state = model.state_dict()
+    filtered = {}
+    for k, v in state_dict.items():
+        if k not in model_state:
+            continue
+        if v.shape == model_state[k].shape:
+            filtered[k] = v
+        elif v.dim() == 2 and model_state[k].dim() == 2 and v.shape[0] == model_state[k].shape[0]:
+            # Weight matrix: old has fewer input cols — copy old cols, keep new cols at init
+            new_w = model_state[k].clone()
+            old_cols = v.shape[1]
+            new_w[:, :old_cols] = v
+            filtered[k] = new_w
+            print(f"  [load_model] partial warm-start {k}: {v.shape} → {model_state[k].shape}", flush=True)
+        else:
+            print(f"  [load_model] skipped incompatible {k}: {v.shape} vs {model_state[k].shape}", flush=True)
+    model.load_state_dict(filtered, strict=False)
     model.train()
     model.to(device)
     return model, model_type, args
@@ -384,6 +410,9 @@ def _sample_action_and_step(
             country_mask=None,
             card_idx=card_idx, mode_idx=mode_idx, country_targets=[],
             old_log_prob=float(log_prob.item()), value=value, side_int=side_int,
+            card_logits=card_logits.cpu().tolist(),
+            mode_logits=mode_logits.cpu().tolist(),
+            country_logits=(country_logits.cpu().tolist() if country_logits is not None else None),
         )
         return {"card_id": card_id, "mode": mode, "targets": []}, step
 
@@ -444,6 +473,9 @@ def _sample_action_and_step(
         country_mask=country_mask.cpu(),
         card_idx=card_idx, mode_idx=mode_idx, country_targets=country_targets,
         old_log_prob=float(log_prob.item()), value=value, side_int=side_int,
+        card_logits=card_logits.cpu().tolist(),
+        mode_logits=mode_logits.cpu().tolist(),
+        country_logits=country_logits.cpu().tolist(),
     )
     return {"card_id": card_id, "mode": mode, "targets": country_targets}, step
 
@@ -724,8 +756,13 @@ def sample_league_opponent(league_dir: str) -> Optional[str]:
     """Sample an opponent from the league pool.
 
     Returns None → use heuristic opponent.
-    Distribution: 20% heuristic (always anchor), 50% latest checkpoint,
+    Distribution: 15% heuristic (anchor), 55% latest checkpoint,
     30% uniformly random from all checkpoints.
+
+    Rationale: 40% heuristic was a conservative fix for the v4 echo-chamber
+    regression; now that we use h2h Elo as primary metric (not heuristic WR),
+    15% heuristic is sufficient as a diversity anchor while allowing more
+    self-play signal. (v8 tuning 2026-04-08)
     """
     import random
 
@@ -733,10 +770,10 @@ def sample_league_opponent(league_dir: str) -> Optional[str]:
     if not pts:
         return None  # empty pool → heuristic
     r = random.random()
-    if r < 0.20:
-        return None           # 20%: heuristic anchor
+    if r < 0.15:
+        return None           # 15%: heuristic anchor
     elif r < 0.70:
-        return str(pts[-1])   # 50%: most recent checkpoint
+        return str(pts[-1])   # 55%: most recent checkpoint
     else:
         return str(random.choice(pts))  # 30%: random past checkpoint
 
@@ -1157,7 +1194,7 @@ def collect_policy_stats(
         _COUNTRY_REGION = _load_country_region_map()
 
     MODE_NAMES = ["Influence", "Event", "Space", "Coup", "Realign"]
-    REGIONS = ["Europe", "Asia", "Middle East", "Africa", "Central America", "South America"]
+    REGIONS = ["Europe", "Asia", "MiddleEast", "Africa", "CentralAmerica", "SouthAmerica"]
     PHASES = ["early", "mid", "late"]
 
     def phase(turn: int) -> str:
@@ -1255,13 +1292,39 @@ def collect_policy_stats(
             # Influence sub-stats
             n_inf = inf_counts[key]
             if n_inf > 0:
+                _REGION_KEY = {
+                    "Europe": "europe", "Asia": "asia", "MiddleEast": "middle_east",
+                    "Africa": "africa", "CentralAmerica": "central_america",
+                    "SouthAmerica": "south_america", "SoutheastAsia": "southeast_asia",
+                }
                 for r in REGIONS:
-                    stats[f"{prefix}/region_{r.lower().replace(' ', '_')}_frac"] = (
+                    stats[f"{prefix}/region_{_REGION_KEY.get(r, r.lower())}_frac"] = (
                         region_counts[(ph, side_name, r)] / n_inf
                     )
                 for label in ["concentrated", "split", "dispersed"]:
                     stats[f"{prefix}/split_{label}_frac"] = split_counts[(ph, side_name, label)] / n_inf
     return stats
+
+
+def _add_scalar_weight_norms(model: nn.Module, log_dict: dict) -> None:
+    """Add scalar_encoder weight norms to log_dict for W&B tracking.
+
+    Tracks three slices of scalar_encoder.weight:
+      new_scalar_weight_norm  — L2 norm of cols 11:32 (the 21 new active-effect features)
+                                Should grow from ~0.05 (random init) as model learns to use them.
+                                If stays near initial value after 50 iters → features not learned.
+      core_scalar_weight_norm — L2 norm of cols 0:11 (original 11 features, should stay stable)
+      region_scalar_weight_norm — L2 norm of cols 32:60 (region scalars, for GNN-side models)
+    """
+    if not hasattr(model, "scalar_encoder"):
+        return
+    w = model.scalar_encoder.weight.detach()  # (hidden_dim, input_dim)
+    input_dim = w.shape[1]
+    log_dict["core_scalar_weight_norm"] = float(w[:, :11].norm().item())
+    if input_dim >= 32:
+        log_dict["new_scalar_weight_norm"] = float(w[:, 11:32].norm().item())
+    if input_dim >= 60:
+        log_dict["region_scalar_weight_norm"] = float(w[:, 32:60].norm().item())
 
 
 def _save_rollout_parquet(
@@ -1306,6 +1369,11 @@ def _save_rollout_parquet(
     side_ints = [s.side_int for s in steps]
     rewards = [s.reward for s in steps]
     values = [s.value for s in steps]
+    gae_returns = [s.returns for s in steps]   # GAE return target (value + TD-lambda advantage)
+
+    # Policy logits — present when steps were collected via Python sequential callback.
+    # None when collected via C++ batched rollout (tscore doesn't return logits).
+    has_logits = steps[0].card_logits is not None if steps else False
 
     # Raw game state columns — present when steps were collected with raw state support.
     has_raw = steps[0].raw_ussr_influence is not None if steps else False
@@ -1320,8 +1388,20 @@ def _save_rollout_parquet(
         "side_int": pa.array(side_ints, type=pa.int8()),
         "reward": pa.array(rewards, type=pa.float32()),
         "value": pa.array(values, type=pa.float32()),
+        "gae_return": pa.array(gae_returns, type=pa.float32()),  # GAE target for value training
         "iteration": pa.array([iteration] * len(steps), type=pa.int32()),
     }
+    if has_logits:
+        # card_logits: (111,) raw logits before masking — used for KL-distillation in arch sweep
+        # mode_logits: (5,) raw logits before masking
+        # country_logits: (86,) probability mixture from model (not raw logits — model output)
+        table_dict["card_logits"] = pa.array(
+            [s.card_logits for s in steps], type=pa.list_(pa.float32()))
+        table_dict["mode_logits"] = pa.array(
+            [s.mode_logits for s in steps], type=pa.list_(pa.float32()))
+        table_dict["country_logits"] = pa.array(
+            [s.country_logits if s.country_logits is not None else [0.0] * 86
+             for s in steps], type=pa.list_(pa.float32()))
     if has_raw:
         table_dict["raw_ussr_influence"] = pa.array(
             [s.raw_ussr_influence for s in steps], type=pa.list_(pa.int16()))
@@ -1406,7 +1486,7 @@ def _export_torchscript_model(model: nn.Module, script_path: str, *, warn_only: 
             example_inputs = (
                 torch.zeros((1, 172), dtype=torch.float32),
                 torch.zeros((1, 448), dtype=torch.float32),
-                torch.zeros((1, 11), dtype=torch.float32),
+                torch.zeros((1, SCALAR_DIM), dtype=torch.float32),
             )
             scripted = torch.jit.trace(model_cpu, example_inputs, strict=False)
         scripted.save(script_path)
@@ -1448,7 +1528,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--games-per-iter", type=int, default=200, help="Games per rollout batch")
     p.add_argument("--ppo-epochs", type=int, default=4, help="PPO update epochs per batch")
     p.add_argument("--clip-eps", type=float, default=0.2, help="PPO clip epsilon")
-    p.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    p.add_argument("--lr", type=float, default=1e-4, help="Learning rate (after warmup)")
+    p.add_argument("--lr-warmup-iters", type=int, default=0,
+                   help="Number of iterations to linearly warm up LR from lr/10 to lr. "
+                        "Use 15 when resuming from a checkpoint with new input features "
+                        "to prevent early noisy gradients from destabilizing learned weights.")
     p.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
     p.add_argument("--gae-lambda", type=float, default=0.95, help="GAE lambda")
     p.add_argument("--ent-coef", type=float, default=0.01, help="Initial entropy coefficient")
@@ -1456,7 +1540,7 @@ def parse_args() -> argparse.Namespace:
                    help="Final entropy coefficient (linear decay). None = constant")
     p.add_argument("--vf-coef", type=float, default=0.5, help="Value function coefficient")
     p.add_argument("--minibatch-size", type=int, default=2048, help="PPO minibatch size")
-    p.add_argument("--benchmark-every", type=int, default=20, help="Benchmark every N iterations")
+    p.add_argument("--benchmark-every", type=int, default=0, help="Benchmark vs heuristic every N iterations (0=disabled; use h2h Elo post-run instead)")
     p.add_argument("--side", choices=["ussr", "us", "both"], default="both",
                    help="Which side to train as")
     p.add_argument("--self-play", action="store_true",
@@ -1617,7 +1701,11 @@ def main() -> None:
             print(f"[iter {iteration}] No steps collected, skipping")
             continue
 
-        # Optionally save rollout steps as Parquet for BC bootstrapping
+        # Compute GAE advantages — must come BEFORE saving parquet so s.returns is populated
+        compute_gae_batch(all_steps, gamma=args.gamma, lam=args.gae_lambda)
+
+        # Optionally save rollout steps as Parquet for BC/KL-distillation
+        # Saved after GAE so gae_return column is correct.
         if args.save_rollout_parquet and all_steps:
             # base_seed is deterministic: args.seed + (iteration - 1) * args.games_per_iter
             _rollout_base_seed = args.seed + (iteration - 1) * args.games_per_iter
@@ -1626,9 +1714,6 @@ def main() -> None:
                 base_seed=_rollout_base_seed,
                 checkpoint_path=args.checkpoint,
             )
-
-        # Compute GAE advantages
-        compute_gae_batch(all_steps, gamma=args.gamma, lam=args.gae_lambda)
 
         t_rollout = time.time() - t_iter_start
 
@@ -1650,6 +1735,17 @@ def main() -> None:
             sp_rollout_wr_us = sum(1 for s in us_sp_steps if s.reward > 0) / max(1, len(us_sp_steps))
 
         # ── PPO update phase ──────────────────────────────────────────────────
+        # LR warmup: linearly ramp from lr/10 → lr over lr_warmup_iters iterations.
+        # Use when resuming with new input features to prevent early gradients from
+        # destabilizing already-learned weights.
+        if args.lr_warmup_iters > 0 and iteration <= args.lr_warmup_iters:
+            warmup_lr = args.lr * (0.1 + 0.9 * (iteration - 1) / args.lr_warmup_iters)
+            for pg in optimizer.param_groups:
+                pg["lr"] = warmup_lr
+        elif args.lr_warmup_iters > 0 and iteration == args.lr_warmup_iters + 1:
+            for pg in optimizer.param_groups:
+                pg["lr"] = args.lr  # restore full LR after warmup
+
         # Entropy scheduling: linear decay from ent_coef to ent_coef_final
         if args.ent_coef_final is not None:
             t_frac = (iteration - 1) / max(1, args.n_iterations - 1)
@@ -1744,6 +1840,7 @@ def main() -> None:
                 if args.self_play:
                     metrics["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
                     metrics["sp_rollout_wr_us"] = sp_rollout_wr_us
+                _add_scalar_weight_norms(model, metrics)
                 wandb_run.log(metrics, step=iteration)
                 if "policy_stats" in bench and wandb_run and bench["policy_stats"]:
                     wandb_run.log(bench["policy_stats"], step=iteration)
@@ -1759,6 +1856,7 @@ def main() -> None:
                 if args.self_play:
                     log_dict["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
                     log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
+                _add_scalar_weight_norms(model, log_dict)
                 wandb_run.log(log_dict, step=iteration)
 
     # ── Final checkpoint + summary ────────────────────────────────────────────
