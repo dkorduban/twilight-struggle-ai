@@ -66,6 +66,28 @@ def _load_country_region_map() -> dict[int, str]:
     return mapping
 
 
+def _load_country_meta() -> tuple[dict[int, int], dict[int, float]]:
+    """Load stability and BG weight per country_id from data/spec/countries.csv.
+
+    BG weight: 1.0 for battlegrounds, 0.2 for non-battlegrounds.
+    Returns (stability_map, bg_weight_map).
+    """
+    import csv as _csv
+
+    csv_path = Path(__file__).parent.parent / "data" / "spec" / "countries.csv"
+    stability_map: dict[int, int] = {}
+    bg_weight_map: dict[int, float] = {}
+    try:
+        with open(csv_path) as f:
+            for row in _csv.DictReader(r for r in f if not r.startswith("#")):
+                cid = int(row["country_id"])
+                stability_map[cid] = int(row["stability"])
+                bg_weight_map[cid] = 1.0 if row["is_battleground"].strip().lower() == "true" else 0.2
+    except Exception:
+        pass
+    return stability_map, bg_weight_map
+
+
 _REGION_NAMES = [
     "Europe",
     "Asia",
@@ -85,6 +107,9 @@ _REGION_KEY = {
     "SoutheastAsia": "southeast_asia",
 }
 _COUNTRY_REGION: dict[int, str] = _load_country_region_map()
+_COUNTRY_STABILITY: dict[int, int]
+_COUNTRY_BG_WEIGHT: dict[int, float]
+_COUNTRY_STABILITY, _COUNTRY_BG_WEIGHT = _load_country_meta()
 _REGION_COUNTRY_IDS: dict[str, tuple[int, ...]] = {
     region: tuple(
         country_id
@@ -1736,11 +1761,21 @@ def collect_policy_stats(
 
 
 def _add_region_net_delta_stats(terminal_steps: list[Step], log_dict: dict) -> None:
-    """Add mean terminal regional influence deltas to log_dict."""
-    if not _COUNTRY_REGION:
+    """Add mean terminal regional influence and control deltas to log_dict.
+
+    Two metrics per region, both BG-weighted (BG=1.0, non-BG=0.2):
+      net_inf_delta   — weighted sum of (model_inf - opp_inf) per country
+      net_ctrl_delta  — weighted sum of (model controls - opp controls) per country
+                        where control = influence > stability
+
+    BG-weighting prevents high-stability non-BG countries (e.g. Canada stab=4)
+    from dominating the delta just by raw influence count.
+    """
+    if not _COUNTRY_REGION or not _COUNTRY_STABILITY:
         return
 
-    totals = {region: 0.0 for region in _REGION_NAMES}
+    inf_totals = {region: 0.0 for region in _REGION_NAMES}
+    ctrl_totals = {region: 0.0 for region in _REGION_NAMES}
     n_terminal = 0
     for step in terminal_steps:
         if step.raw_ussr_influence is None or step.raw_us_influence is None:
@@ -1754,14 +1789,22 @@ def _add_region_net_delta_stats(terminal_steps: list[Step], log_dict: dict) -> N
             opp_inf = step.raw_ussr_influence
 
         for region, country_ids in _REGION_COUNTRY_IDS.items():
-            totals[region] += sum(model_inf[cid] - opp_inf[cid] for cid in country_ids)
+            for cid in country_ids:
+                w = _COUNTRY_BG_WEIGHT.get(cid, 0.2)
+                stab = _COUNTRY_STABILITY.get(cid, 1)
+                inf_totals[region] += w * (model_inf[cid] - opp_inf[cid])
+                model_ctrl = 1 if model_inf[cid] > stab else 0
+                opp_ctrl = 1 if opp_inf[cid] > stab else 0
+                ctrl_totals[region] += w * (model_ctrl - opp_ctrl)
         n_terminal += 1
 
     if n_terminal == 0:
         return
 
     for region in _REGION_NAMES:
-        log_dict[f"stats/region_{_REGION_KEY[region]}_net_delta"] = totals[region] / n_terminal
+        key = _REGION_KEY[region]
+        log_dict[f"stats/region_{key}_net_inf_delta"] = inf_totals[region] / n_terminal
+        log_dict[f"stats/region_{key}_net_ctrl_delta"] = ctrl_totals[region] / n_terminal
 
 
 def _add_scalar_weight_norms(model: nn.Module, log_dict: dict) -> None:
