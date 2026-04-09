@@ -171,6 +171,7 @@ class ProbeEvaluator:
                         out_a["country_logits"][country_active.to(self.device)],
                         out_b["country_logits"][country_active.to(self.device)],
                         batch_country_mask[country_active.to(self.device)],
+                        already_probs=True,  # country head returns mixture-of-softmaxes, not raw logits
                     )
                     country_jsd_sum += float(country_jsd.sum().item())
                     country_jsd_count += int(country_active.sum().item())
@@ -197,15 +198,28 @@ class ProbeEvaluator:
         )
 
     @staticmethod
-    def _jsd(p: torch.Tensor, q: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """Compute masked JSD(P||Q) in [0, 1] for each row."""
+    def _jsd(
+        p: torch.Tensor,
+        q: torch.Tensor,
+        mask: torch.Tensor,
+        already_probs: bool = False,
+    ) -> torch.Tensor:
+        """Compute masked JSD(P||Q) in [0, 1] for each row.
+
+        Args:
+            p, q: (B, N) raw logits OR already-normalized probabilities.
+            mask: (B, N) bool — True = legal/valid slot.
+            already_probs: if True, p and q are already probability distributions
+                (e.g. mixture-of-softmaxes country head); skip softmax, just renorm.
+        """
         if p.shape != q.shape or p.shape != mask.shape:
             raise ValueError(
                 f"Shape mismatch for JSD: p={tuple(p.shape)} q={tuple(q.shape)} mask={tuple(mask.shape)}"
             )
 
-        p_probs = ProbeEvaluator._masked_probs(p, mask)
-        q_probs = ProbeEvaluator._masked_probs(q, mask)
+        normalize = ProbeEvaluator._renorm_probs if already_probs else ProbeEvaluator._masked_probs
+        p_probs = normalize(p, mask)
+        q_probs = normalize(q, mask)
         mix = 0.5 * (p_probs + q_probs)
 
         safe_p = torch.clamp(p_probs, min=1e-10)
@@ -240,8 +254,20 @@ class ProbeEvaluator:
 
     @staticmethod
     def _masked_probs(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """Apply mask then softmax (for raw-logit heads: card, mode)."""
         masked_logits = torch.where(mask, logits, torch.zeros_like(logits))
         probs = torch.softmax(masked_logits, dim=1)
+        probs = probs * mask.to(dtype=probs.dtype)
+        probs = probs / probs.sum(dim=1, keepdim=True).clamp(min=1e-10)
+        return probs
+
+    @staticmethod
+    def _renorm_probs(probs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """Apply mask then renormalize (for already-probability heads: country mixture-of-softmaxes).
+
+        The country head in all real models returns a mixture of softmaxes, not raw logits.
+        Applying softmax again would collapse everything to near-uniform (5000x underestimate of JSD).
+        """
         probs = probs * mask.to(dtype=probs.dtype)
         probs = probs / probs.sum(dim=1, keepdim=True).clamp(min=1e-10)
         return probs
