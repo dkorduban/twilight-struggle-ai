@@ -32,12 +32,19 @@ if [ -f "${FINISHED_DIR}/ppo_final_scripted.pt" ] && [ ! -f "${FINISHED_SCRIPTED
 fi
 
 # --- Build model list dynamically from scripted_for_elo dir ---
+# Only include heuristic + v8 and later (v1-v7 are too weak to be informative anchors)
+MIN_SCRIPTED_VERSION=8
+
 MODELS="heuristic"
-# Include all existing scripted models (excluding the FINISHED one, handled separately)
+# Include scripted models v${MIN_SCRIPTED_VERSION}+ (excluding the FINISHED one, handled separately)
 for scripted_path in data/checkpoints/scripted_for_elo/*_scripted.pt; do
   [ -f "$scripted_path" ] || continue
   fname=$(basename "$scripted_path")
   name="${fname%_scripted.pt}"
+  # Extract version number (e.g. v12 -> 12)
+  ver="${name#v}"
+  if ! [[ "$ver" =~ ^[0-9]+$ ]]; then continue; fi
+  if [ "$ver" -lt "$MIN_SCRIPTED_VERSION" ]; then continue; fi
   if [ "$name" = "$FINISHED" ]; then
     # Use ppo_final.pt for the just-finished model (fresher than the scripted copy)
     if [ -f "${FINISHED_DIR}/ppo_final.pt" ]; then

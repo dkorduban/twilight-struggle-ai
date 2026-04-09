@@ -79,7 +79,11 @@ def build_probe_set(
 
     frames: list[pl.DataFrame] = []
     for path in parquet_paths:
-        available = set(pl.read_parquet_schema(path).keys())
+        try:
+            available = set(pl.read_parquet_schema(path).keys())
+        except Exception as e:
+            print(f"  Skipping {path}: {e}", flush=True)
+            continue
         present = [col for col in needed_columns if col in available]
         if not {"influence", "cards", "scalars", "raw_turn", "side_int", "raw_defcon", "raw_vp", "mode_id"}.issubset(available):
             continue
