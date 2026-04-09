@@ -175,6 +175,9 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
   --league-recency-tau 20 \
   --league-fixture-fadeout 50 \
   --league-heuristic-pct 0.10 \
+  --pfsp-exponent 1.0 \
+  --dir-alpha 0.3 \
+  --dir-epsilon 0.25 \
   --eval-every 20 \
   --eval-opponent "$FINISHED_SCRIPTED" \
   --rollout-workers 1 \
