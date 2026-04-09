@@ -1865,6 +1865,16 @@ def main() -> None:
     final_path = os.path.join(args.out_dir, "ppo_final.pt")
     export_checkpoint(model, final_path, ckpt_meta)
 
+    # When benchmarking is disabled ppo_best.pt is never written; use final as best.
+    if args.benchmark_every == 0 and not os.path.exists(best_ckpt_path):
+        import shutil
+        shutil.copy2(final_path, best_ckpt_path)
+        final_scripted = final_path.replace(".pt", "_scripted.pt")
+        best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
+        if os.path.exists(final_scripted):
+            shutil.copy2(final_scripted, best_scripted)
+        print("  (benchmark_every=0: ppo_best.pt set to final checkpoint)")
+
     t_total = time.time() - t_start
     print(f"\nTraining complete in {t_total/60:.1f} minutes")
     print(f"Best combined WR: {best_combined:.3f}")
