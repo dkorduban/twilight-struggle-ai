@@ -795,24 +795,75 @@ def sample_K_league_opponents(
     league_dir: str,
     k: int,
     fixtures: list[str],
+    recency_tau: float = 20.0,
+    heuristic_pct: float = 0.10,
+    fixture_fadeout: int = 50,
+    current_iter: int = 0,
+    self_slot: bool = True,
+    current_script: Optional[str] = None,
 ) -> list[Optional[str]]:
     """Sample k opponents for mini-batch mixing. None = heuristic.
 
-    Pool = all iter_*.pt in league_dir (full pool, not top-N) + permanent fixtures.
-    Distribution: 10% heuristic, 90% uniform from full pool + fixtures.
-    If pool is empty, falls back to heuristic.
+    Improvements over naive uniform sampling:
+    - Self-slot: slot 0 is always current_script (true self-play; strongest gradient).
+    - Recency-weighted past-self: weight = exp(rank / tau), so newest checkpoint is
+      exp(N/tau) times more likely than oldest. tau=20 → top checkpoint ~7x last-10th.
+    - Fixture fadeout: fixtures hard-removed from pool at current_iter >= fixture_fadeout.
+      They also naturally shrink as recency-weighted past-self grows.
+    - Configurable heuristic_pct per non-self slot.
     """
     import random
+    import re
 
-    pts = [str(p) for p in sorted(Path(league_dir).glob("iter_*.pt"))]
-    full_pool = pts + list(fixtures)
+    # Parse iter_*.pt sorted by iteration number
+    iter_pts: list[tuple[int, str]] = []
+    for p in sorted(Path(league_dir).glob("iter_*.pt")):
+        m = re.search(r"iter_(\d+)\.pt$", str(p))
+        if m:
+            iter_pts.append((int(m.group(1)), str(p)))
+    iter_pts.sort(key=lambda x: x[0])
+
+    # Recency-weighted past-self pool
+    past_self_paths: list[str] = []
+    past_self_weights: list[float] = []
+    for rank, (_, path) in enumerate(iter_pts):
+        past_self_paths.append(path)
+        past_self_weights.append(math.exp(rank / max(recency_tau, 1.0)))
+    if past_self_weights:
+        total = sum(past_self_weights)
+        past_self_weights = [w / total for w in past_self_weights]
+
+    # Active fixtures (hard-removed after fixture_fadeout iterations)
+    active_fixtures = [] if current_iter >= fixture_fadeout else list(fixtures)
+
+    # Combined pool: past-self (recency-weighted) + fixtures (uniform weight = 1/N each)
+    combined_pool: list[str] = past_self_paths + active_fixtures
+    if combined_pool:
+        fixture_w = (1.0 / len(active_fixtures)) if active_fixtures else 0.0
+        # Fixture total weight = same as 1 past-self entry at weight 1.0 (oldest), normalized
+        raw_fixture_w = fixture_w * len(active_fixtures)  # = 1.0 per fixture
+        past_total = sum(past_self_weights) if past_self_weights else 0.0
+        fixture_each = (past_total / max(len(active_fixtures), 1)) * 0.5 if active_fixtures else 0.0
+        combined_weights = past_self_weights + [fixture_each] * len(active_fixtures)
+        total_w = sum(combined_weights) or 1.0
+        combined_weights = [w / total_w for w in combined_weights]
+    else:
+        combined_weights = []
 
     opponents: list[Optional[str]] = []
-    for _ in range(k):
-        if not full_pool or random.random() < 0.10:
+
+    # Slot 0: always current model (true self-play signal)
+    if self_slot and current_script is not None:
+        opponents.append(current_script)
+
+    # Remaining slots: heuristic_pct heuristic, else recency-weighted pool
+    for _ in range(k - len(opponents)):
+        if not combined_pool or random.random() < heuristic_pct:
             opponents.append(None)  # heuristic
         else:
-            opponents.append(random.choice(full_pool))
+            chosen = random.choices(combined_pool, weights=combined_weights, k=1)[0]
+            opponents.append(chosen)
+
     return opponents
 
 
@@ -923,6 +974,11 @@ def collect_rollout_league_batched(
     fixtures: Optional[list[str]] = None,
     n_workers: int = 4,
     rollout_temp: float = 1.0,
+    recency_tau: float = 20.0,
+    heuristic_pct: float = 0.10,
+    fixture_fadeout: int = 50,
+    current_iter: int = 0,
+    self_slot: bool = True,
 ) -> list[Step]:
     """Collect rollout steps against K opponents in parallel (ThreadPoolExecutor).
 
@@ -931,7 +987,10 @@ def collect_rollout_league_batched(
     the GIL so threads run truly in parallel. Steps are concatenated in order
     (no shuffle — PPO minibatch permutation handles randomization).
 
-    Pool = full iter_*.pt history + permanent fixtures. 10% heuristic.
+    Opponent sampling (see sample_K_league_opponents):
+    - Slot 0: always current model (self_slot=True); true self-play gradient signal.
+    - Remaining slots: recency-weighted past-self + fixtures (faded out after fixture_fadeout iters).
+    - heuristic_pct chance per non-self slot of playing vs heuristic.
     """
     from concurrent.futures import ThreadPoolExecutor
 
@@ -947,11 +1006,19 @@ def collect_rollout_league_batched(
         steps_us = collect_rollout_batched(model, n_half, tscore.Side.US, base_seed + n_half, device, {}, vp_reward_coef, rollout_temp)
         return steps_ussr + steps_us
 
-    opponents = sample_K_league_opponents(league_dir, mix_k, fixtures)
+    script_path = _export_temp_model(model)
+    opponents = sample_K_league_opponents(
+        league_dir, mix_k, fixtures,
+        recency_tau=recency_tau,
+        heuristic_pct=heuristic_pct,
+        fixture_fadeout=fixture_fadeout,
+        current_iter=current_iter,
+        self_slot=self_slot,
+        current_script=script_path,
+    )
     games_per_opp = max(2, n_games // mix_k)
     games_per_opp = games_per_opp if games_per_opp % 2 == 0 else games_per_opp - 1
 
-    script_path = _export_temp_model(model)
     try:
         opp_labels = [
             "heuristic" if opp is None else Path(opp).stem
@@ -1957,6 +2024,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--league-fixtures", nargs="*", default=[],
                    help="Permanent fixture scripted .pt paths always included in league pool "
                         "(e.g. older-gen checkpoints for cross-run diversity)")
+    p.add_argument("--league-recency-tau", type=float, default=20.0,
+                   help="Recency half-life for past-self checkpoint sampling. "
+                        "weight=exp(rank/tau); higher=more uniform, lower=more recency bias (default: 20)")
+    p.add_argument("--league-heuristic-pct", type=float, default=0.10,
+                   help="Fraction of non-self league slots assigned to heuristic opponent (default: 0.10)")
+    p.add_argument("--league-fixture-fadeout", type=int, default=50,
+                   help="Hard-remove fixtures from pool after this many iterations (default: 50)")
+    p.add_argument("--league-self-slot", action=argparse.BooleanOptionalAction, default=True,
+                   help="Reserve slot 0 for current model (true self-play). --no-league-self-slot to disable.")
     p.add_argument("--start-iteration", type=int, default=1,
                    help="Resume: start loop from this iteration (seeds offset accordingly)")
     p.add_argument("--best-combined", type=float, default=0.0,
@@ -2103,6 +2179,11 @@ def main() -> None:
                 fixtures=args.league_fixtures,
                 n_workers=args.rollout_workers,
                 rollout_temp=args.rollout_temp,
+                recency_tau=args.league_recency_tau,
+                heuristic_pct=args.league_heuristic_pct,
+                fixture_fadeout=args.league_fixture_fadeout,
+                current_iter=iteration,
+                self_slot=args.league_self_slot,
             )
         elif args.self_play:
             seed = args.seed + (iteration - 1) * args.games_per_iter
