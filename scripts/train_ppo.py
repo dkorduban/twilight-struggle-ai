@@ -2756,13 +2756,15 @@ def main() -> None:
     ckpt_meta["total_iters"] = global_iter_offset + args.n_iterations
     export_checkpoint(model, final_path, ckpt_meta)
 
-    # ppo_best.pt = latest (final) iteration. No heuristic-WR selection.
+    # ppo_best.pt was saved at peak H2H score during training — do NOT overwrite it.
+    # If no eval ever ran (eval_every=0 or run too short), fall back to final.
     import shutil
-    shutil.copy2(final_path, best_ckpt_path)
-    final_scripted = final_path.replace(".pt", "_scripted.pt")
-    best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
-    if os.path.exists(final_scripted):
-        shutil.copy2(final_scripted, best_scripted)
+    if not os.path.exists(best_ckpt_path):
+        shutil.copy2(final_path, best_ckpt_path)
+        final_scripted = final_path.replace(".pt", "_scripted.pt")
+        best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
+        if os.path.exists(final_scripted) and not os.path.exists(best_scripted):
+            shutil.copy2(final_scripted, best_scripted)
 
     t_total = time.time() - t_start
     print(f"\nTraining complete in {t_total/60:.1f} minutes")

@@ -24,10 +24,24 @@ WEAKEST_FIXTURE="data/checkpoints/scripted_for_elo/v8_scripted.pt"
 MID_FIXTURE="data/checkpoints/scripted_for_elo/v14_scripted.pt"
 FRONTIER_FIXTURE="data/checkpoints/scripted_for_elo/v19_scripted.pt"
 
+# --- Prefer ppo_best.pt over ppo_final.pt (best H2H checkpoint, not end-of-run) ---
+# ppo_final.pt often overshoots; ppo_best.pt captures the peak H2H win rate.
+FINISHED_CHECKPOINT="${FINISHED_DIR}/ppo_final.pt"
+if [ -f "${FINISHED_DIR}/ppo_best.pt" ]; then
+  FINISHED_CHECKPOINT="${FINISHED_DIR}/ppo_best.pt"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Using ppo_best.pt for $FINISHED (peak H2H, not final)" \
+    >> results/autonomous_decisions.log
+fi
+
 # --- Copy finished model's scripted file to scripted_for_elo/ ---
-if [ -f "${FINISHED_DIR}/ppo_final_scripted.pt" ] && [ ! -f "${FINISHED_SCRIPTED}" ]; then
-  cp "${FINISHED_DIR}/ppo_final_scripted.pt" "${FINISHED_SCRIPTED}"
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Copied ${FINISHED_DIR}/ppo_final_scripted.pt -> ${FINISHED_SCRIPTED}" \
+# Use best scripted if available, else final scripted
+FINISHED_SCRIPTED_SRC="${FINISHED_DIR}/ppo_final_scripted.pt"
+if [ -f "${FINISHED_DIR}/ppo_best_scripted.pt" ]; then
+  FINISHED_SCRIPTED_SRC="${FINISHED_DIR}/ppo_best_scripted.pt"
+fi
+if [ -f "${FINISHED_SCRIPTED_SRC}" ] && [ ! -f "${FINISHED_SCRIPTED}" ]; then
+  cp "${FINISHED_SCRIPTED_SRC}" "${FINISHED_SCRIPTED}"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Copied ${FINISHED_SCRIPTED_SRC} -> ${FINISHED_SCRIPTED}" \
     >> results/autonomous_decisions.log
 fi
 
@@ -162,12 +176,12 @@ if [ "$PLATEAU_COUNT" -ge 1 ]; then
 fi
 
 # --- Launch next PPO run ---
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from ${FINISHED} ppo_final.pt" \
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from ${FINISHED} $(basename $FINISHED_CHECKPOINT)" \
   >> results/autonomous_decisions.log
 
 mkdir -p "$NEXT_DIR"
 nohup nice -n 10 uv run python scripts/train_ppo.py \
-  --checkpoint "${FINISHED_DIR}/ppo_final.pt" \
+  --checkpoint "${FINISHED_CHECKPOINT}" \
   --out-dir "$NEXT_DIR" \
   --n-iterations 200 --games-per-iter 200 \
   --lr 2e-5 --clip-eps 0.12 \
