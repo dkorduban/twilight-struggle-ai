@@ -876,6 +876,12 @@ def _save_json_atomic(path: str, payload: dict) -> None:
         raise
 
 
+# Sentinel path for heuristic when used as a league fixture.
+# Allows heuristic to participate in PFSP weighting (tracked under key "heuristic" in wr_table)
+# instead of the separate coin-flip mechanism.
+HEURISTIC_FIXTURE = "__heuristic__"
+
+
 def _pfsp_weight(opponent_key: str, wr_table: dict[str, dict], pfsp_exponent: float) -> float:
     """Return average of per-side (1 - WR)^pfsp_exponent.
 
@@ -985,7 +991,8 @@ def sample_K_league_opponents(
     if combined_pool:
         past_total = sum(past_self_weights) if past_self_weights else 0.0
         fixture_pfsp_weights = [
-            _pfsp_weight(Path(f).stem, wr_table or {}, pfsp_exponent) for f in active_fixtures
+            _pfsp_weight("heuristic" if f == HEURISTIC_FIXTURE else Path(f).stem,
+                         wr_table or {}, pfsp_exponent) for f in active_fixtures
         ]
         fixture_total = sum(fixture_pfsp_weights) or 1.0
         fixture_each = [
@@ -993,8 +1000,13 @@ def sample_K_league_opponents(
             for w in fixture_pfsp_weights
         ] if active_fixtures else []
         combined_weights = past_self_weights + fixture_each
-        total_w = sum(combined_weights) or 1.0
-        combined_weights = [w / total_w for w in combined_weights]
+        total_w = sum(combined_weights)
+        if total_w <= 0:
+            # Past-self pool is empty (early iters before first iter_*.pt).
+            # Fall back to uniform weights over fixtures so random.choices doesn't crash.
+            combined_weights = [0.0] * len(past_self_paths) + [1.0 / max(len(active_fixtures), 1)] * len(active_fixtures)
+        else:
+            combined_weights = [w / total_w for w in combined_weights]
     else:
         combined_weights = []
 
@@ -1004,7 +1016,8 @@ def sample_K_league_opponents(
     if self_slot and current_script is not None:
         opponents.append(current_script)
 
-    # Remaining slots: heuristic_pct heuristic, else recency*pfsp-weighted pool
+    # Remaining slots: recency*pfsp-weighted pool (includes heuristic as a fixture if set).
+    # heuristic_pct fallback still applies when pool is empty.
     for _ in range(k - len(opponents)):
         if not combined_pool or random.random() < heuristic_pct:
             opponents.append(None)  # heuristic
@@ -1223,16 +1236,41 @@ def collect_rollout_league_batched(
 
     try:
         opp_labels = [
-            "heuristic" if opp is None
+            "heuristic" if (opp is None or opp == HEURISTIC_FIXTURE)
             else "self" if opp == script_path
             else Path(opp).stem
             for opp in opponents
         ]
         print(f"  [league] opponents: {opp_labels}", flush=True)
 
+        # Print PFSP stats: per-opponent WR and sampling weight
+        if wr_table:
+            pfsp_lines = []
+            seen_keys: set[str] = set()
+            for opp, label in zip(opponents, opp_labels):
+                if label in seen_keys:
+                    continue
+                seen_keys.add(label)
+                if label == "self":
+                    continue
+                wr_key = "heuristic" if (opp is None or opp == HEURISTIC_FIXTURE) else label
+                info = wr_table.get(wr_key, {})
+                total_u = int(info.get("total_ussr", 0))
+                total_s = int(info.get("total_us", 0))
+                wr_u = info.get("wins_ussr", 0) / total_u if total_u >= 10 else None
+                wr_s = info.get("wins_us", 0) / total_s if total_s >= 10 else None
+                wr_u_str = f"{wr_u:.2f}" if wr_u is not None else "?"
+                wr_s_str = f"{wr_s:.2f}" if wr_s is not None else "?"
+                pfsp_w = _pfsp_weight(wr_key, wr_table, pfsp_exponent)
+                pfsp_lines.append(f"    {label}: WR_ussr={wr_u_str}(n={total_u}) WR_us={wr_s_str}(n={total_s}) pfsp={pfsp_w:.3f}")
+            if pfsp_lines:
+                print("  [pfsp]", flush=True)
+                for line in pfsp_lines:
+                    print(line, flush=True)
+
         def _run_one(i: int, opp: Optional[str]) -> list[Step]:
             seed = base_seed + i * games_per_opp
-            if opp is None:
+            if opp is None or opp == HEURISTIC_FIXTURE:
                 return _collect_heuristic_from_script(script_path, games_per_opp, seed, vp_reward_coef, rollout_temp, dir_alpha, dir_epsilon)
             return _collect_vs_model_from_script(script_path, opp, games_per_opp, seed, vp_reward_coef, rollout_temp, dir_alpha, dir_epsilon)
 
@@ -1248,6 +1286,8 @@ def collect_rollout_league_batched(
                     wr_key = opp
                     if opp is not None and opp == script_path:
                         wr_key = "__self__"
+                    elif opp == HEURISTIC_FIXTURE:
+                        wr_key = None  # tracked under "heuristic" key in wr_table
                     _update_wr_table_from_steps(wr_table, wr_key, batch)
                 all_steps.extend(batch)
 
@@ -2231,6 +2271,71 @@ def run_h2h_eval(
                 pass
 
 
+def _panel_eval_worker(
+    our_script: str,
+    panel: list,
+    n_games_per_opp: int,
+    seed: int,
+    result_path: str,
+) -> None:
+    """Module-level function (required for multiprocessing fork/spawn).
+    Runs panel eval entirely on CPU, writes JSON result file.
+    """
+    import json
+    import sys
+    from pathlib import Path as _Path
+
+    try:
+        import tscore as _tscore
+    except ImportError:
+        for bd in ["build-ninja/bindings", "build/bindings"]:
+            bd_path = _Path(__file__).parent.parent / bd
+            if bd_path.exists():
+                sys.path.insert(0, str(bd_path))
+                break
+        import tscore as _tscore
+
+    results = {}
+    half = max(2, n_games_per_opp // 2)
+    pool = min(32, half)
+
+    for opp in panel:
+        if opp == HEURISTIC_FIXTURE:
+            opp_name = "heuristic"
+            try:
+                r_ussr = _tscore.benchmark_batched(our_script, _tscore.Side.USSR, half, pool_size=pool, seed=seed, nash_temperatures=False)
+                r_us = _tscore.benchmark_batched(our_script, _tscore.Side.US, half, pool_size=pool, seed=seed + half, nash_temperatures=False)
+                ussr_wins = sum(1 for r in r_ussr if r.winner == _tscore.Side.USSR)
+                us_wins = sum(1 for r in r_us if r.winner == _tscore.Side.US)
+            except Exception as e:
+                results[opp_name] = {"error": str(e)}
+                continue
+        else:
+            opp_name = _Path(opp).stem.replace("_scripted", "")
+            try:
+                r_a = _tscore.benchmark_model_vs_model_batched(
+                    model_a_path=our_script, model_b_path=opp, n_games=half,
+                    pool_size=pool, seed=seed, device="cpu", temperature=0.0,
+                )
+                r_b = _tscore.benchmark_model_vs_model_batched(
+                    model_a_path=opp, model_b_path=our_script, n_games=half,
+                    pool_size=pool, seed=seed + half, device="cpu", temperature=0.0,
+                )
+                ussr_wins = sum(1 for r in r_a if r.winner == _tscore.Side.USSR)
+                us_wins = sum(1 for r in r_b if r.winner == _tscore.Side.US)
+            except Exception as e:
+                results[opp_name] = {"error": str(e)}
+                continue
+        results[opp_name] = {
+            "ussr_wr": ussr_wins / max(1, half),
+            "us_wr": us_wins / max(1, half),
+            "combined_wr": (ussr_wins + us_wins) / max(1, half * 2),
+        }
+
+    with open(result_path, "w") as f:
+        json.dump(results, f, indent=2)
+
+
 def _export_torchscript_model(model: nn.Module, script_path: str, *, warn_only: bool = False) -> None:
     """Export a device-agnostic TorchScript copy of the current model to disk."""
     orig_device = next(model.parameters()).device
@@ -2272,13 +2377,30 @@ def export_checkpoint(
     ckpt_meta: dict,
     optimizer: Optional[torch.optim.Optimizer] = None,
 ) -> None:
-    """Save model checkpoint in format compatible with benchmark_batched."""
+    """Save model checkpoint atomically (write to .tmp then rename).
+
+    Direct torch.save to the target path is not atomic: a kill/crash mid-write
+    leaves a corrupt file at the target path. After the rename the file is either
+    fully present or absent — never corrupt. The previous checkpoint is only
+    deleted AFTER this rename succeeds, so there is always at least one valid
+    checkpoint on disk.
+    """
+    tmp_path = checkpoint_path + ".tmp"
     payload = {"model_state_dict": model.state_dict(), "args": ckpt_meta}
     if optimizer is not None:
         payload["optimizer_state_dict"] = optimizer.state_dict()
-    torch.save(payload, checkpoint_path)
+    torch.save(payload, tmp_path)
+    os.replace(tmp_path, checkpoint_path)  # atomic on Linux (same filesystem)
     script_path = checkpoint_path.replace(".pt", "_scripted.pt")
     _export_torchscript_model(model, script_path, warn_only=True)
+
+    # Update pointer file so restart scripts always know the latest valid checkpoint
+    # without having to guess the iteration number.
+    pointer_path = os.path.join(os.path.dirname(checkpoint_path), "latest_checkpoint.txt")
+    tmp_ptr = pointer_path + ".tmp"
+    with open(tmp_ptr, "w") as f:
+        f.write(checkpoint_path)
+    os.replace(tmp_ptr, pointer_path)
 
 
 # ---------------------------------------------------------------------------
@@ -2310,9 +2432,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--vf-coef", type=float, default=0.5, help="Value function coefficient")
     p.add_argument("--minibatch-size", type=int, default=2048, help="PPO minibatch size")
     p.add_argument("--eval-opponent", type=str, default=None,
-                   help="Scripted .pt of previous run's final model to eval against every --eval-every iters")
+                   help="[DEPRECATED] Use --eval-panel instead. Single scripted .pt to eval against.")
+    p.add_argument("--eval-panel", nargs="*", default=[],
+                   help="Fixed panel of opponents for async background eval. Accepts paths to scripted .pt files "
+                        "or '__heuristic__'. Evals all opponents in parallel process so training is not blocked. "
+                        "Results logged to W&B under panel/<opponent>_combined_wr. Does NOT affect checkpoint selection "
+                        "(ppo_best.pt = ppo_final.pt).")
     p.add_argument("--eval-every", type=int, default=20,
-                   help="Run h2h eval vs --eval-opponent every N iterations (default: 20)")
+                   help="Run panel eval every N iterations (default: 20)")
     p.add_argument("--side", choices=["ussr", "us", "both"], default="both",
                    help="Which side to train as")
     p.add_argument("--self-play", action="store_true",
@@ -2341,8 +2468,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--league-recency-tau", type=float, default=20.0,
                    help="Recency half-life for past-self checkpoint sampling. "
                         "weight=exp(rank/tau); higher=more uniform, lower=more recency bias (default: 20)")
-    p.add_argument("--league-heuristic-pct", type=float, default=0.10,
-                   help="Fraction of non-self league slots assigned to heuristic opponent (default: 0.10)")
+    p.add_argument("--league-heuristic-pct", type=float, default=0.0,
+                   help="[DEPRECATED] Fraction of non-self league slots assigned to heuristic opponent. "
+                        "Default changed to 0.0. Pass '__heuristic__' in --league-fixtures instead for "
+                        "proper PFSP tracking. Setting this >0 will print a deprecation warning.")
     p.add_argument("--league-fixture-fadeout", type=int, default=50,
                    help="Hard-remove fixtures from pool after this many iterations (default: 50)")
     p.add_argument("--league-self-slot", action=argparse.BooleanOptionalAction, default=True,
@@ -2386,6 +2515,18 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
+    if args.league_heuristic_pct > 0:
+        import sys
+        print(
+            f"\n[DEPRECATED] --league-heuristic-pct={args.league_heuristic_pct} is deprecated and will be removed.\n"
+            "  The coin-flip approach gives P(zero heuristic games) = (1-pct)^k per iteration.\n"
+            "  Instead, add '__heuristic__' to --league-fixtures for proper PFSP tracking:\n"
+            "    --league-fixtures <path1> <path2> __heuristic__\n"
+            "  Setting to 0.0 for this run.\n",
+            file=sys.stderr,
+        )
+        args.league_heuristic_pct = 0.0
+
     os.makedirs(args.out_dir, exist_ok=True)
 
     # Save args for reproducibility
@@ -2400,9 +2541,21 @@ def main() -> None:
             api_key_path = Path(__file__).parent.parent / ".wandb-api-key.txt"
             if api_key_path.exists():
                 os.environ["WANDB_API_KEY"] = api_key_path.read_text().strip()
+            run_name = args.wandb_run_name or f"ppo_{Path(args.out_dir).name}"
+            # Stable run_id derived from out_dir so restarts resume the same W&B run.
+            # Stored in out_dir/wandb_run_id.txt to survive process restarts.
+            run_id_file = Path(args.out_dir) / "wandb_run_id.txt"
+            if run_id_file.exists():
+                run_id = run_id_file.read_text().strip()
+            else:
+                import hashlib
+                run_id = hashlib.md5(str(Path(args.out_dir).resolve()).encode()).hexdigest()[:8]
+                run_id_file.write_text(run_id)
             wandb_run = wandb.init(
                 project=args.wandb_project,
-                name=args.wandb_run_name or f"ppo_{Path(args.out_dir).name}",
+                name=run_name,
+                id=run_id,
+                resume="allow",
                 config=vars(args),
             )
         except Exception as e:
@@ -2469,6 +2622,13 @@ def main() -> None:
     def _is_milestone(it: int) -> bool:
         return it % args.eval_every == 0 or it == args.n_iterations
 
+    # Async panel eval state (non-blocking: runs in background Process)
+    import multiprocessing as _mp
+    _panel_proc: "_mp.Process | None" = None
+    _panel_result_path: "str | None" = None
+    _panel_script_path: "str | None" = None
+    _panel_trigger_iter: int = 0
+
     print(f"\nStarting PPO training: {args.n_iterations} iterations × "
           f"{args.games_per_iter} games/iter, side={args.side}", flush=True)
     print(f"Device: {device}, lr={args.lr}, clip={args.clip_eps}, "
@@ -2481,7 +2641,6 @@ def main() -> None:
         print(f"Resuming from iteration {args.start_iteration}", flush=True)
 
     t_start = time.time()
-    best_combined = 0.0
     best_ckpt_path = os.path.join(args.out_dir, "ppo_best.pt")
 
     for iteration in range(args.start_iteration, args.n_iterations + 1):
@@ -2647,19 +2806,6 @@ def main() -> None:
             flush=True,
         )
 
-        log_dict = dict(metrics)
-        log_dict["rollout_wr"] = rollout_wr
-        log_dict["rollout_wr_ussr"] = rollout_wr_ussr
-        log_dict["rollout_wr_us"] = rollout_wr_us
-        log_dict["n_steps"] = n_steps
-        log_dict["iter_time_s"] = t_iter
-        log_dict["ent_coef"] = current_ent_coef
-        if args.self_play:
-            log_dict["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
-            log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
-        _add_scalar_weight_norms(model, log_dict)
-        _add_region_net_delta_stats(terminal_steps, log_dict)
-
         if probe_eval is not None and args.probe_every > 0 and iteration % args.probe_every == 0:
             was_training = model.training
             model.eval()
@@ -2707,7 +2853,7 @@ def main() -> None:
                 pass
         last_rolling_ckpt = new_ckpt_path
 
-        # ── Periodic h2h eval ─────────────────────────────────────────────────
+        # ── Build log dict ────────────────────────────────────────────────────
         log_dict = dict(metrics)
         log_dict["rollout_wr"] = rollout_wr
         log_dict["rollout_wr_ussr"] = rollout_wr_ussr
@@ -2719,52 +2865,106 @@ def main() -> None:
             log_dict["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
             log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
         _add_scalar_weight_norms(model, log_dict)
+        _add_region_net_delta_stats(terminal_steps, log_dict)
 
-        if _is_milestone(iteration) and args.eval_opponent:
-            t_bench_start = time.time()
-            print(f"  H2H eval vs {Path(args.eval_opponent).name} (200 games) ...", flush=True)
-            h2h = run_h2h_eval(model, args.eval_opponent, n_games=200, seed=70000 + iteration * 200)
-            t_bench = time.time() - t_bench_start
-            print(
-                f"  H2H: USSR={h2h['h2h_ussr_wr']:.3f} "
-                f"US={h2h['h2h_us_wr']:.3f} "
-                f"combined={h2h['h2h_combined_wr']:.3f} "
-                f"({t_bench:.0f}s)",
-                flush=True,
-            )
-            log_dict.update(h2h)
-            # Collect policy stats from the current iteration's rollout steps
+        # ── Async panel eval: collect result from previous run ────────────────
+        if _panel_proc is not None and not _panel_proc.is_alive():
+            _panel_proc.join()
+            _panel_proc = None
+            if _panel_result_path and os.path.exists(_panel_result_path):
+                try:
+                    with open(_panel_result_path) as f:
+                        panel_res = json.load(f)
+                    os.remove(_panel_result_path)
+                    panel_log: dict = {}
+                    valid_opps = {k: v for k, v in panel_res.items() if "error" not in v}
+                    for opp_name, stats in panel_res.items():
+                        if "error" in stats:
+                            print(f"  [panel eval] {opp_name}: ERROR {stats['error']}", flush=True)
+                            continue
+                        panel_log[f"panel/{opp_name}_ussr_wr"] = stats["ussr_wr"]
+                        panel_log[f"panel/{opp_name}_us_wr"] = stats["us_wr"]
+                        panel_log[f"panel/{opp_name}_combined_wr"] = stats["combined_wr"]
+                    if valid_opps:
+                        avg_combined = sum(v["combined_wr"] for v in valid_opps.values()) / len(valid_opps)
+                        panel_log["panel/avg_combined_wr"] = avg_combined
+                        print(
+                            f"  [panel eval iter {_panel_trigger_iter}] avg={avg_combined:.3f}: "
+                            + " | ".join(f"{k}={v['combined_wr']:.3f}" for k, v in valid_opps.items()),
+                            flush=True,
+                        )
+                    if wandb_run is not None and panel_log:
+                        wandb_run.log(panel_log, step=_panel_trigger_iter)
+                    # Persist to panel_eval_history.json for post-run checkpoint selection
+                    history_path = os.path.join(args.out_dir, "panel_eval_history.json")
+                    try:
+                        history: dict = {}
+                        if os.path.exists(history_path):
+                            with open(history_path) as f:
+                                history = json.load(f)
+                        history[str(_panel_trigger_iter)] = panel_res
+                        _save_json_atomic(history_path, history)
+                    except Exception as he:
+                        print(f"  [panel eval] history save failed: {he}", flush=True)
+                except Exception as e:
+                    print(f"  [panel eval] result read failed: {e}", flush=True)
+            if _panel_script_path:
+                try:
+                    os.remove(_panel_script_path)
+                except OSError:
+                    pass
+
+        # ── Async panel eval: trigger new run at milestone ────────────────────
+        if _is_milestone(iteration) and args.eval_panel and _panel_proc is None:
+            _panel_script_path = os.path.join(args.out_dir, f"panel_eval_{iteration:04d}.pt")
+            _panel_result_path = os.path.join(args.out_dir, f"panel_eval_{iteration:04d}_result.json")
+            _panel_trigger_iter = iteration
             try:
-                policy_stats = collect_policy_stats(steps=all_steps)
-                log_dict.update(policy_stats)
+                _export_torchscript_model(model, _panel_script_path, warn_only=False)
+                # Use "spawn" to avoid inheriting CUDA context from parent (fork + CUDA = deadlock).
+                _panel_proc = _mp.get_context("spawn").Process(
+                    target=_panel_eval_worker,
+                    args=(_panel_script_path, args.eval_panel, 200, 70000 + iteration * 200, _panel_result_path),
+                    daemon=True,
+                )
+                _panel_proc.start()
+                panel_labels = [
+                    "heuristic" if p == HEURISTIC_FIXTURE else Path(p).stem.replace("_scripted", "")
+                    for p in args.eval_panel
+                ]
+                print(f"  [panel eval] launched pid={_panel_proc.pid} iter={iteration} panel={panel_labels}", flush=True)
             except Exception as e:
-                print(f"  [stats] policy stats failed: {e}", flush=True)
+                print(f"  [panel eval] launch failed: {e}", flush=True)
+                _panel_proc = None
 
-            if h2h["h2h_combined_wr"] > best_combined:
-                best_combined = h2h["h2h_combined_wr"]
-                export_checkpoint(model, best_ckpt_path, ckpt_meta)
-                print(f"  New best: combined={best_combined:.3f}")
-
-            if wandb_run is not None:
-                wandb_run.log(log_dict, step=iteration)
-        else:
-            if wandb_run is not None:
-                wandb_run.log(log_dict, step=iteration)
+        if wandb_run is not None:
+            wandb_run.log(log_dict, step=iteration)
 
     # ── Final checkpoint + summary ────────────────────────────────────────────
     final_path = os.path.join(args.out_dir, "ppo_final.pt")
     ckpt_meta["total_iters"] = global_iter_offset + args.n_iterations
     export_checkpoint(model, final_path, ckpt_meta)
 
-    # ppo_best.pt was saved at peak H2H score during training — do NOT overwrite it.
-    # If no eval ever ran (eval_every=0 or run too short), fall back to final.
+    # ppo_best.pt = ppo_final.pt. H2H-based checkpoint selection was removed because
+    # 200-game H2H has ~3.5% SE (barely better than random) and caused echo-chamber
+    # regression (v24-v26). Panel eval results are logged to W&B for monitoring only.
     import shutil
-    if not os.path.exists(best_ckpt_path):
-        shutil.copy2(final_path, best_ckpt_path)
-        final_scripted = final_path.replace(".pt", "_scripted.pt")
-        best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
-        if os.path.exists(final_scripted) and not os.path.exists(best_scripted):
-            shutil.copy2(final_scripted, best_scripted)
+    shutil.copy2(final_path, best_ckpt_path)
+    final_scripted = final_path.replace(".pt", "_scripted.pt")
+    best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
+    if os.path.exists(final_scripted):
+        shutil.copy2(final_scripted, best_scripted)
+
+    # Clean up any still-running panel eval process
+    if _panel_proc is not None and _panel_proc.is_alive():
+        _panel_proc.terminate()
+        _panel_proc.join(timeout=5)
+    for leftover in [_panel_result_path, _panel_script_path]:
+        if leftover:
+            try:
+                os.remove(leftover)
+            except OSError:
+                pass
 
     t_total = time.time() - t_start
     print(f"\nTraining complete in {t_total/60:.1f} minutes")

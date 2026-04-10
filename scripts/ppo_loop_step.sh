@@ -22,15 +22,56 @@ NEXT_LOG="results/ppo_${NEXT}.log"
 FINISHED_SCRIPTED="data/checkpoints/scripted_for_elo/${FINISHED}_scripted.pt"
 WEAKEST_FIXTURE="data/checkpoints/scripted_for_elo/v8_scripted.pt"
 MID_FIXTURE="data/checkpoints/scripted_for_elo/v14_scripted.pt"
-FRONTIER_FIXTURE="data/checkpoints/scripted_for_elo/v19_scripted.pt"
+FRONTIER_FIXTURE="data/checkpoints/scripted_for_elo/v22_scripted.pt"
 
-# --- Prefer ppo_best.pt over ppo_final.pt (best H2H checkpoint, not end-of-run) ---
-# ppo_final.pt often overshoots; ppo_best.pt captures the peak H2H win rate.
+# --- Confirmation tournament: pick ppo_best.pt from panel eval history ---
+# Runs ~10 min on CPU; selects the top-3 panel-eval checkpoints by avg combined WR,
+# runs a round-robin tournament among them + fixtures, copies winner to ppo_best.pt.
+CONFIRM_LOG="results/confirm_${FINISHED}.log"
+if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Running confirmation tournament for $FINISHED ..." \
+    >> results/autonomous_decisions.log
+  uv run python scripts/ppo_confirm_best.py \
+    --run-dir "$FINISHED_DIR" \
+    --fixtures \
+      "v8:${WEAKEST_FIXTURE}" \
+      "v14:${MID_FIXTURE}" \
+      "v22:${FRONTIER_FIXTURE}" \
+      "heuristic" \
+    --n-top 3 \
+    --n-games 400 \
+    --anchor v14 --anchor-elo 2001 \
+    --script-dir data/checkpoints/scripted_for_elo \
+    2>&1 | tee "$CONFIRM_LOG"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Confirmation tournament done for $FINISHED" \
+    >> results/autonomous_decisions.log
+else
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] No panel_eval_history.json for $FINISHED — skipping confirmation tournament" \
+    >> results/autonomous_decisions.log
+fi
+
+# ppo_best.pt set by confirmation tournament above; fall back to ppo_final.pt if missing.
 FINISHED_CHECKPOINT="${FINISHED_DIR}/ppo_final.pt"
 if [ -f "${FINISHED_DIR}/ppo_best.pt" ]; then
   FINISHED_CHECKPOINT="${FINISHED_DIR}/ppo_best.pt"
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Using ppo_best.pt for $FINISHED (peak H2H, not final)" \
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Using ppo_best.pt for $FINISHED (confirmation tournament winner)" \
     >> results/autonomous_decisions.log
+fi
+
+# --- One-time checkpoint override (e.g. restart lineage from a different base) ---
+# Create results/checkpoint_override_${NEXT}.txt with the desired checkpoint path to override.
+OVERRIDE_FILE="results/checkpoint_override_${NEXT}.txt"
+if [ -f "$OVERRIDE_FILE" ]; then
+  OVERRIDE_PATH=$(cat "$OVERRIDE_FILE" | tr -d '[:space:]')
+  if [ -f "$OVERRIDE_PATH" ]; then
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] OVERRIDE: $NEXT will start from $OVERRIDE_PATH (not $FINISHED_CHECKPOINT)" \
+      >> results/autonomous_decisions.log
+    FINISHED_CHECKPOINT="$OVERRIDE_PATH"
+    mv "$OVERRIDE_FILE" "${OVERRIDE_FILE}.used"
+  else
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARNING: override file $OVERRIDE_FILE found but path $OVERRIDE_PATH does not exist — ignoring" \
+      >> results/autonomous_decisions.log
+  fi
 fi
 
 # --- Copy finished model's scripted file to scripted_for_elo/ ---
@@ -98,6 +139,7 @@ uv run python scripts/run_elo_tournament.py \
   --resume-from "$LADDER" \
   --out "$LADDER" \
   --script-dir data/checkpoints/scripted_for_elo \
+  --match-cache-dir results/matches \
   2>&1 | tee -a "$ELO_LOG"
 
 # --- Plateau check: new_model.elo vs 3rd-place from BEFORE it was added ---
@@ -207,15 +249,20 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
     "$WEAKEST_FIXTURE" \
     "$MID_FIXTURE" \
     "$FRONTIER_FIXTURE" \
+    "__heuristic__" \
   --league-recency-tau 20 \
-  --league-fixture-fadeout 50 \
-  --league-heuristic-pct 0.10 \
+  --league-fixture-fadeout 150 \
+  --league-heuristic-pct 0.0 \
   --pfsp-exponent 1.0 \
   --dir-alpha 0.3 \
   --dir-epsilon 0.25 \
   $UPGO_FLAG \
   --eval-every 20 \
-  --eval-opponent "$FINISHED_SCRIPTED" \
+  --eval-panel \
+    "$WEAKEST_FIXTURE" \
+    "$MID_FIXTURE" \
+    "$FRONTIER_FIXTURE" \
+    "__heuristic__" \
   --rollout-workers 1 \
   --rollout-temp 1.2 \
   --device cuda --wandb --wandb-run-name "ppo_${NEXT}" \

@@ -3627,23 +3627,31 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
         step.country_mask.index_put_({static_cast<int64_t>(cid)}, true);
     }
 
-    auto source_logits = country_logits_raw.defined()
+    // country_logits_raw is the soft-mixture probability distribution from the model
+    // (mixing * softmax(strategy_logits) summed across strategies).
+    // Do NOT override with hard-argmax strategy — that causes log_prob mismatch with Python PPO.
+    auto source_probs = country_logits_raw.defined()
         ? country_logits_raw
         : torch::zeros({kCountrySlots}, torch::TensorOptions().dtype(torch::kFloat32));
-    if (strategy_logits_raw.defined() && country_strategy_logits_raw.defined()) {
-        const auto strategy_index = strategy_logits_raw.argmax(/*dim=*/0).item<int64_t>();
-        source_logits = country_strategy_logits_raw.index({strategy_index});
-    }
 
-    auto masked_country = torch::full_like(source_logits, -std::numeric_limits<float>::infinity());
+    // Mask inaccessible countries to 0 (probability space, not logit space).
+    auto masked_probs = torch::zeros_like(source_probs);
     for (const auto cid : accessible) {
         const auto index = static_cast<int64_t>(cid);
-        masked_country.index_put_({index}, tensor_at(source_logits, index));
+        masked_probs.index_put_({index}, tensor_at(source_probs, index));
     }
-    const auto scaled_country = masked_country / temperature;
-    const auto country_probs = torch::softmax(scaled_country, 0);
-    // Use unscaled logits for log_prob to match Python PPO's recomputation at T=1.0.
-    const auto country_log_probs = torch::log_softmax(masked_country, 0);
+    // Renormalize after masking.
+    const auto sum_probs = masked_probs.sum();
+    const auto normalized_probs = masked_probs / (sum_probs + 1e-10f);
+
+    // Temperature sampling: softmax(log(p) / T) ∝ p^(1/T).
+    const auto log_probs_base = torch::log(normalized_probs + 1e-10f);
+    const auto scaled_log = log_probs_base / temperature;
+    const auto country_probs = torch::softmax(scaled_log, 0);
+
+    // Log_prob for PPO stored at T=1.0 to match Python PPO's recomputation:
+    //   country_logits (mixed probs) → mask to 0 → normalize → log
+    const auto country_log_probs = log_probs_base;
 
     ActionEncoding action{.card_id = sampled_card_id, .mode = mode, .targets = {}};
     float log_prob_country = 0.0f;
