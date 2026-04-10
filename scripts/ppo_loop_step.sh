@@ -175,6 +175,19 @@ if [ "$PLATEAU_COUNT" -ge 1 ]; then
     >> results/autonomous_decisions.log
 fi
 
+# --- League pool safety: NEXT_DIR is fresh, so no stale iter files to worry about.
+# But guard against accidental re-use: if NEXT_DIR already has iter_*.pt from a
+# different checkpoint lineage (e.g. after a crash mid-run), remove them so the
+# new run's league pool starts clean.
+if [ -d "$NEXT_DIR" ]; then
+  STALE_COUNT=$(ls "${NEXT_DIR}"/iter_*.pt 2>/dev/null | wc -l)
+  if [ "$STALE_COUNT" -gt 0 ]; then
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARNING: $NEXT_DIR has $STALE_COUNT stale iter_*.pt files — removing to prevent league pool mismatch" \
+      >> results/autonomous_decisions.log
+    rm -f "${NEXT_DIR}"/iter_*.pt "${NEXT_DIR}"/iter_*_scripted.pt
+  fi
+fi
+
 # --- Launch next PPO run ---
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from ${FINISHED} $(basename $FINISHED_CHECKPOINT)" \
   >> results/autonomous_decisions.log
