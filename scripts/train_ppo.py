@@ -33,11 +33,12 @@ import torch.nn.functional as F
 # Bindings
 _repo_root = Path(__file__).resolve().parent.parent
 for _bindings_path in (
+    _repo_root / "build-ninja" / "bindings",  # preferred (ninja build)
     _repo_root / "build" / "bindings",
-    _repo_root / "build-ninja" / "bindings",
 ):
+    # Check for actual .so file, not just directory existence (empty dir would break path)
     _bindings_dir = str(_bindings_path)
-    if _bindings_path.exists() and _bindings_dir not in sys.path:
+    if any(_bindings_path.glob("tscore*.so")) and _bindings_dir not in sys.path:
         sys.path.insert(0, _bindings_dir)
         break
 _py_dir = str(Path(__file__).resolve().parent.parent / "python")
