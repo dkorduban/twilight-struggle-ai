@@ -53,6 +53,23 @@ const T& sample_one(std::span<const T> values, Pcg64Rng& rng) {
     return values[rng.choice_index(values.size())];
 }
 
+/// Choose an option index: use policy callback if available, otherwise random.
+int choose_option(
+    const PublicState& pub, CardId card_id, Side side,
+    int n_options, Pcg64Rng& rng, const PolicyCallbackFn* cb
+) {
+    if (cb && n_options > 1) {
+        EventDecision dec;
+        dec.source_card = card_id;
+        dec.kind = DecisionKind::SmallChoice;
+        dec.n_options = n_options;
+        dec.acting_side = side;
+        const int choice = (*cb)(pub, dec);
+        return std::clamp(choice, 0, n_options - 1);
+    }
+    return static_cast<int>(rng.choice_index(static_cast<size_t>(n_options)));
+}
+
 void apply_vp_delta(PublicState& pub, Side side, int delta) {
     if (side == Side::USSR) {
         pub.vp += delta;
@@ -144,7 +161,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
     const PublicState& pub,
     const ActionEncoding& action,
     Side side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
 ) {
     auto next = pub;
     bool force_game_over = false;
@@ -249,7 +267,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 16: {
-            if (rng.choice_index(2) == 0) {
+            // Warsaw Pact: 0 = remove US influence from 4 E.Europe, 1 = add USSR to 5 E.Europe
+            if (choose_option(next, 16, Side::USSR, 2, rng, policy_cb) == 0) {
                 std::vector<CountryId> pool;
                 for (const auto cid : kEasternBlocIds) {
                     if (next.influence_of(Side::US, cid) > 0) {
@@ -367,11 +386,15 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             }
             break;
 
-        case 29:
+        case 29: {
+            // East European Unrest: remove 1 USSR influence from 3 E.Europe countries
+            // (2 each in Late War, turns 8-10).
+            const int amount = (next.turn >= 8) ? 2 : 1;
             for (const auto cid : sample_up_to(kEasternBlocIds, 3, rng)) {
-                add_influence(next, Side::US, cid, 1);
+                add_influence(next, Side::USSR, cid, -amount);
             }
             break;
+        }
 
         case 30: {
             std::vector<CountryId> pool;
@@ -509,14 +532,17 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             const auto winner =
                 side == Side::USSR ? (ussr_roll >= us_roll ? Side::USSR : Side::US)
                                    : (us_roll >= ussr_roll ? Side::US : Side::USSR);
-            const auto defcon_delta = rng.choice_index(2) == 0 ? -1 : 1;
+            // Summit: winner chooses DEFCON direction. 0 = lower (-1), 1 = raise (+1)
+            const auto defcon_delta = choose_option(next, 48, winner, 2, rng, policy_cb) == 0 ? -1 : 1;
             next.defcon = std::clamp(next.defcon + defcon_delta, 1, 5);
             apply_vp_delta(next, winner, 2);
             break;
         }
 
         case 49: {
-            next.defcon = rng.uniform_int(1, 5);
+            // How I Learned: player sets DEFCON to any level 1-5.
+            // Options: 0→DEFCON 1, 1→DEFCON 2, 2→DEFCON 3, 3→DEFCON 4, 4→DEFCON 5
+            next.defcon = choose_option(next, 49, side, 5, rng, policy_cb) + 1;
             next.milops[to_index(side)] = 5;
             break;
         }
@@ -856,13 +882,17 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 90: {
+            // The Reformer: 4 influence in non-US-controlled Europe + DEFCON+1.
+            // +2 extra influence if USSR ahead on space race.
             std::vector<CountryId> pool;
             for (const auto cid : all_country_ids()) {
                 if (country_spec(cid).region == Region::Europe && !controls_country(Side::US, cid, next)) {
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 4, rng)) {
+            const int base = 4;
+            const int bonus = (next.space[to_index(Side::USSR)] > next.space[to_index(Side::US)]) ? 2 : 0;
+            for (const auto cid : sample_up_to(pool, base + bonus, rng)) {
                 add_influence(next, Side::USSR, cid, 1);
             }
             next.defcon = std::min(5, next.defcon + 1);
@@ -1026,7 +1056,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
     const PublicState& pub,
     const ActionEncoding& action,
     Side side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
 ) {
     auto next = pub;
 
@@ -1128,7 +1159,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
         }
 
         case ActionMode::Event: {
-            auto [event_pub, over, winner] = apply_event(pub, action, side, rng);
+            auto [event_pub, over, winner] = apply_event(pub, action, side, rng, policy_cb);
             return {event_pub, over, winner};
         }
     }
