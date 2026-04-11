@@ -7,7 +7,7 @@ DATA_05M="data/v3_selfplay_05M_v2"   # dual-callback data; 516k rows, 4500 games
 DATA_1M="data/v3_selfplay_1M_v2"    # not yet collected
 EXCLUDE_05M="$DATA_05M/EXCLUDE_GAME_IDS.txt"  # proxy-eval game_ids — never in train/val
 OUT_BASE="data/checkpoints/phase4"
-LOG_BASE="results/phase4_logs"
+LOG_BASE="results/logs/phase4"
 mkdir -p "$OUT_BASE" "$LOG_BASE"
 
 EPOCHS=60

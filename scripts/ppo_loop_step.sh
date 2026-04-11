@@ -13,9 +13,9 @@ NEXT=$2       # e.g. v15
 
 FINISHED_DIR="data/checkpoints/ppo_${FINISHED}_league"
 NEXT_DIR="data/checkpoints/ppo_${NEXT}_league"
-LADDER="results/elo_full_ladder.json"
-ELO_LOG="results/elo_${FINISHED}_update.log"
-NEXT_LOG="results/ppo_${NEXT}.log"
+LADDER="results/elo/elo_full_ladder.json"
+ELO_LOG="results/logs/elo/elo_${FINISHED}_update.log"
+NEXT_LOG="results/logs/ppo/ppo_${NEXT}.log"
 
 # Fixtures updated 2026-04-11: use ALL good scripted versions as league fixtures.
 # Broader opponent diversity provides harder training signal (Opus analysis:
@@ -53,7 +53,7 @@ echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] League fixtures: $FIXTURE_COUNT opponen
 # --- Confirmation tournament: pick ppo_best.pt from panel eval history ---
 # Runs ~10 min on CPU; selects the top-3 panel-eval checkpoints by avg combined WR,
 # runs a round-robin tournament among them + fixtures, copies winner to ppo_best.pt.
-CONFIRM_LOG="results/confirm_${FINISHED}.log"
+CONFIRM_LOG="results/logs/elo/confirm_${FINISHED}.log"
 if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Running confirmation tournament for $FINISHED ..." \
     >> results/autonomous_decisions.log
@@ -344,7 +344,7 @@ nohup bash -c "
     NEXT_NUM=\$(echo '$NEXT' | sed 's/v//')
     AFTER_NUM=\$((NEXT_NUM + 1))
     echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] watcher: $NEXT done, running loop step\" >> results/autonomous_decisions.log
-    bash scripts/ppo_loop_step.sh $NEXT v\${AFTER_NUM} >> results/ppo_loop_watcher.log 2>&1
+    bash scripts/ppo_loop_step.sh $NEXT v\${AFTER_NUM} >> results/logs/ppo/ppo_loop_watcher.log 2>&1
   else
     echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] watcher: $NEXT ended without ppo_final.pt — no auto-launch\" >> results/autonomous_decisions.log
   fi

@@ -65,8 +65,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Select per-side fixture pools via Elo ranking + JSD deduplication"
     )
-    p.add_argument("--jsd-matrix", default="results/jsd_matrix.json")
-    p.add_argument("--elo-ladder", default="results/elo_full_ladder.json")
+    p.add_argument("--jsd-matrix", default="results/elo/jsd_matrix.json")
+    p.add_argument("--elo-ladder", default="results/elo/elo_full_ladder.json")
     p.add_argument("--model-dir", default="data/checkpoints/scripted_for_elo",
                    help="Directory containing *_scripted.pt files")
     p.add_argument("--ussr-pool-n", type=int, default=8,
@@ -189,7 +189,7 @@ def main() -> None:
         "ussr_fixture_paths": ussr_paths,
         "us_fixture_paths": us_paths,
     }
-    out_path = Path("results/selected_fixtures.json")
+    out_path = Path("results/elo/selected_fixtures.json")
     with open(out_path, "w") as f:
         json.dump(out, f, indent=2)
     print(f"\nSaved selection to {out_path}")

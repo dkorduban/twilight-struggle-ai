@@ -7,7 +7,7 @@
 set -euo pipefail
 
 REPO=/home/dkord/code/twilight-struggle-ai
-LOG="$REPO/results/health_checks.log"
+LOG="$REPO/results/logs/misc/health_checks.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 ALERTS=()
 

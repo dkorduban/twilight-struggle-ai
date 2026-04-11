@@ -248,7 +248,7 @@ def main():
         print(f"  Advance: {best.advance_time_sec:.3f}s ({100*best.advance_time_sec/total:.1f}%)")
 
         # Write markdown report
-        report_path = Path('/home/dkord/code/twilight-struggle-ai/results/mcts_throughput_matrix.md')
+        report_path = Path('/home/dkord/code/twilight-struggle-ai/results/analysis/mcts_throughput_matrix.md')
         report_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(report_path, 'w') as f:
@@ -292,7 +292,7 @@ def main():
             else:
                 f.write("**Conclusion**: Fairly balanced; no single bottleneck dominates.\n")
 
-        print(f"\n✓ Report written to results/mcts_throughput_matrix.md")
+        print(f"\n✓ Report written to results/analysis/mcts_throughput_matrix.md")
 
 if __name__ == '__main__':
     main()

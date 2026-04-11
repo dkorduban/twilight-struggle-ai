@@ -7,7 +7,7 @@ then computes all N*(N-1)/2 pairwise JSD values from cached tensors.
 Tracks all 3 heads separately: card_jsd, mode_jsd, country_jsd.
 Combined distance = 0.5*card + 0.3*country + 0.2*mode (weighted by entropy).
 
-Output: results/jsd_matrix.json
+Output: results/elo/jsd_matrix.json
 """
 from __future__ import annotations
 
@@ -143,7 +143,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model-dir", default="data/checkpoints/scripted_for_elo",
                    help="Directory containing *_scripted.pt files")
     p.add_argument("--probe-set", default="data/probe_positions.parquet")
-    p.add_argument("--out", default="results/jsd_matrix.json")
+    p.add_argument("--out", default="results/elo/jsd_matrix.json")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--include", nargs="*", help="Only include these model names (e.g. v8 v14 v22)")

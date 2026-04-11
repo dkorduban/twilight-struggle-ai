@@ -12,7 +12,7 @@ set -euo pipefail
 TIER="${1:-05M}"
 BASE_DATA="data/v3_selfplay"
 OUT_DIR="data/checkpoints/phase4"
-LOG_DIR="results/phase4_logs"
+LOG_DIR="results/logs/phase4"
 mkdir -p "$OUT_DIR" "$LOG_DIR"
 
 # Common hyperparams (plan §Phase 4)

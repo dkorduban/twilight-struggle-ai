@@ -10,15 +10,15 @@ Usage (full tournament):
         --models v12:data/checkpoints/ppo_v12_league/ppo_best.pt \
                  v13:data/checkpoints/ppo_v13_league/ppo_final.pt \
         --games 400 --anchor v12 --anchor-elo 2001 \
-        --schedule round_robin --out results/elo_ppo_ladder.json
+        --schedule round_robin --out results/elo/elo_ppo_ladder.json
 
 Usage (add new candidate, reuse existing results):
     uv run python scripts/run_elo_tournament.py \
         --models v12:... v13:... v14:data/checkpoints/ppo_v14_league/ppo_final.pt \
         --games 400 --anchor v12 --anchor-elo 2001 \
         --schedule round_robin \
-        --resume-from results/elo_ppo_ladder.json \
-        --out results/elo_ppo_ladder.json
+        --resume-from results/elo/elo_ppo_ladder.json \
+        --out results/elo/elo_ppo_ladder.json
 """
 
 from __future__ import annotations
@@ -419,7 +419,7 @@ def main():
     p.add_argument("--schedule", choices=["chain", "round_robin"], default="chain")
     p.add_argument("--seed", type=int, default=88000)
     p.add_argument("--script-dir", type=Path, default=Path("data/checkpoints/scripted_for_elo"))
-    p.add_argument("--out", type=Path, default=Path("results/elo_ppo_ladder.json"))
+    p.add_argument("--out", type=Path, default=Path("results/elo/elo_ppo_ladder.json"))
     p.add_argument(
         "--resume-from", type=Path, default=None,
         help="JSON from a previous tournament run; reuse existing match results and only "

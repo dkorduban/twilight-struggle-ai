@@ -11,7 +11,7 @@ cd /home/dkord/code/twilight-struggle-ai
 VERSION=$1
 DIR="data/checkpoints/ppo_${VERSION}_league"
 POINTER="$DIR/latest_checkpoint.txt"
-LOG="results/ppo_${VERSION}.log"
+LOG="results/logs/ppo/ppo_${VERSION}.log"
 
 if [ ! -f "$POINTER" ]; then
   echo "ERROR: $POINTER not found. Cannot determine latest checkpoint." >&2

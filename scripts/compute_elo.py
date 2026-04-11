@@ -281,7 +281,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("results/elo_ratings.json"),
+        default=Path("results/elo/elo_ratings.json"),
     )
     parser.add_argument(
         "--anchor-rating",
