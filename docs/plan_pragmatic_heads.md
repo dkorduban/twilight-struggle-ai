@@ -75,7 +75,7 @@ Marshall Plan" vs "place influence from main AR ops."
 
 ---
 
-## Phase 1: SmallChoiceHead + Engine Callbacks (1-2 weeks)
+## Phase 1: SmallChoiceHead + Engine Callbacks ✅ COMPLETE (2026-04-11)
 
 ### Why first
 - Highest ROI: 8 binary/option events become policy-driven
