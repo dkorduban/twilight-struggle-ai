@@ -75,7 +75,20 @@ def bounded_knapsack_dp(
             take = int(choice[c, remaining].item())
             alloc[b, c] = take
             remaining -= take * int(cost[b, c].item())
-    return alloc
+    if not scores.requires_grad:
+        return alloc
+
+    soft_logits = scores[:, :, 0].masked_fill(~legal_mask, -1e9)
+    soft_weights = torch.softmax(soft_logits, dim=1) * legal_mask.to(scores.dtype)
+    normalizer = soft_weights.sum(dim=1, keepdim=True)
+    soft_weights = torch.where(
+        normalizer > 0,
+        soft_weights / normalizer,
+        torch.zeros_like(soft_weights),
+    )
+    soft_alloc = soft_weights * budget.to(dtype=scores.dtype).unsqueeze(1)
+    soft_alloc = torch.minimum(soft_alloc, cap.to(dtype=scores.dtype))
+    return alloc.to(dtype=scores.dtype) + soft_alloc - soft_alloc.detach()
 
 
 def greedy_topk_alloc(
