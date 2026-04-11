@@ -1,40 +1,25 @@
 #!/usr/bin/env python3
 """Select a diverse, Elo-stratified fixture set for PPO league training.
 
-Algorithm: Pareto-front seeding + greedy max-min JSD diversification.
+v2 Algorithm: Per-side pools with JSD deduplication.
 
-1. Load JSD matrix (from compute_jsd_matrix.py) + Elo ladder.
-2. Find Pareto front in (elo_ussr, elo_us) space — mandatory anchors.
-3. Greedily add models that maximize min-JSD distance to current set.
-4. Stop at --target-n.
+USSR pool: ranked by elo_ussr, greedily add models with min-JSD > --min-jsd.
+US pool:   ranked by elo_us,   greedily add models with min-JSD > --min-jsd.
+Both pools deduplicate within themselves (models too similar are skipped).
 
-Prints: --league-fixtures argument list (space-separated paths).
+The combined unique set is what --league-fixtures outputs.
+With two separate pools, the PFSP trainer can pick harder USSR opponents for
+USSR decisions and harder US opponents for US decisions.
+
+Prints:
+  --league-fixtures argument list (space-separated paths)
+  --ussr-fixtures / --us-fixtures argument lists for two-pool PFSP
 """
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
-
-
-def pareto_front(models: dict[str, dict]) -> list[str]:
-    """Return names on the 2D Pareto front in (elo_ussr, elo_us) space (maximization)."""
-    names = list(models.keys())
-    front = []
-    for a in names:
-        dominated = False
-        for b in names:
-            if a == b:
-                continue
-            if (models[b]["elo_ussr"] >= models[a]["elo_ussr"] and
-                    models[b]["elo_us"] >= models[a]["elo_us"] and
-                    (models[b]["elo_ussr"] > models[a]["elo_ussr"] or
-                     models[b]["elo_us"] > models[a]["elo_us"])):
-                dominated = True
-                break
-        if not dominated:
-            front.append(a)
-    return front
 
 
 def min_dist_to_set(
@@ -45,55 +30,80 @@ def min_dist_to_set(
 ) -> float:
     if not current_set:
         return float("inf")
-    return min(
+    dists = [
         matrix[candidate][s][metric]
         for s in current_set
         if s in matrix.get(candidate, {})
-    )
+    ]
+    return min(dists) if dists else float("inf")
+
+
+def build_pool(
+    candidates_sorted: list[str],
+    target_n: int,
+    min_jsd: float,
+    matrix: dict[str, dict[str, dict]],
+    metric: str = "combined",
+) -> list[str]:
+    """Greedily build a pool by rank order, skipping near-duplicates.
+
+    Models are pre-sorted by the relevant Elo dimension (caller's responsibility).
+    We add the top model, then each subsequent model only if its min-JSD to the
+    already-selected set exceeds min_jsd.
+    """
+    selected: list[str] = []
+    for cand in candidates_sorted:
+        if len(selected) >= target_n:
+            break
+        d = min_dist_to_set(cand, selected, matrix, metric)
+        if d >= min_jsd:
+            selected.append(cand)
+    return selected
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Select diverse fixture set via Pareto + greedy max-min JSD"
+        description="Select per-side fixture pools via Elo ranking + JSD deduplication"
     )
     p.add_argument("--jsd-matrix", default="results/jsd_matrix.json")
     p.add_argument("--elo-ladder", default="results/elo_full_ladder.json")
     p.add_argument("--model-dir", default="data/checkpoints/scripted_for_elo",
                    help="Directory containing *_scripted.pt files")
-    p.add_argument("--target-n", type=int, default=16,
-                   help="Target fixture count (excluding heuristic)")
+    p.add_argument("--ussr-pool-n", type=int, default=8,
+                   help="Target USSR pool size")
+    p.add_argument("--us-pool-n", type=int, default=8,
+                   help="Target US pool size")
+    p.add_argument("--min-jsd", type=float, default=0.010,
+                   help="Minimum JSD distance to include a model (deduplication threshold)")
     p.add_argument("--metric", default="combined",
                    choices=["combined", "card_jsd", "mode_jsd", "country_jsd"],
-                   help="Distance metric for greedy selection")
+                   help="Distance metric for deduplication")
     p.add_argument("--min-elo", type=float, default=None,
                    help="Exclude models below this combined Elo")
     p.add_argument("--add-heuristic", action="store_true", default=True,
                    help="Append __heuristic__ to output")
     p.add_argument("--no-heuristic", dest="add_heuristic", action="store_false")
     p.add_argument("--show-analysis", action="store_true",
-                   help="Print per-model JSD stats")
+                   help="Print per-model JSD stats vs selected set")
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
 
-    # Load JSD matrix
     with open(args.jsd_matrix) as f:
         jsd_data = json.load(f)
     matrix: dict[str, dict[str, dict]] = jsd_data["matrix"]
     jsd_models = set(jsd_data["models"])
 
-    # Load Elo ladder
     with open(args.elo_ladder) as f:
         elo_data = json.load(f)
     elo_ratings: dict[str, dict] = elo_data["ratings"]
 
-    # Intersect: only models present in both JSD matrix AND Elo ladder AND scripted dir
     model_dir = Path(args.model_dir)
     scripted_models = {p.stem.replace("_scripted", ""): p for p in model_dir.glob("*_scripted.pt")}
 
-    candidates = {}
+    candidates: dict[str, dict] = {}
     for name in jsd_models:
         if name not in elo_ratings:
             continue
@@ -107,82 +117,77 @@ def main() -> None:
 
     print(f"Candidate pool: {len(candidates)} models (in JSD matrix + Elo + scripted dir)")
 
-    # Pareto front
-    front = pareto_front(candidates)
-    front_set = set(front)
-    print(f"Pareto front ({len(front)} models): {sorted(front)}")
+    # --- USSR pool: rank by elo_ussr ---
+    ussr_ranked = sorted(candidates, key=lambda n: candidates[n]["elo_ussr"], reverse=True)
+    ussr_pool = build_pool(ussr_ranked, args.ussr_pool_n, args.min_jsd, matrix, args.metric)
 
-    # Greedy max-min JSD selection
-    selected: list[str] = list(front)  # seed with Pareto-front models
+    print(f"\nUSSR pool ({len(ussr_pool)} models, ranked by elo_ussr, min-JSD={args.min_jsd}):")
+    for name in ussr_pool:
+        r = candidates[name]
+        d = min_dist_to_set(name, [x for x in ussr_pool if x != name], matrix, args.metric)
+        print(f"  {name}: elo={r['elo']:.0f} ussr={r['elo_ussr']:.0f} us={r['elo_us']:.0f}  min-JSD={d:.4f}")
 
-    # If Pareto front already exceeds target, prune it by greedy removal of most redundant
-    if len(selected) > args.target_n:
-        print(f"Pareto front ({len(selected)}) > target ({args.target_n}), pruning...")
-        while len(selected) > args.target_n:
-            # Remove the model whose removal changes min-spread the least
-            best_remove = None
-            best_min_spread_after = -1.0
-            for candidate in selected:
-                remaining = [s for s in selected if s != candidate]
-                # min-spread = average of (min dist to set) for each remaining model
-                spread = sum(
-                    min_dist_to_set(r, [s for s in remaining if s != r], matrix, args.metric)
-                    for r in remaining
-                ) / max(1, len(remaining))
-                if spread > best_min_spread_after:
-                    best_min_spread_after = spread
-                    best_remove = candidate
-            if best_remove:
-                print(f"  Removing {best_remove} (spread after removal: {best_min_spread_after:.4f})")
-                selected.remove(best_remove)
+    # --- US pool: rank by elo_us ---
+    us_ranked = sorted(candidates, key=lambda n: candidates[n]["elo_us"], reverse=True)
+    us_pool = build_pool(us_ranked, args.us_pool_n, args.min_jsd, matrix, args.metric)
 
-    # Greedy add: pick model maximizing min-distance to current set
-    remaining_candidates = [n for n in candidates if n not in set(selected)]
-    while len(selected) < args.target_n and remaining_candidates:
-        best = max(
-            remaining_candidates,
-            key=lambda c: min_dist_to_set(c, selected, matrix, args.metric),
-        )
-        best_dist = min_dist_to_set(best, selected, matrix, args.metric)
-        selected.append(best)
-        remaining_candidates.remove(best)
-        print(f"  Added {best}: min-dist={best_dist:.4f}")
+    print(f"\nUS pool ({len(us_pool)} models, ranked by elo_us, min-JSD={args.min_jsd}):")
+    for name in us_pool:
+        r = candidates[name]
+        d = min_dist_to_set(name, [x for x in us_pool if x != name], matrix, args.metric)
+        print(f"  {name}: elo={r['elo']:.0f} ussr={r['elo_ussr']:.0f} us={r['elo_us']:.0f}  min-JSD={d:.4f}")
 
-    print(f"\nSelected {len(selected)} fixtures:")
+    # --- Combined unique set ---
+    combined_set: list[str] = list(dict.fromkeys(ussr_pool + us_pool))  # preserve order, dedup
+    combined_sorted = sorted(combined_set, key=lambda n: candidates[n]["elo"], reverse=True)
 
-    # Sort by Elo descending for display
-    selected_sorted = sorted(selected, key=lambda n: elo_ratings[n]["elo"], reverse=True)
-    for name in selected_sorted:
-        r = elo_ratings[name]
-        asym = r["elo_ussr"] - r["elo_us"]
-        in_front = "* " if name in front_set else "  "
-        print(f"  {in_front}{name}: elo={r['elo']:.0f} ussr={r['elo_ussr']:.0f} us={r['elo_us']:.0f} asym={asym:+.0f}")
+    print(f"\nCombined unique fixtures: {len(combined_sorted)} models")
+    for name in combined_sorted:
+        r = candidates[name]
+        in_ussr = "U" if name in ussr_pool else " "
+        in_us = "S" if name in us_pool else " "
+        print(f"  [{in_ussr}{in_us}] {name}: elo={r['elo']:.0f} ussr={r['elo_ussr']:.0f} us={r['elo_us']:.0f}")
 
     if args.show_analysis:
-        print("\nPer-model JSD stats (vs rest of selected set):")
-        for name in selected_sorted:
+        print("\nPer-model JSD stats (vs rest of combined set):")
+        for name in combined_sorted:
             dists = [
                 matrix[name][other]["card_jsd"]
-                for other in selected
+                for other in combined_set
                 if other != name and other in matrix.get(name, {})
             ]
             if dists:
                 print(f"  {name}: card_jsd min={min(dists):.4f} mean={sum(dists)/len(dists):.4f} max={max(dists):.4f}")
 
-    # Output: --league-fixtures argument list
-    print("\n--- Copy-paste for --league-fixtures ---")
-    fixture_paths = [str(scripted_models[n]) for n in selected_sorted]
+    # --- Output copy-paste blocks ---
+    ussr_paths = [str(scripted_models[n]) for n in ussr_pool]
+    us_paths = [str(scripted_models[n]) for n in us_pool]
+    combined_paths = [str(scripted_models[n]) for n in combined_sorted]
     if args.add_heuristic:
-        fixture_paths.append("__heuristic__")
-    print(" \\\n    ".join(fixture_paths))
+        combined_paths.append("__heuristic__")
+        ussr_paths.append("__heuristic__")
+        us_paths.append("__heuristic__")
 
-    # Also output JSON for programmatic use
+    print("\n--- --league-fixtures (combined, for single-pool PFSP) ---")
+    print(" \\\n    ".join(combined_paths))
+
+    print("\n--- --ussr-fixtures (for two-pool PFSP) ---")
+    print(" \\\n    ".join(ussr_paths))
+
+    print("\n--- --us-fixtures (for two-pool PFSP) ---")
+    print(" \\\n    ".join(us_paths))
+
     out = {
-        "selected": selected_sorted,
-        "pareto_front": sorted(front),
+        "ussr_pool": ussr_pool,
+        "us_pool": us_pool,
+        "combined": combined_sorted,
         "metric": args.metric,
-        "target_n": args.target_n,
-        "fixture_paths": fixture_paths,
+        "min_jsd": args.min_jsd,
+        "ussr_pool_n": args.ussr_pool_n,
+        "us_pool_n": args.us_pool_n,
+        "fixture_paths": combined_paths,
+        "ussr_fixture_paths": ussr_paths,
+        "us_fixture_paths": us_paths,
     }
     out_path = Path("results/selected_fixtures.json")
     with open(out_path, "w") as f:
