@@ -1,0 +1,233 @@
+# Snakefile.ppo — PPO self-play training pipeline
+#
+# Usage:
+#   uv run snakemake -s Snakefile.ppo -j4 --resources gpu=1 bench=1 results/bench/ppo_v65.txt
+#   uv run snakemake -s Snakefile.ppo -j4 --resources gpu=1 bench=1  # all experiments
+#
+# Add experiments to experiments_ppo.yaml, then run the above.
+# Mirrors the structure of Snakefile (BC pipeline).
+
+import os
+import yaml
+
+# ---------------------------------------------------------------------------
+# Load experiment definitions from experiments_ppo.yaml
+# ---------------------------------------------------------------------------
+with open("experiments_ppo.yaml") as _f:
+    _cfg = yaml.safe_load(_f)
+
+_defaults = _cfg["defaults"]
+_bench = _cfg["benchmark"]
+_experiments = _cfg.get("experiments") or {}
+
+# name → experiment config
+EXPERIMENTS = {
+    name: {
+        "checkpoint": exp["checkpoint"],
+        "extra_args": exp.get("extra_args", ""),
+        **{k: v for k, v in exp.items() if k not in {"checkpoint", "extra_args"}},
+    }
+    for name, exp in _experiments.items()
+}
+
+
+def _merged_train_cfg(name):
+    cfg = dict(_defaults)
+    cfg.update({k: v for k, v in EXPERIMENTS[name].items() if k not in {"checkpoint", "extra_args"}})
+    return cfg
+
+
+def _ppo_train_args(name):
+    cfg = _merged_train_cfg(name)
+    parts = [
+        f"--n-iterations {cfg['n_iterations']}",
+        f"--games-per-iter {cfg['games_per_iter']}",
+        f"--lr {cfg['lr']}",
+        f"--clip-eps {cfg['clip_eps']}",
+        f"--ent-coef {cfg['ent_coef']}",
+        f"--ent-coef-final {cfg['ent_coef_final']}",
+        f"--max-kl {cfg['max_kl']}",
+        f"--league-mix-k {cfg['league_mix_k']}",
+        f"--league-recency-tau {cfg['league_recency_tau']}",
+        f"--league-fixture-fadeout {cfg['league_fixture_fadeout']}",
+        f"--pfsp-exponent {cfg['pfsp_exponent']}",
+        f"--dir-alpha {cfg['dir_alpha']}",
+        f"--dir-epsilon {cfg['dir_epsilon']}",
+        f"--eval-every {cfg['eval_every']}",
+        f"--rollout-temp {cfg['rollout_temp']}",
+    ]
+    if cfg["upgo"]:
+        parts.append("--upgo")
+    extra_args = EXPERIMENTS[name]["extra_args"].strip()
+    if extra_args:
+        parts.append(extra_args)
+    return " ".join(parts)
+
+
+BENCH_GAMES = _bench["games_per_side"]
+BENCH_POOL = _bench["pool_size"]
+BENCH_USSR_SEED = _bench["ussr_seed"]
+BENCH_US_SEED = _bench["us_seed"]
+
+# ---------------------------------------------------------------------------
+# Default target: all PPO benchmarks
+# ---------------------------------------------------------------------------
+rule ppo_all:
+    input:
+        expand("results/bench/ppo_{name}.txt", name=EXPERIMENTS.keys())
+
+# ---------------------------------------------------------------------------
+# Step 1: Train PPO league run → sentinel
+# ---------------------------------------------------------------------------
+rule ppo_train:
+    input:
+        checkpoint=lambda wc: EXPERIMENTS[wc.name]["checkpoint"]
+    output:
+        sentinel="data/checkpoints/ppo_{name}_league/.training_complete"
+    params:
+        out_dir=lambda wc: f"data/checkpoints/ppo_{wc.name}_league",
+        train_args=lambda wc: _ppo_train_args(wc.name),
+        run_name=lambda wc: f"ppo_{wc.name}"
+    resources:
+        gpu=1
+    log:
+        "results/logs/ppo/ppo_{name}_snakemake.log"
+    shell:
+        """
+        mkdir -p {params.out_dir} results/logs/ppo
+        if [ -f {params.out_dir}/latest_checkpoint.txt ]; then
+            echo "[ppo_train] {wildcards.name}: latest_checkpoint.txt exists, skipping launch and marking complete" | tee -a {log}
+            touch {output.sentinel}
+        else
+            echo "[ppo_train] {wildcards.name}: starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+            nohup nice -n 10 uv run python scripts/train_ppo.py \
+                --checkpoint {input.checkpoint} \
+                --out-dir {params.out_dir} \
+                {params.train_args} \
+                --league {params.out_dir} \
+                --league-save-every 10 \
+                --league-heuristic-pct 0.0 \
+                --rollout-workers 1 \
+                --device cuda \
+                --wandb \
+                --wandb-run-name {params.run_name} \
+                >> {log} 2>&1 &
+            PID=$!
+            echo "[ppo_train] {wildcards.name}: launched PID=$PID" | tee -a {log}
+            wait $PID
+            echo "[ppo_train] {wildcards.name}: finished at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+            touch {output.sentinel}
+        fi
+        """
+
+# ---------------------------------------------------------------------------
+# Step 2: Export best/final PPO checkpoint to TorchScript
+# ---------------------------------------------------------------------------
+rule ppo_export:
+    input:
+        sentinel="data/checkpoints/ppo_{name}_league/.training_complete"
+    output:
+        scripted="data/checkpoints/ppo_{name}_league/baseline_best_scripted.pt"
+    log:
+        "results/logs/ppo/ppo_{name}_snakemake.log"
+    shell:
+        """
+        mkdir -p results/logs/ppo
+        if [ -f data/checkpoints/ppo_{wildcards.name}_league/ppo_best.pt ]; then
+            CKPT=data/checkpoints/ppo_{wildcards.name}_league/ppo_best.pt
+        elif [ -f data/checkpoints/ppo_{wildcards.name}_league/ppo_final.pt ]; then
+            CKPT=data/checkpoints/ppo_{wildcards.name}_league/ppo_final.pt
+        else
+            echo "[ppo_export] {wildcards.name}: missing ppo_best.pt and ppo_final.pt" | tee -a {log}
+            exit 1
+        fi
+        echo "[ppo_export] {wildcards.name}: exporting $CKPT -> {output.scripted}" | tee -a {log}
+        uv run python cpp/tools/export_baseline_to_torchscript.py \
+            --checkpoint "$CKPT" \
+            --out {output.scripted} \
+            2>&1 | tee -a {log}
+        """
+
+# ---------------------------------------------------------------------------
+# Step 3a: Benchmark one side
+# ---------------------------------------------------------------------------
+rule ppo_bench_side:
+    input:
+        scripted="data/checkpoints/ppo_{name}_league/baseline_best_scripted.pt"
+    output:
+        result="results/bench/ppo_{name}_{side}.json"
+    params:
+        n=BENCH_GAMES,
+        pool=BENCH_POOL,
+        seed=lambda wc: BENCH_USSR_SEED if wc.side == "ussr" else BENCH_US_SEED
+    wildcard_constraints:
+        side="ussr|us"
+    resources:
+        bench=1
+    shell:
+        """
+        mkdir -p results/bench results/logs/ppo
+        PYTHONPATH=build-ninja/bindings nice -n 15 uv run python -c "
+import tscore, json, tempfile, os
+n = {params.n}
+side = tscore.Side.USSR if '{wildcards.side}' == 'ussr' else tscore.Side.US
+results = tscore.benchmark_batched('{input.scripted}', side, n, pool_size={params.pool}, seed={params.seed})
+wins = sum(1 for r in results if r.winner == side)
+data = {{'side': '{wildcards.side}', 'wins': wins, 'games': n, 'pct': wins/n*100}}
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname('{output.result}'), suffix='.tmp')
+with os.fdopen(fd, 'w') as f:
+    json.dump(data, f)
+os.rename(tmp, '{output.result}')
+pct = wins/n*100
+print('ppo_{wildcards.name} {wildcards.side}: {{wins}}/{{n}} = {{pct:.1f}}%'.format(wins=wins, n=n, pct=pct))
+" 2>&1 | tee -a results/logs/ppo/ppo_{wildcards.name}_snakemake.log
+        """
+
+# ---------------------------------------------------------------------------
+# Step 3b: Merge both sides into final result
+# ---------------------------------------------------------------------------
+rule ppo_bench_merge:
+    input:
+        ussr="results/bench/ppo_{name}_ussr.json",
+        us="results/bench/ppo_{name}_us.json"
+    output:
+        result="results/bench/ppo_{name}.txt"
+    log:
+        "results/logs/ppo/ppo_{name}_snakemake.log"
+    shell:
+        """
+        mkdir -p results/bench results/logs/ppo
+        uv run python - <<'PY' 2>&1 | tee -a {log}
+import json
+import math
+
+ussr = json.load(open("{input.ussr}"))
+us = json.load(open("{input.us}"))
+n = ussr["games"]
+up, sp = ussr["pct"], us["pct"]
+cp = (ussr["wins"] + us["wins"]) / (2 * n) * 100
+use = math.sqrt(up/100*(1-up/100)/n)*100
+sse = math.sqrt(sp/100*(1-sp/100)/n)*100
+cse = math.sqrt((up/100*(1-up/100)+sp/100*(1-sp/100))/(4*n))*100
+line = "%s | USSR %.1f%% +/-%.1f | US %.1f%% +/-%.1f | Combined %.1f%% +/-%.1f" % (
+    "ppo_{wildcards.name}",
+    up,
+    use,
+    sp,
+    sse,
+    cp,
+    cse,
+)
+print(line)
+with open("{output.result}", "w") as f:
+    f.write(line + "\\n")
+PY
+        """
+
+# TODO: implement overlapping confirmation
+# This rule should fire as soon as a checkpoint appears (not after all training),
+# run a quick 50-game sanity check, and gate the full benchmark on passing.
+rule confirm:
+    input: "data/checkpoints/ppo_{name}_league/.training_complete"
+    output: touch("data/checkpoints/ppo_{name}_league/.confirmed")
+    shell: "echo '[confirm] stub: {wildcards.name} training complete at $(date)' >> results/logs/ppo/ppo_{wildcards.name}_snakemake.log"
