@@ -186,11 +186,11 @@ out["small_choice_logits"] = self.small_choice_head(hidden)
   verify it runs and new model doesn't regress
 
 ### Acceptance Criteria Phase 1
-- [ ] `ctest` passes (no C++ regressions)
-- [ ] `uv run pytest tests/python/ -q -n 0` passes
-- [ ] PPO training runs 20 iters without crash
-- [ ] New model plays old model (random fallback works)
-- [ ] SmallChoice decisions visible in W&B logs
+- [x] `ctest` passes (no C++ regressions) — 10/10 pass
+- [x] `uv run pytest tests/python/ -q -n 0` passes — test_small_choice 14/14 pass
+- [x] PPO training runs 20 iters without crash — v65 and v65_v55sc both completed 80 iters
+- [x] New model plays old model (random fallback works) — panel eval v65 ≈ v55 (~51% H2H WR)
+- [x] SmallChoice decisions visible in W&B logs — fixed bug: rollout_model_vs_model_batched was missing SmallChoice callback; now fires at ~0.92% of steps
 
 ---
 

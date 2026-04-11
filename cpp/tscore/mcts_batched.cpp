@@ -4440,7 +4440,41 @@ RolloutResult rollout_model_vs_model_batched(
                     }
                     steps_by_game[static_cast<size_t>(entry.game_index)].push_back(std::move(step));
                 }
-                commit_greedy_action(*entry.slot, action);
+                // Set up SmallChoice callback so event decisions are policy-driven
+                // and captured for training (Phase 1 SmallChoiceHead).
+                const PolicyCallbackFn* cb_ptr = nullptr;
+                PolicyCallbackFn small_choice_cb;
+                int sc_target = -1;
+                int sc_n_options = 0;
+                float sc_logprob = 0.0f;
+                if (outputs_a.small_choice_logits.defined() &&
+                    outputs_a.small_choice_logits.size(0) > batch_idx) {
+                    const auto logits_row = outputs_a.small_choice_logits[batch_idx];
+                    small_choice_cb = [logits_row, &sc_target, &sc_n_options, &sc_logprob](
+                        const PublicState& /*pub*/, const EventDecision& dec) -> int {
+                        if (dec.kind != DecisionKind::SmallChoice || dec.n_options <= 1) {
+                            return 0;
+                        }
+                        auto masked = logits_row.slice(/*dim=*/0, /*start=*/0, /*end=*/dec.n_options);
+                        auto log_probs = torch::log_softmax(masked, /*dim=*/0);
+                        int choice = static_cast<int>(masked.argmax(0).item<int64_t>());
+                        sc_target = choice;
+                        sc_n_options = dec.n_options;
+                        sc_logprob = log_probs[choice].item<float>();
+                        return choice;
+                    };
+                    cb_ptr = &small_choice_cb;
+                }
+                commit_greedy_action(*entry.slot, action, cb_ptr);
+                // Patch the last step with SmallChoice data if a decision was made.
+                if (sc_target >= 0) {
+                    auto& game_steps = steps_by_game[static_cast<size_t>(entry.game_index)];
+                    if (!game_steps.empty()) {
+                        game_steps.back().small_choice_target = sc_target;
+                        game_steps.back().small_choice_n_options = sc_n_options;
+                        game_steps.back().small_choice_logprob = sc_logprob;
+                    }
+                }
             }
         }
 
