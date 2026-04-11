@@ -26,6 +26,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+# ---------------------------------------------------------------------------
+# Tracking imports (optional — never crash training if unavailable)
+# ---------------------------------------------------------------------------
+try:
+    from tsrl.checkpoint_db import log_checkpoint as _log_checkpoint
+    from tsrl.experiment_log import (
+        log_experiment_start as _log_exp_start,
+        log_experiment_end as _log_exp_end,
+    )
+    from tsrl.smoke_test import run_smoke_test as _run_smoke_test
+    _TRACKING_AVAILABLE = True
+except ImportError:
+    _TRACKING_AVAILABLE = False
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -44,6 +58,18 @@ for _bindings_path in (
 _py_dir = str(Path(__file__).resolve().parent.parent / "python")
 if _py_dir not in sys.path:
     sys.path.insert(0, _py_dir)
+
+if not _TRACKING_AVAILABLE:
+    try:
+        from tsrl.checkpoint_db import log_checkpoint as _log_checkpoint
+        from tsrl.experiment_log import (
+            log_experiment_start as _log_exp_start,
+            log_experiment_end as _log_exp_end,
+        )
+        from tsrl.smoke_test import run_smoke_test as _run_smoke_test
+        _TRACKING_AVAILABLE = True
+    except ImportError:
+        _TRACKING_AVAILABLE = False
 
 import tscore  # noqa: E402
 
@@ -2716,6 +2742,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--explore-eps", type=float, default=0.0,
                    help="Epsilon weight for Dirichlet noise mixing (0=disabled, 0.25=standard). "
                         "Only active when --explore-alpha > 0.")
+    p.add_argument("--skip-smoke-test", action="store_true", default=False,
+                   help="Skip the pre-training smoke test (10 games) that validates the checkpoint.")
     return p.parse_args()
 
 
@@ -2769,6 +2797,17 @@ def main() -> None:
             print(f"W&B init failed: {e}, continuing without logging")
             wandb_run = None
 
+    if _TRACKING_AVAILABLE:
+        try:
+            _log_exp_start(
+                name=str(args.out_dir) if hasattr(args, "out_dir") else "ppo_run",
+                hypothesis="PPO self-play training run",
+                command=" ".join(sys.argv),
+                wandb_id=wandb_run.id if wandb_run is not None else None,
+            )
+        except Exception as _e:
+            print(f"[tracking] log_experiment_start failed: {_e}")
+
     device = args.device
     if device == "cuda" and not torch.cuda.is_available():
         print("CUDA not available, falling back to CPU")
@@ -2777,6 +2816,20 @@ def main() -> None:
     print(f"Loading checkpoint: {args.checkpoint}")
     model, model_type, ckpt_args = load_model(args.checkpoint, device)
     global_iter_offset = int(ckpt_args.get("total_iters", 0))
+
+    if _TRACKING_AVAILABLE and not args.skip_smoke_test:
+        try:
+            _ok, _msg = _run_smoke_test(Path(args.checkpoint))
+            if not _ok:
+                print(f"[smoke test] FAILED: {_msg}")
+                print("Use --skip-smoke-test to bypass.")
+                raise SystemExit(1)
+            print(f"[smoke test] {_msg}")
+        except SystemExit:
+            raise
+        except Exception as _e:
+            print(f"[smoke test] Error (non-fatal): {_e}")
+
     probe_eval = None
     probe_bc_model = None
     if args.probe_set and args.probe_every > 0 and Path(args.probe_set).exists():
@@ -3052,6 +3105,18 @@ def main() -> None:
         new_ckpt_path = os.path.join(args.out_dir, f"ppo_iter{iteration:04d}.pt")
         ckpt_meta["total_iters"] = global_iter_offset + iteration
         export_checkpoint(model, new_ckpt_path, ckpt_meta, optimizer=optimizer)
+        if _TRACKING_AVAILABLE:
+            try:
+                _hp = {k: v for k, v in vars(args).items() if isinstance(v, (int, float, str, bool, type(None)))}
+                _log_checkpoint(
+                    name=Path(new_ckpt_path).stem,
+                    file_path=Path(new_ckpt_path),
+                    hyperparams=_hp,
+                    wandb_run_id=wandb_run.id if wandb_run is not None else None,
+                    parent_name=getattr(args, "checkpoint", None),
+                )
+            except Exception as _e:
+                print(f"[tracking] log_checkpoint failed: {_e}")
         # Delete previous rolling checkpoint if it was not a milestone.
         if last_rolling_ckpt is not None and not _is_milestone(
             int(os.path.basename(last_rolling_ckpt).removeprefix("ppo_iter").split(".")[0])
@@ -3158,6 +3223,18 @@ def main() -> None:
     final_path = os.path.join(args.out_dir, "ppo_final.pt")
     ckpt_meta["total_iters"] = global_iter_offset + args.n_iterations
     export_checkpoint(model, final_path, ckpt_meta)
+    if _TRACKING_AVAILABLE:
+        try:
+            _hp = {k: v for k, v in vars(args).items() if isinstance(v, (int, float, str, bool, type(None)))}
+            _log_checkpoint(
+                name=Path(final_path).stem,
+                file_path=Path(final_path),
+                hyperparams=_hp,
+                wandb_run_id=wandb_run.id if wandb_run is not None else None,
+                parent_name=getattr(args, "checkpoint", None),
+            )
+        except Exception as _e:
+            print(f"[tracking] log_checkpoint(final) failed: {_e}")
 
     # ppo_best.pt = ppo_final.pt. H2H-based checkpoint selection was removed because
     # 200-game H2H has ~3.5% SE (barely better than random) and caused echo-chamber
@@ -3179,6 +3256,15 @@ def main() -> None:
                 os.remove(leftover)
             except OSError:
                 pass
+
+    if _TRACKING_AVAILABLE:
+        try:
+            _log_exp_end(
+                name=str(args.out_dir) if hasattr(args, "out_dir") else "ppo_run",
+                result_summary=f"PPO training complete, {args.n_iterations} iterations",
+            )
+        except Exception as _e:
+            print(f"[tracking] log_experiment_end failed: {_e}")
 
     t_total = time.time() - t_start
     print(f"\nTraining complete in {t_total/60:.1f} minutes")
