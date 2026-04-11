@@ -10,6 +10,7 @@
 
 #include "game_state.hpp"
 #include "policies.hpp"
+#include "policy_callback.hpp"
 
 namespace ts {
 
@@ -59,7 +60,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     GameState& gs,
     const ActionEncoding& action,
     Side side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
 );
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(

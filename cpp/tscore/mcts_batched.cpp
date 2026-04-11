@@ -3882,7 +3882,7 @@ ActionEncoding greedy_action_from_outputs(
         .value_or(ActionEncoding{});
 }
 
-void commit_greedy_action(GameSlot& slot, const ActionEncoding& action) {
+void commit_greedy_action(GameSlot& slot, const ActionEncoding& action, const PolicyCallbackFn* policy_cb = nullptr) {
     if (!slot.decision.has_value()) {
         return;
     }
@@ -3935,7 +3935,7 @@ void commit_greedy_action(GameSlot& slot, const ActionEncoding& action) {
         hand.reset(resolved.card_id);
     }
 
-    auto [new_pub, over, winner] = apply_action_live(slot.root_state, resolved, decision.side, slot.rng);
+    auto [new_pub, over, winner] = apply_action_live(slot.root_state, resolved, decision.side, slot.rng, policy_cb);
     (void)new_pub;
     sync_china_flags(slot.root_state);
 

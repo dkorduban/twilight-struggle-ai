@@ -119,7 +119,8 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
     GameState& gs,
     CardId card_id,
     Side event_side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
 );
 
 std::optional<CardId> draw_one(GameState& gs, Pcg64Rng& rng) {
@@ -646,7 +647,8 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
     GameState& gs,
     CardId card_id,
     Side event_side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
 ) {
     if (is_cat_c_card(card_id)) {
         return apply_hand_event(gs, card_id, event_side, rng);
@@ -656,7 +658,7 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
         .mode = ActionMode::Event,
         .targets = {},
     };
-    auto [new_pub, over, winner] = apply_action(gs.pub, action, event_side, rng);
+    auto [new_pub, over, winner] = apply_action(gs.pub, action, event_side, rng, policy_cb);
     gs.pub = new_pub;
     return {new_pub, over, winner};
 }
@@ -665,12 +667,13 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     GameState& gs,
     const ActionEncoding& action,
     Side side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
 ) {
     if (action.mode != ActionMode::Event) {
         const auto owner = card_spec(action.card_id).side;
         if (owner == other_side(side)) {
-            auto [new_pub, over, winner] = fire_event_with_state(gs, action.card_id, owner, rng);
+            auto [new_pub, over, winner] = fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
             if (over) {
                 return {new_pub, true, winner};
             }
@@ -681,7 +684,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
         return apply_hand_event(gs, action.card_id, side, rng);
     }
 
-    auto [new_pub, over, winner] = apply_action(gs.pub, action, side, rng);
+    auto [new_pub, over, winner] = apply_action(gs.pub, action, side, rng, policy_cb);
     gs.pub = new_pub;
     if (!over && action.mode == ActionMode::Space) {
         const auto opponent = other_side(side);
@@ -1145,9 +1148,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     GameState& gs,
     const ActionEncoding& action,
     Side side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
 ) {
-    return apply_action_with_hands(gs, action, side, rng);
+    return apply_action_with_hands(gs, action, side, rng, policy_cb);
 }
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(
