@@ -70,6 +70,30 @@ int choose_option(
     return static_cast<int>(rng.choice_index(static_cast<size_t>(n_options)));
 }
 
+/// Choose a country from a pool: use policy callback if available, otherwise random.
+/// Returns the chosen CountryId (not the index).
+template <typename Container>
+CountryId choose_country(
+    const PublicState& pub, CardId card_id, Side side,
+    const Container& pool, Pcg64Rng& rng, const PolicyCallbackFn* cb
+) {
+    const int n = static_cast<int>(std::size(pool));
+    if (n == 0) return 0;
+    if (cb && n > 1) {
+        EventDecision dec;
+        dec.source_card = card_id;
+        dec.kind = DecisionKind::CountrySelect;
+        dec.n_options = n;
+        dec.acting_side = side;
+        for (int i = 0; i < n && i < EventDecision::kMaxEligible; ++i) {
+            dec.eligible_ids[i] = static_cast<int>(pool[i]);
+        }
+        const int choice = std::clamp((*cb)(pub, dec), 0, n - 1);
+        return static_cast<CountryId>(pool[choice]);
+    }
+    return pool[rng.choice_index(static_cast<size_t>(n))];
+}
+
 void apply_vp_delta(PublicState& pub, Side side, int delta) {
     if (side == Side::USSR) {
         pub.vp += delta;
@@ -288,7 +312,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 20: {
-            if (rng.bernoulli(0.5)) {
+            // Olympic Games: 0 = boycott (DEFCON -1, place 4 inf), 1 = compete (dice)
+            if (choose_option(next, 20, other_side(side), 2, rng, policy_cb) == 0) {
                 next.defcon = std::max(1, next.defcon - 1);
                 const auto accessible = accessible_countries(side, next, ActionMode::Influence);
                 if (!accessible.empty()) {
@@ -334,8 +359,9 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 24: {
+            // Indo-Pakistani War: choose India or Pakistan via masked country selection
             static constexpr std::array<CountryId, 2> kTargets = {kIndiaId, kPakistanId};
-            const auto target = sample_one<CountryId>(kTargets, rng);
+            const auto target = choose_country(next, 24, side, kTargets, rng, policy_cb);
             const auto net = apply_free_coup(next, side, target, 2, rng, true);
             apply_vp_delta(next, side, net > 0 ? 2 : -1);
             break;
@@ -484,6 +510,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 39: {
+            // Brush War: pick stability ≤ 2 country via masked country selection
             std::vector<CountryId> pool;
             for (const auto cid : all_country_ids()) {
                 if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
@@ -494,7 +521,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             if (!pool.empty()) {
-                const auto target = sample_one<CountryId>(pool, rng);
+                const auto target = choose_country(next, 39, Side::USSR, pool, rng, policy_cb);
                 const auto net = apply_free_coup(next, Side::USSR, target, 3, rng, false);
                 if (net > 0) {
                     add_influence(next, Side::US, target, -std::min(2, next.influence_of(Side::US, target)));
@@ -548,6 +575,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 50: {
+            // OAS Founded: +2 influence and free coup in Central/South America
             std::vector<CountryId> pool;
             for (const auto cid : all_country_ids()) {
                 const auto region = country_spec(cid).region;
@@ -556,8 +584,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             if (!pool.empty()) {
-                add_influence(next, side, sample_one<CountryId>(pool, rng), 2);
-                apply_free_coup(next, side, sample_one<CountryId>(pool, rng), 2, rng, false);
+                const auto inf_target = choose_country(next, 50, side, pool, rng, policy_cb);
+                add_influence(next, side, inf_target, 2);
+                const auto coup_target = choose_country(next, 50, side, pool, rng, policy_cb);
+                apply_free_coup(next, side, coup_target, 2, rng, false);
             }
             break;
         }
@@ -596,15 +626,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             add_influence(next, Side::USSR, kMozambiqueId, 2);
             break;
 
-        case 56:
+        case 56: {
+            // South African Unrest: +2 to South Africa, +2 to chosen neighbor
             add_influence(next, Side::USSR, kSouthAfricaId, 2);
-            add_influence(
-                next,
-                Side::USSR,
-                sample_one<CountryId>(std::array<CountryId, 3>{kBotswanaId, 69, kZimbabweId}, rng),
-                2
-            );
+            static constexpr std::array<CountryId, 3> kSaNeighbors = {kBotswanaId, 69, kZimbabweId};
+            const auto neighbor = choose_country(next, 56, Side::USSR, kSaNeighbors, rng, policy_cb);
+            add_influence(next, Side::USSR, neighbor, 2);
             break;
+        }
 
         case 57:
             add_influence(next, Side::USSR, kChileId, 2);
@@ -943,10 +972,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             }
             break;
 
-        case 94:
+        case 94: {
+            // Junta: remove US from Nicaragua, free coup on Cuba/Chile/Nicaragua
             remove_all_influence(next, Side::US, kNicaraguaId);
-            apply_free_coup(next, Side::USSR, sample_one<CountryId>(std::array<CountryId, 3>{38, 41, 45}, rng), 2, rng, false);
+            static constexpr std::array<CountryId, 3> kJuntaTargets = {38, 41, 45};  // Cuba, Chile, Nicaragua
+            const auto target = choose_country(next, 94, Side::USSR, kJuntaTargets, rng, policy_cb);
+            apply_free_coup(next, Side::USSR, target, 2, rng, false);
             break;
+        }
 
         case 96:
             next.ops_modifier[to_index(Side::US)] -= 1;
@@ -963,6 +996,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 97: {
+            // Chernobyl: US chooses region to block USSR influence placement
+            // 0=Europe, 1=Asia, 2=MiddleEast, 3=CentralAmerica, 4=SouthAmerica, 5=Africa
             static constexpr std::array<Region, 6> kRegions = {
                 Region::Europe,
                 Region::Asia,
@@ -971,7 +1006,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 Region::SouthAmerica,
                 Region::Africa,
             };
-            next.chernobyl_blocked_region = sample_one<Region>(kRegions, rng);
+            const int idx = choose_option(next, 97, Side::US, 6, rng, policy_cb);
+            next.chernobyl_blocked_region = kRegions[idx];
             break;
         }
 

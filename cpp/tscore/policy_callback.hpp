@@ -23,6 +23,11 @@ struct EventDecision {
     DecisionKind kind = DecisionKind::SmallChoice;
     int n_options = 0;           // number of legal choices (indices 0..n_options-1)
     Side acting_side = Side::Neutral;
+
+    // For CountrySelect: which country IDs are eligible (indices into eligible_ids).
+    // The callback returns an index in [0, n_options), mapping to eligible_ids[index].
+    static constexpr int kMaxEligible = 86;
+    int eligible_ids[kMaxEligible] = {};  // country IDs; only first n_options are valid
 };
 
 /// Callback type: given the current public state and the decision description,
