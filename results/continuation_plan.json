@@ -1,19 +1,17 @@
 {
-  "current_task": "Implementing WS1-WS5 from feedback-20260411 workstreams: policy changes, continuation plan, hooks, binary freshness, Snakemake PPO pipeline, checkpoint identity DB, experiment tracking",
+  "current_task": "v66_sc PPO training running (PID 402749). Phase 2 DP decoder dispatched to Codex agent.",
   "next_tasks": [
-    "WS2: Verify PPO Snakemake pipeline (Codex dispatch in progress)",
-    "WS3: Verify checkpoint metadata DB integration into train_ppo.py (Codex dispatch in progress)",
-    "WS4: Verify experiments.jsonl logging in train_ppo.py (Codex dispatch in progress)",
-    "WS5: Verify binary freshness hook fires correctly",
-    "Monitor v65 PPO training — check W&B for Elo convergence, escalate to Opus if plateau after 2 consecutive versions below v55 (Elo ~2124)",
-    "When v65 completes: run benchmark both sides, update benchmark_history.json, log to experiments.jsonl",
-    "WS6: Tech debt — extract shared constants to python/tsrl/constants.py (one file at a time)",
-    "WS7: Overlapping confirmation games — implement background launch immediately after checkpoint save"
+    "When v66_sc completes: benchmark vs v65_sc; if Elo improves \u2192 Phase 2 is confirmed working",
+    "When Codex finishes dp_decoder.py: review tests, then wire into model inference (Phase 2b)",
+    "Phase 2b: replace proportional allocation in mcts_batched.cpp with DP decoder call",
+    "After v66 benchmark: run compute_elo.py to update Elo ladder with v66_sc",
+    "WS6: extract shared constants to python/tsrl/constants.py (one extraction per commit)"
   ],
   "blocked_on": null,
   "active_background": [
-    "v65 PPO training (PID 384530, started 2026-04-11, W&B run ppo_v65)"
+    "v66_sc PPO training (PID 402749) \u2014 80 iters from v65_sc, with working SmallChoice (sc_loss non-zero)",
+    "Codex agent: implementing python/tsrl/policies/dp_decoder.py + tests"
   ],
-  "last_updated": "2026-04-11T00:00:00Z",
-  "context": "v65 starts from v55_best (Elo ~2124), uses v2 fixture set (per-side pool), SmallChoiceHead enabled. Escalate to Opus if Elo regresses >30pts from v55 or 2+ consecutive versions below v55."
+  "last_updated": "2026-04-11T17:15:00Z",
+  "context": "Three bugs found and fixed this session:\n1. rollout_model_vs_model_batched missing SmallChoice callback (sc_loss was 0 in all PPO runs)\n2. smoke_test.py used wrong benchmark_batched signature\n3. train_ppo.py bindings path detection: old build/bindings/ shadowed build-ninja/bindings/ when PYTHONPATH set\nAll Phase 1 acceptance criteria now verified and checked off.\nPhase 2 is CountryAllocHead DP Upgrade \u2014 dp_decoder.py is first deliverable.\nPhase 2b (wire into C++ inference) requires separate C++ work after Python module is done."
 }
