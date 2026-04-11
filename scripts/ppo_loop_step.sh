@@ -3,8 +3,8 @@
 # Usage: bash scripts/ppo_loop_step.sh <finished_version> <next_version>
 # Example: bash scripts/ppo_loop_step.sh v14 v15
 #
-# Plateau rule: arch sweep if v(N).elo - v(N-3).elo < 15
-# (3-run cumulative window, not per-run delta)
+# Plateau rule: 3 consecutive runs with delta < 15 Elo vs pre-tournament rank-3
+# Config (2026-04-11): 80 iters, ent 0.01->0.003, UPGO, all-version fixtures, UCB-PFSP c=2.0, k=6
 set -euo pipefail
 cd /home/dkord/code/twilight-struggle-ai
 
@@ -17,12 +17,38 @@ LADDER="results/elo_full_ladder.json"
 ELO_LOG="results/elo_${FINISHED}_update.log"
 NEXT_LOG="results/ppo_${NEXT}.log"
 
-# Fixtures updated 2026-04-09: v8/v14/v19 span the current Elo range better than v4/v8/v12.
-# Original v4/v8/v12 were 50-90 Elo below frontier by v22 era. Update when frontier moves 50+ above v19.
+# Fixtures updated 2026-04-11: use ALL good scripted versions as league fixtures.
+# Broader opponent diversity provides harder training signal (Opus analysis:
+# v45 paradox — lowest rollout_wr = highest Elo because of harder opponents).
 FINISHED_SCRIPTED="data/checkpoints/scripted_for_elo/${FINISHED}_scripted.pt"
-WEAKEST_FIXTURE="data/checkpoints/scripted_for_elo/v8_scripted.pt"
-MID_FIXTURE="data/checkpoints/scripted_for_elo/v14_scripted.pt"
-FRONTIER_FIXTURE="data/checkpoints/scripted_for_elo/v22_scripted.pt"
+# Panel eval still uses 3 fixed references for comparability
+PANEL_WEAKEST="data/checkpoints/scripted_for_elo/v8_scripted.pt"
+PANEL_MID="data/checkpoints/scripted_for_elo/v14_scripted.pt"
+PANEL_FRONTIER="data/checkpoints/scripted_for_elo/v22_scripted.pt"
+
+# Corrupted-era models: trained with T=1.2 + log_prob bugs (v27-v41). Excluded permanently.
+EXCLUDED_VERSIONS="27 28 29 30 31 32 33 34 35 36 37 38 39 40 41"
+MIN_SCRIPTED_VERSION=8
+
+# Build full fixture list from all good scripted versions (excluding corrupted era + self)
+LEAGUE_FIXTURES=""
+for fix_path in data/checkpoints/scripted_for_elo/*_scripted.pt; do
+  [ -f "$fix_path" ] || continue
+  fix_name=$(basename "$fix_path" | sed 's/_scripted\.pt//')
+  fix_ver="${fix_name#v}"
+  if ! [[ "$fix_ver" =~ ^[0-9]+$ ]]; then continue; fi
+  if [ "$fix_ver" -lt "$MIN_SCRIPTED_VERSION" ]; then continue; fi
+  # Skip corrupted-era models
+  if echo "$EXCLUDED_VERSIONS" | grep -qw "$fix_ver"; then continue; fi
+  # Skip the model about to be trained (it'll be the starting checkpoint)
+  if [ "$fix_name" = "$NEXT" ]; then continue; fi
+  LEAGUE_FIXTURES="$LEAGUE_FIXTURES $fix_path"
+done
+# Always include heuristic
+LEAGUE_FIXTURES="$LEAGUE_FIXTURES __heuristic__"
+FIXTURE_COUNT=$(echo $LEAGUE_FIXTURES | wc -w)
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] League fixtures: $FIXTURE_COUNT opponents (all good versions + heuristic)" \
+  >> results/autonomous_decisions.log
 
 # --- Confirmation tournament: pick ppo_best.pt from panel eval history ---
 # Runs ~10 min on CPU; selects the top-3 panel-eval checkpoints by avg combined WR,
@@ -34,13 +60,13 @@ if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
   uv run python scripts/ppo_confirm_best.py \
     --run-dir "$FINISHED_DIR" \
     --fixtures \
-      "v8:${WEAKEST_FIXTURE}" \
-      "v14:${MID_FIXTURE}" \
-      "v22:${FRONTIER_FIXTURE}" \
+      "v8:${PANEL_WEAKEST}" \
+      "v14:${PANEL_MID}" \
+      "v22:${PANEL_FRONTIER}" \
       "heuristic" \
-    --n-top 3 \
-    --n-games 400 \
-    --anchor v14 --anchor-elo 2001 \
+    --n-top 8 \
+    --n-games 200 \
+    --anchor v14 --anchor-elo 2015 \
     --script-dir data/checkpoints/scripted_for_elo \
     2>&1 | tee "$CONFIRM_LOG"
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Confirmation tournament done for $FINISHED" \
@@ -88,7 +114,7 @@ fi
 
 # --- Build model list dynamically from scripted_for_elo dir ---
 # Only include heuristic + v8 and later (v1-v7 are too weak to be informative anchors)
-MIN_SCRIPTED_VERSION=8
+# EXCLUDED_VERSIONS and MIN_SCRIPTED_VERSION defined at top of script
 
 MODELS="heuristic"
 # Include scripted models v${MIN_SCRIPTED_VERSION}+ (excluding the FINISHED one, handled separately)
@@ -100,6 +126,8 @@ for scripted_path in data/checkpoints/scripted_for_elo/*_scripted.pt; do
   ver="${name#v}"
   if ! [[ "$ver" =~ ^[0-9]+$ ]]; then continue; fi
   if [ "$ver" -lt "$MIN_SCRIPTED_VERSION" ]; then continue; fi
+  # Skip corrupted-era models
+  if echo "$EXCLUDED_VERSIONS" | grep -qw "$ver"; then continue; fi
   if [ "$name" = "$FINISHED" ]; then
     # Use ppo_final.pt for the just-finished model (fresher than the scripted copy)
     if [ -f "${FINISHED_DIR}/ppo_final.pt" ]; then
@@ -134,7 +162,7 @@ else:
 echo "=== ELO update: adding $FINISHED ===" | tee "$ELO_LOG"
 uv run python scripts/run_elo_tournament.py \
   --models $MODELS \
-  --games 400 --anchor v12 --anchor-elo 2001 \
+  --games 400 --anchor v14 --anchor-elo 2015 \
   --schedule round_robin \
   --resume-from "$LADDER" \
   --out "$LADDER" \
@@ -209,13 +237,10 @@ if [ "$PLATEAU_COUNT" -ge 3 ]; then
     >> results/autonomous_decisions.log
 fi
 
-# --- UPGO: enable after first plateau ---
-UPGO_FLAG=""
-if [ "$PLATEAU_COUNT" -ge 1 ]; then
-  UPGO_FLAG="--upgo"
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] UPGO enabled for $NEXT (consecutive_plateaus=$PLATEAU_COUNT)" \
-    >> results/autonomous_decisions.log
-fi
+# --- UPGO: always enabled (analysis 2026-04-11: reduces variance on US-side sparse reward) ---
+UPGO_FLAG="--upgo"
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] UPGO always enabled for $NEXT" \
+  >> results/autonomous_decisions.log
 
 # --- League pool safety: NEXT_DIR is fresh, so no stale iter files to worry about.
 # But guard against accidental re-use: if NEXT_DIR already has iter_*.pt from a
@@ -230,41 +255,69 @@ if [ -d "$NEXT_DIR" ]; then
   fi
 fi
 
+# --- Persist WR table across runs for UCB-PFSP warm-start ---
+# Copy fixture WR data with 0.7× decay (discounted UCB for non-stationary bandits).
+# Model changes each run, so old WR estimates go stale. Decay shrinks n_i, which
+# increases UCB exploration bonus → stale matchups get re-tested. 0.7× is moderate:
+#   After 1 run: 200→140, after 3: 200→69 (significant re-explore).
+# Strip self-play iter_* entries (keys don't match across runs).
+mkdir -p "$NEXT_DIR"
+if [ -f "${FINISHED_DIR}/wr_table.json" ]; then
+  python3 -c "
+import json, math
+with open('${FINISHED_DIR}/wr_table.json') as f:
+    data = json.load(f)
+DECAY = 0.7
+out = {}
+for key, val in data.items():
+    if key.startswith('iter_') or key == '__self__':
+        continue
+    out[key] = {
+        'wins_ussr': int(round(val.get('wins_ussr', 0) * DECAY)),
+        'total_ussr': int(round(val.get('total_ussr', 0) * DECAY)),
+        'wins_us': int(round(val.get('wins_us', 0) * DECAY)),
+        'total_us': int(round(val.get('total_us', 0) * DECAY)),
+    }
+with open('${NEXT_DIR}/wr_table.json', 'w') as f:
+    json.dump(out, f, indent=2, sort_keys=True)
+print(f'Carried over {len(out)} fixture WR entries (0.7x decay for discounted UCB)')
+"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Copied WR table from $FINISHED to $NEXT (0.7x decay, fixtures only)" \
+    >> results/autonomous_decisions.log
+fi
+
 # --- Launch next PPO run ---
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from ${FINISHED} $(basename $FINISHED_CHECKPOINT)" \
   >> results/autonomous_decisions.log
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=2.0, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.01->0.003" \
+  >> results/autonomous_decisions.log
 
-mkdir -p "$NEXT_DIR"
 nohup nice -n 10 uv run python scripts/train_ppo.py \
   --checkpoint "${FINISHED_CHECKPOINT}" \
   --out-dir "$NEXT_DIR" \
-  --n-iterations 200 --games-per-iter 200 \
+  --n-iterations 80 --games-per-iter 200 \
   --lr 2e-5 --clip-eps 0.12 \
-  --ent-coef 0.03 --ent-coef-final 0.005 \
+  --ent-coef 0.01 --ent-coef-final 0.003 \
+  --global-ent-decay-start 1 --global-ent-decay-end 80 \
   --max-kl 0.3 \
+  --reset-optimizer \
   --league "$NEXT_DIR" \
   --league-save-every 10 \
-  --league-mix-k 4 \
+  --league-mix-k 6 \
   --league-fixtures \
-    "$WEAKEST_FIXTURE" \
-    "$MID_FIXTURE" \
-    "$FRONTIER_FIXTURE" \
-    "__heuristic__" \
-  --league-recency-tau 20 \
-  --league-fixture-fadeout 150 \
+    $LEAGUE_FIXTURES \
+  --league-recency-tau 50 \
+  --league-fixture-fadeout 999 \
   --league-heuristic-pct 0.0 \
-  --pfsp-exponent 1.0 \
-  --dir-alpha 0.3 \
-  --dir-epsilon 0.25 \
+  --pfsp-exponent 2.0 \
   $UPGO_FLAG \
-  --eval-every 20 \
+  --eval-every 10 \
   --eval-panel \
-    "$WEAKEST_FIXTURE" \
-    "$MID_FIXTURE" \
-    "$FRONTIER_FIXTURE" \
+    "$PANEL_WEAKEST" \
+    "$PANEL_MID" \
+    "$PANEL_FRONTIER" \
     "__heuristic__" \
   --rollout-workers 1 \
-  --rollout-temp 1.2 \
   --device cuda --wandb --wandb-run-name "ppo_${NEXT}" \
   >> "$NEXT_LOG" 2>&1 &
 
