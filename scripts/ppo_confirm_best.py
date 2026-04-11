@@ -94,8 +94,10 @@ def main() -> None:
         print(f"  iter {it:04d}: avg_panel_wr={wr:.3f}  {path}")
 
     # Build --models list for run_elo_tournament.py
-    # Candidates: iterNNNN:path
-    models = [f"iter{it:04d}:{path}" for _, it, path in top]
+    # Candidates: <run>_iterNNNN:path — run prefix prevents match-cache collisions
+    # across different runs that all save iter0010, iter0020, etc.
+    run_prefix = os.path.basename(run_dir.rstrip("/"))  # e.g. "ppo_v47_league"
+    models = [f"{run_prefix}_iter{it:04d}:{path}" for _, it, path in top]
 
     # Fixtures: either "heuristic" or "name:path"
     fixture_names = []
@@ -148,14 +150,14 @@ def main() -> None:
         tournament = json.load(f)
     ratings = tournament.get("ratings", {})
 
-    candidate_names = [f"iter{it:04d}" for _, it, _ in top]
+    candidate_names = [f"{run_prefix}_iter{it:04d}" for _, it, _ in top]
     candidate_ratings = {k: v["elo"] for k, v in ratings.items() if k in candidate_names}
     if not candidate_ratings:
         print("ERROR: no candidate ratings found in tournament output.", file=sys.stderr)
         sys.exit(1)
 
     winner_name = max(candidate_ratings, key=lambda k: candidate_ratings[k])
-    winner_iter = int(winner_name.removeprefix("iter"))
+    winner_iter = int(winner_name.split("_iter")[1])
     winner_scripted = os.path.join(run_dir, f"ppo_iter{winner_iter:04d}_scripted.pt")
     winner_ckpt = os.path.join(run_dir, f"ppo_iter{winner_iter:04d}.pt")
 

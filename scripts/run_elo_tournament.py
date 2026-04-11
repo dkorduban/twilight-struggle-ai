@@ -121,6 +121,72 @@ def bayeselo_fit(
     return {p: anchor_elo + ratings[idx[p]] * elo_scale for p in players}
 
 
+def bayeselo_fit_mm(
+    matches: list[MatchResult],
+    anchor: str,
+    anchor_elo: float = 1500.0,
+    max_iter: int = 5000,
+    tol: float = 1e-10,
+) -> dict[str, float]:
+    """MM (minorization-maximization) BayesElo solver in gamma-space.
+
+    Unlike the Newton-step solver in bayeselo_fit(), this is provably convergent
+    for any connected comparison graph (Hunter 2004), including bipartite graphs
+    where the Newton diagonal Hessian approximation diverges.
+    """
+    players = sorted({m.player_a for m in matches} | {m.player_b for m in matches})
+    idx = {p: i for i, p in enumerate(players)}
+    n = len(players)
+    gamma = [1.0] * n  # strength parameters (positive reals)
+    anchor_idx = idx[anchor]
+
+    # Pre-compute per-player match lists for efficiency
+    player_matches: list[list[tuple[int, int, int]]] = [[] for _ in range(n)]
+    player_wins: list[float] = [0.0] * n
+    for m in matches:
+        ia, ib = idx[m.player_a], idx[m.player_b]
+        g = m.games
+        player_matches[ia].append((ib, g, 0))
+        player_matches[ib].append((ia, g, 0))
+        player_wins[ia] += m.wins_a
+        player_wins[ib] += m.wins_b
+
+    for iteration in range(max_iter):
+        new_gamma = gamma[:]
+        for i in range(n):
+            if i == anchor_idx:
+                continue
+            w_i = player_wins[i]
+            if w_i < 1e-15:
+                new_gamma[i] = 1e-10
+                continue
+            denom = 0.0
+            for opp_idx, g, _ in player_matches[i]:
+                denom += g / (gamma[i] + gamma[opp_idx])
+            if denom > 1e-15:
+                new_gamma[i] = w_i / denom
+
+        # Rescale so anchor gamma = 1.0
+        scale = 1.0 / max(new_gamma[anchor_idx], 1e-300)
+        new_gamma = [g * scale for g in new_gamma]
+
+        # Check convergence in log-space
+        delta = max(
+            abs(math.log(max(new_gamma[i], 1e-300)) - math.log(max(gamma[i], 1e-300)))
+            for i in range(n)
+        )
+        gamma = new_gamma
+        if delta < tol:
+            break
+
+    # Convert gamma → Elo
+    elo_scale = 400.0 / math.log(10.0)
+    return {
+        p: anchor_elo + math.log(max(gamma[idx[p]], 1e-300)) * elo_scale
+        for p in players
+    }
+
+
 def bayeselo_ci95(
     matches: list[MatchResult],
     elos: dict[str, float],
@@ -539,7 +605,7 @@ def main():
 
     if len(bipartite_mlist) >= 2:
         print(f"Fitting BayesElo (bipartite per-side, anchor={bipartite_anchor}={args.anchor_elo}) ...", flush=True)
-        elos_bipartite = bayeselo_fit(bipartite_mlist, anchor=bipartite_anchor, anchor_elo=args.anchor_elo)
+        elos_bipartite = bayeselo_fit_mm(bipartite_mlist, anchor=bipartite_anchor, anchor_elo=args.anchor_elo)
     else:
         print("  (skipping bipartite BayesElo: insufficient matches)", flush=True)
 
