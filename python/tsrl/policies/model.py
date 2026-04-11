@@ -40,6 +40,7 @@ NUM_STRATEGIES = 4
 NUM_CARDS = 112  # card IDs 0..111, but index 0 unused; masks are len 112
 NUM_PLAYABLE_CARDS = 111  # card IDs 1..111
 NUM_MODES = 5
+SMALL_CHOICE_MAX = 8  # max options for SmallChoiceHead (covers all known TS decisions)
 INFLUENCE_DIM = NUM_COUNTRIES * 2        # 172
 CARD_DIM = NUM_CARDS * 4                 # 448
 SCALAR_DIM = 32  # bumped from 11 after PPO v3; includes 21 active-effect features
@@ -617,6 +618,10 @@ class TSBaselineModel(nn.Module):
         self.value_branch = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
         self.value_head = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
 
+        # SmallChoice head for event-level binary/option decisions.
+        # Outputs (B, SMALL_CHOICE_MAX) logits; masked to legal options at inference.
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
     def forward(
         self,
         influence: torch.Tensor,
@@ -637,7 +642,8 @@ class TSBaselineModel(nn.Module):
         Returns
         -------
         dict with keys ``card_logits``, ``mode_logits``, ``country_logits``,
-        ``country_strategy_logits``, ``strategy_logits``, and ``value``.
+        ``country_strategy_logits``, ``strategy_logits``, ``value``,
+        and ``small_choice_logits``.
         """
         h_inf = torch.relu(self.influence_encoder(influence))
         h_card = torch.relu(self.card_encoder(cards))
@@ -657,6 +663,7 @@ class TSBaselineModel(nn.Module):
         strategy_probs = torch.softmax(country_strategy_logits, dim=2)
         country_logits = (mixing * strategy_probs).sum(dim=1)
         value = torch.tanh(self.value_head(torch.relu(self.value_branch(hidden))))
+        small_choice_logits = self.small_choice_head(hidden)
 
         return {
             "card_logits": card_logits,
@@ -665,6 +672,7 @@ class TSBaselineModel(nn.Module):
             "country_strategy_logits": country_strategy_logits,
             "strategy_logits": strategy_logits,
             "value": value,
+            "small_choice_logits": small_choice_logits,
         }
 
 
@@ -951,6 +959,8 @@ class TSMarginalValueModel(nn.Module):
         self.value_branch = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
         self.value_head = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
 
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
     def forward(
         self,
         influence: torch.Tensor,
@@ -981,6 +991,7 @@ class TSMarginalValueModel(nn.Module):
             hidden.shape[0], _MARGINAL_T_MAX, device=hidden.device, dtype=hidden.dtype
         )
         value = torch.tanh(self.value_head(torch.relu(self.value_branch(hidden))))
+        small_choice_logits = self.small_choice_head(hidden)
 
         return {
             "card_logits": card_logits,
@@ -990,6 +1001,7 @@ class TSMarginalValueModel(nn.Module):
             "strategy_logits": strategy_logits,
             "marginal_logits": marginal_logits,
             "value": value,
+            "small_choice_logits": small_choice_logits,
         }
 
 
