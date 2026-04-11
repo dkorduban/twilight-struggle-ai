@@ -1466,6 +1466,9 @@ class TSControlFeatGNNSideModel(nn.Module):
         self.value_branch_us = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
         self.value_head_us = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
 
+        # SmallChoice head for event-level binary/option decisions.
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
     def forward(
         self,
         influence: torch.Tensor,
@@ -1496,6 +1499,7 @@ class TSControlFeatGNNSideModel(nn.Module):
         mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
         strategy_probs = torch.softmax(country_strategy_logits, dim=2)
         country_logits = (mixing * strategy_probs).sum(dim=1)
+        small_choice_logits = self.small_choice_head(hidden)
 
         # Side-conditional value: select USSR or US head per sample
         v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
@@ -1510,6 +1514,7 @@ class TSControlFeatGNNSideModel(nn.Module):
             "country_strategy_logits": country_strategy_logits,
             "strategy_logits": strategy_logits,
             "value": value,
+            "small_choice_logits": small_choice_logits,
         }
 
 
@@ -1621,6 +1626,9 @@ class TSCountryAttnSideModel(nn.Module):
         self.value_branch_us = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
         self.value_head_us = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
 
+        # SmallChoice head for event-level binary/option decisions.
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
     def forward(
         self,
         influence: torch.Tensor,
@@ -1655,6 +1663,7 @@ class TSCountryAttnSideModel(nn.Module):
         mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
         strategy_probs = torch.softmax(country_strategy_logits, dim=2)
         country_logits = (mixing * strategy_probs).sum(dim=1)
+        small_choice_logits = self.small_choice_head(hidden)
 
         # Side-conditional value
         v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
@@ -1669,4 +1678,5 @@ class TSCountryAttnSideModel(nn.Module):
             "country_strategy_logits": country_strategy_logits,
             "strategy_logits": strategy_logits,
             "value": value,
+            "small_choice_logits": small_choice_logits,
         }
