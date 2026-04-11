@@ -27,6 +27,7 @@
 #include "mcts.hpp"
 #include "nn_features.hpp"
 #include "policies.hpp"
+#include "policy_callback.hpp"
 #include "scoring.hpp"
 #include "step.hpp"
 
@@ -4624,7 +4625,22 @@ RolloutResult rollout_games_batched(
                     }
                     steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
                 }
-                commit_greedy_action(*slot, action);
+                // Create PolicyCallback from model's small_choice_logits if available.
+                const PolicyCallbackFn* cb_ptr = nullptr;
+                PolicyCallbackFn small_choice_cb;
+                if (outputs.small_choice_logits.defined() &&
+                    outputs.small_choice_logits.size(0) > batch_idx) {
+                    const auto logits_row = outputs.small_choice_logits[batch_idx];
+                    small_choice_cb = [logits_row](const PublicState& /*pub*/, const EventDecision& dec) -> int {
+                        if (dec.kind != DecisionKind::SmallChoice || dec.n_options <= 1) {
+                            return 0;
+                        }
+                        auto masked = logits_row.slice(/*dim=*/0, /*start=*/0, /*end=*/dec.n_options);
+                        return static_cast<int>(masked.argmax(0).item<int64_t>());
+                    };
+                    cb_ptr = &small_choice_cb;
+                }
+                commit_greedy_action(*slot, action, cb_ptr);
             }
         }
     }
@@ -4770,7 +4786,22 @@ RolloutResult rollout_self_play_batched(
                     }
                     steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
                 }
-                commit_greedy_action(*slot, action);
+                // Create PolicyCallback from model's small_choice_logits if available.
+                const PolicyCallbackFn* cb_ptr = nullptr;
+                PolicyCallbackFn small_choice_cb;
+                if (outputs.small_choice_logits.defined() &&
+                    outputs.small_choice_logits.size(0) > batch_idx) {
+                    const auto logits_row = outputs.small_choice_logits[batch_idx];
+                    small_choice_cb = [logits_row](const PublicState& /*pub*/, const EventDecision& dec) -> int {
+                        if (dec.kind != DecisionKind::SmallChoice || dec.n_options <= 1) {
+                            return 0;
+                        }
+                        auto masked = logits_row.slice(/*dim=*/0, /*start=*/0, /*end=*/dec.n_options);
+                        return static_cast<int>(masked.argmax(0).item<int64_t>());
+                    };
+                    cb_ptr = &small_choice_cb;
+                }
+                commit_greedy_action(*slot, action, cb_ptr);
             }
         }
     }
