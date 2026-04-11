@@ -19,6 +19,30 @@ constexpr int kMidWarTurn = 4;
 constexpr int kLateWarTurn = 8;
 constexpr int kMaxTurns = 10;
 constexpr int kSpaceShuttleArs = 8;
+
+/// Choose a country from a pool: use policy callback if available, otherwise random.
+template <typename Container>
+CountryId choose_country(
+    const PublicState& pub, CardId card_id, Side side,
+    const Container& pool, Pcg64Rng& rng, const PolicyCallbackFn* cb
+) {
+    const int n = static_cast<int>(std::size(pool));
+    if (n == 0) return 0;
+    if (cb && n > 1) {
+        EventDecision dec;
+        dec.source_card = card_id;
+        dec.kind = DecisionKind::CountrySelect;
+        dec.n_options = n;
+        dec.acting_side = side;
+        for (int i = 0; i < n && i < EventDecision::kMaxEligible; ++i) {
+            dec.eligible_ids[i] = static_cast<int>(pool[i]);
+        }
+        const int choice = std::clamp((*cb)(pub, dec), 0, n - 1);
+        return static_cast<CountryId>(pool[choice]);
+    }
+    return pool[rng.choice_index(static_cast<size_t>(n))];
+}
+
 constexpr CountryId kWestGermanyId = 18;
 constexpr std::array<CardId, 17> kCatCCardIds = {5, 10, 26, 32, 36, 45, 46, 47, 52, 68, 78, 84, 88, 95, 98, 101, 108};
 
@@ -147,7 +171,7 @@ std::optional<CardId> draw_one(GameState& gs, Pcg64Rng& rng) {
     return card;
 }
 
-void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
+void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng, const PolicyCallbackFn* policy_cb = nullptr) {
     auto accessible = accessible_countries(side, pub, ActionMode::Influence);
     if (accessible.empty()) {
         return;
@@ -163,7 +187,7 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
 
     if (mode == ActionMode::Influence) {
         for (int i = 0; i < ops; ++i) {
-            const auto target = accessible[rng.choice_index(accessible.size())];
+            const auto target = choose_country(pub, 0, side, accessible, rng, policy_cb);
             pub.set_influence(side, target, pub.influence_of(side, target) + 1);
         }
         return;
@@ -184,7 +208,7 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
                 targets = accessible;
             }
         }
-        const auto target = targets[rng.choice_index(targets.size())];
+        const auto target = choose_country(pub, 0, side, targets, rng, policy_cb);
         const auto net = coup_result(ops, country_spec(target).stability, rng);
         if (net > 0) {
             const auto removed = std::min(net, pub.influence_of(opponent, target));
@@ -201,7 +225,7 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
     }
 
     for (int i = 0; i < std::min(ops, static_cast<int>(accessible.size())); ++i) {
-        const auto target = accessible[rng.choice_index(accessible.size())];
+        const auto target = choose_country(pub, 0, side, accessible, rng, policy_cb);
         const auto ussr_inf = pub.influence_of(Side::USSR, target);
         const auto us_inf = pub.influence_of(Side::US, target);
         auto count_adj = [&](Side player) {
@@ -280,7 +304,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     GameState& gs,
     CardId card_id,
     Side side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
 ) {
     auto pub = gs.pub;
 
@@ -341,9 +366,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
         }
 
         case 26: {
+            // CIA Created: +1 US influence in any accessible country
             const auto accessible = accessible_countries(Side::US, pub, ActionMode::Influence);
             if (!accessible.empty()) {
-                const auto target = accessible[rng.choice_index(accessible.size())];
+                const auto target = choose_country(pub, 26, Side::US, accessible, rng, policy_cb);
                 pub.set_influence(Side::US, target, pub.influence_of(Side::US, target) + 1);
             }
             break;
@@ -396,7 +422,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     }
                 }
                 if (!pool.empty()) {
-                    const auto target = pool[rng.choice_index(pool.size())];
+                    const auto target = choose_country(pub, 36, Side::USSR, pool, rng, policy_cb);
                     pub.set_influence(Side::USSR, target, pub.influence_of(Side::USSR, target) + 1);
                 }
             }
@@ -651,7 +677,7 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
     const PolicyCallbackFn* policy_cb
 ) {
     if (is_cat_c_card(card_id)) {
-        return apply_hand_event(gs, card_id, event_side, rng);
+        return apply_hand_event(gs, card_id, event_side, rng, policy_cb);
     }
     ActionEncoding action{
         .card_id = card_id,
@@ -681,7 +707,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     }
 
     if (action.mode == ActionMode::Event && is_cat_c_card(action.card_id)) {
-        return apply_hand_event(gs, action.card_id, side, rng);
+        return apply_hand_event(gs, action.card_id, side, rng, policy_cb);
     }
 
     auto [new_pub, over, winner] = apply_action(gs.pub, action, side, rng, policy_cb);
@@ -707,7 +733,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     return {new_pub, over, winner};
 }
 
-std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(GameState& gs, Pcg64Rng& rng) {
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(GameState& gs, Pcg64Rng& rng, const PolicyCallbackFn* policy_cb = nullptr) {
     std::vector<CountryId> eligible;
     for (const auto cid : all_country_ids()) {
         if (gs.pub.influence_of(Side::US, cid) > 0) {
@@ -717,7 +743,8 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(
     if (eligible.empty()) {
         return std::nullopt;
     }
-    const auto target = eligible[rng.choice_index(eligible.size())];
+    // NORAD: US places +1 influence in any country where US already has influence
+    const auto target = choose_country(gs.pub, 106, Side::US, eligible, rng, policy_cb);
     gs.pub.set_influence(Side::US, target, gs.pub.influence_of(Side::US, target) + 1);
     const auto [over, winner] = check_vp_win(gs.pub);
     return std::tuple{gs.pub, over, winner};
