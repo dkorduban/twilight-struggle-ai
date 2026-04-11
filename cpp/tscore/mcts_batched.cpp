@@ -4293,7 +4293,8 @@ RolloutResult rollout_model_vs_model_batched(
     float temperature,
     bool nash_temperatures,
     float dir_alpha,
-    float dir_epsilon
+    float dir_epsilon,
+    Side learned_side
 ) {
     if (n_games <= 0) {
         return {};
@@ -4305,10 +4306,15 @@ RolloutResult rollout_model_vs_model_batched(
         pool_size = std::min(n_games, 64);
     }
 
-    // game_index [0, half) => model_a plays USSR, model_b plays US.
-    // game_index [half, n_games) => model_a plays US, model_b plays USSR.
+    // learned_side=Neutral: alternate sides (first half USSR, second half US).
+    // learned_side=USSR: model_a always plays USSR.
+    // learned_side=US:   model_a always plays US.
     const int half = n_games / 2;
-    auto a_is_ussr = [&](int game_index) -> bool { return game_index < half; };
+    auto a_is_ussr = [&](int game_index) -> bool {
+        if (learned_side == Side::USSR) return true;
+        if (learned_side == Side::US)   return false;
+        return game_index < half;  // Neutral: alternate
+    };
 
     BatchedMctsConfig config;
     config.pool_size = pool_size;

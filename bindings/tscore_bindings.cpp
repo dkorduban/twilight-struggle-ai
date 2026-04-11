@@ -794,7 +794,7 @@ PYBIND11_MODULE(tscore, m) {
         [](const std::string& model_a_path, const std::string& model_b_path,
            int n_games, int pool_size, py::object seed_obj,
            const std::string& device_str, float temperature, bool nash_temperatures,
-           float dir_alpha, float dir_epsilon) {
+           float dir_alpha, float dir_epsilon, ts::Side learned_side) {
             std::optional<uint32_t> seed;
             if (!seed_obj.is_none()) {
                 seed = seed_obj.cast<uint32_t>();
@@ -814,7 +814,8 @@ PYBIND11_MODULE(tscore, m) {
                 temperature,
                 nash_temperatures,
                 dir_alpha,
-                dir_epsilon
+                dir_epsilon,
+                learned_side
             );
 
             py::list steps_out;
@@ -833,9 +834,11 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("nash_temperatures") = false,
         py::arg("dir_alpha") = 0.0f,
         py::arg("dir_epsilon") = 0.0f,
+        py::arg("learned_side") = ts::Side::Neutral,
         "Run model_a (learning model) vs model_b (opponent) batched rollout.\n"
-        "game_index [0, n_games/2) => model_a plays USSR, model_b plays US.\n"
-        "game_index [n_games/2, n_games) => model_a plays US, model_b plays USSR.\n"
+        "learned_side=Neutral (default): alternating sides.\n"
+        "learned_side=USSR: all n_games with model_a as USSR.\n"
+        "learned_side=US:   all n_games with model_a as US.\n"
         "Steps are recorded ONLY for model_a decisions.\n"
         "Returns (results, steps, game_boundaries).\n"
         "dir_alpha/dir_epsilon: Dirichlet noise at root for model_a (0=disabled)."

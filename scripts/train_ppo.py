@@ -1191,47 +1191,47 @@ def _collect_vs_model_from_script(
 ) -> list[Step]:
     """Collect n_games vs a scripted model opponent.
 
-    side="both": n_games total, half as USSR half as US (legacy behaviour).
-    side="ussr": play n_games*2, return only the USSR half (model_a plays USSR).
-    side="us":   play n_games*2, return only the US half  (model_a plays US).
-
-    The C++ binding always alternates sides: game indices [0, total//2) → model_a=USSR,
-    [total//2, total) → model_a=US. Doubling total_games gives n_games of the wanted
-    side at the cost of running (and discarding) n_games of the other side.
+    side="both": n_games total, alternating USSR/US (legacy behaviour).
+    side="ussr": n_games with model_a as USSR only (no wasted games).
+    side="us":   n_games with model_a as US only (no wasted games).
     """
-    if side in ("ussr", "us"):
-        total_games = n_games * 2  # run double; keep the desired half
+    if side == "ussr":
+        learned_side = tscore.Side.USSR
+    elif side == "us":
+        learned_side = tscore.Side.US
     else:
-        total_games = n_games
+        learned_side = tscore.Side.Neutral  # alternating
+
     results, raw_steps, boundaries = _call_rollout_with_optional_dirichlet(
         "rollout_model_vs_model_batched",
         dir_alpha=dir_alpha,
         dir_epsilon=dir_epsilon,
         model_a_path=our_script,
         model_b_path=opp_script,
-        n_games=total_games,
-        pool_size=min(total_games, 64),
+        n_games=n_games,
+        pool_size=min(n_games, 64),
         seed=base_seed,
         device="cpu",
         temperature=rollout_temp,
         nash_temperatures=False,
+        learned_side=learned_side,
     )
     steps = _steps_from_native(raw_steps)
-    half = total_games // 2
+    half = n_games // 2
     kept: list[Step] = []
     for i, result in enumerate(results):
         start = boundaries[i]
         end = boundaries[i + 1] if i + 1 < len(boundaries) else len(steps)
         if start >= end:
             continue
-        model_a_side_int = 0 if i < half else 1  # 0=USSR, 1=US
+        if side == "ussr":
+            model_a_side_int = 0
+        elif side == "us":
+            model_a_side_int = 1
+        else:
+            model_a_side_int = 0 if i < half else 1
         steps[end - 1].reward = _compute_reward(result, model_a_side_int, vp_reward_coef)
         steps[end - 1].done = True
-        # Filter: skip games where model_a plays the wrong side
-        if side == "ussr" and model_a_side_int != 0:
-            continue
-        if side == "us" and model_a_side_int != 1:
-            continue
         kept.extend(steps[start:end])
     return kept
 

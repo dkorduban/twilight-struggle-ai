@@ -260,8 +260,9 @@ std::vector<GameResult> benchmark_mcts(
 );
 
 /// Run model_a (learning model, steps recorded) vs model_b (opponent, no steps).
-/// game_index [0, half) => model_a plays USSR, model_b plays US.
-/// game_index [half, n_games) => model_a plays US, model_b plays USSR.
+/// learned_side=Neutral (default): alternating — [0, half) model_a=USSR, [half, n_games) model_a=US.
+/// learned_side=USSR: all n_games with model_a as USSR.
+/// learned_side=US:   all n_games with model_a as US.
 /// Returns RolloutResult with steps only for model_a decisions.
 RolloutResult rollout_model_vs_model_batched(
     int n_games,
@@ -273,7 +274,8 @@ RolloutResult rollout_model_vs_model_batched(
     float temperature = 1.0f,
     bool nash_temperatures = false,
     float dir_alpha = 0.0f,
-    float dir_epsilon = 0.0f
+    float dir_epsilon = 0.0f,
+    Side learned_side = Side::Neutral
 );
 
 }  // namespace ts
