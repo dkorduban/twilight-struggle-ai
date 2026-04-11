@@ -1148,7 +1148,224 @@ void resolve_heuristic_decision(IsmctsGameSlot& slot) {
     commit_selected_action(slot, action);
 }
 
-void advance_until_search_or_done(IsmctsGameSlot& slot, Side learned_side) {
+/// Select a greedy (argmax) action from model logits for a single state.
+/// Uses batch-1 inference: fill one slot, run forward, pick best legal action.
+ActionEncoding greedy_action_from_model(
+    torch::jit::script::Module& model,
+    const PublicState& pub,
+    const CardSet& hand,
+    bool holds_china,
+    Side side,
+    Pcg64Rng& rng,
+    torch::Device device
+) {
+    // Heuristic fallback used when model output is degenerate.
+    const auto heuristic_fallback = [&]() -> ActionEncoding {
+        return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+            .value_or(ActionEncoding{});
+    };
+
+    auto playable = legal_cards(hand, pub, side, holds_china);
+    if (playable.empty()) {
+        return heuristic_fallback();
+    }
+
+    // Batch-1 forward pass.
+    nn::BatchInputs inputs;
+    inputs.allocate(1, device);
+    inputs.fill_slot(0, pub, hand, holds_china, side);
+    inputs.filled = 1;
+    const auto outputs = nn::forward_model_batched(model, inputs);
+    constexpr int64_t bi = 0;
+
+    const auto card_logits = outputs.card_logits.index({bi});
+    const auto mode_logits = outputs.mode_logits.index({bi});
+
+    // Mask illegal cards (DEFCON-lowering safety included).
+    auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
+    for (const auto card_id : playable) {
+        if (is_card_blocked_by_defcon(pub, side, card_id)) {
+            continue;
+        }
+        const auto idx = static_cast<int64_t>(card_id - 1);
+        masked_card.index_put_({idx}, card_logits.index({idx}));
+    }
+
+    // If all playable cards were masked, fall back.
+    const bool all_masked = (masked_card.max().item<float>() == -std::numeric_limits<float>::infinity());
+    if (all_masked) {
+        return heuristic_fallback();
+    }
+
+    const auto card_id = static_cast<CardId>(masked_card.argmax().item<int64_t>() + 1);
+
+    // Mode selection.
+    auto modes = legal_modes(card_id, pub, side);
+    if (modes.empty()) {
+        return heuristic_fallback();
+    }
+
+    auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+    for (const auto m : modes) {
+        const auto idx = static_cast<int64_t>(static_cast<int>(m));
+        masked_mode.index_put_({idx}, mode_logits.index({idx}));
+    }
+    // DEFCON safety: forbid coup/event for DEFCON-lowering cards at DEFCON<=2.
+    if (pub.defcon <= 2) {
+        for (auto mode_val : {ActionMode::Coup, ActionMode::Event}) {
+            if (is_defcon_lowering_card(card_id)) {
+                const auto idx = static_cast<int64_t>(static_cast<int>(mode_val));
+                masked_mode.index_put_({idx}, -std::numeric_limits<float>::infinity());
+            }
+        }
+    }
+    // Re-check after filtering.
+    const bool mode_all_masked = (masked_mode.max().item<float>() == -std::numeric_limits<float>::infinity());
+    if (mode_all_masked) {
+        return heuristic_fallback();
+    }
+    const auto mode = static_cast<ActionMode>(masked_mode.argmax().item<int64_t>());
+
+    // Country / target selection.
+    ActionEncoding action{.card_id = card_id, .mode = mode, .targets = {}};
+
+    if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
+        auto accessible = accessible_countries(side, pub, mode);
+        if (accessible.empty()) {
+            return heuristic_fallback();
+        }
+        // Filter forbidden targets (DEFCON, NATO, etc.) using the cache logic.
+        const auto& cache = AccessibleCache::build(side, pub);
+        const auto& valid = (mode == ActionMode::Coup) ? cache.coup : cache.realign;
+        if (valid.empty()) {
+            return heuristic_fallback();
+        }
+        // Pick highest logit among accessible countries.
+        const auto country_logits = outputs.country_logits.defined()
+            ? outputs.country_logits.index({bi})
+            : torch::zeros(kMaxCountryLogits);
+        CountryId best_country = valid[0];
+        float best_val = -std::numeric_limits<float>::infinity();
+        for (const auto cid : valid) {
+            const float v = country_logits.index({static_cast<int64_t>(cid)}).item<float>();
+            if (v > best_val) {
+                best_val = v;
+                best_country = cid;
+            }
+        }
+        action.targets.push_back(best_country);
+    } else if (mode == ActionMode::Influence || mode == ActionMode::Space) {
+        const auto& cache = AccessibleCache::build(side, pub);
+        if (mode == ActionMode::Space) {
+            // Space: pick best country (though usually irrelevant for space).
+            if (!cache.influence.empty()) {
+                action.targets.push_back(cache.influence[0]);
+            }
+        } else {
+            const auto ops = effective_ops(card_id, pub, side);
+            const auto& accessible = cache.influence;
+            if (accessible.empty()) {
+                return heuristic_fallback();
+            }
+            const auto country_logits = outputs.country_logits.defined()
+                ? outputs.country_logits.index({bi})
+                : torch::zeros(kMaxCountryLogits);
+            // Allocate ops proportional to logits (deterministic, like greedy_action_from_outputs).
+            std::vector<float> vals;
+            vals.reserve(accessible.size());
+            float max_v = -std::numeric_limits<float>::infinity();
+            for (const auto cid : accessible) {
+                const float v = country_logits.index({static_cast<int64_t>(cid)}).item<float>();
+                vals.push_back(v);
+                if (v > max_v) max_v = v;
+            }
+            // Softmax.
+            float sum_exp = 0.0f;
+            for (auto& v : vals) {
+                v = std::exp(v - max_v);
+                sum_exp += v;
+            }
+            for (auto& v : vals) {
+                v /= sum_exp;
+            }
+            // Floor allocation.
+            std::vector<int> alloc(accessible.size(), 0);
+            float rem = static_cast<float>(ops);
+            for (size_t i = 0; i < accessible.size(); ++i) {
+                alloc[i] = static_cast<int>(std::floor(vals[i] * static_cast<float>(ops)));
+                rem -= static_cast<float>(alloc[i]);
+            }
+            // Distribute remaining ops by largest fractional.
+            int rem_int = static_cast<int>(std::round(rem));
+            if (rem_int > 0) {
+                std::vector<std::pair<float, size_t>> fractional;
+                for (size_t i = 0; i < accessible.size(); ++i) {
+                    const float frac = vals[i] * static_cast<float>(ops) - static_cast<float>(alloc[i]);
+                    fractional.emplace_back(-frac, i);  // negate for ascending sort = descending frac
+                }
+                std::sort(fractional.begin(), fractional.end());
+                for (int k = 0; k < rem_int && k < static_cast<int>(fractional.size()); ++k) {
+                    alloc[fractional[static_cast<size_t>(k)].second] += 1;
+                }
+            }
+            for (size_t i = 0; i < accessible.size(); ++i) {
+                for (int k = 0; k < alloc[i]; ++k) {
+                    action.targets.push_back(accessible[i]);
+                }
+            }
+        }
+    }
+    // Event mode: no targets needed.
+
+    if (action.targets.empty() && mode != ActionMode::Event && mode != ActionMode::Space) {
+        return heuristic_fallback();
+    }
+    return action;
+}
+
+void resolve_model_decision(
+    IsmctsGameSlot& slot,
+    torch::jit::script::Module& model,
+    torch::Device device
+) {
+    if (!slot.decision.has_value()) {
+        return;
+    }
+    const auto& dec = *slot.decision;
+    // Set phasing so greedy_action_from_model reads the correct side.
+    slot.game_state.pub.phasing = dec.side;
+    auto action = greedy_action_from_model(
+        model,
+        dec.pub_snapshot,
+        dec.hand_snapshot,
+        dec.holds_china,
+        dec.side,
+        slot.rng,
+        device
+    );
+    commit_selected_action(slot, action);
+}
+
+// Resolve an opponent decision using either heuristic or model policy.
+// When opponent_model is non-null, use greedy model inference; otherwise use heuristic.
+void resolve_opponent_decision(
+    IsmctsGameSlot& slot,
+    torch::jit::script::Module* opponent_model,
+    torch::Device device
+) {
+    if (opponent_model != nullptr) {
+        resolve_model_decision(slot, *opponent_model, device);
+    } else {
+        resolve_heuristic_decision(slot);
+    }
+}
+
+void advance_until_search_or_done(
+    IsmctsGameSlot& slot,
+    Side learned_side,
+    torch::jit::script::Module* opponent_model = nullptr,
+    torch::Device device = torch::kCPU
+) {
     while (slot.active && !slot.game_done && !slot.decision.has_value()) {
         switch (slot.stage) {
             case IsmctsGameStage::TurnSetup: {
@@ -1185,7 +1402,7 @@ void advance_until_search_or_done(IsmctsGameSlot& slot, Side learned_side) {
                 slot.game_state.phase = GamePhase::Headline;
                 queue_decision(slot, side, /*ar=*/0, /*is_headline=*/true);
                 if (side != learned_side) {
-                    resolve_heuristic_decision(slot);
+                    resolve_opponent_decision(slot, opponent_model, device);
                 }
                 break;
             }
@@ -1249,7 +1466,7 @@ void advance_until_search_or_done(IsmctsGameSlot& slot, Side learned_side) {
                 }
                 queue_decision(slot, side, slot.current_ar, /*is_headline=*/false);
                 if (side != learned_side) {
-                    resolve_heuristic_decision(slot);
+                    resolve_opponent_decision(slot, opponent_model, device);
                 }
                 break;
             }
@@ -1287,7 +1504,7 @@ void advance_until_search_or_done(IsmctsGameSlot& slot, Side learned_side) {
                 }
                 queue_decision(slot, side, slot.game_state.pub.ar, /*is_headline=*/false);
                 if (side != learned_side) {
-                    resolve_heuristic_decision(slot);
+                    resolve_opponent_decision(slot, opponent_model, device);
                 }
                 break;
             }
@@ -1815,6 +2032,188 @@ std::vector<GameResult> play_ismcts_matchup_pooled(
     fprintf(stderr, "[ISMCTS profile] advance=%.3fs select=%.3fs nn=%.3fs expand=%.3fs apply=%.3fs total=%.3fs\n",
             t_advance, t_select, t_nn, t_expand, t_apply, total);
     fprintf(stderr, "[ISMCTS profile] batches=%d items=%d avg_batch=%.1f\n",
+            n_batches, total_batch_items, n_batches > 0 ? double(total_batch_items) / n_batches : 0.0);
+
+    return results;
+}
+
+std::vector<GameResult> play_ismcts_vs_model_pooled(
+    int n_games,
+    torch::jit::script::Module& search_model,
+    torch::jit::script::Module& opponent_model,
+    Side search_side,
+    const IsmctsConfig& config,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device
+) {
+    if (n_games <= 0) {
+        return {};
+    }
+    if (!is_player_side(search_side)) {
+        throw std::invalid_argument("search_side must be USSR or US");
+    }
+    if (config.n_determinizations <= 0) {
+        throw std::invalid_argument("n_determinizations must be positive");
+    }
+    if (pool_size <= 0) {
+        throw std::invalid_argument("pool_size must be positive");
+    }
+
+    std::vector<IsmctsGameSlot> pool(static_cast<size_t>(pool_size));
+    int games_started = 0;
+    std::vector<GameResult> results;
+    results.reserve(static_cast<size_t>(n_games));
+
+    const int max_pending = config.max_pending_per_det;
+    const int max_batch = pool_size * config.n_determinizations * max_pending;
+    nn::BatchInputs batch_inputs;
+    batch_inputs.allocate(max_batch, device);
+    std::vector<BatchEntry> batch_entries;
+    batch_entries.reserve(static_cast<size_t>(max_batch));
+
+    using Clock = std::chrono::high_resolution_clock;
+    double t_advance = 0, t_select = 0, t_nn = 0, t_expand = 0, t_apply = 0;
+    int n_batches = 0, total_batch_items = 0;
+
+    while (static_cast<int>(results.size()) < n_games) {
+        for (auto& slot : pool) {
+            if (slot.active && slot.game_done && !slot.emitted) {
+                results.push_back(slot.result);
+                slot.emitted = true;
+                slot.active = false;
+            }
+            if (!slot.active && games_started < n_games) {
+                initialize_game_slot(slot, games_started, base_seed);
+                games_started += 1;
+            }
+        }
+
+        batch_inputs.reset();
+        batch_entries.clear();
+
+        for (auto& slot : pool) {
+            if (!slot.active || slot.game_done) {
+                continue;
+            }
+
+            if (!slot.search_active) {
+                auto t0 = Clock::now();
+                advance_until_search_or_done(slot, search_side, &opponent_model, device);
+                t_advance += std::chrono::duration<double>(Clock::now() - t0).count();
+                if (slot.game_done || !slot.decision.has_value()) {
+                    continue;
+                }
+                start_search(slot, config);
+            }
+
+            auto t0s = Clock::now();
+            for (auto& det : slot.dets) {
+                if (determinization_complete(det, config.mcts_config.n_simulations)) {
+                    continue;
+                }
+
+                if (det.root == nullptr && det.pending.empty()) {
+                    if (auto immediate = expand_without_model(det.root_state, det.rng); immediate.has_value()) {
+                        det.root = std::move(immediate->node);
+                        apply_root_dirichlet_noise(*det.root, config.mcts_config, det.rng);
+                    } else {
+                        PendingExpansion pend;
+                        pend.sim_state = clone_game_state(det.root_state);
+                        pend.is_root_expansion = true;
+                        det.pending.push_back(std::move(pend));
+                        queue_batch_item(batch_inputs, batch_entries, slot, det);
+                    }
+                    continue;
+                }
+                if (det.root == nullptr) {
+                    continue;
+                }
+
+                for (;;) {
+                    const int budget = sims_budget(det, config.mcts_config.n_simulations, max_pending);
+                    if (budget <= 0) break;
+                    const auto selection = select_to_leaf(det, config.mcts_config);
+                    if (selection.needs_batch) {
+                        queue_batch_item(batch_inputs, batch_entries, slot, det);
+                    } else {
+                        det.sims_completed += 1;
+                    }
+                }
+            }
+            t_select += std::chrono::duration<double>(Clock::now() - t0s).count();
+        }
+
+        if (!batch_entries.empty()) {
+            n_batches += 1;
+            total_batch_items += static_cast<int>(batch_entries.size());
+            auto t0n = Clock::now();
+            const auto outputs = nn::forward_model_batched(search_model, batch_inputs);
+            t_nn += std::chrono::duration<double>(Clock::now() - t0n).count();
+            auto t0e = Clock::now();
+            const auto raw = RawBatchOutputs::extract(outputs);
+            for (size_t i = 0; i < batch_entries.size(); ++i) {
+                auto& entry = batch_entries[i];
+                const auto batch_index = static_cast<int>(i);
+                auto& pend = entry.det->pending[entry.pending_index];
+                if (pend.is_root_expansion) {
+                    auto expansion = expand_from_raw(
+                        pend.sim_state,
+                        raw,
+                        batch_index,
+                        config.mcts_config,
+                        entry.det->rng
+                    );
+                    entry.det->root = std::move(expansion.node);
+                    apply_root_dirichlet_noise(*entry.det->root, config.mcts_config, entry.det->rng);
+                } else {
+                    auto expansion = expand_from_raw(
+                        pend.sim_state,
+                        raw,
+                        batch_index,
+                        config.mcts_config,
+                        entry.det->rng
+                    );
+                    auto& [parent, edge_index] = pend.path.back();
+                    parent->children[static_cast<size_t>(edge_index)] = std::move(expansion.node);
+                    backpropagate_path(pend.path, expansion.leaf_value);
+                    entry.det->sims_completed += 1;
+                }
+            }
+            for (auto& slot : pool) {
+                for (auto& det : slot.dets) {
+                    det.pending.clear();
+                }
+            }
+            t_expand += std::chrono::duration<double>(Clock::now() - t0e).count();
+        }
+
+        auto t0a = Clock::now();
+        for (auto& slot : pool) {
+            if (!search_complete(slot, config.mcts_config.n_simulations)) {
+                continue;
+            }
+
+            auto result = aggregate_result(slot, config);
+            auto action = result.best_action;
+            if (action.card_id == 0 && slot.decision.has_value()) {
+                action = choose_action(
+                    PolicyKind::MinimalHybrid,
+                    slot.decision->pub_snapshot,
+                    slot.decision->hand_snapshot,
+                    slot.decision->holds_china,
+                    slot.rng
+                ).value_or(ActionEncoding{});
+            }
+            commit_selected_action(slot, action);
+        }
+        t_apply += std::chrono::duration<double>(Clock::now() - t0a).count();
+    }
+
+    const double total = t_advance + t_select + t_nn + t_expand + t_apply;
+    fprintf(stderr, "[ISMCTS vs model profile] advance=%.3fs select=%.3fs nn=%.3fs expand=%.3fs apply=%.3fs total=%.3fs\n",
+            t_advance, t_select, t_nn, t_expand, t_apply, total);
+    fprintf(stderr, "[ISMCTS vs model profile] batches=%d items=%d avg_batch=%.1f\n",
             n_batches, total_batch_items, n_batches > 0 ? double(total_batch_items) / n_batches : 0.0);
 
     return results;

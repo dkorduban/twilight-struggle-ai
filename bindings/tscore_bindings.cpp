@@ -880,6 +880,102 @@ PYBIND11_MODULE(tscore, m) {
         "device: 'cpu' or 'cuda' for GPU inference."
     );
     m.def(
+        "benchmark_ismcts_vs_model",
+        [](const std::string& search_model_path,
+           const std::string& opponent_model_path,
+           ts::Side search_side,
+           int n_games,
+           int n_determinizations, int n_simulations,
+           py::object seed_obj, int pool_size,
+           int max_pending_per_det, const std::string& device_str) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            torch::Device device(device_str);
+            auto search_model = torch::jit::load(search_model_path, device);
+            search_model.eval();
+            auto opponent_model = torch::jit::load(opponent_model_path, device);
+            opponent_model.eval();
+            ts::IsmctsConfig config;
+            config.n_determinizations = n_determinizations;
+            config.max_pending_per_det = max_pending_per_det;
+            config.mcts_config.n_simulations = n_simulations;
+            return ts::play_ismcts_vs_model_pooled(
+                n_games,
+                search_model,
+                opponent_model,
+                search_side,
+                config,
+                pool_size,
+                seed.value_or(std::random_device{}()),
+                device
+            );
+        },
+        py::arg("search_model_path"),
+        py::arg("opponent_model_path"),
+        py::arg("search_side"),
+        py::arg("n_games"),
+        py::arg("n_determinizations") = 16,
+        py::arg("n_simulations") = 100,
+        py::arg("seed") = py::none(),
+        py::arg("pool_size") = 16,
+        py::arg("max_pending_per_det") = 4,
+        py::arg("device") = "cpu",
+        "Run ISMCTS vs raw-policy benchmark.\n"
+        "search_side uses information-set MCTS (search_model); opponent uses greedy model inference (opponent_model).\n"
+        "Returns list[GameResult]."
+    );
+    m.def(
+        "benchmark_ismcts_vs_model_both_sides",
+        [](const std::string& search_model_path,
+           const std::string& opponent_model_path,
+           int n_games,
+           int n_determinizations, int n_simulations,
+           py::object seed_obj, int pool_size,
+           int max_pending_per_det, const std::string& device_str) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            torch::Device device(device_str);
+            auto search_model = torch::jit::load(search_model_path, device);
+            search_model.eval();
+            auto opponent_model = torch::jit::load(opponent_model_path, device);
+            opponent_model.eval();
+            ts::IsmctsConfig config;
+            config.n_determinizations = n_determinizations;
+            config.max_pending_per_det = max_pending_per_det;
+            config.mcts_config.n_simulations = n_simulations;
+
+            const uint32_t base_seed = seed.value_or(std::random_device{}());
+            const int half = n_games / 2;
+            const int remainder = n_games - half;
+
+            auto results_ussr = ts::play_ismcts_vs_model_pooled(
+                half, search_model, opponent_model, ts::Side::USSR,
+                config, pool_size, base_seed, device);
+            auto results_us = ts::play_ismcts_vs_model_pooled(
+                remainder, search_model, opponent_model, ts::Side::US,
+                config, pool_size, base_seed + static_cast<uint32_t>(half), device);
+
+            results_ussr.insert(results_ussr.end(), results_us.begin(), results_us.end());
+            return results_ussr;
+        },
+        py::arg("search_model_path"),
+        py::arg("opponent_model_path"),
+        py::arg("n_games"),
+        py::arg("n_determinizations") = 16,
+        py::arg("n_simulations") = 100,
+        py::arg("seed") = py::none(),
+        py::arg("pool_size") = 16,
+        py::arg("max_pending_per_det") = 4,
+        py::arg("device") = "cpu",
+        "Run ISMCTS vs raw-policy benchmark on both sides.\n"
+        "First n_games/2 games: search plays USSR; remaining: search plays US.\n"
+        "Returns list[GameResult]."
+    );
+    m.def(
         "benchmark_mcts_vs_greedy",
         [](const std::string& model_path, ts::Side learned_side, int n_games,
            int n_simulations, int pool_size, uint32_t seed, const std::string& device_str) {

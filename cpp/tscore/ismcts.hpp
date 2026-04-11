@@ -63,6 +63,19 @@ std::vector<GameResult> play_ismcts_matchup_pooled(
     torch::Device device
 );
 
+/// Like play_ismcts_matchup_pooled but the opponent uses a neural network model
+/// (greedy argmax) instead of the heuristic policy.
+std::vector<GameResult> play_ismcts_vs_model_pooled(
+    int n_games,
+    torch::jit::script::Module& search_model,
+    torch::jit::script::Module& opponent_model,
+    Side search_side,
+    const IsmctsConfig& config,
+    int pool_size,
+    uint32_t base_seed,
+    torch::Device device
+);
+
 #endif
 
 }  // namespace ts
