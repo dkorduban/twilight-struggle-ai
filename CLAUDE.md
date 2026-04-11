@@ -423,3 +423,6 @@ Keep this file concise. If project guidance becomes too large, move topic-specif
 - `.claude/rules/` for scoped rules
 - `.claude/skills/` for reusable workflows
 - `docs/` for detailed specs
+
+## Long-form design documents
+`long-prompts/` contains extended conversations (human ↔ external LLM) about architecture, action spaces, and analysis. These are food-for-thought documents — directionally useful but may need adaptation. Check them when facing a design decision in the relevant area. They are **not** authoritative — the codebase and `docs/` take precedence.
