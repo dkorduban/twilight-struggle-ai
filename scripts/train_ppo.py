@@ -50,10 +50,12 @@ for _bindings_path in (
     _repo_root / "build-ninja" / "bindings",  # preferred (ninja build)
     _repo_root / "build" / "bindings",
 ):
-    # Check for actual .so file, not just directory existence (empty dir would break path)
+    # Check for actual .so file, not just directory existence (empty dir would break path).
+    # Always break on first match so old build/ doesn't shadow build-ninja/ on PYTHONPATH.
     _bindings_dir = str(_bindings_path)
-    if any(_bindings_path.glob("tscore*.so")) and _bindings_dir not in sys.path:
-        sys.path.insert(0, _bindings_dir)
+    if any(_bindings_path.glob("tscore*.so")):
+        if _bindings_dir not in sys.path:
+            sys.path.insert(0, _bindings_dir)
         break
 _py_dir = str(Path(__file__).resolve().parent.parent / "python")
 if _py_dir not in sys.path:
