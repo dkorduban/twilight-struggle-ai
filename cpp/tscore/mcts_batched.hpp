@@ -145,6 +145,12 @@ struct RolloutStep {
 
     // Card IDs (1-indexed) in the deciding side's known_in_hand bitset.
     std::vector<int> hand_card_ids;
+
+    // SmallChoice event decision captured by PolicyCallback during commit_greedy_action.
+    // -1 means no small_choice decision occurred for this step.
+    int small_choice_target = -1;
+    int small_choice_n_options = 0;  // number of legal options (0 if no decision)
+    float small_choice_logprob = 0.0f;  // log-prob of the chosen option under the policy
 };
 
 struct RolloutResult {

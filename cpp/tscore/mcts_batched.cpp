@@ -4626,21 +4626,40 @@ RolloutResult rollout_games_batched(
                     steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
                 }
                 // Create PolicyCallback from model's small_choice_logits if available.
+                // Captures the last small_choice decision for training targets.
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 PolicyCallbackFn small_choice_cb;
+                int sc_target = -1;
+                int sc_n_options = 0;
+                float sc_logprob = 0.0f;
                 if (outputs.small_choice_logits.defined() &&
                     outputs.small_choice_logits.size(0) > batch_idx) {
                     const auto logits_row = outputs.small_choice_logits[batch_idx];
-                    small_choice_cb = [logits_row](const PublicState& /*pub*/, const EventDecision& dec) -> int {
+                    small_choice_cb = [logits_row, &sc_target, &sc_n_options, &sc_logprob](
+                        const PublicState& /*pub*/, const EventDecision& dec) -> int {
                         if (dec.kind != DecisionKind::SmallChoice || dec.n_options <= 1) {
                             return 0;
                         }
                         auto masked = logits_row.slice(/*dim=*/0, /*start=*/0, /*end=*/dec.n_options);
-                        return static_cast<int>(masked.argmax(0).item<int64_t>());
+                        auto log_probs = torch::log_softmax(masked, /*dim=*/0);
+                        int choice = static_cast<int>(masked.argmax(0).item<int64_t>());
+                        sc_target = choice;
+                        sc_n_options = dec.n_options;
+                        sc_logprob = log_probs[choice].item<float>();
+                        return choice;
                     };
                     cb_ptr = &small_choice_cb;
                 }
                 commit_greedy_action(*slot, action, cb_ptr);
+                // Patch the last step with small_choice data if a decision was made.
+                if (sc_target >= 0 && step.card_idx >= 0) {
+                    auto& game_steps = steps_by_game[static_cast<size_t>(slot->game_index)];
+                    if (!game_steps.empty()) {
+                        game_steps.back().small_choice_target = sc_target;
+                        game_steps.back().small_choice_n_options = sc_n_options;
+                        game_steps.back().small_choice_logprob = sc_logprob;
+                    }
+                }
             }
         }
     }
@@ -4787,21 +4806,40 @@ RolloutResult rollout_self_play_batched(
                     steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
                 }
                 // Create PolicyCallback from model's small_choice_logits if available.
+                // Captures the last small_choice decision for training targets.
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 PolicyCallbackFn small_choice_cb;
+                int sc_target = -1;
+                int sc_n_options = 0;
+                float sc_logprob = 0.0f;
                 if (outputs.small_choice_logits.defined() &&
                     outputs.small_choice_logits.size(0) > batch_idx) {
                     const auto logits_row = outputs.small_choice_logits[batch_idx];
-                    small_choice_cb = [logits_row](const PublicState& /*pub*/, const EventDecision& dec) -> int {
+                    small_choice_cb = [logits_row, &sc_target, &sc_n_options, &sc_logprob](
+                        const PublicState& /*pub*/, const EventDecision& dec) -> int {
                         if (dec.kind != DecisionKind::SmallChoice || dec.n_options <= 1) {
                             return 0;
                         }
                         auto masked = logits_row.slice(/*dim=*/0, /*start=*/0, /*end=*/dec.n_options);
-                        return static_cast<int>(masked.argmax(0).item<int64_t>());
+                        auto log_probs = torch::log_softmax(masked, /*dim=*/0);
+                        int choice = static_cast<int>(masked.argmax(0).item<int64_t>());
+                        sc_target = choice;
+                        sc_n_options = dec.n_options;
+                        sc_logprob = log_probs[choice].item<float>();
+                        return choice;
                     };
                     cb_ptr = &small_choice_cb;
                 }
                 commit_greedy_action(*slot, action, cb_ptr);
+                // Patch the last step with small_choice data if a decision was made.
+                if (sc_target >= 0 && step.card_idx >= 0) {
+                    auto& game_steps = steps_by_game[static_cast<size_t>(slot->game_index)];
+                    if (!game_steps.empty()) {
+                        game_steps.back().small_choice_target = sc_target;
+                        game_steps.back().small_choice_n_options = sc_n_options;
+                        game_steps.back().small_choice_logprob = sc_logprob;
+                    }
+                }
             }
         }
     }

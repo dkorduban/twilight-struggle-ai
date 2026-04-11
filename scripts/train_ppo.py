@@ -118,6 +118,10 @@ _REGION_COUNTRY_IDS: dict[str, tuple[int, ...]] = {
     )
     for region in _REGION_NAMES
 }
+# SE Asia is a scoring subset of Asia — include SEA countries in the Asia bucket too.
+_REGION_COUNTRY_IDS["Asia"] = tuple(sorted(
+    set(_REGION_COUNTRY_IDS["Asia"]) | set(_REGION_COUNTRY_IDS["SoutheastAsia"])
+))
 
 CARD_SLOTS = 112      # kMaxCardId(111) + 1; index 0 unused
 COUNTRY_SLOTS = 86    # country IDs 0..85
@@ -236,6 +240,10 @@ class Step:
     card_logits: Optional[list] = None    # (111,) raw pre-mask logits
     mode_logits: Optional[list] = None    # (5,) raw pre-mask logits
     country_logits: Optional[list] = None # (86,) probability mixture from model
+    # SmallChoice event decision captured during rollout (Phase 1e).
+    small_choice_target: int = -1         # -1 means no decision this step
+    small_choice_n_options: int = 0       # number of legal options
+    small_choice_logprob: float = 0.0     # log-prob of chosen option under rollout policy
 
 
 # ---------------------------------------------------------------------------
@@ -728,6 +736,9 @@ def collect_rollout_batched(
             raw_milops=list(s["raw_milops"]) if "raw_milops" in s else None,
             raw_space=list(s["raw_space"]) if "raw_space" in s else None,
             hand_card_ids=list(s["hand_card_ids"]) if "hand_card_ids" in s else None,
+            small_choice_target=int(s["small_choice_target"]) if "small_choice_target" in s else -1,
+            small_choice_n_options=int(s["small_choice_n_options"]) if "small_choice_n_options" in s else 0,
+            small_choice_logprob=float(s["small_choice_logprob"]) if "small_choice_logprob" in s else 0.0,
         )
         all_steps.append(step)
 
@@ -797,6 +808,9 @@ def collect_rollout_self_play_batched(
             raw_milops=list(s["raw_milops"]) if "raw_milops" in s else None,
             raw_space=list(s["raw_space"]) if "raw_space" in s else None,
             hand_card_ids=list(s["hand_card_ids"]) if "hand_card_ids" in s else None,
+            small_choice_target=int(s["small_choice_target"]) if "small_choice_target" in s else -1,
+            small_choice_n_options=int(s["small_choice_n_options"]) if "small_choice_n_options" in s else 0,
+            small_choice_logprob=float(s["small_choice_logprob"]) if "small_choice_logprob" in s else 0.0,
         )
         all_steps.append(step)
 
@@ -882,24 +896,39 @@ def _save_json_atomic(path: str, payload: dict) -> None:
 HEURISTIC_FIXTURE = "__heuristic__"
 
 
-def _pfsp_weight(opponent_key: str, wr_table: dict[str, dict], pfsp_exponent: float) -> float:
-    """Return average of per-side (1 - WR)^pfsp_exponent.
+def _pfsp_weight(opponent_key: str, wr_table: dict[str, dict], pfsp_exponent: float,
+                  total_games_all: int = 0) -> float:
+    """UCB-based opponent selection weight (difficulty + exploration bonus).
 
-    Each side defaults to 0.5 until >= 10 games played on that side.
-    Averaging the two sides ensures PFSP responds to asymmetric difficulty
-    (e.g. model dominates as USSR but struggles as US against a given opponent).
+    Uses UCB1 formula: (1 - WR) + c * sqrt(ln(N) / n_i)
+    where c = pfsp_exponent, N = total games across all opponents, n_i = games vs this one.
+    - Hard opponents (low WR) get high base weight.
+    - Under-explored opponents (low n_i) get high exploration bonus.
+    - Well-explored easy opponents naturally fade out.
+
+    Falls back to 1.0 (uniform) when fewer than MIN_GAMES have been played.
+    Averages across both sides to capture asymmetric difficulty.
     """
     wr_info = wr_table.get(opponent_key, {})
     MIN_GAMES = 10
 
-    def _side_weight(wins_key: str, total_key: str) -> float:
+    def _side_ucb(wins_key: str, total_key: str) -> float:
         wins = int(wr_info.get(wins_key, 0))
         total = int(wr_info.get(total_key, 0))
-        wr = wins / total if total >= MIN_GAMES else 0.5
-        return max(0.01, (1.0 - wr)) ** pfsp_exponent
+        if total < MIN_GAMES:
+            # Under-explored: return high weight to encourage exploration
+            return 1.0
+        wr = wins / total
+        exploitation = 1.0 - wr  # harder opponent = higher base score
+        # UCB exploration bonus: large when this opponent has few games relative to total
+        if total_games_all > 0 and total > 0:
+            exploration = pfsp_exponent * math.sqrt(math.log(total_games_all) / total)
+        else:
+            exploration = 0.0
+        return max(0.01, exploitation + exploration)
 
-    w_ussr = _side_weight("wins_ussr", "total_ussr")
-    w_us = _side_weight("wins_us", "total_us")
+    w_ussr = _side_ucb("wins_ussr", "total_ussr")
+    w_us = _side_ucb("wins_us", "total_us")
     return (w_ussr + w_us) / 2.0
 
 
@@ -956,8 +985,8 @@ def sample_K_league_opponents(
       exp(N/tau) times more likely than oldest. tau=20 → top checkpoint ~7x last-10th.
     - Fixture fadeout: fixtures hard-removed from pool at current_iter >= fixture_fadeout.
       They also naturally shrink as recency-weighted past-self grows.
-    - PFSP: each recency weight multiplied by (1 - WR_against_opponent)^pfsp_exponent.
-      Harder opponents get more training time. WR defaults to 0.5 until 20 games played.
+    - UCB-PFSP: each recency weight multiplied by UCB1 score
+      = (1-WR) + c*sqrt(ln(N)/n_i). Harder + under-explored opponents get more time.
     - Configurable heuristic_pct per non-self slot.
     """
     import random
@@ -971,12 +1000,19 @@ def sample_K_league_opponents(
             iter_pts.append((int(m.group(1)), str(p)))
     iter_pts.sort(key=lambda x: x[0])
 
-    # Recency-weighted past-self pool, multiplied by PFSP factor
+    # Compute total games across all opponents for UCB exploration bonus
+    _wr = wr_table or {}
+    total_games_all = sum(
+        int(v.get("total_ussr", 0)) + int(v.get("total_us", 0))
+        for v in _wr.values()
+    )
+
+    # Recency-weighted past-self pool, multiplied by UCB-PFSP factor
     past_self_paths: list[str] = []
     past_self_weights: list[float] = []
     for rank, (_, path) in enumerate(iter_pts):
         recency_w = math.exp(rank / max(recency_tau, 1.0))
-        pfsp_w = _pfsp_weight(Path(path).stem, wr_table or {}, pfsp_exponent)
+        pfsp_w = _pfsp_weight(Path(path).stem, _wr, pfsp_exponent, total_games_all)
         past_self_paths.append(path)
         past_self_weights.append(recency_w * pfsp_w)
     if past_self_weights:
@@ -992,7 +1028,7 @@ def sample_K_league_opponents(
         past_total = sum(past_self_weights) if past_self_weights else 0.0
         fixture_pfsp_weights = [
             _pfsp_weight("heuristic" if f == HEURISTIC_FIXTURE else Path(f).stem,
-                         wr_table or {}, pfsp_exponent) for f in active_fixtures
+                         _wr, pfsp_exponent, total_games_all) for f in active_fixtures
         ]
         fixture_total = sum(fixture_pfsp_weights) or 1.0
         fixture_each = [
@@ -1055,6 +1091,9 @@ def _steps_from_native(raw_steps: list) -> list[Step]:
             raw_milops=list(s["raw_milops"]) if "raw_milops" in s else None,
             raw_space=list(s["raw_space"]) if "raw_space" in s else None,
             hand_card_ids=list(s["hand_card_ids"]) if "hand_card_ids" in s else None,
+            small_choice_target=int(s["small_choice_target"]) if "small_choice_target" in s else -1,
+            small_choice_n_options=int(s["small_choice_n_options"]) if "small_choice_n_options" in s else 0,
+            small_choice_logprob=float(s["small_choice_logprob"]) if "small_choice_logprob" in s else 0.0,
         ))
     return out
 
@@ -1185,8 +1224,11 @@ def collect_rollout_league_batched(
     pfsp_exponent: float = 1.0,
     dir_alpha: float = 0.0,
     dir_epsilon: float = 0.0,
-) -> list[Step]:
+) -> tuple[list[Step], dict[str, float]]:
     """Collect rollout steps against K opponents in parallel (ThreadPoolExecutor).
+
+    Returns (steps, ucb_metrics) where ucb_metrics maps "ucb/{key}" to the UCB
+    weight for each fixture/opponent in the WR table. Suitable for W&B logging.
 
     Exports the model once, splits n_games evenly across K opponents, and runs
     each opponent's batch in a separate thread. The C++ rollout functions release
@@ -1217,7 +1259,7 @@ def collect_rollout_league_batched(
         if wr_table_path:
             _update_wr_table_from_steps(wr_table, None, all_steps)
             _save_json_atomic(wr_table_path, wr_table)
-        return all_steps
+        return all_steps, {}
 
     script_path = _export_temp_model(model)
     opponents = sample_K_league_opponents(
@@ -1294,7 +1336,29 @@ def collect_rollout_league_batched(
         if wr_table_path:
             _save_json_atomic(wr_table_path, wr_table)
 
-        return all_steps
+        # Compute UCB metrics for all WR table entries → W&B logging
+        ucb_metrics: dict[str, float] = {}
+        if wr_table:
+            _total_all = sum(
+                int(v.get("total_ussr", 0)) + int(v.get("total_us", 0))
+                for v in wr_table.values()
+            )
+            for key, info in wr_table.items():
+                if key == "__self__" or key.startswith("iter_"):
+                    continue
+                # Clean name for W&B: v8_scripted → v8
+                clean = key.replace("_scripted", "")
+                w = _pfsp_weight(key, wr_table, pfsp_exponent, _total_all)
+                ucb_metrics[f"ucb/{clean}_weight"] = w
+                # Also log per-side WR for context
+                t_u = int(info.get("total_ussr", 0))
+                t_s = int(info.get("total_us", 0))
+                if t_u >= 10:
+                    ucb_metrics[f"ucb/{clean}_wr_ussr"] = int(info.get("wins_ussr", 0)) / t_u
+                if t_s >= 10:
+                    ucb_metrics[f"ucb/{clean}_wr_us"] = int(info.get("wins_us", 0)) / t_s
+
+        return all_steps, ucb_metrics
     finally:
         try:
             os.remove(script_path)
@@ -1504,8 +1568,8 @@ def ppo_update(
             sigma = advs[mask].std()
             advs[mask] = (advs[mask] - mu) / (sigma + 1e-8)
 
-    metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
-               "clip_fraction": 0.0, "approx_kl": 0.0}
+    metrics = {"policy_loss": 0.0, "value_loss": 0.0, "sc_loss": 0.0,
+               "entropy": 0.0, "clip_fraction": 0.0, "approx_kl": 0.0}
     n_updates = 0
 
     for _ in range(ppo_epochs):
@@ -1529,6 +1593,7 @@ def ppo_update(
             card_logits_b = outputs["card_logits"]        # (B, 111)
             mode_logits_b = outputs["mode_logits"]        # (B, 5)
             country_logits_b = outputs.get("country_logits")  # (B, 86) or None
+            small_choice_logits_b = outputs.get("small_choice_logits")  # (B, 8) or None
             values_b = outputs["value"].squeeze(-1)       # (B,)
 
             # Diagnose NaN in inputs and model outputs (first minibatch only to avoid log spam)
@@ -1628,12 +1693,33 @@ def ppo_update(
             value_loss = F.mse_loss(values_b, batch_returns)
             entropy_loss = -entropies.mean()
 
-            loss = policy_loss + vf_coef * value_loss + ent_coef * entropy_loss
+            # ── SmallChoice auxiliary cross-entropy loss ──────────────────────
+            sc_loss = torch.tensor(0.0, device=device)
+            if small_choice_logits_b is not None:
+                sc_targets = torch.tensor(
+                    [s.small_choice_target for s in batch_steps], device=device)
+                sc_n_opts = torch.tensor(
+                    [s.small_choice_n_options for s in batch_steps], device=device)
+                sc_valid = (sc_targets >= 0) & (sc_n_opts > 1)
+                if sc_valid.any():
+                    sc_logits_valid = small_choice_logits_b[sc_valid]  # (V, 8)
+                    sc_targets_valid = sc_targets[sc_valid].long()     # (V,)
+                    sc_n_valid = sc_n_opts[sc_valid]                   # (V,)
+                    # Mask logits beyond n_options to -inf
+                    sc_mask = torch.arange(
+                        sc_logits_valid.size(1), device=device
+                    ).unsqueeze(0) < sc_n_valid.unsqueeze(1)  # (V, 8)
+                    sc_logits_masked = sc_logits_valid.masked_fill(~sc_mask, float("-inf"))
+                    sc_loss = F.cross_entropy(sc_logits_masked, sc_targets_valid)
+
+            loss = (policy_loss + vf_coef * value_loss
+                    + ent_coef * entropy_loss + sc_loss)
 
             # Skip update if loss is NaN to prevent weight corruption
             if torch.isnan(loss):
                 print(f"  [NaN] loss components: pl={policy_loss.item():.4f} "
-                      f"vl={value_loss.item():.4f} ent={entropy_loss.item():.4f} — skipping", flush=True)
+                      f"vl={value_loss.item():.4f} ent={entropy_loss.item():.4f} "
+                      f"sc={sc_loss.item():.4f} — skipping", flush=True)
                 continue
 
             optimizer.zero_grad()
@@ -1648,6 +1734,7 @@ def ppo_update(
 
             metrics["policy_loss"] += policy_loss.item()
             metrics["value_loss"] += value_loss.item()
+            metrics["sc_loss"] += sc_loss.item()
             metrics["entropy"] += entropies.mean().item()
             metrics["clip_fraction"] += clip_frac
             metrics["approx_kl"] += approx_kl
@@ -1682,6 +1769,8 @@ class PackedSteps:
     old_log_probs: torch.Tensor
     advantages: torch.Tensor        # per-side normalized
     returns: torch.Tensor
+    sc_targets: torch.Tensor        # (N,) SmallChoice target (-1 = no decision)
+    sc_n_options: torch.Tensor      # (N,) number of options per SmallChoice
 
     def to(self, device: str) -> "PackedSteps":
         return PackedSteps(
@@ -1698,6 +1787,8 @@ class PackedSteps:
             old_log_probs=self.old_log_probs.to(device),
             advantages=self.advantages.to(device),
             returns=self.returns.to(device),
+            sc_targets=self.sc_targets.to(device),
+            sc_n_options=self.sc_n_options.to(device),
         )
 
 
@@ -1756,6 +1847,8 @@ def pack_steps(steps: list[Step]) -> PackedSteps:
         old_log_probs=torch.tensor([s.old_log_prob for s in steps], dtype=torch.float32),
         advantages=advantages,
         returns=returns,
+        sc_targets=torch.tensor([s.small_choice_target for s in steps], dtype=torch.long),
+        sc_n_options=torch.tensor([s.small_choice_n_options for s in steps], dtype=torch.long),
     )
 
 
@@ -1782,8 +1875,8 @@ def ppo_update_packed(
     packed = packed_steps.to(device)
     model.eval()
 
-    metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
-               "clip_fraction": 0.0, "approx_kl": 0.0}
+    metrics = {"policy_loss": 0.0, "value_loss": 0.0, "sc_loss": 0.0,
+               "entropy": 0.0, "clip_fraction": 0.0, "approx_kl": 0.0}
     n_updates = 0
 
     for _ in range(ppo_epochs):
@@ -1800,6 +1893,7 @@ def ppo_update_packed(
             mode_logits = outputs["mode_logits"].nan_to_num(nan=0.0)
             values = outputs["value"].squeeze(-1).nan_to_num(nan=0.0)
             country_logits = outputs.get("country_logits")
+            small_choice_logits = outputs.get("small_choice_logits")
 
             # Diag on first minibatch
             if n_updates == 0:
@@ -1861,7 +1955,24 @@ def ppo_update_packed(
             policy_loss = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
             value_loss = F.mse_loss(values, returns)
             entropy_loss = -entropies.mean()
-            loss = policy_loss + vf_coef * value_loss + ent_coef * entropy_loss
+
+            # SmallChoice auxiliary cross-entropy loss
+            sc_loss = torch.tensor(0.0, device=device)
+            if small_choice_logits is not None:
+                sc_tgt = packed.sc_targets.index_select(0, idx)
+                sc_nopt = packed.sc_n_options.index_select(0, idx)
+                sc_valid = (sc_tgt >= 0) & (sc_nopt > 1)
+                if sc_valid.any():
+                    sc_logits_v = small_choice_logits[sc_valid]
+                    sc_tgt_v = sc_tgt[sc_valid]
+                    sc_nopt_v = sc_nopt[sc_valid]
+                    sc_mask = torch.arange(
+                        sc_logits_v.size(1), device=device
+                    ).unsqueeze(0) < sc_nopt_v.unsqueeze(1)
+                    sc_logits_v = sc_logits_v.masked_fill(~sc_mask, float("-inf"))
+                    sc_loss = F.cross_entropy(sc_logits_v, sc_tgt_v)
+
+            loss = policy_loss + vf_coef * value_loss + ent_coef * entropy_loss + sc_loss
 
             if torch.isnan(loss):
                 continue
@@ -1877,6 +1988,7 @@ def ppo_update_packed(
 
             metrics["policy_loss"] += float(policy_loss.item())
             metrics["value_loss"] += float(value_loss.item())
+            metrics["sc_loss"] += float(sc_loss.item())
             metrics["entropy"] += float(entropies.mean().item())
             metrics["clip_fraction"] += clip_frac
             metrics["approx_kl"] += approx_kl
@@ -2045,48 +2157,70 @@ def collect_policy_stats(
 def _add_region_net_delta_stats(terminal_steps: list[Step], log_dict: dict) -> None:
     """Add mean terminal regional influence and control deltas to log_dict.
 
-    Two metrics per region, both BG-weighted (BG=1.0, non-BG=0.2):
-      net_inf_delta   — weighted sum of (model_inf - opp_inf) per country
-      net_ctrl_delta  — weighted sum of (model controls - opp controls) per country
+    Reported per side (ussr/us) × per phase (early t1-3 / mid t4-7 / late t8-10).
+    Two metrics per region per slice, both BG-weighted (BG=1.0, non-BG=0.2):
+      net_inf_delta   — weighted sum of (that_side_inf - opp_inf) per country
+      net_ctrl_delta  — weighted sum of (that_side controls - opp controls) per country
                         where control = influence > stability
 
-    BG-weighting prevents high-stability non-BG countries (e.g. Canada stab=4)
-    from dominating the delta just by raw influence count.
+    SE Asia countries are counted in both SoutheastAsia AND Asia buckets (SE Asia is a
+    scoring subset of Asia, not disjoint from it).
+    BG-weighting prevents high-stability non-BG countries from dominating the delta.
     """
     if not _COUNTRY_REGION or not _COUNTRY_STABILITY:
         return
 
-    inf_totals = {region: 0.0 for region in _REGION_NAMES}
-    ctrl_totals = {region: 0.0 for region in _REGION_NAMES}
-    n_terminal = 0
+    _PHASES = {"early": (1, 3), "mid": (4, 7), "late": (8, 10)}
+    _SIDES = {0: "ussr", 1: "us"}
+
+    # Accumulators: (side_int, phase_name, region) -> float
+    inf_totals: dict[tuple, float] = {}
+    ctrl_totals: dict[tuple, float] = {}
+    counts: dict[tuple, int] = {}
+    for side_int in (0, 1):
+        for phase in _PHASES:
+            for region in _REGION_NAMES:
+                k = (side_int, phase, region)
+                inf_totals[k] = 0.0
+                ctrl_totals[k] = 0.0
+                counts[k] = 0
+
     for step in terminal_steps:
         if step.raw_ussr_influence is None or step.raw_us_influence is None:
             continue
+        turn = step.raw_turn or 0
+        phase = "early" if turn <= 3 else ("mid" if turn <= 7 else "late")
 
-        if step.side_int == 0:
-            model_inf = step.raw_ussr_influence
-            opp_inf = step.raw_us_influence
-        else:
-            model_inf = step.raw_us_influence
-            opp_inf = step.raw_ussr_influence
+        for side_int, side_name in _SIDES.items():
+            if side_int == 0:
+                model_inf = step.raw_ussr_influence
+                opp_inf = step.raw_us_influence
+            else:
+                model_inf = step.raw_us_influence
+                opp_inf = step.raw_ussr_influence
 
-        for region, country_ids in _REGION_COUNTRY_IDS.items():
-            for cid in country_ids:
-                w = _COUNTRY_BG_WEIGHT.get(cid, 0.2)
-                stab = _COUNTRY_STABILITY.get(cid, 1)
-                inf_totals[region] += w * (model_inf[cid] - opp_inf[cid])
-                model_ctrl = 1 if model_inf[cid] > stab else 0
-                opp_ctrl = 1 if opp_inf[cid] > stab else 0
-                ctrl_totals[region] += w * (model_ctrl - opp_ctrl)
-        n_terminal += 1
+            for region, country_ids in _REGION_COUNTRY_IDS.items():
+                k = (side_int, phase, region)
+                for cid in country_ids:
+                    w = _COUNTRY_BG_WEIGHT.get(cid, 0.2)
+                    stab = _COUNTRY_STABILITY.get(cid, 1)
+                    inf_totals[k] += w * (model_inf[cid] - opp_inf[cid])
+                    model_ctrl = 1 if model_inf[cid] > stab else 0
+                    opp_ctrl = 1 if opp_inf[cid] > stab else 0
+                    ctrl_totals[k] += w * (model_ctrl - opp_ctrl)
+                counts[k] += 1
 
-    if n_terminal == 0:
-        return
-
-    for region in _REGION_NAMES:
-        key = _REGION_KEY[region]
-        log_dict[f"stats/region_{key}_net_inf_delta"] = inf_totals[region] / n_terminal
-        log_dict[f"stats/region_{key}_net_ctrl_delta"] = ctrl_totals[region] / n_terminal
+    for side_int, side_name in _SIDES.items():
+        for phase in _PHASES:
+            for region in _REGION_NAMES:
+                k = (side_int, phase, region)
+                n = counts[k]
+                if n == 0:
+                    continue
+                rkey = _REGION_KEY[region]
+                prefix = f"stats/{side_name}_{phase}"
+                log_dict[f"{prefix}/region_{rkey}_net_inf_delta"] = inf_totals[k] / n
+                log_dict[f"{prefix}/region_{rkey}_net_ctrl_delta"] = ctrl_totals[k] / n
 
 
 def _add_scalar_weight_norms(model: nn.Module, log_dict: dict) -> None:
@@ -2410,6 +2544,9 @@ def export_checkpoint(
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="PPO fine-tuning for Twilight Struggle AI")
     p.add_argument("--checkpoint", required=True, help="BC checkpoint to warm-start from")
+    p.add_argument("--reset-optimizer", action="store_true",
+                   help="Ignore optimizer state in checkpoint; start fresh Adam. "
+                        "Use when restarting from a checkpoint trained under different code.")
     p.add_argument("--out-dir", required=True, help="Directory for PPO checkpoints")
     p.add_argument("--n-iterations", type=int, default=200, help="PPO iterations")
     p.add_argument("--games-per-iter", type=int, default=200, help="Games per rollout batch")
@@ -2590,19 +2727,23 @@ def main() -> None:
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     # Restore optimizer state if checkpoint contains it (PPO resume, not BC warm-start).
-    _opt_ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    if isinstance(_opt_ckpt, dict) and "optimizer_state_dict" in _opt_ckpt:
-        try:
-            optimizer.load_state_dict(_opt_ckpt["optimizer_state_dict"])
-            # Move optimizer state tensors to the training device.
-            for state in optimizer.state.values():
-                for k, v in state.items():
-                    if isinstance(v, torch.Tensor):
-                        state[k] = v.to(device)
-            print("  Restored optimizer state from checkpoint.", flush=True)
-        except Exception as e:
-            print(f"  [warn] Could not restore optimizer state: {e}", flush=True)
-    del _opt_ckpt
+    # Skip if --reset-optimizer is set (e.g. restarting from a checkpoint trained under different code).
+    if getattr(args, "reset_optimizer", False):
+        print("  --reset-optimizer: skipping optimizer state restore, starting fresh Adam.", flush=True)
+    else:
+        _opt_ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+        if isinstance(_opt_ckpt, dict) and "optimizer_state_dict" in _opt_ckpt:
+            try:
+                optimizer.load_state_dict(_opt_ckpt["optimizer_state_dict"])
+                # Move optimizer state tensors to the training device.
+                for state in optimizer.state.values():
+                    for k, v in state.items():
+                        if isinstance(v, torch.Tensor):
+                            state[k] = v.to(device)
+                print("  Restored optimizer state from checkpoint.", flush=True)
+            except Exception as e:
+                print(f"  [warn] Could not restore optimizer state: {e}", flush=True)
+        del _opt_ckpt
 
     # Determine training sides
     if args.side == "ussr":
@@ -2649,6 +2790,7 @@ def main() -> None:
         # ── Rollout phase ────────────────────────────────────────────────────
         all_steps: list[Step] = []
         self_play_steps: list[Step] = []
+        ucb_metrics: dict[str, float] = {}
         if args.league:
             seed = args.seed + (iteration - 1) * args.games_per_iter
             # Save current checkpoint to league pool before rollout.
@@ -2659,7 +2801,7 @@ def main() -> None:
                 pool_path = str(Path(args.league) / f"iter_{iteration:04d}.pt")
                 _export_torchscript_model(model, pool_path, warn_only=True)
                 print(f"  Saved to league pool: {pool_path}", flush=True)
-            all_steps = collect_rollout_league_batched(
+            all_steps, ucb_metrics = collect_rollout_league_batched(
                 model, args.league, args.games_per_iter, seed, device,
                 vp_reward_coef=args.vp_reward_coef,
                 mix_k=args.league_mix_k,
@@ -2866,6 +3008,8 @@ def main() -> None:
             log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
         _add_scalar_weight_norms(model, log_dict)
         _add_region_net_delta_stats(terminal_steps, log_dict)
+        if args.league and ucb_metrics:
+            log_dict.update(ucb_metrics)
 
         # ── Async panel eval: collect result from previous run ────────────────
         if _panel_proc is not None and not _panel_proc.is_alive():

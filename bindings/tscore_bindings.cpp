@@ -278,6 +278,10 @@ py::dict rollout_step_to_dict(const ts::RolloutStep& step) {
     out["raw_space"]  = py::list(py::cast(
         std::vector<int>(step.raw_space.begin(), step.raw_space.end())));
     out["hand_card_ids"] = py::list(py::cast(step.hand_card_ids));
+    // SmallChoice event decision fields (Phase 1e).
+    out["small_choice_target"] = step.small_choice_target;
+    out["small_choice_n_options"] = step.small_choice_n_options;
+    out["small_choice_logprob"] = step.small_choice_logprob;
     return out;
 }
 
