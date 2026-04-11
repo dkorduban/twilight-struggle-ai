@@ -256,6 +256,16 @@ if [ -d "$NEXT_DIR" ]; then
 fi
 
 # --- Persist WR table across runs for UCB-PFSP warm-start ---
+# IMPORTANT: Always carry over the WR table when starting any PPO run — including
+# manual launches that bypass this script. Without a seeded WR table, all fixtures
+# start at n=0 → pfsp=1.0 (max), but are individually diluted by the 50%-mass cap
+# across all fixtures, so they effectively get almost no selection weight in early
+# iters. The model then trains only against itself, defeating the league purpose.
+#
+# For manual launches, run this before starting the PPO process:
+#   python3 scripts/seed_wr_table.py <source_wr_table.json> <new_out_dir>/wr_table.json
+# Or copy ppo_loop_step.sh's WR-table block manually.
+#
 # Copy fixture WR data with 0.7× decay (discounted UCB for non-stationary bandits).
 # Model changes each run, so old WR estimates go stale. Decay shrinks n_i, which
 # increases UCB exploration bonus → stale matchups get re-tested. 0.7× is moderate:

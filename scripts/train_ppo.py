@@ -896,9 +896,14 @@ def _save_json_atomic(path: str, payload: dict) -> None:
 HEURISTIC_FIXTURE = "__heuristic__"
 
 
-def _pfsp_weight(opponent_key: str, wr_table: dict[str, dict], pfsp_exponent: float,
-                  total_games_all: int = 0) -> float:
-    """UCB-based opponent selection weight (difficulty + exploration bonus).
+def _pfsp_weight(
+    opponent_key: str,
+    wr_table: dict[str, dict],
+    pfsp_exponent: float,
+    total_games_all: int = 0,
+    side: str = "ussr",
+) -> float:
+    """UCB-based opponent selection weight for one side.
 
     Uses UCB1 formula: (1 - WR) + c * sqrt(ln(N) / n_i)
     where c = pfsp_exponent, N = total games across all opponents, n_i = games vs this one.
@@ -906,30 +911,24 @@ def _pfsp_weight(opponent_key: str, wr_table: dict[str, dict], pfsp_exponent: fl
     - Under-explored opponents (low n_i) get high exploration bonus.
     - Well-explored easy opponents naturally fade out.
 
-    Falls back to 1.0 (uniform) when fewer than MIN_GAMES have been played.
-    Averages across both sides to capture asymmetric difficulty.
+    side: "ussr" → use USSR WR   "us" → use US WR
+    Always call with an explicit side; the two pools use this independently.
     """
     wr_info = wr_table.get(opponent_key, {})
     MIN_GAMES = 10
 
-    def _side_ucb(wins_key: str, total_key: str) -> float:
-        wins = int(wr_info.get(wins_key, 0))
-        total = int(wr_info.get(total_key, 0))
-        if total < MIN_GAMES:
-            # Under-explored: return high weight to encourage exploration
-            return 1.0
-        wr = wins / total
-        exploitation = 1.0 - wr  # harder opponent = higher base score
-        # UCB exploration bonus: large when this opponent has few games relative to total
-        if total_games_all > 0 and total > 0:
-            exploration = pfsp_exponent * math.sqrt(math.log(total_games_all) / total)
-        else:
-            exploration = 0.0
-        return max(0.01, exploitation + exploration)
-
-    w_ussr = _side_ucb("wins_ussr", "total_ussr")
-    w_us = _side_ucb("wins_us", "total_us")
-    return (w_ussr + w_us) / 2.0
+    wins_key, total_key = ("wins_ussr", "total_ussr") if side == "ussr" else ("wins_us", "total_us")
+    wins = int(wr_info.get(wins_key, 0))
+    total = int(wr_info.get(total_key, 0))
+    if total < MIN_GAMES:
+        return 1.0
+    wr = wins / total
+    exploitation = 1.0 - wr
+    if total_games_all > 0 and total > 0:
+        exploration = pfsp_exponent * math.sqrt(math.log(total_games_all) / total)
+    else:
+        exploration = 0.0
+    return max(0.01, exploitation + exploration)
 
 
 def _update_wr_table_from_steps(
@@ -972,22 +971,22 @@ def sample_K_league_opponents(
     heuristic_pct: float = 0.10,
     fixture_fadeout: int = 50,
     current_iter: int = 0,
-    self_slot: bool = True,
+    self_slot: bool = False,
     current_script: Optional[str] = None,
     wr_table: dict[str, dict] | None = None,
     pfsp_exponent: float = 1.0,
+    side: str = "ussr",
 ) -> list[Optional[str]]:
-    """Sample k opponents for mini-batch mixing. None = heuristic.
+    """Sample k opponents for one side's pool. None = heuristic.
 
-    Improvements over naive uniform sampling:
-    - Self-slot: slot 0 is always current_script (true self-play; strongest gradient).
-    - Recency-weighted past-self: weight = exp(rank / tau), so newest checkpoint is
-      exp(N/tau) times more likely than oldest. tau=20 → top checkpoint ~7x last-10th.
-    - Fixture fadeout: fixtures hard-removed from pool at current_iter >= fixture_fadeout.
-      They also naturally shrink as recency-weighted past-self grows.
-    - UCB-PFSP: each recency weight multiplied by UCB1 score
-      = (1-WR) + c*sqrt(ln(N)/n_i). Harder + under-explored opponents get more time.
-    - Configurable heuristic_pct per non-self slot.
+    Call twice — once with side="ussr", once with side="us" — to get independent
+    pools each weighted by the relevant per-side PFSP UCB score.
+
+    - Recency-weighted past-self: weight = exp(rank / tau).
+    - Fixture fadeout: fixtures removed at current_iter >= fixture_fadeout.
+    - UCB-PFSP: (1-WR_side) + c*sqrt(ln(N)/n_i) using the specified side's WR.
+    - self_slot: if True, prepend current_script as slot 0 (legacy; prefer False and
+      handle self-play separately in the caller).
     """
     import random
     import re
@@ -1012,7 +1011,7 @@ def sample_K_league_opponents(
     past_self_weights: list[float] = []
     for rank, (_, path) in enumerate(iter_pts):
         recency_w = math.exp(rank / max(recency_tau, 1.0))
-        pfsp_w = _pfsp_weight(Path(path).stem, _wr, pfsp_exponent, total_games_all)
+        pfsp_w = _pfsp_weight(Path(path).stem, _wr, pfsp_exponent, total_games_all, side=side)
         past_self_paths.append(path)
         past_self_weights.append(recency_w * pfsp_w)
     if past_self_weights:
@@ -1028,7 +1027,7 @@ def sample_K_league_opponents(
         past_total = sum(past_self_weights) if past_self_weights else 0.0
         fixture_pfsp_weights = [
             _pfsp_weight("heuristic" if f == HEURISTIC_FIXTURE else Path(f).stem,
-                         _wr, pfsp_exponent, total_games_all) for f in active_fixtures
+                         _wr, pfsp_exponent, total_games_all, side=side) for f in active_fixtures
         ]
         fixture_total = sum(fixture_pfsp_weights) or 1.0
         fixture_each = [
@@ -1136,18 +1135,30 @@ def _collect_heuristic_from_script(
     rollout_temp: float = 1.0,
     dir_alpha: float = 0.0,
     dir_epsilon: float = 0.0,
+    side: str = "both",
 ) -> list[Step]:
-    """Collect n_games vs heuristic using an already-exported script."""
-    # TODO: add per-move temperature schedule when C++ bindings expose it
-    n_half = n_games // 2
+    """Collect n_games vs heuristic using an already-exported script.
+
+    side: "ussr" → only USSR games, "us" → only US games, "both" → half each.
+    n_games is per side when side!="both", total otherwise.
+    """
+    if side == "ussr":
+        collect_sides = [(tscore.Side.USSR, 0)]
+        n_half = n_games
+    elif side == "us":
+        collect_sides = [(tscore.Side.US, 0)]
+        n_half = n_games
+    else:
+        collect_sides = [(tscore.Side.USSR, 0), (tscore.Side.US, n_games // 2)]
+        n_half = n_games // 2
     all_steps: list[Step] = []
-    for side, seed_offset in [(tscore.Side.USSR, 0), (tscore.Side.US, n_half)]:
+    for side_enum, seed_offset in collect_sides:
         results, raw_steps, boundaries = _call_rollout_with_optional_dirichlet(
             "rollout_games_batched",
             dir_alpha=dir_alpha,
             dir_epsilon=dir_epsilon,
             model_path=script_path,
-            learned_side=side,
+            learned_side=side_enum,
             n_games=n_half,
             pool_size=min(n_half, 64),
             seed=base_seed + seed_offset,
@@ -1156,7 +1167,7 @@ def _collect_heuristic_from_script(
             nash_temperatures=True,
         )
         steps = _steps_from_native(raw_steps)
-        side_int = 0 if side == tscore.Side.USSR else 1
+        side_int = 0 if side_enum == tscore.Side.USSR else 1
         for i, result in enumerate(results):
             start = boundaries[i]
             end = boundaries[i + 1] if i + 1 < len(boundaries) else len(steps)
@@ -1176,32 +1187,53 @@ def _collect_vs_model_from_script(
     rollout_temp: float = 1.0,
     dir_alpha: float = 0.0,
     dir_epsilon: float = 0.0,
+    side: str = "both",
 ) -> list[Step]:
-    """Collect n_games vs a scripted model opponent (half each side)."""
+    """Collect n_games vs a scripted model opponent.
+
+    side="both": n_games total, half as USSR half as US (legacy behaviour).
+    side="ussr": play n_games*2, return only the USSR half (model_a plays USSR).
+    side="us":   play n_games*2, return only the US half  (model_a plays US).
+
+    The C++ binding always alternates sides: game indices [0, total//2) → model_a=USSR,
+    [total//2, total) → model_a=US. Doubling total_games gives n_games of the wanted
+    side at the cost of running (and discarding) n_games of the other side.
+    """
+    if side in ("ussr", "us"):
+        total_games = n_games * 2  # run double; keep the desired half
+    else:
+        total_games = n_games
     results, raw_steps, boundaries = _call_rollout_with_optional_dirichlet(
         "rollout_model_vs_model_batched",
         dir_alpha=dir_alpha,
         dir_epsilon=dir_epsilon,
         model_a_path=our_script,
         model_b_path=opp_script,
-        n_games=n_games,
-        pool_size=min(n_games, 64),
+        n_games=total_games,
+        pool_size=min(total_games, 64),
         seed=base_seed,
         device="cpu",
         temperature=rollout_temp,
         nash_temperatures=False,
     )
     steps = _steps_from_native(raw_steps)
-    half = n_games // 2
+    half = total_games // 2
+    kept: list[Step] = []
     for i, result in enumerate(results):
         start = boundaries[i]
         end = boundaries[i + 1] if i + 1 < len(boundaries) else len(steps)
         if start >= end:
             continue
-        model_a_side_int = 0 if i < half else 1
+        model_a_side_int = 0 if i < half else 1  # 0=USSR, 1=US
         steps[end - 1].reward = _compute_reward(result, model_a_side_int, vp_reward_coef)
         steps[end - 1].done = True
-    return steps
+        # Filter: skip games where model_a plays the wrong side
+        if side == "ussr" and model_a_side_int != 0:
+            continue
+        if side == "us" and model_a_side_int != 1:
+            continue
+        kept.extend(steps[start:end])
+    return kept
 
 
 def collect_rollout_league_batched(
@@ -1262,74 +1294,109 @@ def collect_rollout_league_batched(
         return all_steps, {}
 
     script_path = _export_temp_model(model)
-    opponents = sample_K_league_opponents(
-        league_dir, mix_k, fixtures,
+
+    # Two independent opponent pools — USSR and US — each weighted by per-side PFSP.
+    # k_per_side opponents per pool; self-play slot is always added separately.
+    k_per_side = max(1, (mix_k - (1 if self_slot else 0)) // 2)
+    _sample_kwargs = dict(
+        fixtures=fixtures,
         recency_tau=recency_tau,
         heuristic_pct=heuristic_pct,
         fixture_fadeout=fixture_fadeout,
         current_iter=current_iter,
-        self_slot=self_slot,
+        self_slot=False,  # self handled below
         current_script=script_path,
         wr_table=wr_table,
         pfsp_exponent=pfsp_exponent,
     )
-    games_per_opp = max(2, n_games // mix_k)
-    games_per_opp = games_per_opp if games_per_opp % 2 == 0 else games_per_opp - 1
+    ussr_opps = sample_K_league_opponents(league_dir, k_per_side, side="ussr", **_sample_kwargs)
+    us_opps   = sample_K_league_opponents(league_dir, k_per_side, side="us",   **_sample_kwargs)
+
+    # Each slot gets an equal share of n_games; self gets both sides, pools get one side each.
+    total_slots = (1 if self_slot else 0) + k_per_side * 2
+    games_per_slot = max(2, n_games // max(total_slots, 1))
+    games_per_slot = games_per_slot if games_per_slot % 2 == 0 else games_per_slot - 1
+
+    def _label(opp: Optional[str]) -> str:
+        if opp is None or opp == HEURISTIC_FIXTURE:
+            return "heuristic"
+        if opp == script_path:
+            return "self"
+        return Path(opp).stem
 
     try:
-        opp_labels = [
-            "heuristic" if (opp is None or opp == HEURISTIC_FIXTURE)
-            else "self" if opp == script_path
-            else Path(opp).stem
-            for opp in opponents
-        ]
-        print(f"  [league] opponents: {opp_labels}", flush=True)
+        # Log opponent selections
+        if self_slot:
+            print(f"  [league] self: self | ussr_pool: {[_label(o) for o in ussr_opps]} | us_pool: {[_label(o) for o in us_opps]}", flush=True)
+        else:
+            print(f"  [league] ussr_pool: {[_label(o) for o in ussr_opps]} | us_pool: {[_label(o) for o in us_opps]}", flush=True)
 
-        # Print PFSP stats: per-opponent WR and sampling weight
+        # Print per-side PFSP weights
         if wr_table:
+            all_shown_keys: set[str] = set()
             pfsp_lines = []
-            seen_keys: set[str] = set()
-            for opp, label in zip(opponents, opp_labels):
-                if label in seen_keys:
-                    continue
-                seen_keys.add(label)
-                if label == "self":
-                    continue
-                wr_key = "heuristic" if (opp is None or opp == HEURISTIC_FIXTURE) else label
-                info = wr_table.get(wr_key, {})
-                total_u = int(info.get("total_ussr", 0))
-                total_s = int(info.get("total_us", 0))
-                wr_u = info.get("wins_ussr", 0) / total_u if total_u >= 10 else None
-                wr_s = info.get("wins_us", 0) / total_s if total_s >= 10 else None
-                wr_u_str = f"{wr_u:.2f}" if wr_u is not None else "?"
-                wr_s_str = f"{wr_s:.2f}" if wr_s is not None else "?"
-                pfsp_w = _pfsp_weight(wr_key, wr_table, pfsp_exponent)
-                pfsp_lines.append(f"    {label}: WR_ussr={wr_u_str}(n={total_u}) WR_us={wr_s_str}(n={total_s}) pfsp={pfsp_w:.3f}")
+            for pool_side, pool_opps in [("ussr", ussr_opps), ("us", us_opps)]:
+                seen: set[str] = set()
+                for opp in pool_opps:
+                    label = _label(opp)
+                    if label in seen or label == "self":
+                        continue
+                    seen.add(label)
+                    all_shown_keys.add(label)
+                    wr_key = "heuristic" if (opp is None or opp == HEURISTIC_FIXTURE) else label
+                    info = wr_table.get(wr_key, {})
+                    total_u = int(info.get("total_ussr", 0))
+                    total_s = int(info.get("total_us", 0))
+                    wr_u_str = f"{info.get('wins_ussr',0)/total_u:.2f}" if total_u >= 10 else "?"
+                    wr_s_str = f"{info.get('wins_us',0)/total_s:.2f}" if total_s >= 10 else "?"
+                    w = _pfsp_weight(wr_key, wr_table, pfsp_exponent, side=pool_side)
+                    pfsp_lines.append(f"    [{pool_side}] {label}: WR_ussr={wr_u_str}(n={total_u}) WR_us={wr_s_str}(n={total_s}) pfsp={w:.3f}")
             if pfsp_lines:
                 print("  [pfsp]", flush=True)
                 for line in pfsp_lines:
                     print(line, flush=True)
 
-        def _run_one(i: int, opp: Optional[str]) -> list[Step]:
-            seed = base_seed + i * games_per_opp
-            if opp is None or opp == HEURISTIC_FIXTURE:
-                return _collect_heuristic_from_script(script_path, games_per_opp, seed, vp_reward_coef, rollout_temp, dir_alpha, dir_epsilon)
-            return _collect_vs_model_from_script(script_path, opp, games_per_opp, seed, vp_reward_coef, rollout_temp, dir_alpha, dir_epsilon)
+        # Build task list: (slot_index, opp, collect_side)
+        # collect_side: "ussr"/"us" for pool opponents (single-side); "both" for self-slot.
+        tasks: list[tuple[int, Optional[str], str]] = []
+        slot_idx = 0
+        if self_slot:
+            tasks.append((slot_idx, script_path, "both"))
+            slot_idx += 1
+        for opp in ussr_opps:
+            tasks.append((slot_idx, opp, "ussr"))
+            slot_idx += 1
+        for opp in us_opps:
+            tasks.append((slot_idx, opp, "us"))
+            slot_idx += 1
 
-        actual_workers = min(n_workers, mix_k)
-        with ThreadPoolExecutor(max_workers=actual_workers) as pool:
-            futures_with_opps = [(pool.submit(_run_one, i, opp), opp) for i, opp in enumerate(opponents)]
+        def _run_one(task_idx: int, opp: Optional[str], collect_side: str) -> list[Step]:
+            seed = base_seed + task_idx * games_per_slot
+            if opp is None or opp == HEURISTIC_FIXTURE:
+                return _collect_heuristic_from_script(
+                    script_path, games_per_slot, seed, vp_reward_coef,
+                    rollout_temp, dir_alpha, dir_epsilon, side=collect_side,
+                )
+            return _collect_vs_model_from_script(
+                script_path, opp, games_per_slot, seed, vp_reward_coef, rollout_temp, dir_alpha, dir_epsilon,
+                side=collect_side,
+            )
+
+        actual_workers = min(n_workers, len(tasks))
+        with ThreadPoolExecutor(max_workers=actual_workers) as executor:
+            futures_with_meta = [
+                (executor.submit(_run_one, ti, opp, cs), opp)
+                for ti, opp, cs in tasks
+            ]
             all_steps: list[Step] = []
-            for f, opp in futures_with_opps:
+            for f, opp in futures_with_meta:
                 batch = f.result()
                 if wr_table_path:
-                    # Self-slot uses the temp script_path — canonicalize to "self"
-                    # so WR accumulates under one stable key instead of 1 entry/iter.
                     wr_key = opp
                     if opp is not None and opp == script_path:
                         wr_key = "__self__"
                     elif opp == HEURISTIC_FIXTURE:
-                        wr_key = None  # tracked under "heuristic" key in wr_table
+                        wr_key = None
                     _update_wr_table_from_steps(wr_table, wr_key, batch)
                 all_steps.extend(batch)
 
@@ -1348,8 +1415,10 @@ def collect_rollout_league_batched(
                     continue
                 # Clean name for W&B: v8_scripted → v8
                 clean = key.replace("_scripted", "")
-                w = _pfsp_weight(key, wr_table, pfsp_exponent, _total_all)
-                ucb_metrics[f"ucb/{clean}_weight"] = w
+                w_u = _pfsp_weight(key, wr_table, pfsp_exponent, _total_all, side="ussr")
+                w_s = _pfsp_weight(key, wr_table, pfsp_exponent, _total_all, side="us")
+                ucb_metrics[f"ucb/{clean}_weight_ussr"] = w_u
+                ucb_metrics[f"ucb/{clean}_weight_us"] = w_s
                 # Also log per-side WR for context
                 t_u = int(info.get("total_ussr", 0))
                 t_s = int(info.get("total_us", 0))
