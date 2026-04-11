@@ -31,6 +31,7 @@ struct BatchOutputs {
     torch::Tensor strategy_logits;
     torch::Tensor country_strategy_logits;
     torch::Tensor value;
+    torch::Tensor small_choice_logits;  // (B, 8) or undefined for old models
 };
 
 torch::Tensor extract_influence(const PublicState& pub);
