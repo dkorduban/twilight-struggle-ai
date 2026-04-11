@@ -28,7 +28,19 @@ suffix = p.suffix.lower()
 
 if suffix == ".py":
     code, out = run([sys.executable, "-m", "py_compile", str(p)], timeout=15)
-    emit(f"Quick check {'passed' if code == 0 else 'failed'} for {p}: {out[:1200] if out else 'python -m py_compile'}")
+    if code != 0:
+        emit(f"Quick check failed for {p}: {out[:1200]}")
+        sys.exit(0)
+    emit(f"Quick check passed for {p}: python -m py_compile OK")
+    # Also run the matching test file if it exists (skip large scripts, only short tests)
+    repo_root = Path(__file__).parent.parent.parent
+    test_file = repo_root / "tests" / "python" / f"test_{p.stem}.py"
+    if test_file.exists() and p.stat().st_size < 200_000:  # skip huge files like train_ppo.py
+        tcode, tout = run(
+            [sys.executable, "-m", "pytest", str(test_file), "-x", "-q", "--no-header", "--tb=short", "-n", "0"],
+            timeout=60,
+        )
+        emit(f"Tests {'passed' if tcode == 0 else 'FAILED'} for {test_file.name}: {tout[:1600] if tout else 'pytest'}")
     sys.exit(0)
 
 if suffix == ".json":

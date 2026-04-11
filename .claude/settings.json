@@ -66,6 +66,28 @@
     "defaultMode": "acceptEdits"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json, pathlib, sys; p=pathlib.Path('/home/dkord/code/twilight-struggle-ai/results/continuation_plan.json'); data=json.loads(p.read_text()) if p.exists() else None; out={'systemMessage': 'CONTINUATION PLAN:\\ncurrent: ' + (data.get('current_task','(none)') if data else '(none)') + '\\nnext: ' + '\\n  '.join((data.get('next_tasks') or [])[:5] if data else []) + '\\nactive_bg: ' + ', '.join(data.get('active_background') or [] if data else [])} if data else {}; print(json.dumps(out)) if out else None\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json; print(json.dumps({'systemMessage': 'REMINDER: Update results/continuation_plan.json before session ends. Include current_task, next_tasks, active_background, and any context needed for next session.'}))\""
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -73,6 +95,10 @@
           {
             "type": "command",
             "command": "python3 /home/dkord/code/twilight-struggle-ai/.claude/hooks/prevent_dangerous_bash.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 /home/dkord/code/twilight-struggle-ai/.claude/hooks/check_binary_freshness.py"
           }
         ]
       },
