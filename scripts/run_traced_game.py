@@ -272,6 +272,8 @@ def _extract_features(
     removed_mask = _card_mask(state["removed"])
     cards = hand_mask + hand_mask + discard_mask + removed_mask
 
+    # 32 scalars matching cpp/tscore/nn_features.cpp fill_scalars() exactly.
+    # [0-10] Core game state
     scalars = [
         state["vp"] / 20.0,
         (state["defcon"] - 1) / 4.0,
@@ -284,6 +286,31 @@ def _extract_features(
         state["turn"] / 10.0,
         state["ar"] / 8.0,
         float(int(side)),
+        # [11-21] Trap / constraint effects
+        float(pub.bear_trap_active),
+        float(pub.quagmire_active),
+        float(pub.cuban_missile_crisis_active),
+        float(pub.iran_hostage_crisis_active),
+        float(pub.norad_active),
+        float(pub.shuttle_diplomacy_active),
+        float(pub.salt_active),
+        float(pub.flower_power_active),
+        float(pub.flower_power_cancelled),
+        float(pub.vietnam_revolts_active),
+        float(pub.north_sea_oil_extra_ar),
+        # [22-27] Board-modifying effects
+        float(pub.glasnost_extra_ar),
+        float(pub.nato_active),
+        float(pub.de_gaulle_active),
+        float(pub.nuclear_subs_active),
+        float(pub.formosan_active),
+        float(pub.awacs_active),
+        # [28-29] Chernobyl
+        float(pub.chernobyl_blocked_region is not None),
+        float(int(pub.chernobyl_blocked_region) / 6.0 if pub.chernobyl_blocked_region is not None else 0.0),
+        # [30-31] Per-side ops modifier
+        float(pub.ops_modifier[0]) / 3.0,
+        float(pub.ops_modifier[1]) / 3.0,
     ]
 
     return (
@@ -339,9 +366,49 @@ def _action_sort_key(action: ActionEncoding) -> tuple[int, int, tuple[int, ...]]
     return (action.card_id, int(action.mode), tuple(action.targets))
 
 
-def _make_model_policy(model_path: Path) -> Policy:
-    model = torch.jit.load(str(model_path), map_location="cpu")
+def _load_model(model_path: Path):
+    """Load a TorchScript model or a regular PyTorch checkpoint."""
+    try:
+        model = torch.jit.load(str(model_path), map_location="cpu")
+        model.eval()
+        return model
+    except RuntimeError:
+        pass
+    # Regular PPO checkpoint — use the same registry as train_ppo.py
+    from tsrl.policies.model import (  # noqa: E402
+        TSBaselineModel, TSCardEmbedModel, TSCountryEmbedModel, TSFullEmbedModel,
+        TSCountryAttnModel, TSCountryAttnSideModel, TSDirectCountryModel,
+        TSMarginalValueModel, TSControlFeatModel, TSControlFeatGNNModel,
+        TSControlFeatGNNSideModel,
+    )
+    MODEL_REGISTRY = {
+        "baseline": TSBaselineModel,
+        "card_embed": TSCardEmbedModel,
+        "country_embed": TSCountryEmbedModel,
+        "full_embed": TSFullEmbedModel,
+        "country_attn": TSCountryAttnModel,
+        "country_attn_side": TSCountryAttnSideModel,
+        "direct_country": TSDirectCountryModel,
+        "marginal_value": TSMarginalValueModel,
+        "control_feat": TSControlFeatModel,
+        "control_feat_gnn": TSControlFeatGNNModel,
+        "control_feat_gnn_side": TSControlFeatGNNSideModel,
+    }
+    ckpt = torch.load(str(model_path), map_location="cpu", weights_only=False)
+    args = ckpt.get("args", {})
+    hidden_dim = args.get("hidden_dim", 256)
+    dropout = args.get("dropout", 0.1)
+    model_type = args.get("model_type", "baseline")
+    cls = MODEL_REGISTRY.get(model_type, TSBaselineModel)
+    model = cls(hidden_dim=hidden_dim, dropout=dropout)
+    state = ckpt.get("model_state_dict") or ckpt
+    model.load_state_dict(state, strict=False)
     model.eval()
+    return model
+
+
+def _make_model_policy(model_path: Path) -> Policy:
+    model = _load_model(model_path)
 
     def _policy(pub: PublicState, hand: frozenset[int], holds_china: bool) -> ActionEncoding | None:
         legal_actions = enumerate_actions(hand, pub, pub.phasing, holds_china=holds_china)
