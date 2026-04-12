@@ -19,6 +19,7 @@ import argparse
 import json
 import math
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -2746,6 +2747,12 @@ def parse_args() -> argparse.Namespace:
                         "Only active when --explore-alpha > 0.")
     p.add_argument("--skip-smoke-test", action="store_true", default=False,
                    help="Skip the pre-training smoke test (10 games) that validates the checkpoint.")
+    p.add_argument("--post-train-hook", type=str, default=None,
+                   help="Shell command to run after training completes (non-blocking, in background). "
+                        "The placeholder {out_dir} is replaced with the actual out-dir path. "
+                        "Example: 'bash scripts/post_train_confirm.sh {out_dir}'")
+    p.add_argument("--experiment", type=str, default=None,
+                   help="Experiment name for tracking (informational only)")
     return p.parse_args()
 
 
@@ -3274,6 +3281,24 @@ def main() -> None:
 
     if wandb_run is not None:
         wandb_run.finish()
+
+    # ── Post-training hook (e.g. confirmation tournament) ──────────────────
+    if args.post_train_hook:
+        hook_cmd = args.post_train_hook.replace("{out_dir}", args.out_dir)
+        print(f"\n[post-train-hook] Running: {hook_cmd}")
+        try:
+            hook_result = subprocess.run(
+                hook_cmd, shell=True, timeout=3600,  # 1 hour max
+                capture_output=False,  # let output flow to stdout/stderr
+            )
+            if hook_result.returncode != 0:
+                print(f"[post-train-hook] WARNING: exited with code {hook_result.returncode}")
+            else:
+                print("[post-train-hook] completed successfully")
+        except subprocess.TimeoutExpired:
+            print("[post-train-hook] WARNING: timed out after 3600s")
+        except Exception as e:
+            print(f"[post-train-hook] ERROR: {e}")
 
 
 if __name__ == "__main__":

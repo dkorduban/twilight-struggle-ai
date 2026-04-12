@@ -35,11 +35,13 @@ LEAGUE_FIXTURES=""
 for fix_path in data/checkpoints/scripted_for_elo/*_scripted.pt; do
   [ -f "$fix_path" ] || continue
   fix_name=$(basename "$fix_path" | sed 's/_scripted\.pt//')
+  # Extract numeric prefix from version (v12 -> 12, v65_sc -> 65)
   fix_ver="${fix_name#v}"
-  if ! [[ "$fix_ver" =~ ^[0-9]+$ ]]; then continue; fi
-  if [ "$fix_ver" -lt "$MIN_SCRIPTED_VERSION" ]; then continue; fi
-  # Skip corrupted-era models
-  if echo "$EXCLUDED_VERSIONS" | grep -qw "$fix_ver"; then continue; fi
+  fix_num="${fix_ver%%[^0-9]*}"
+  if [ -z "$fix_num" ]; then continue; fi
+  if [ "$fix_num" -lt "$MIN_SCRIPTED_VERSION" ]; then continue; fi
+  # Skip corrupted-era models (only exact numeric matches)
+  if echo "$EXCLUDED_VERSIONS" | grep -qw "$fix_num"; then continue; fi
   # Skip the model about to be trained (it'll be the starting checkpoint)
   if [ "$fix_name" = "$NEXT" ]; then continue; fi
   LEAGUE_FIXTURES="$LEAGUE_FIXTURES $fix_path"
@@ -122,12 +124,13 @@ for scripted_path in data/checkpoints/scripted_for_elo/*_scripted.pt; do
   [ -f "$scripted_path" ] || continue
   fname=$(basename "$scripted_path")
   name="${fname%_scripted.pt}"
-  # Extract version number (e.g. v12 -> 12)
+  # Extract numeric prefix from version (v12 -> 12, v65_sc -> 65)
   ver="${name#v}"
-  if ! [[ "$ver" =~ ^[0-9]+$ ]]; then continue; fi
-  if [ "$ver" -lt "$MIN_SCRIPTED_VERSION" ]; then continue; fi
-  # Skip corrupted-era models
-  if echo "$EXCLUDED_VERSIONS" | grep -qw "$ver"; then continue; fi
+  ver_num="${ver%%[^0-9]*}"
+  if [ -z "$ver_num" ]; then continue; fi
+  if [ "$ver_num" -lt "$MIN_SCRIPTED_VERSION" ]; then continue; fi
+  # Skip corrupted-era models (only exact numeric matches)
+  if echo "$EXCLUDED_VERSIONS" | grep -qw "$ver_num"; then continue; fi
   if [ "$name" = "$FINISHED" ]; then
     # Use ppo_final.pt for the just-finished model (fresher than the scripted copy)
     if [ -f "${FINISHED_DIR}/ppo_final.pt" ]; then
@@ -336,15 +339,22 @@ echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $NEXT launched PID=$NEXT_PID" \
   >> results/autonomous_decisions.log
 
 # --- Chain the watcher for the next run ---
+# Version name increment: supports both plain vN (v65->v66) and suffixed vN_foo (v65_sc->v66_sc).
+# Extract numeric prefix and optional suffix, then increment the number.
 nohup bash -c "
   cd /home/dkord/code/twilight-struggle-ai
   echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] watcher: polling $NEXT (PID $NEXT_PID)\" >> results/autonomous_decisions.log
   while kill -0 $NEXT_PID 2>/dev/null; do sleep 15; done
   if [ -f data/checkpoints/ppo_${NEXT}_league/ppo_final.pt ]; then
-    NEXT_NUM=\$(echo '$NEXT' | sed 's/v//')
-    AFTER_NUM=\$((NEXT_NUM + 1))
-    echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] watcher: $NEXT done, running loop step\" >> results/autonomous_decisions.log
-    bash scripts/ppo_loop_step.sh $NEXT v\${AFTER_NUM} >> results/logs/ppo/ppo_loop_watcher.log 2>&1
+    # Parse version: v65 -> num=65 suffix=''; v65_sc -> num=65 suffix='_sc'
+    VSTR='$NEXT'
+    VBODY=\"\${VSTR#v}\"
+    VNUM=\"\${VBODY%%[^0-9]*}\"
+    VSUFFIX=\"\${VBODY#\$VNUM}\"
+    AFTER_NUM=\$((VNUM + 1))
+    AFTER=\"v\${AFTER_NUM}\${VSUFFIX}\"
+    echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] watcher: $NEXT done, running loop step -> \$AFTER\" >> results/autonomous_decisions.log
+    bash scripts/ppo_loop_step.sh $NEXT \$AFTER >> results/logs/ppo/ppo_loop_watcher.log 2>&1
   else
     echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] watcher: $NEXT ended without ppo_final.pt — no auto-launch\" >> results/autonomous_decisions.log
   fi
