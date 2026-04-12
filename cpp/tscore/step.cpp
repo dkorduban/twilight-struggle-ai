@@ -130,47 +130,6 @@ const T& sample_one(std::span<const T> values, Pcg64Rng& rng) {
     return values[rng.choice_index(values.size())];
 }
 
-/// Choose an option index: use policy callback if available, otherwise random.
-int choose_option(
-    const PublicState& pub, CardId card_id, Side side,
-    int n_options, Pcg64Rng& rng, const PolicyCallbackFn* cb
-) {
-    if (cb && n_options > 1) {
-        EventDecision dec;
-        dec.source_card = card_id;
-        dec.kind = DecisionKind::SmallChoice;
-        dec.n_options = n_options;
-        dec.acting_side = side;
-        const int choice = (*cb)(pub, dec);
-        return std::clamp(choice, 0, n_options - 1);
-    }
-    return static_cast<int>(rng.choice_index(static_cast<size_t>(n_options)));
-}
-
-/// Choose a country from a pool: use policy callback if available, otherwise random.
-/// Returns the chosen CountryId (not the index).
-template <typename Container>
-CountryId choose_country(
-    const PublicState& pub, CardId card_id, Side side,
-    const Container& pool, Pcg64Rng& rng, const PolicyCallbackFn* cb
-) {
-    const int n = static_cast<int>(std::size(pool));
-    if (n == 0) return 0;
-    if (cb && n > 1) {
-        EventDecision dec;
-        dec.source_card = card_id;
-        dec.kind = DecisionKind::CountrySelect;
-        dec.n_options = n;
-        dec.acting_side = side;
-        for (int i = 0; i < n && i < EventDecision::kMaxEligible; ++i) {
-            dec.eligible_ids[i] = static_cast<int>(pool[i]);
-        }
-        const int choice = std::clamp((*cb)(pub, dec), 0, n - 1);
-        return static_cast<CountryId>(pool[choice]);
-    }
-    return pool[rng.choice_index(static_cast<size_t>(n))];
-}
-
 void apply_vp_delta(PublicState& pub, Side side, int delta) {
     if (side == Side::USSR) {
         pub.vp += delta;
