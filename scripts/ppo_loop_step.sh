@@ -166,11 +166,10 @@ if [ -f "${FINISHED_DIR}/ppo_final.pt" ] && ! echo "$MODELS" | grep -q " ${FINIS
   MODELS="$MODELS ${FINISHED}:${FINISHED_DIR}/ppo_final.pt"
 fi
 
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ppo_loop_step: $FINISHED finished, running ELO update then launching $NEXT" \
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ppo_loop_step: $FINISHED finished, launching $NEXT then running ELO update in background" \
   >> results/autonomous_decisions.log
 
-# --- Capture 3rd-place Elo BEFORE adding the new candidate ---
-# Plateau rule: new_model.elo - pre_tournament_rank3.elo < 15
+# --- Capture 3rd-place Elo BEFORE adding the new candidate (fast, just reads JSON) ---
 PRE_THIRD=$(python3 -c "
 import json
 with open('$LADDER') as f: d=json.load(f)
@@ -182,94 +181,12 @@ else:
     print('NONE')
 " 2>/dev/null)
 
-# --- ELO update (CPU, overlaps safely with GPU training) ---
-echo "=== ELO update: adding $FINISHED ===" | tee "$ELO_LOG"
-uv run python scripts/run_elo_tournament.py \
-  --models $MODELS \
-  --games 400 --anchor v14 --anchor-elo 2015 \
-  --schedule round_robin \
-  --resume-from "$LADDER" \
-  --out "$LADDER" \
-  --script-dir data/checkpoints/scripted_for_elo \
-  --match-cache-dir results/matches \
-  2>&1 | tee -a "$ELO_LOG"
-
-# --- Plateau check: new_model.elo vs 3rd-place from BEFORE it was added ---
-PLATEAU_NOTE=$(python3 - "$FINISHED" "$LADDER" "$PRE_THIRD" << 'PYEOF'
-import json, sys
-
-finished = sys.argv[1]
-ladder_path = sys.argv[2]
-pre_third_str = sys.argv[3]  # "name:elo" or "NONE"
-
-with open(ladder_path) as f:
-    d = json.load(f)
-ratings = d["ratings"]
-
-elo_finished = ratings.get(finished, {}).get("elo")
-if elo_finished is None:
-    print(f"PLATEAU_NODATA ({finished} not in post-tournament ladder)")
-    sys.exit(0)
-
-if pre_third_str == "NONE":
-    print("PLATEAU_NODATA (fewer than 3 models in pre-tournament ladder)")
-    sys.exit(0)
-
-third_name, third_elo = pre_third_str.split(":")
-third_elo = float(third_elo)
-
-# Also check new model is actually at the top (if it regressed, no plateau signal)
-ppo_only = {n: v["elo"] for n, v in ratings.items() if n != "heuristic"}
-ranked = sorted(ppo_only.items(), key=lambda x: -x[1])
-if ranked[0][0] != finished:
-    print(f"PLATEAU_SKIP: {finished}({elo_finished:.0f}) is not top model after tournament (top={ranked[0][0]})")
-    sys.exit(0)
-
-delta = elo_finished - third_elo
-if delta < 15:
-    print(f"PLATEAU_YES: {finished}({elo_finished:.0f}) - pre-3rd {third_name}({third_elo:.0f}) = {delta:+.0f} < 15")
-else:
-    print(f"PLATEAU_NO: {finished}({elo_finished:.0f}) - pre-3rd {third_name}({third_elo:.0f}) = {delta:+.0f} >= 15")
-PYEOF
-)
-
-ELO_FINISHED=$(python3 -c "
-import json
-with open('$LADDER') as f: d=json.load(f)
-print(d['ratings'].get('$FINISHED', {}).get('elo', 'N/A'))
-")
-
-# --- Track consecutive plateau count in a persistent file ---
-PLATEAU_FILE="results/plateau_count.txt"
-PLATEAU_COUNT=0
-if [ -f "$PLATEAU_FILE" ]; then
-  PLATEAU_COUNT=$(cat "$PLATEAU_FILE")
-fi
-
-if echo "$PLATEAU_NOTE" | grep -q "PLATEAU_YES"; then
-  PLATEAU_COUNT=$((PLATEAU_COUNT + 1))
-elif echo "$PLATEAU_NOTE" | grep -q "PLATEAU_NO"; then
-  PLATEAU_COUNT=0  # reset on any non-plateau run
-fi
-echo "$PLATEAU_COUNT" > "$PLATEAU_FILE"
-
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ELO result: $FINISHED=$ELO_FINISHED  $PLATEAU_NOTE  consecutive_plateaus=$PLATEAU_COUNT" \
-  >> results/autonomous_decisions.log
-
-if [ "$PLATEAU_COUNT" -ge 3 ]; then
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] *** 3 CONSECUTIVE PLATEAUS — next run should try simple arch experiment (wider trunk, more strategies, etc.) ***" \
-    >> results/autonomous_decisions.log
-fi
-
 # --- UPGO: always enabled (analysis 2026-04-11: reduces variance on US-side sparse reward) ---
 UPGO_FLAG="--upgo"
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] UPGO always enabled for $NEXT" \
   >> results/autonomous_decisions.log
 
-# --- League pool safety: NEXT_DIR is fresh, so no stale iter files to worry about.
-# But guard against accidental re-use: if NEXT_DIR already has iter_*.pt from a
-# different checkpoint lineage (e.g. after a crash mid-run), remove them so the
-# new run's league pool starts clean.
+# --- League pool safety: guard against stale iter_*.pt from a crashed/restarted lineage ---
 if [ -d "$NEXT_DIR" ]; then
   STALE_COUNT=$(ls "${NEXT_DIR}"/iter_*.pt 2>/dev/null | wc -l)
   if [ "$STALE_COUNT" -gt 0 ]; then
@@ -389,4 +306,75 @@ nohup bash -c "
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] watcher for $NEXT launched (PID $!)" \
   >> results/autonomous_decisions.log
 
-echo "Done. $NEXT running (PID=$NEXT_PID), ELO=$ELO_FINISHED for $FINISHED. $PLATEAU_NOTE"
+# --- ELO update + plateau check: runs in background, GPU training is already underway ---
+# Captures PRE_THIRD snapshot taken before this block, writes result to autonomous_decisions.log.
+nohup bash -c "
+  cd /home/dkord/code/twilight-struggle-ai
+  echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] ELO update (background): adding $FINISHED\" >> results/autonomous_decisions.log
+  echo '=== ELO update: adding $FINISHED ===' | tee '$ELO_LOG'
+  uv run python scripts/run_elo_tournament.py \
+    --models $MODELS \
+    --games 400 --anchor v14 --anchor-elo 2015 \
+    --schedule round_robin \
+    --resume-from '$LADDER' \
+    --out '$LADDER' \
+    --script-dir data/checkpoints/scripted_for_elo \
+    --match-cache-dir results/matches \
+    2>&1 | tee -a '$ELO_LOG'
+
+  ELO_FINISHED=\$(python3 -c \"
+import json
+with open('$LADDER') as f: d=json.load(f)
+print(d['ratings'].get('$FINISHED', {}).get('elo', 'N/A'))
+\")
+
+  # Plateau check
+  PLATEAU_NOTE=\$(python3 - '$FINISHED' '$LADDER' '$PRE_THIRD' << 'PYEOF'
+import json, sys
+finished = sys.argv[1]
+ladder_path = sys.argv[2]
+pre_third_str = sys.argv[3]
+with open(ladder_path) as f:
+    d = json.load(f)
+ratings = d['ratings']
+elo_finished = ratings.get(finished, {}).get('elo')
+if elo_finished is None:
+    print(f'PLATEAU_NODATA ({finished} not in ladder)')
+    sys.exit(0)
+if pre_third_str == 'NONE':
+    print('PLATEAU_NODATA (fewer than 3 models)')
+    sys.exit(0)
+third_name, third_elo = pre_third_str.split(':')
+third_elo = float(third_elo)
+ppo_only = {n: v['elo'] for n, v in ratings.items() if n != 'heuristic'}
+ranked = sorted(ppo_only.items(), key=lambda x: -x[1])
+if ranked[0][0] != finished:
+    print(f'PLATEAU_SKIP: {finished}({elo_finished:.0f}) not top (top={ranked[0][0]})')
+    sys.exit(0)
+delta = elo_finished - third_elo
+if delta < 15:
+    print(f'PLATEAU_YES: {finished}({elo_finished:.0f}) - pre-3rd {third_name}({third_elo:.0f}) = {delta:+.0f} < 15')
+else:
+    print(f'PLATEAU_NO: {finished}({elo_finished:.0f}) - pre-3rd {third_name}({third_elo:.0f}) = {delta:+.0f} >= 15')
+PYEOF
+)
+
+  PLATEAU_FILE='results/plateau_count.txt'
+  PLATEAU_COUNT=0
+  [ -f \"\$PLATEAU_FILE\" ] && PLATEAU_COUNT=\$(cat \"\$PLATEAU_FILE\")
+  echo \"\$PLATEAU_NOTE\" | grep -q 'PLATEAU_YES' && PLATEAU_COUNT=\$((PLATEAU_COUNT + 1)) || true
+  echo \"\$PLATEAU_NOTE\" | grep -q 'PLATEAU_NO'  && PLATEAU_COUNT=0 || true
+  echo \"\$PLATEAU_COUNT\" > \"\$PLATEAU_FILE\"
+
+  echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] ELO result: $FINISHED=\$ELO_FINISHED  \$PLATEAU_NOTE  consecutive_plateaus=\$PLATEAU_COUNT\" \
+    >> results/autonomous_decisions.log
+  if [ \"\$PLATEAU_COUNT\" -ge 3 ]; then
+    echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] *** 3 CONSECUTIVE PLATEAUS — consider arch experiment ***\" \
+      >> results/autonomous_decisions.log
+  fi
+" >> "$ELO_LOG" 2>&1 &
+
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ELO update for $FINISHED launched in background (PID $!)" \
+  >> results/autonomous_decisions.log
+
+echo "Done. $NEXT launched (PID=$NEXT_PID). ELO update for $FINISHED running in background."
