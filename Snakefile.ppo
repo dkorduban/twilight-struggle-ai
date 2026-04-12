@@ -3,6 +3,7 @@
 # Usage:
 #   uv run snakemake -s Snakefile.ppo -j4 --resources gpu=1 bench=1 results/bench/ppo_v65.txt
 #   uv run snakemake -s Snakefile.ppo -j4 --resources gpu=1 bench=1  # all experiments
+#   uv run snakemake -s Snakefile.ppo -j1 ppo_confirm_only            # just Elo placement
 #
 # Add experiments to experiments_ppo.yaml, then run the above.
 # Mirrors the structure of Snakefile (BC pipeline).
@@ -74,7 +75,8 @@ BENCH_US_SEED = _bench["us_seed"]
 # ---------------------------------------------------------------------------
 rule ppo_all:
     input:
-        expand("results/bench/ppo_{name}.txt", name=EXPERIMENTS.keys())
+        expand("results/bench/ppo_{name}.txt", name=EXPERIMENTS.keys()),
+        expand("data/checkpoints/ppo_{name}_league/.elo_confirmed", name=EXPERIMENTS.keys())
 
 # ---------------------------------------------------------------------------
 # Step 1: Train PPO league run → sentinel
@@ -224,10 +226,29 @@ with open("{output.result}", "w") as f:
 PY
         """
 
-# TODO: implement overlapping confirmation
-# This rule should fire as soon as a checkpoint appears (not after all training),
-# run a quick 50-game sanity check, and gate the full benchmark on passing.
-rule confirm:
-    input: "data/checkpoints/ppo_{name}_league/.training_complete"
-    output: touch("data/checkpoints/ppo_{name}_league/.confirmed")
-    shell: "echo '[confirm] stub: {wildcards.name} training complete at $(date)' >> results/logs/ppo/ppo_{wildcards.name}_snakemake.log"
+# ---------------------------------------------------------------------------
+# Step 4: Incremental Elo confirmation (places new model vs previous best + fixtures)
+# ---------------------------------------------------------------------------
+rule ppo_confirm:
+    input:
+        sentinel="data/checkpoints/ppo_{name}_league/.training_complete"
+    output:
+        confirmed="data/checkpoints/ppo_{name}_league/.elo_confirmed"
+    log:
+        "results/logs/ppo/ppo_{name}_confirm.log"
+    shell:
+        """
+        mkdir -p results/logs/ppo results/elo
+        echo "[ppo_confirm] {wildcards.name}: starting Elo placement at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        bash scripts/post_train_confirm.sh \
+            data/checkpoints/ppo_{wildcards.name}_league \
+            --incremental \
+            2>&1 | tee -a {log}
+        touch {output.confirmed}
+        echo "[ppo_confirm] {wildcards.name}: done at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        """
+
+# Quick target: just run confirmation tournaments for all experiments
+rule ppo_confirm_only:
+    input:
+        expand("data/checkpoints/ppo_{name}_league/.elo_confirmed", name=EXPERIMENTS.keys())
