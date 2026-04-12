@@ -432,7 +432,18 @@ def main():
              "Loaded before --resume-from so match history survives ladder resets. "
              "Default: results/matches/",
     )
+    p.add_argument(
+        "--mode", default=None,
+        help="Tournament mode tag for SQL provenance (e.g. 'incremental', 'full', 'sanity'). "
+             "Defaults to --schedule value if not set.",
+    )
+    p.add_argument(
+        "--new-model", default=None,
+        help="Name of the newly trained model being placed (for SQL provenance).",
+    )
     args = p.parse_args()
+    if args.mode is None:
+        args.mode = args.schedule
 
     if args.games % 2 != 0:
         p.error("--games must be even (half played each side)")
@@ -670,6 +681,16 @@ def main():
               f"→ bipartite model {'better' if bip_sq_err < comb_sq_err else 'not better'} fit)")
 
     # Save results
+    ratings_out = {
+        name: {
+            "elo": round(elo, 1),
+            "elo_ussr": round(_belo(name, "USSR"), 1) if _belo(name, "USSR") is not None else None,
+            "elo_us": round(_belo(name, "US"), 1) if _belo(name, "US") is not None else None,
+            "ci95": [round(cis[name][0], 1), round(cis[name][1], 1)],
+            "delta_vs_anchor": round(elo - args.anchor_elo, 1),
+        }
+        for name, elo in ranked
+    }
     out_data = {
         "anchor": args.anchor,
         "anchor_elo": args.anchor_elo,
@@ -677,21 +698,38 @@ def main():
         "games_per_match": args.games,
         "games_per_side": half,
         "schedule": args.schedule,
-        "ratings": {
-            name: {
-                "elo": round(elo, 1),
-                "elo_ussr": round(_belo(name, "USSR"), 1) if _belo(name, "USSR") is not None else None,
-                "elo_us": round(_belo(name, "US"), 1) if _belo(name, "US") is not None else None,
-                "ci95": [round(cis[name][0], 1), round(cis[name][1], 1)],
-                "delta_vs_anchor": round(elo - args.anchor_elo, 1),
-            }
-            for name, elo in ranked
-        },
+        "ratings": ratings_out,
         "matches": match_log,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out_data, indent=2))
     print(f"\nSaved to {args.out}", flush=True)
+
+    # Persist to SQL for provenance and cross-tournament aggregation.
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
+        from tsrl.checkpoint_db import log_tournament, DB_PATH
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        # Infer which model is new: the one not in resume-from (or last alphabetically)
+        new_model = getattr(args, "new_model", None)
+        mode = getattr(args, "mode", args.schedule)
+        tid = f"{mode}_{ts}_{'_'.join(sorted(scripts.keys())[:2])}"
+        log_tournament(
+            tournament_id=tid,
+            mode=mode,
+            models=list(scripts.keys()),
+            anchor=args.anchor,
+            anchor_elo=args.anchor_elo,
+            games_per_match=args.games,
+            match_log=match_log,
+            ratings=ratings_out,
+            new_model=new_model,
+        )
+        print(f"[sql] Tournament logged: {tid} → {DB_PATH}", flush=True)
+    except Exception as _sql_err:
+        print(f"[sql] WARNING: failed to log tournament to SQL: {_sql_err}", flush=True)
 
 
 if __name__ == "__main__":

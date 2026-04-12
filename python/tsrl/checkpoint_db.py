@@ -59,9 +59,74 @@ CREATE TABLE IF NOT EXISTS rollout_stats (
     n_games INTEGER,
     logged_at TEXT NOT NULL
 );
+
+-- Each time run_elo_tournament.py runs, one row per tournament run.
+CREATE TABLE IF NOT EXISTS tournaments (
+    id TEXT PRIMARY KEY,              -- e.g. "incremental_20260411T183042Z_v67"
+    run_at TEXT NOT NULL,
+    mode TEXT,                        -- "incremental" | "full"
+    new_model TEXT,                   -- model being placed (NULL for full round-robin)
+    models_json TEXT,                 -- JSON list of all models in this run
+    anchor TEXT,
+    anchor_elo REAL,
+    games_per_match INTEGER
+);
+
+-- One row per (model_a, model_b) pair per tournament.
+-- model_a/model_b order matches the tournament script (not normalized here — use the view).
+CREATE TABLE IF NOT EXISTS match_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id TEXT NOT NULL REFERENCES tournaments(id),
+    model_a TEXT NOT NULL,
+    model_b TEXT NOT NULL,
+    wins_a INTEGER NOT NULL,
+    wins_b INTEGER NOT NULL,
+    draws INTEGER NOT NULL DEFAULT 0,
+    wins_a_ussr INTEGER,
+    wins_b_ussr INTEGER,
+    wins_a_us INTEGER,
+    wins_b_us INTEGER,
+    n_games INTEGER NOT NULL,
+    seed INTEGER,
+    run_at TEXT NOT NULL
+);
+
+-- Per-tournament Elo snapshot for each model.
+CREATE TABLE IF NOT EXISTS elo_ladder (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id TEXT NOT NULL REFERENCES tournaments(id),
+    model TEXT NOT NULL,
+    elo REAL NOT NULL,
+    elo_ussr REAL,
+    elo_us REAL,
+    ci_lo REAL,
+    ci_hi REAL,
+    computed_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_rollout_checkpoint ON rollout_stats(checkpoint_name);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_name ON checkpoints(name);
 CREATE INDEX IF NOT EXISTS idx_benchmarks_name ON benchmarks(checkpoint_name);
+CREATE INDEX IF NOT EXISTS idx_match_results_tournament ON match_results(tournament_id);
+CREATE INDEX IF NOT EXISTS idx_match_results_pair ON match_results(model_a, model_b);
+CREATE INDEX IF NOT EXISTS idx_elo_ladder_model ON elo_ladder(model);
+CREATE INDEX IF NOT EXISTS idx_elo_ladder_tournament ON elo_ladder(tournament_id);
+"""
+
+# Aggregate view DDL — created separately because executescript can't mix CREATE VIEW
+# with IF NOT EXISTS in older sqlite3 versions reliably.
+_MATCHUP_VIEW_DDL = """
+CREATE VIEW IF NOT EXISTS matchup_aggregates AS
+SELECT
+    CASE WHEN model_a < model_b THEN model_a ELSE model_b END AS player_1,
+    CASE WHEN model_a < model_b THEN model_b ELSE model_a END AS player_2,
+    SUM(CASE WHEN model_a < model_b THEN wins_a ELSE wins_b END) AS p1_wins,
+    SUM(CASE WHEN model_a < model_b THEN wins_b ELSE wins_a END) AS p2_wins,
+    SUM(draws) AS draws,
+    SUM(n_games) AS total_games,
+    COUNT(*) AS n_tournaments
+FROM match_results
+GROUP BY player_1, player_2;
 """
 
 
@@ -86,6 +151,8 @@ def _get_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     _ensure_column(conn, "elo_ratings", "elo_ussr", "REAL")
     _ensure_column(conn, "elo_ratings", "elo_us", "REAL")
+    # Create aggregate view separately (CREATE VIEW IF NOT EXISTS is safe to re-run)
+    conn.executescript(_MATCHUP_VIEW_DDL)
     conn.commit()
     return conn
 
@@ -219,5 +286,103 @@ def log_elo_rating(
             datetime.now(timezone.utc).isoformat(),
         ),
     )
+    conn.commit()
+    conn.close()
+
+
+def log_tournament(
+    tournament_id: str,
+    mode: str,
+    models: list[str],
+    anchor: str,
+    anchor_elo: float,
+    games_per_match: int,
+    match_log: list[dict],
+    ratings: dict[str, dict],
+    new_model: Optional[str] = None,
+    db_path: Path = DB_PATH,
+) -> None:
+    """Persist a complete tournament run to SQL with full provenance.
+
+    Args:
+        tournament_id: Unique string ID, e.g. "incremental_20260411T183042Z_v67".
+        mode: "incremental" or "full".
+        models: List of all model names in this tournament.
+        anchor: Anchor model name (e.g. "v14").
+        anchor_elo: Anchor Elo value.
+        games_per_match: Games per pair.
+        match_log: List of match dicts from run_elo_tournament.py
+                   (keys: model_a, model_b, wins_a, wins_b, draws,
+                    wins_a_ussr, wins_b_ussr, wins_a_us, wins_b_us, n_games, seed).
+        ratings: Dict of {model: {"elo", "elo_ussr", "elo_us", "ci95": [lo, hi]}}.
+        new_model: Which model was being placed (None for full round-robin).
+    """
+    conn = _get_db(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Upsert tournament record (replace on conflict so re-runs are idempotent)
+    conn.execute(
+        """INSERT OR REPLACE INTO tournaments
+           (id, run_at, mode, new_model, models_json, anchor, anchor_elo, games_per_match)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            tournament_id,
+            now,
+            mode,
+            new_model,
+            json.dumps(models),
+            anchor,
+            anchor_elo,
+            games_per_match,
+        ),
+    )
+
+    # Delete old match rows for this tournament (idempotent re-run support)
+    conn.execute("DELETE FROM match_results WHERE tournament_id = ?", (tournament_id,))
+    conn.execute("DELETE FROM elo_ladder WHERE tournament_id = ?", (tournament_id,))
+
+    # Insert match results — one row per pair, preserving order from tournament script
+    for m in match_log:
+        conn.execute(
+            """INSERT INTO match_results
+               (tournament_id, model_a, model_b, wins_a, wins_b, draws,
+                wins_a_ussr, wins_b_ussr, wins_a_us, wins_b_us, n_games, seed, run_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                tournament_id,
+                m["model_a"],
+                m["model_b"],
+                m["wins_a"],
+                m["wins_b"],
+                m.get("draws", 0),
+                m.get("wins_a_ussr"),
+                m.get("wins_b_ussr"),
+                m.get("wins_a_us"),
+                m.get("wins_b_us"),
+                m.get("n_games", games_per_match),
+                m.get("seed"),
+                now,
+            ),
+        )
+
+    # Insert per-tournament Elo snapshot
+    for model, r in ratings.items():
+        ci = r.get("ci95", [None, None])
+        conn.execute(
+            """INSERT INTO elo_ladder
+               (tournament_id, model, elo, elo_ussr, elo_us, ci_lo, ci_hi, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                tournament_id,
+                model,
+                r["elo"],
+                r.get("elo_ussr"),
+                r.get("elo_us"),
+                ci[0] if ci else None,
+                ci[1] if ci else None,
+                now,
+            ),
+        )
+
     conn.commit()
     conn.close()

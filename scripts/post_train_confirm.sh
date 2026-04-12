@@ -124,13 +124,35 @@ except Exception:
     print('v55')
 " 2>/dev/null)
 
-  # Fixed fixture set: prev_best + v55 (frontier) + v14 (anchor) + heuristic (deduplicated)
-  INCREMENTAL_FIXTURES="${PREV_BEST} v55 v14 heuristic"
+  # 5-opponent pool (Opus-recommended, 2026-04-11):
+  # PREV_BEST (top of ladder) + v14 (anchor) + 3 mid-range from selected_fixtures.json
+  # No heuristic — heuristic is too weak to narrow Elo CI meaningfully.
+  # Round-robin of 6 models = C(6,2)=15 pairs; ~5 are new, rest cached.
+  FIXTURES_JSON="results/selected_fixtures.json"
 
-  # Resolve to paths (deduplicate fixture names)
-  MODELS="heuristic"
+  POOL_FIXTURES=$(python3 -c "
+import json, os
+exclude = {'$VERSION', '$PREV_BEST', 'v14', 'heuristic'}
+pool = []
+try:
+    d = json.load(open('$FIXTURES_JSON'))
+    # Combined fixture_paths, extract version names from paths
+    for path in d.get('fixture_paths', []):
+        name = os.path.basename(path).replace('_scripted.pt', '')
+        if name not in exclude and name not in pool:
+            pool.append(name)
+except Exception:
+    pass
+# Fallback if file missing or pool empty
+if not pool:
+    pool = ['v48', 'v45', 'v54']
+print(' '.join(pool[:3]))
+" 2>/dev/null)
+
+  # Resolve to paths: PREV_BEST + v14 + 3 pool models + new version (no heuristic)
+  MODELS=""
   SEEN=""
-  for fixture in $PREV_BEST v55 v14; do
+  for fixture in $PREV_BEST v14 $POOL_FIXTURES; do
     echo "$SEEN" | grep -qw "$fixture" && continue  # skip duplicate
     SEEN="$SEEN $fixture"
     pt="${SCRIPT_DIR}/${fixture}_scripted.pt"
@@ -140,14 +162,16 @@ except Exception:
   NEW_PT="${RUN_DIR}/ppo_best_scripted.pt"
   [ -f "$NEW_PT" ] || NEW_PT="${RUN_DIR}/ppo_final_scripted.pt"
   [ -f "$NEW_PT" ] || NEW_PT="${FINISHED_SCRIPTED}"
-  MODELS="$MODELS ${VERSION}:${NEW_PT}"
+  MODELS="${MODELS# } ${VERSION}:${NEW_PT}"
+  INCREMENTAL_FIXTURES="$PREV_BEST v14 $POOL_FIXTURES (no heuristic)"
 
   MODEL_COUNT=$(echo $MODELS | wc -w)
   NEW_MATCHES=$((MODEL_COUNT * (MODEL_COUNT - 1) / 2))
 
   if [ "$DRY_RUN" = "1" ]; then
     echo "Step 3 (incremental): Would run round_robin on: $MODELS"
-    echo "  ~$NEW_MATCHES total pairs (most will be cached), ~$((NEW_MATCHES < 5 ? NEW_MATCHES : MODEL_COUNT - 1)) new matches"
+    echo "  Pool from selected_fixtures.json: $POOL_FIXTURES"
+    echo "  ~$NEW_MATCHES total pairs (most will be cached), ~$((MODEL_COUNT - 1)) new matches"
     echo "  Estimated runtime: <5 minutes"
     exit 0
   fi
@@ -164,6 +188,7 @@ except Exception:
     --models $MODELS \
     --games 200 --anchor v14 --anchor-elo 2015 \
     --schedule round_robin \
+    --mode incremental --new-model "$VERSION" \
     ${LADDER:+--resume-from "$LADDER"} \
     --out "$INCREMENTAL_OUT" \
     --script-dir "$SCRIPT_DIR" \
@@ -227,6 +252,7 @@ else
     --models $MODELS \
     --games 400 --anchor v14 --anchor-elo 2015 \
     --schedule round_robin \
+    --mode full --new-model "$VERSION" \
     ${LADDER:+--resume-from "$LADDER"} \
     --out "$LADDER" \
     --script-dir "$SCRIPT_DIR" \
