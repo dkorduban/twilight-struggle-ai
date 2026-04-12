@@ -15,9 +15,13 @@ ALERTS=()
 
 # 1. Training process
 TRAIN_PIDS=$(pgrep -f "train_ppo.py" 2>/dev/null | tr '\n' ' ' || true)
+TRAIN_COUNT=$(echo "$TRAIN_PIDS" | wc -w)
 if [ -z "$TRAIN_PIDS" ]; then
     TRAINING_STATUS="NONE"
     ALERTS+=("TRAINING PROCESS DEAD (no train_ppo.py found)")
+elif [ "$TRAIN_COUNT" -gt 1 ]; then
+    TRAINING_STATUS="DUPLICATE pids=$TRAIN_PIDS (count=$TRAIN_COUNT)"
+    ALERTS+=("DUPLICATE TRAINING PROCESSES: $TRAIN_COUNT instances of train_ppo.py running (pids=$TRAIN_PIDS) — kill all but one")
 else
     TRAINING_STATUS="running pids=$TRAIN_PIDS"
 fi

@@ -36,6 +36,19 @@ PANEL_V14="data/checkpoints/scripted_for_elo/v14_scripted.pt"
 
 FIXTURES_JSON="results/selected_fixtures.json"
 
+# --- Singleton guard: abort if another train_ppo.py is already running ---
+# The lockfile (results/train_ppo.lock) is held exclusively by train_ppo.py
+# for its entire lifetime. flock -n returns non-zero if the lock is taken.
+if flock -n results/train_ppo.lock true 2>/dev/null; then
+  : # lock was free, good to proceed (flock released immediately — we just tested)
+else
+  EXISTING_PIDS=$(pgrep -f "train_ppo.py" 2>/dev/null | tr '\n' ' ' || true)
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ABORT: train_ppo.py already running (PIDs: $EXISTING_PIDS) — refusing to launch $NEXT" \
+    >> results/autonomous_decisions.log
+  echo "ERROR: train_ppo.py already running (PIDs: $EXISTING_PIDS). Kill it first." >&2
+  exit 1
+fi
+
 # Load per-side fixture paths from JSON; skip the model about to be trained.
 # ussr_fixture_paths: ranked by elo_ussr (best USSR opponents).
 # us_fixture_paths:   ranked by elo_us  (best US opponents).

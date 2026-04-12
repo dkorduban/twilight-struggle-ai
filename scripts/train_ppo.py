@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import math
 import os
@@ -2802,6 +2803,35 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+
+    # ── Singleton guard: prevent duplicate training runs ──────────────────────
+    # Uses an exclusive flock so the lock auto-releases if the process crashes.
+    # Any second invocation (health_check restart, stray autonomous loop, etc.)
+    # will see the lock held and exit immediately with a clear error message.
+    _lock_path = Path("results/train_ppo.lock")
+    _lock_path.parent.mkdir(parents=True, exist_ok=True)
+    _lock_fd = open(_lock_path, "w")
+    try:
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        # Read the PID from the lockfile to report it
+        try:
+            _lock_fd2 = open(_lock_path)
+            _held_by = _lock_fd2.read().strip()
+            _lock_fd2.close()
+        except Exception:
+            _held_by = "unknown"
+        print(
+            f"[train_ppo] ABORT: another instance is already running (lock held by PID {_held_by}).\n"
+            "  Only one train_ppo.py may run at a time (GPU singleton).\n"
+            "  Kill the existing process first, then retry.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    _lock_fd.write(str(os.getpid()))
+    _lock_fd.flush()
+    # lock_fd intentionally kept open for process lifetime; closed on exit
+    # ─────────────────────────────────────────────────────────────────────────
 
     if args.league_heuristic_pct > 0:
         import sys
