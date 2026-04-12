@@ -1,15 +1,20 @@
 {
-  "current_task": "Infrastructure sprint complete. v66_sc placed at 1982 Elo. Next: Phase 2b (DP decoder C++ wire-in) + WS4 (experiments.jsonl created). Need next PPO training run.",
+  "current_task": "v67_sc training launched from v66_sc/ppo_best.pt via ppo_loop_step.sh. 80 iters, 5-opponent panel (v55+v54+v44+v45+v14), no heuristic, Elo-weighted scoring.",
   "next_tasks": [
-    "Phase 2b: wire DP decoder into C++ inference — replace proportional allocation in mcts_batched.cpp or model forward with DP decoder call; requires cpp-engine-builder agent",
-    "Start next PPO generation: v67 from v66_sc or fresh from v55 checkpoint — hypothesis needed in experiments.jsonl before launch",
-    "WS10: ISMCTS search budget sweep — systematic validation of sim counts (50, 100, 200, 500) vs heuristic and v55; largest untouched strength lever",
+    "Monitor v67_sc training progress — check autonomous_decisions.log / W&B for panel eval results",
+    "WS10: ISMCTS sweep — dispatch systematic search budget validation (100/200/400/800 sims vs heuristic and v55)",
+    "JSD matrix regeneration: add v66_sc to JSD analysis, re-run select_league_fixtures.py to update selected_fixtures.json",
+    "Phase 2b: DP decoder C++ wire-in — replace proportional allocation in C++ with DP decoder call",
     "WS8: CPU saturation audit — profile ppo_loop_step.sh to find bottleneck between rollout/train/export",
-    "WS6: extract shared constants to python/tsrl/constants.py (one extraction per commit, low priority)",
-    "JSD matrix regeneration: add v66_sc to JSD analysis, re-run select_league_fixtures.py to update selected_fixtures.json"
+    "JSD probe eval: spec at .claude/plan/jsd-probe-eval.md — add ProbeEvaluator to train_ppo.py",
+    "/askopus on iter_0010 dominance (>50% best checkpoints are iter_0010) — too short training? entropy annealing too aggressive?"
   ],
   "blocked_on": null,
-  "active_background": [],
-  "last_updated": "2026-04-12T08:00:00Z",
-  "context": "Session 2026-04-12 completed:\n- SQL schema: tournaments + match_results + elo_ladder + rollout_opponent_stats + matchup_aggregates view\n- 1545 cached match JSONs migrated to metadata.sqlite3\n- post_train_confirm.sh: 5-opponent candidate pool (no heuristic), incremental→scratch→merge fix\n- Per-side fixture pools (ussr/us) wired through ppo_loop_step.sh → train_ppo.py\n- Autonomy policy fixed: Opus escalation blocks one lineage only, not all work\n- experiments.jsonl created with retroactive entries\n- results/analysis/ subdirectory for Opus analyses\n\nElo ladder top: v55=2124, v46=2108, v54=2108. v66_sc=1982 (last placed).\nPhase 2 DP decoder committed in Python. Phase 2b (C++ wire-in) is next major dev work.\nWS4 gap closed. WS10 (ISMCTS) remains largest untouched strength lever."
+  "active_background": [
+    "v67_sc PPO training (PID~471117+, started 2026-04-12)",
+    "Candidate tournament for v66_sc (nohup background, started 2026-04-12)",
+    "Opus: Elo ladder bias analysis (COMPLETED — results/analysis/opus_analysis_20260412_elo_ladder_bias.md)"
+  ],
+  "last_updated": "2026-04-12T09:00:00Z",
+  "context": "Session 2026-04-12 continued:\n- Elo-weighted panel scoring: {v55:0.35, v54:0.25, v44:0.20, v45:0.15, v14:0.05}\n- Panel + candidate tournament aligned to same 5-opponent pool (v55+v54+v44+v45+v14, no heuristic)\n- ppo_loop_step.sh updated (old: v8+v14+v22+heuristic; new: 5-opponent pool)\n- Heuristic removed from elo_full_ladder.json (Elo 1750; Opus: max 3 Elo shift on remaining models)\n- Panel eval time tracked → W&B (panel/eval_time_sec)\n- confirmation→candidate rename in all scripts\n- .claude/settings.json: added python3, nohup, git add/commit, cp, mkdir, echo, sqlite3, uv run python to allow list\n- v67_sc launched: from v66_sc/ppo_best.pt (Elo 2009), targeting v55 (Elo 2124)\n- Opus: BayesElo robust to composition; adding 5 clones shifts ratings <6 Elo; removing heuristic <3 Elo shift\n\nElo ladder top (no heuristic): v55=2124, v46=2108, v54=2108, v44=2106. v66_sc=2009.\nv67_sc running. Watcher set up for v67_sc→v68_sc auto-chain."
 }
