@@ -171,7 +171,13 @@ std::optional<CardId> draw_one(GameState& gs, Pcg64Rng& rng) {
     return card;
 }
 
-void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng, const PolicyCallbackFn* policy_cb = nullptr) {
+void apply_ops_randomly(
+    PublicState& pub,
+    Side side,
+    int ops,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
+) {
     auto accessible = accessible_countries(side, pub, ActionMode::Influence);
     if (accessible.empty()) {
         return;
@@ -182,7 +188,9 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng, con
         ActionMode::Coup,
         ActionMode::Realign,
     };
-    const auto mode = modes[rng.choice_index(modes.size())];
+    const auto mode = modes[static_cast<size_t>(
+        choose_option(pub, 0, side, static_cast<int>(modes.size()), rng, policy_cb)
+    )];
     const auto opponent = other_side(side);
 
     if (mode == ActionMode::Influence) {
@@ -254,7 +262,8 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng, con
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar(
     GameState& gs,
     Side side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
 ) {
     bool trapped = false;
     bool bear_trap = false;
@@ -288,7 +297,7 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_a
         return std::tuple{pub, over, winner};
     }
 
-    const auto chosen = eligible[rng.choice_index(eligible.size())];
+    const auto chosen = choose_card(pub, bear_trap ? 47 : 45, side, eligible, rng, policy_cb);
     discard_from_hand(gs, side, chosen, pub);
     if (roll_d6(rng) <= 4) {
         if (bear_trap) {
@@ -315,7 +324,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
         case 5: {
             auto hand = hand_to_vector(gs.hands[to_index(Side::USSR)]);
             if (!hand.empty()) {
-                const auto target = hand[rng.choice_index(hand.size())];
+                const auto target = choose_card(pub, 5, Side::USSR, hand, rng, policy_cb);
                 gs.hands[to_index(Side::USSR)].reset(target);
                 if (card_spec(target).starred) {
                     pub.removed.set(target);
@@ -335,7 +344,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                         return {pub, true, result.winner};
                     }
                 } else if (card_spec(target).side == Side::US) {
-                    auto [event_pub, over, winner] = fire_event_with_state(gs, target, Side::US, rng);
+                    auto [event_pub, over, winner] = fire_event_with_state(gs, target, Side::US, rng, policy_cb);
                     pub = event_pub;
                     if (over) {
                         card_played(pub, 5, side);
@@ -360,7 +369,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!eligible.empty()) {
-                discard_from_hand(gs, Side::US, eligible[rng.choice_index(eligible.size())], pub);
+                discard_from_hand(gs, Side::US, choose_card(pub, 10, Side::US, eligible, rng, policy_cb), pub);
             } else {
                 pub.set_influence(Side::US, kWestGermanyId, 0);
             }
@@ -392,10 +401,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!eligible.empty()) {
-                const auto chosen = eligible[rng.choice_index(eligible.size())];
+                const auto chosen = choose_card(pub, 32, side, eligible, rng, policy_cb);
                 const auto ops = effective_ops(chosen, pub, side);
                 discard_from_hand(gs, side, chosen, pub);
-                apply_ops_randomly(pub, side, ops, rng);
+                apply_ops_randomly(pub, side, ops, rng, policy_cb);
             }
             break;
         }
@@ -440,7 +449,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             pub.salt_active = true;
             auto discarded = hand_to_vector(pub.discard);
             if (!discarded.empty()) {
-                const auto chosen = discarded[rng.choice_index(discarded.size())];
+                const auto chosen = choose_card(pub, 46, side, discarded, rng, policy_cb);
                 pub.discard.reset(chosen);
                 gs.hands[to_index(side)].set(chosen);
             }
@@ -472,9 +481,9 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = candidates[rng.choice_index(candidates.size())];
+                const auto chosen = choose_card(pub, 52, side, candidates, rng, policy_cb);
                 gs.hands[to_index(opponent)].reset(chosen);
-                apply_ops_randomly(pub, side, effective_ops(chosen, pub, side), rng);
+                apply_ops_randomly(pub, side, effective_ops(chosen, pub, side), rng, policy_cb);
                 gs.hands[to_index(opponent)].set(chosen);
             }
             break;
@@ -511,9 +520,9 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = candidates[rng.choice_index(candidates.size())];
+                const auto chosen = choose_card(pub, 68, Side::US, candidates, rng, policy_cb);
                 gs.hands[to_index(Side::USSR)].reset(chosen);
-                apply_ops_randomly(pub, Side::US, effective_ops(chosen, pub, Side::US), rng);
+                apply_ops_randomly(pub, Side::US, effective_ops(chosen, pub, Side::US), rng, policy_cb);
                 gs.hands[to_index(Side::USSR)].set(chosen);
             }
             break;
@@ -593,10 +602,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     discarded.end()
                 );
                 if (!discarded.empty()) {
-                    const auto chosen = discarded[rng.choice_index(discarded.size())];
+                    const auto chosen = choose_card(pub, 88, side, discarded, rng, policy_cb);
                     pub.discard.reset(chosen);
                     gs.pub = pub;
-                    auto [event_pub, over, winner] = fire_event_with_state(gs, chosen, side, rng);
+                    auto [event_pub, over, winner] = fire_event_with_state(gs, chosen, side, rng, policy_cb);
                     pub = event_pub;
                     if (over) {
                         card_played(pub, 88, side);
@@ -649,7 +658,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = candidates[rng.choice_index(candidates.size())];
+                const auto chosen = choose_card(pub, 101, Side::US, candidates, rng, policy_cb);
                 discard_from_hand(gs, Side::US, chosen, pub);
             }
             break;
@@ -735,7 +744,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     return {new_pub, over, winner};
 }
 
-std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(GameState& gs, Pcg64Rng& rng, const PolicyCallbackFn* policy_cb = nullptr) {
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(
+    GameState& gs,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
+) {
     std::vector<CountryId> eligible;
     for (const auto cid : all_country_ids()) {
         if (gs.pub.influence_of(Side::US, cid) > 0) {
@@ -745,7 +758,6 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(
     if (eligible.empty()) {
         return std::nullopt;
     }
-    // NORAD: US places +1 influence in any country where US already has influence
     const auto target = choose_country(gs.pub, 106, Side::US, eligible, rng, policy_cb);
     gs.pub.set_influence(Side::US, target, gs.pub.influence_of(Side::US, target) + 1);
     const auto [over, winner] = check_vp_win(gs.pub);
@@ -1187,16 +1199,18 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(
     GameState& gs,
     Side side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
 ) {
-    return resolve_trap_ar(gs, side, rng);
+    return resolve_trap_ar(gs, side, rng, policy_cb);
 }
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad_live(
     GameState& gs,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
 ) {
-    return resolve_norad(gs, rng);
+    return resolve_norad(gs, rng, policy_cb);
 }
 
 std::optional<GameResult> run_extra_action_round_live(

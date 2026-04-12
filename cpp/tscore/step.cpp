@@ -9,6 +9,83 @@
 #include "game_data.hpp"
 
 namespace ts {
+
+int choose_option(
+    const PublicState& pub,
+    CardId card_id,
+    Side side,
+    int n_options,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
+) {
+    if (n_options <= 0) {
+        return 0;
+    }
+    if (policy_cb != nullptr && n_options > 1) {
+        EventDecision decision;
+        decision.source_card = card_id;
+        decision.kind = DecisionKind::SmallChoice;
+        decision.n_options = n_options;
+        decision.acting_side = side;
+        return std::clamp((*policy_cb)(pub, decision), 0, n_options - 1);
+    }
+    return static_cast<int>(rng.choice_index(static_cast<size_t>(n_options)));
+}
+
+CountryId choose_country(
+    const PublicState& pub,
+    CardId card_id,
+    Side side,
+    std::span<const CountryId> pool,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
+) {
+    const auto n_options = static_cast<int>(pool.size());
+    if (n_options <= 0) {
+        return 0;
+    }
+    if (policy_cb != nullptr && n_options > 1) {
+        EventDecision decision;
+        decision.source_card = card_id;
+        decision.kind = DecisionKind::CountrySelect;
+        decision.n_options = n_options;
+        decision.acting_side = side;
+        for (int i = 0; i < n_options; ++i) {
+            decision.eligible_ids[i] = static_cast<int>(pool[static_cast<size_t>(i)]);
+        }
+        const auto choice = std::clamp((*policy_cb)(pub, decision), 0, n_options - 1);
+        return pool[static_cast<size_t>(choice)];
+    }
+    return pool[rng.choice_index(pool.size())];
+}
+
+CardId choose_card(
+    const PublicState& pub,
+    CardId card_id,
+    Side side,
+    std::span<const CardId> pool,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
+) {
+    const auto n_options = static_cast<int>(pool.size());
+    if (n_options <= 0) {
+        return 0;
+    }
+    if (policy_cb != nullptr && n_options > 1) {
+        EventDecision decision;
+        decision.source_card = card_id;
+        decision.kind = DecisionKind::CardSelect;
+        decision.n_options = n_options;
+        decision.acting_side = side;
+        for (int i = 0; i < n_options; ++i) {
+            decision.eligible_ids[i] = static_cast<int>(pool[static_cast<size_t>(i)]);
+        }
+        const auto choice = std::clamp((*policy_cb)(pub, decision), 0, n_options - 1);
+        return pool[static_cast<size_t>(choice)];
+    }
+    return pool[rng.choice_index(pool.size())];
+}
+
 namespace {
 
 // Card-group constants used by event implementations below.
@@ -1095,6 +1172,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb
 ) {
+    (void)policy_cb;
     auto next = pub;
 
     switch (action.mode) {

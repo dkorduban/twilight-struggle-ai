@@ -9,9 +9,33 @@
 
 namespace ts {
 
-/// Apply an action (card play) to the public state.
-/// When policy_cb is non-null, event decisions that would normally be random
-/// are delegated to the callback instead.  Pass nullptr for backward compat.
+int choose_option(
+    const PublicState& pub,
+    CardId card_id,
+    Side side,
+    int n_options,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
+);
+
+CountryId choose_country(
+    const PublicState& pub,
+    CardId card_id,
+    Side side,
+    std::span<const CountryId> pool,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
+);
+
+CardId choose_card(
+    const PublicState& pub,
+    CardId card_id,
+    Side side,
+    std::span<const CardId> pool,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
+);
+
 std::tuple<PublicState, bool, std::optional<Side>> apply_action(
     const PublicState& pub,
     const ActionEncoding& action,

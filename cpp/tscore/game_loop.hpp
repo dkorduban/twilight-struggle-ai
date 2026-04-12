@@ -67,12 +67,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(
     GameState& gs,
     Side side,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
 );
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad_live(
     GameState& gs,
-    Pcg64Rng& rng
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
 );
 
 std::optional<GameResult> run_extra_action_round_live(

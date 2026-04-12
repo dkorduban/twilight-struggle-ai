@@ -5,34 +5,28 @@
 #pragma once
 
 #include <functional>
-#include <vector>
 
 #include "game_state.hpp"
 
 namespace ts {
 
 enum class DecisionKind : int {
-    SmallChoice   = 0,  // binary / small option (e.g. Warsaw Pact add vs remove)
-    CountrySelect = 1,  // pick a country from eligible list
-    CardSelect    = 2,  // pick a card from a candidate set
+    SmallChoice = 0,
+    CountrySelect = 1,
+    CardSelect = 2,
 };
 
-/// Describes a decision the engine needs a policy to resolve.
 struct EventDecision {
     CardId source_card = 0;
     DecisionKind kind = DecisionKind::SmallChoice;
-    int n_options = 0;           // number of legal choices (indices 0..n_options-1)
+    int n_options = 0;
     Side acting_side = Side::Neutral;
 
-    // For CountrySelect: which country IDs are eligible (indices into eligible_ids).
-    // The callback returns an index in [0, n_options), mapping to eligible_ids[index].
-    static constexpr int kMaxEligible = 86;
-    int eligible_ids[kMaxEligible] = {};  // country IDs; only first n_options are valid
+    // Eligible country or card ids; only the first n_options entries are valid.
+    static constexpr int kMaxEligible = kCardSlots;
+    int eligible_ids[kMaxEligible] = {};
 };
 
-/// Callback type: given the current public state and the decision description,
-/// return the chosen option index in [0, decision.n_options).
-/// If the callback returns an out-of-range index, the engine clamps to valid range.
 using PolicyCallbackFn = std::function<int(const PublicState&, const EventDecision&)>;
 
 }  // namespace ts
