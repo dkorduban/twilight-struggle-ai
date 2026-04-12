@@ -12,6 +12,7 @@
 namespace ts {
 
 int effective_ops(CardId card_id, const PublicState& pub, Side side);
+bool is_defcon_restricted(CountryId country_id, const PublicState& pub);
 // Cards legal to choose from hand in the current public state.
 std::vector<CardId> legal_cards(const CardSet& hand, const PublicState& pub, Side side, bool holds_china);
 // Modes legal for a selected card.

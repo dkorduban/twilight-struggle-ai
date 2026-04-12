@@ -195,18 +195,20 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng, con
 
     if (mode == ActionMode::Coup) {
         auto targets = accessible;
-        if (pub.defcon <= 2) {
-            targets.erase(
-                std::remove_if(
-                    targets.begin(),
-                    targets.end(),
-                    [](CountryId cid) { return country_spec(cid).is_battleground; }
-                ),
-                targets.end()
-            );
-            if (targets.empty()) {
-                targets = accessible;
+        targets.erase(
+            std::remove_if(
+                targets.begin(),
+                targets.end(),
+                [&pub](CountryId cid) { return is_defcon_restricted(cid, pub); }
+            ),
+            targets.end()
+        );
+        if (targets.empty()) {
+            for (int i = 0; i < ops; ++i) {
+                const auto target = accessible[rng.choice_index(accessible.size())];
+                pub.set_influence(side, target, pub.influence_of(side, target) + 1);
             }
+            return;
         }
         const auto target = choose_country(pub, 0, side, targets, rng, policy_cb);
         const auto net = coup_result(ops, country_spec(target).stability, rng);
@@ -849,6 +851,7 @@ std::optional<GameResult> run_headline_phase(
             : gs.hands[to_index(opp)];
         const auto vp_before = gs.pub.vp;
         const auto defcon_before = gs.pub.defcon;
+        gs.pub.phasing = side;
         auto [new_pub, over, winner] = apply_action_with_hands(gs, action, side, rng);
         if (trace_steps != nullptr) {
             trace_steps->push_back(StepTrace{

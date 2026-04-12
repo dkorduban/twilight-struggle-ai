@@ -8,16 +8,8 @@
 #include "scoring.hpp"
 
 namespace ts {
-namespace {
-
 // DEFCON thresholds by region for coup/realignment restrictions.
 constexpr std::array<int, 7> kDefconRegionThreshold = {4, 3, 2, 1, 1, 1, 3};
-constexpr std::array<int, 8> kSpaceOpsMinimum = {2, 2, 2, 2, 3, 3, 3, 4};
-constexpr std::array<CountryId, 12> kNatoWe = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};
-
-bool contains(std::span<const CountryId> values, CountryId value) {
-    return std::find(values.begin(), values.end(), value) != values.end();
-}
 
 bool is_defcon_restricted(CountryId country_id, const PublicState& pub) {
     if (country_id == kUsaAnchorId || country_id == kUssrAnchorId) {
@@ -25,6 +17,15 @@ bool is_defcon_restricted(CountryId country_id, const PublicState& pub) {
     }
     const auto threshold = kDefconRegionThreshold[static_cast<size_t>(country_spec(country_id).region)];
     return pub.defcon <= threshold;
+}
+
+namespace {
+
+constexpr std::array<int, 8> kSpaceOpsMinimum = {2, 2, 2, 2, 3, 3, 3, 4};
+constexpr std::array<CountryId, 12> kNatoWe = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};
+
+bool contains(std::span<const CountryId> values, CountryId value) {
+    return std::find(values.begin(), values.end(), value) != values.end();
 }
 
 bool nato_prerequisite_met(const PublicState& pub) {
