@@ -1,15 +1,17 @@
 {
-  "current_task": "v79_sc training (PID 586847) iter2 in progress. Iter1 confirmed: t=187.5s (3.2x faster than workers=1). 8+8 fixture pool active.",
+  "current_task": "Engine + tech debt cleanup (no new training). 4 bg agents completed.",
   "next_tasks": [
-    "Monitor iter2-5 for US fixture diversity (v45,v15,v58,v18,v20,v16,v21,v49 should appear in us_pool). US slots drew iter_0001 twice in iter1/iter2 (P=11% each — fine, just random).",
-    "v79_sc iter10 panel eval (ETA ~April 13 00:00-02:00 UTC at 187s/iter): target panel_wr > 0.488 (v78_sc HWM)",
-    "v79_sc iter10 Elo: target > 2097 (v78_sc). SOTA = 2119.1 (v77_sc)",
-    "At iter10: check if ppo_running_best.pt updated (panel HWM trigger)"
+    "Wait for run_traced_game.py migration agent (a3c2559e) to complete",
+    "Wait for ISMCTS re-benchmark agent (a5c23900) to complete",
+    "Cherry-pick run_traced_game.py changes when agent returns",
+    "Pragmatic Heads Phase 3: game_loop.cpp Ask Not (card37) PolicyCallback for discard count",
+    "WS10: ISMCTS search budget sweep 100/200/400/800 sims after re-benchmark",
+    "Consider starting new training run (v80_sc) once engine completeness confirmed"
   ],
   "blocked_on": null,
   "active_background": [
-    "v79_sc training (PID 586847, iter2 in progress)",
-    "watcher PID=587007 watching v79_sc"
+    "run_traced_game.py migration (a3c2559e)",
+    "ISMCTS re-benchmark (a5c23900)"
   ],
   "completed_this_session": [
     "SPEED FIX: --rollout-workers 5 confirmed 3.2x speedup (187s vs 596s iter1)",
@@ -19,6 +21,6 @@
     "BUG FIX 3 (commit ddaca63): heuristic_pct=0 when __heuristic__ in fixture pool",
     "v77_sc BREAKTHROUGH iter10 Elo=2119.1, v78_sc HWM=0.488"
   ],
-  "last_updated": "2026-04-12T20:32:00Z",
+  "last_updated": "2026-04-12T23:37:23.228700+00:00",
   "context": "v79_sc running with all fixes: 8+8 fixture pool (USSR: v55,v48,v19,v21,v22,v20,v58,v45 + heuristic; US: v45,v15,v58,v18,v20,v16,v21,v49 + heuristic), --rollout-workers 5, PFSP warmup 2.0x mult, symmetric PFSP+UCB, no heuristic double-dip. At 187s/iter, iter10 ETA is ~April 13 00:00-02:00 UTC (~30min per iter group). Watcher PID=587007 auto-launches v80_sc on completion."
 }
