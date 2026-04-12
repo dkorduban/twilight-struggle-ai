@@ -1,26 +1,23 @@
 {
-  "current_task": "v68_sc training running (PID 486242), iter ~61/80. Watcher will auto-chain to v69_sc.",
+  "current_task": "v77_sc relaunching from ppo_v55_league/ppo_best.pt (Elo 2119) with ent_coef=0.01. Candidate tournament running, launch expected ~17:05 UTC.",
   "next_tasks": [
-    "Monitor v68_sc panel eval results (Elo 1968 from early incremental — final will be after ppo_best.pt is selected)",
-    "v69_sc will use corrected fixtures, entropy decay [370,450], panel eval 60 games (WS8 fix)",
-    "[defer-to-opus] Analyze v68_sc regression (1968 vs v67_sc 2038) — is this a real regression or noise from early checkpoint placement?",
-    "[defer-to-opus] Consider reducing n_iterations 80→30 per Opus iter_0010 finding (no improvement after iter ~10)",
-    "Phase 3: Event country targets via PolicyCallback — spec in docs/plan_pragmatic_heads.md Phase 3"
+    "Monitor v77_sc launch — confirm training started, ent_coef=0.01 in cmdline",
+    "v77_sc iter10 Elo (~17:09 UTC): if >2097 -> entropy fix worked; if ~2096 -> also need fixture fix or abandon SC",
+    "Opus Rec#1 (primary): after v77_sc, plan v56 non-SC — v55 lineage, self-play only, ent_coef=0.01 constant, 80-200 iters"
   ],
   "blocked_on": null,
   "active_background": [
-    "v68_sc PPO training (PID 486242, started 2026-04-12 09:48 UTC, ~61/80 iters)"
+    "ppo_loop_step.sh relaunch (PID 555966) — candidate tournament for v76_sc running, v77_sc launch imminent",
+    "v77_sc checkpoint: ppo_v55_league/ppo_best.pt, ent_coef=0.01->0.003 (entropy shock fixed)"
   ],
   "completed_this_session": [
-    "Phase 2b: DP decoder wired into learned_policy.py INFLUENCE branch (bounded_knapsack_dp)",
-    "WS8: Panel eval 200→60 games/opp (CPU contention fix, saves ~280s/run)",
-    "post_train_confirm.sh: fixed stale fixtures v8/v14/v22/heuristic → v55/v54/v44/v45/v14",
-    "ppo_loop_step.sh: global entropy decay fix (uses PREV_TOTAL_ITERS from checkpoint)",
-    "JSD probe eval: ProbeEvaluator + build_probe_set.py + 6 tests (Codex impl)",
-    "Opus iter_0010 analysis: model flat after iter 10, entropy schedule bug, heuristic decay contamination",
-    "v67_sc: Elo 2038 (↑29 from v66_sc 2009)",
-    "Standing policy §13: Opus budget gate (>90% → defer, not substitute Sonnet)"
+    "v72_sc=2097, v75_sc=2096, v76_sc=2069 — PLATEAU CONFIRMED across all SC generations",
+    "Infrastructure fix: per-gen round_robin -> instant plateau check (c82880d)",
+    "Opus analysis COMPLETE: entropy shock (ent=0.03 vs v55 at 0.01) + PFSP samples only 2/27 fixtures",
+    "FIX: ppo_loop_step.sh ent_coef 0.03->0.01 (commit 53e7e2c)",
+    "v77_sc first attempt CRASHED: scripted.pt is TorchScript (inference-only). Use ppo_best.pt for training.",
+    "v77_sc relaunch: ppo_v55_league/ppo_best.pt + ent_coef=0.01"
   ],
-  "last_updated": "2026-04-12T11:20:00Z",
-  "context": "v68_sc shows Elo 1968 from incremental early placement — likely noise from iter_0010 checkpoint. Final Elo determined after training completes and candidate tournament runs with correct fixtures (v55/v54/v44/v45/v14). All major infrastructure fixes from this session committed."
+  "last_updated": "2026-04-12T17:03:30Z",
+  "context": "LESSON LEARNED: checkpoint_override files must point to ppo_best.pt (training checkpoint), NOT _scripted.pt (TorchScript inference-only). Scripted.pt files cannot be loaded with torch.load() for training. Opus root cause: (1) ent shock: SC restarts at ent=0.03 vs v55 trained at 0.01. (2) PFSP only samples 2/27 fixtures. Fix applied: ent=0.01. v77_sc tests v55 ppo_best + correct entropy. If plateau persists: abandon SC entirely, launch v56 non-SC (self-play only, ent=0.01 constant, 80-200 iters)."
 }
