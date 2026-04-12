@@ -17,39 +17,32 @@ LADDER="results/elo/elo_full_ladder.json"
 ELO_LOG="results/logs/elo/elo_${FINISHED}_update.log"
 NEXT_LOG="results/logs/ppo/ppo_${NEXT}.log"
 
-# Fixtures updated 2026-04-11: use ALL good scripted versions as league fixtures.
-# Broader opponent diversity provides harder training signal (Opus analysis:
-# v45 paradox — lowest rollout_wr = highest Elo because of harder opponents).
+# Fixtures: read from JSD-deduplicated fixture list (results/selected_fixtures.json).
+# To regenerate: uv run python scripts/select_league_fixtures.py
+# The JSON fixture_paths field lists scripted .pt paths + __heuristic__.
 FINISHED_SCRIPTED="data/checkpoints/scripted_for_elo/${FINISHED}_scripted.pt"
 # Panel eval still uses 3 fixed references for comparability
 PANEL_WEAKEST="data/checkpoints/scripted_for_elo/v8_scripted.pt"
 PANEL_MID="data/checkpoints/scripted_for_elo/v14_scripted.pt"
 PANEL_FRONTIER="data/checkpoints/scripted_for_elo/v22_scripted.pt"
 
-# Corrupted-era models: trained with T=1.2 + log_prob bugs (v27-v41). Excluded permanently.
-EXCLUDED_VERSIONS="27 28 29 30 31 32 33 34 35 36 37 38 39 40 41"
-MIN_SCRIPTED_VERSION=8
+FIXTURES_JSON="results/selected_fixtures.json"
 
-# Build full fixture list from all good scripted versions (excluding corrupted era + self)
-LEAGUE_FIXTURES=""
-for fix_path in data/checkpoints/scripted_for_elo/*_scripted.pt; do
-  [ -f "$fix_path" ] || continue
-  fix_name=$(basename "$fix_path" | sed 's/_scripted\.pt//')
-  # Extract numeric prefix from version (v12 -> 12, v65_sc -> 65)
-  fix_ver="${fix_name#v}"
-  fix_num="${fix_ver%%[^0-9]*}"
-  if [ -z "$fix_num" ]; then continue; fi
-  if [ "$fix_num" -lt "$MIN_SCRIPTED_VERSION" ]; then continue; fi
-  # Skip corrupted-era models (only exact numeric matches)
-  if echo "$EXCLUDED_VERSIONS" | grep -qw "$fix_num"; then continue; fi
-  # Skip the model about to be trained (it'll be the starting checkpoint)
-  if [ "$fix_name" = "$NEXT" ]; then continue; fi
-  LEAGUE_FIXTURES="$LEAGUE_FIXTURES $fix_path"
-done
-# Always include heuristic
-LEAGUE_FIXTURES="$LEAGUE_FIXTURES __heuristic__"
+# Load fixture paths from JSON; skip the model about to be trained
+LEAGUE_FIXTURES=$(python3 -c "
+import json, sys
+d = json.load(open('$FIXTURES_JSON'))
+paths = d['fixture_paths']
+out = [p for p in paths if '/${NEXT}_scripted.pt' not in p]
+print(' '.join(out))
+" 2>/dev/null)
+
+if [ -z "$LEAGUE_FIXTURES" ]; then
+  echo "ERROR: Could not load fixtures from $FIXTURES_JSON" >&2
+  exit 1
+fi
 FIXTURE_COUNT=$(echo $LEAGUE_FIXTURES | wc -w)
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] League fixtures: $FIXTURE_COUNT opponents (all good versions + heuristic)" \
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] League fixtures: $FIXTURE_COUNT opponents (from $FIXTURES_JSON)" \
   >> results/autonomous_decisions.log
 
 # --- Confirmation tournament: pick ppo_best.pt from panel eval history ---
