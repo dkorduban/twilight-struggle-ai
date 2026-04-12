@@ -61,22 +61,26 @@ fi
 # Step 1: Candidate tournament (pick best checkpoint within run)
 # ---------------------------------------------------------------------------
 if [ -f "${RUN_DIR}/panel_eval_history.json" ]; then
-  PANEL_WEAKEST="${SCRIPT_DIR}/v8_scripted.pt"
-  PANEL_MID="${SCRIPT_DIR}/v14_scripted.pt"
-  PANEL_FRONTIER="${SCRIPT_DIR}/v22_scripted.pt"
+  # 5-opponent panel (Opus-recommended 2026-04-12): v55+v54+v44+v45+v14, no heuristic
+  PANEL_V55="${SCRIPT_DIR}/v55_scripted.pt"
+  PANEL_V54="${SCRIPT_DIR}/v54_scripted.pt"
+  PANEL_V44="${SCRIPT_DIR}/v44_scripted.pt"
+  PANEL_V45="${SCRIPT_DIR}/v45_scripted.pt"
+  PANEL_V14="${SCRIPT_DIR}/v14_scripted.pt"
   if [ "$DRY_RUN" = "1" ]; then
-    echo "Step 1: Would run ppo_confirm_best.py vs v8, v14, v22, heuristic (200 games each)"
+    echo "Step 1: Would run ppo_confirm_best.py vs v55, v54, v44, v45, v14 (150 games each)"
   else
     log_decision "Running candidate tournament for $VERSION ..."
     uv run python scripts/ppo_confirm_best.py \
       --run-dir "$RUN_DIR" \
       --fixtures \
-        "v8:${PANEL_WEAKEST}" \
-        "v14:${PANEL_MID}" \
-        "v22:${PANEL_FRONTIER}" \
-        "heuristic" \
+        "v55:${PANEL_V55}" \
+        "v54:${PANEL_V54}" \
+        "v44:${PANEL_V44}" \
+        "v45:${PANEL_V45}" \
+        "v14:${PANEL_V14}" \
       --n-top 8 \
-      --n-games 200 \
+      --n-games 150 \
       --anchor v14 --anchor-elo 2015 \
       --script-dir "$SCRIPT_DIR" \
       2>&1 | tee "$CONFIRM_LOG"
