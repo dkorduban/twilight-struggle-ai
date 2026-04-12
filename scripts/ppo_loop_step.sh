@@ -60,13 +60,17 @@ echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] League fixtures: $FIXTURE_COUNT unique 
   >> results/autonomous_decisions.log
 
 # --- Confirmation tournament: pick ppo_best.pt from panel eval history ---
-# Runs ~10 min on CPU; selects the top-3 panel-eval checkpoints by avg combined WR,
-# runs a round-robin tournament among them + fixtures, copies winner to ppo_best.pt.
+# Runs non-blocking in background so the next training run starts immediately.
+# ppo_confirm_best.py selects the top-N panel-eval checkpoints and runs a
+# round-robin among them; winner is written to ppo_best.pt.
+# Next run uses ppo_final.pt as default (line below), updated to ppo_best.pt
+# once the background job completes. Since the watcher polls for ppo_final.pt,
+# there is no race condition — the next run is already well underway by then.
 CONFIRM_LOG="results/logs/elo/confirm_${FINISHED}.log"
 if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Running confirmation tournament for $FINISHED ..." \
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Launching confirmation tournament for $FINISHED (non-blocking) ..." \
     >> results/autonomous_decisions.log
-  uv run python scripts/ppo_confirm_best.py \
+  nohup uv run python scripts/ppo_confirm_best.py \
     --run-dir "$FINISHED_DIR" \
     --fixtures \
       "v8:${PANEL_WEAKEST}" \
@@ -77,8 +81,8 @@ if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
     --n-games 200 \
     --anchor v14 --anchor-elo 2015 \
     --script-dir data/checkpoints/scripted_for_elo \
-    2>&1 | tee "$CONFIRM_LOG"
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Confirmation tournament done for $FINISHED" \
+    >> "$CONFIRM_LOG" 2>&1 &
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Confirmation tournament launched in background (PID $!) for $FINISHED" \
     >> results/autonomous_decisions.log
 else
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] No panel_eval_history.json for $FINISHED — skipping confirmation tournament" \
