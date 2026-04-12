@@ -3255,7 +3255,14 @@ def main() -> None:
                         panel_log[f"panel/{opp_name}_us_wr"] = stats["us_wr"]
                         panel_log[f"panel/{opp_name}_combined_wr"] = stats["combined_wr"]
                     if valid_opps:
-                        avg_combined = sum(v["combined_wr"] for v in valid_opps.values()) / len(valid_opps)
+                        # Elo-weighted panel scoring: frontier opponents count more.
+                        # Weights calibrated to Elo range: v22~2096 > v14~2015 > v8~1915 > heuristic~1751.
+                        # Normalized over whichever opponents actually ran (some may error).
+                        _PANEL_WEIGHTS: dict[str, float] = {"v22": 0.40, "v14": 0.30, "v8": 0.20, "heuristic": 0.10}
+                        _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in valid_opps)
+                        avg_combined = sum(
+                            v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in valid_opps.items()
+                        ) / _wsum
                         panel_log["panel/avg_combined_wr"] = avg_combined
                         print(
                             f"  [panel eval iter {_panel_trigger_iter}] avg={avg_combined:.3f}: "

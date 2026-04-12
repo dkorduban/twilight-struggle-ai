@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# post_train_confirm.sh — confirmation tournament + Elo placement after PPO training.
+# post_train_confirm.sh — candidate tournament + Elo placement after PPO training.
 #
 # Designed to be called from train_ppo.py --post-train-hook or manually.
 # Handles arbitrary version names (v65, v66_sc, etc.) — no numeric-only assumption.
@@ -16,7 +16,7 @@
 #   bash scripts/post_train_confirm.sh <run_dir> --dry-run          # preview scope
 #   bash scripts/post_train_confirm.sh <run_dir> --full             # full ladder update
 #
-# Policy: post-training confirmation MUST use --incremental. >20 new matches = stop and investigate.
+# Policy: post-training placement MUST use --incremental. >20 new matches = stop and investigate.
 set -euo pipefail
 cd /home/dkord/code/twilight-struggle-ai
 
@@ -58,7 +58,7 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 1: Confirmation tournament (pick best checkpoint within run)
+# Step 1: Candidate tournament (pick best checkpoint within run)
 # ---------------------------------------------------------------------------
 if [ -f "${RUN_DIR}/panel_eval_history.json" ]; then
   PANEL_WEAKEST="${SCRIPT_DIR}/v8_scripted.pt"
@@ -67,7 +67,7 @@ if [ -f "${RUN_DIR}/panel_eval_history.json" ]; then
   if [ "$DRY_RUN" = "1" ]; then
     echo "Step 1: Would run ppo_confirm_best.py vs v8, v14, v22, heuristic (200 games each)"
   else
-    log_decision "Running confirmation tournament for $VERSION ..."
+    log_decision "Running candidate tournament for $VERSION ..."
     uv run python scripts/ppo_confirm_best.py \
       --run-dir "$RUN_DIR" \
       --fixtures \
@@ -80,10 +80,10 @@ if [ -f "${RUN_DIR}/panel_eval_history.json" ]; then
       --anchor v14 --anchor-elo 2015 \
       --script-dir "$SCRIPT_DIR" \
       2>&1 | tee "$CONFIRM_LOG"
-    log_decision "Confirmation tournament done for $VERSION"
+    log_decision "Candidate tournament done for $VERSION"
   fi
 else
-  echo "No panel_eval_history.json for $VERSION — skipping confirmation tournament"
+  echo "No panel_eval_history.json for $VERSION — skipping candidate tournament"
 fi
 
 # ---------------------------------------------------------------------------

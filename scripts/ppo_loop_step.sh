@@ -59,16 +59,16 @@ US_COUNT=$(echo $US_FIXTURES | wc -w)
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] League fixtures: $FIXTURE_COUNT unique (ussr=$USSR_COUNT us=$US_COUNT) from $FIXTURES_JSON" \
   >> results/autonomous_decisions.log
 
-# --- Confirmation tournament: pick ppo_best.pt from panel eval history ---
+# --- Candidate tournament: pick ppo_best.pt from panel eval history ---
 # Runs non-blocking in background so the next training run starts immediately.
-# ppo_confirm_best.py selects the top-N panel-eval checkpoints and runs a
-# round-robin among them; winner is written to ppo_best.pt.
-# Next run uses ppo_final.pt as default (line below), updated to ppo_best.pt
-# once the background job completes. Since the watcher polls for ppo_final.pt,
-# there is no race condition — the next run is already well underway by then.
+# ppo_confirm_best.py selects the top-N panel-eval checkpoints by Elo-weighted
+# panel WR, runs a round-robin among them; winner is written to ppo_best.pt.
+# Note: Option F (train_ppo.py) already saves ppo_running_best.pt on each panel
+# high-water mark, so ppo_best.pt should reflect the running best even before
+# this candidate tournament completes.
 CONFIRM_LOG="results/logs/elo/confirm_${FINISHED}.log"
 if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Launching confirmation tournament for $FINISHED (non-blocking) ..." \
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Launching candidate tournament for $FINISHED (non-blocking) ..." \
     >> results/autonomous_decisions.log
   nohup uv run python scripts/ppo_confirm_best.py \
     --run-dir "$FINISHED_DIR" \
@@ -82,18 +82,19 @@ if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
     --anchor v14 --anchor-elo 2015 \
     --script-dir data/checkpoints/scripted_for_elo \
     >> "$CONFIRM_LOG" 2>&1 &
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Confirmation tournament launched in background (PID $!) for $FINISHED" \
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Candidate tournament launched in background (PID $!) for $FINISHED" \
     >> results/autonomous_decisions.log
 else
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] No panel_eval_history.json for $FINISHED — skipping confirmation tournament" \
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] No panel_eval_history.json for $FINISHED — skipping candidate tournament" \
     >> results/autonomous_decisions.log
 fi
 
-# ppo_best.pt set by confirmation tournament above; fall back to ppo_final.pt if missing.
+# ppo_best.pt set by Option F (train_ppo.py running_best) or candidate tournament above;
+# fall back to ppo_final.pt if missing.
 FINISHED_CHECKPOINT="${FINISHED_DIR}/ppo_final.pt"
 if [ -f "${FINISHED_DIR}/ppo_best.pt" ]; then
   FINISHED_CHECKPOINT="${FINISHED_DIR}/ppo_best.pt"
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Using ppo_best.pt for $FINISHED (confirmation tournament winner)" \
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Using ppo_best.pt for $FINISHED (Option F / candidate tournament)" \
     >> results/autonomous_decisions.log
 fi
 
