@@ -3333,7 +3333,7 @@ def main() -> None:
                 # Use "spawn" to avoid inheriting CUDA context from parent (fork + CUDA = deadlock).
                 _panel_proc = _mp.get_context("spawn").Process(
                     target=_panel_eval_worker,
-                    args=(_panel_script_path, args.eval_panel, 200, 70000 + iteration * 200, _panel_result_path),
+                    args=(_panel_script_path, args.eval_panel, 60, 70000 + iteration * 200, _panel_result_path),
                     daemon=True,
                 )
                 _panel_proc.start()
