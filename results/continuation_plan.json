@@ -2,16 +2,14 @@
   "current_task": "Engine + tech debt cleanup (no new training). 4 bg agents completed.",
   "next_tasks": [
     "Wait for run_traced_game.py migration agent (a3c2559e) to complete",
-    "Wait for ISMCTS re-benchmark agent (a5c23900) to complete",
-    "Cherry-pick run_traced_game.py changes when agent returns",
-    "Pragmatic Heads Phase 3: game_loop.cpp Ask Not (card37) PolicyCallback for discard count",
-    "WS10: ISMCTS search budget sweep 100/200/400/800 sims after re-benchmark",
-    "Consider starting new training run (v80_sc) once engine completeness confirmed"
+    "WS10 ISMCTS: DEFCON-1 rate 92.5% post-fix \u2014 not a bug, model needs DEFCON defense training; do search budget sweep (200/400/800 sims) to find diminishing returns",
+    "Pragmatic Heads Phase 3: Ask Not (card37) + Our Man in Tehran (card84) PolicyCallback",
+    "Next training run: v80_sc from v55 checkpoint, with DP allocation + SmallChoice; target >2118 Elo",
+    "Consider DEFCON-aware reward shaping: penalize DEFCON-1 losses harder in PPO loss"
   ],
   "blocked_on": null,
   "active_background": [
-    "run_traced_game.py migration (a3c2559e)",
-    "ISMCTS re-benchmark (a5c23900)"
+    "run_traced_game.py migration (a3c2559e)"
   ],
   "completed_this_session": [
     "SPEED FIX: --rollout-workers 5 confirmed 3.2x speedup (187s vs 596s iter1)",
@@ -21,6 +19,6 @@
     "BUG FIX 3 (commit ddaca63): heuristic_pct=0 when __heuristic__ in fixture pool",
     "v77_sc BREAKTHROUGH iter10 Elo=2119.1, v78_sc HWM=0.488"
   ],
-  "last_updated": "2026-04-12T23:37:23.228700+00:00",
+  "last_updated": "2026-04-12T23:49:13.963113+00:00",
   "context": "v79_sc running with all fixes: 8+8 fixture pool (USSR: v55,v48,v19,v21,v22,v20,v58,v45 + heuristic; US: v45,v15,v58,v18,v20,v16,v21,v49 + heuristic), --rollout-workers 5, PFSP warmup 2.0x mult, symmetric PFSP+UCB, no heuristic double-dip. At 187s/iter, iter10 ETA is ~April 13 00:00-02:00 UTC (~30min per iter group). Watcher PID=587007 auto-launches v80_sc on completion."
 }
