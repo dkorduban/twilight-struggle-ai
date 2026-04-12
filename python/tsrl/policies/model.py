@@ -43,6 +43,7 @@ from tsrl.constants import (
     NUM_PLAYABLE_CARDS,
     NUM_STRATEGIES,
     SCALAR_DIM,
+    SMALL_CHOICE_MAX,  # re-exported for backward compat
 )
 
 INFLUENCE_HIDDEN = 128
