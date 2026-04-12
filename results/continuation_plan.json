@@ -1,20 +1,19 @@
 {
-  "current_task": "v67_sc training launched from v66_sc/ppo_best.pt via ppo_loop_step.sh. 80 iters, 5-opponent panel (v55+v54+v44+v45+v14), no heuristic, Elo-weighted scoring.",
+  "current_task": "v67_sc training running (PID 473035). v68_sc watcher active. Candidate tournament killed (stale fixtures); will re-run correctly after v67_sc completes.",
   "next_tasks": [
-    "Monitor v67_sc training progress — check autonomous_decisions.log / W&B for panel eval results",
-    "WS10: ISMCTS sweep — dispatch systematic search budget validation (100/200/400/800 sims vs heuristic and v55)",
-    "JSD matrix regeneration: add v66_sc to JSD analysis, re-run select_league_fixtures.py to update selected_fixtures.json",
+    "Review JSD probe eval results when a26de6b0 Codex agent completes",
+    "Review ISMCTS sweep results when a8ec1888 completes (may be redundant given ismcts_vs_model_v45_200g.md existing results)",
     "Phase 2b: DP decoder C++ wire-in — replace proportional allocation in C++ with DP decoder call",
     "WS8: CPU saturation audit — profile ppo_loop_step.sh to find bottleneck between rollout/train/export",
-    "JSD probe eval: spec at .claude/plan/jsd-probe-eval.md — add ProbeEvaluator to train_ppo.py",
-    "/askopus on iter_0010 dominance (>50% best checkpoints are iter_0010) — too short training? entropy annealing too aggressive?"
+    "Entropy schedule fix already committed — applies to v68_sc and later",
+    "Consider reducing n_iterations to 20-30 (Opus: 80 iters is ~4x too long; no improvement after iter ~10)"
   ],
   "blocked_on": null,
   "active_background": [
-    "v67_sc PPO training (PID~471117+, started 2026-04-12)",
-    "Candidate tournament for v66_sc (nohup background, started 2026-04-12)",
-    "Opus: Elo ladder bias analysis (COMPLETED — results/analysis/opus_analysis_20260412_elo_ladder_bias.md)"
+    "v67_sc PPO training (PID 473035, started 2026-04-12 01:46 UTC)",
+    "JSD probe eval Codex worktree (a26de6b0, started 2026-04-12)",
+    "ISMCTS sweep bg-codex-analyzer (a8ec1888, started 2026-04-12)"
   ],
-  "last_updated": "2026-04-12T09:00:00Z",
-  "context": "Session 2026-04-12 continued:\n- Elo-weighted panel scoring: {v55:0.35, v54:0.25, v44:0.20, v45:0.15, v14:0.05}\n- Panel + candidate tournament aligned to same 5-opponent pool (v55+v54+v44+v45+v14, no heuristic)\n- ppo_loop_step.sh updated (old: v8+v14+v22+heuristic; new: 5-opponent pool)\n- Heuristic removed from elo_full_ladder.json (Elo 1750; Opus: max 3 Elo shift on remaining models)\n- Panel eval time tracked → W&B (panel/eval_time_sec)\n- confirmation→candidate rename in all scripts\n- .claude/settings.json: added python3, nohup, git add/commit, cp, mkdir, echo, sqlite3, uv run python to allow list\n- v67_sc launched: from v66_sc/ppo_best.pt (Elo 2009), targeting v55 (Elo 2124)\n- Opus: BayesElo robust to composition; adding 5 clones shifts ratings <6 Elo; removing heuristic <3 Elo shift\n\nElo ladder top (no heuristic): v55=2124, v46=2108, v54=2108, v44=2106. v66_sc=2009.\nv67_sc running. Watcher set up for v67_sc→v68_sc auto-chain."
+  "last_updated": "2026-04-12T10:15:00Z",
+  "context": "Session 2026-04-12 continued:\n- Opus iter_0010 analysis DONE: model does NOT improve during 80 iters; WR flat from iter10-70; iter_0010 wins by first-mover bias in noisy HWM + old heuristic WR decline; 80 iters is ~4x too long\n- Global entropy schedule bug FIXED: ent_coef was always at minimum (0.003) for chained runs because global_iter_offset (230 for v67_sc) >> global_ent_decay_end (80). Fixed ppo_loop_step.sh to read PREV_TOTAL_ITERS from checkpoint and set decay window correctly.\n- Candidate tournament killed: was using stale fixtures (v8/v14/v22/heuristic). Will re-run with correct fixtures (v55/v54/v44/v45/v14) after v67_sc completes via ppo_loop_step.sh.\n- ISMCTS vs model: ALREADY DONE. ismcts_vs_model_v45_200g.md shows 92.5% WR (87% USSR, 98% US) at 100 sims. No further C++ work needed for ISMCTS vs model.\n- No Opus for 2 hours (budget): use other models for analysis.\n\nElo ladder top (no heuristic): v55=2124, v46=2108, v54=2108, v44=2106. v66_sc=2009.\nv67_sc running from v66_sc/ppo_best.pt (global_iter_offset=230, fixed entropy decay=[230,310])."
 }

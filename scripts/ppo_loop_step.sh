@@ -237,10 +237,22 @@ print(f'Carried over {len(out)} fixture WR entries (0.7x decay for discounted UC
     >> results/autonomous_decisions.log
 fi
 
+# --- Read total_iters from parent checkpoint for per-run entropy decay ---
+# Ensures each chained run gets fresh entropy annealing (global iter offset > 80 otherwise)
+PREV_TOTAL_ITERS=$(python3 -c "
+import torch, sys
+try:
+    ckpt = torch.load('${FINISHED_CHECKPOINT}', map_location='cpu', weights_only=False)
+    print(int(ckpt.get('args', {}).get('total_iters', 0)))
+except Exception as e:
+    print(0)
+" 2>/dev/null)
+PREV_TOTAL_ITERS="${PREV_TOTAL_ITERS:-0}"
+
 # --- Launch next PPO run ---
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from ${FINISHED} $(basename $FINISHED_CHECKPOINT)" \
   >> results/autonomous_decisions.log
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=2.0, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.01->0.003" \
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=2.0, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.01->0.003 global_decay=[${PREV_TOTAL_ITERS},$((PREV_TOTAL_ITERS+80))]" \
   >> results/autonomous_decisions.log
 
 nohup nice -n 10 uv run python scripts/train_ppo.py \
@@ -249,7 +261,7 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
   --n-iterations 80 --games-per-iter 200 \
   --lr 2e-5 --clip-eps 0.12 \
   --ent-coef 0.01 --ent-coef-final 0.003 \
-  --global-ent-decay-start 1 --global-ent-decay-end 80 \
+  --global-ent-decay-start "${PREV_TOTAL_ITERS}" --global-ent-decay-end "$((PREV_TOTAL_ITERS + 80))" \
   --max-kl 0.3 \
   --reset-optimizer \
   --league "$NEXT_DIR" \
