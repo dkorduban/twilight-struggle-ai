@@ -1693,19 +1693,26 @@ GameState sample_determinization(
     auto determinized = clone_game_state(gs);
     const auto opponent = other_side(acting_side);
     auto& opponent_hand = determinized.hands[to_index(opponent)];
-    const auto known_opp_count = count_hand_excluding_china(opponent_hand);
-    if (known_opp_count > opp_hand_size) {
-        throw std::invalid_argument("known opponent hand exceeds opp_hand_size");
+    auto hidden_pool = determinized.deck;
+
+    // The live state carries the opponent's true hand. For determinization,
+    // treat every non-China opponent card as hidden by returning it to the
+    // resampling pool before drawing a replacement hand of the same size.
+    for (const auto card_id : hand_to_vector(opponent_hand)) {
+        if (card_id == kChinaCardId) {
+            continue;
+        }
+        hidden_pool.push_back(card_id);
+        opponent_hand.reset(card_id);
     }
 
-    auto hidden_pool = determinized.deck;
     hidden_pool.erase(
         std::remove(hidden_pool.begin(), hidden_pool.end(), kChinaCardId),
         hidden_pool.end()
     );
     shuffle_with_numpy_rng(std::span<CardId>(hidden_pool.begin(), hidden_pool.end()), rng);
 
-    const auto hidden_needed = opp_hand_size - known_opp_count;
+    const auto hidden_needed = opp_hand_size;
     if (hidden_needed > static_cast<int>(hidden_pool.size())) {
         throw std::invalid_argument("not enough hidden cards to fill opponent hand");
     }
