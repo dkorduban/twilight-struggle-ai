@@ -110,82 +110,111 @@ fi
 # Step 3: Elo placement
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "incremental" ]; then
-  # INCREMENTAL: new model vs previous best + 2 nearest fixtures + heuristic only.
-  # Reads the current ladder to find the top-rated model as "previous best".
-  PREV_BEST=$(python3 -c "
-import json, sys
+  # INCREMENTAL — fast Elo placement with zero redundant games.
+  #
+  # Strategy:
+  #   - The candidate tournament (Step 1) already played VERSION vs PANEL
+  #     {v55, v54, v44, v45, v14} — those 5 pairs are in the SQL match cache.
+  #   - We add 3 DIVERSE opponents chosen to span the full Elo range:
+  #     bottom-quartile, median, and top (excluding panel models).
+  #     This anchors the rating across the full distribution, not just the top.
+  #   - Run round-robin among (panel + diverse + VERSION).
+  #     The 5 panel pairs are loaded from cache (0 new games).
+  #     Only the 3 diverse pairs are played (~600 games, ~3-5 min).
+  #   - Merge only VERSION's updated rating into elo_full_ladder.json.
+
+  # Panel fixtures used in ppo_confirm_best.py (Step 1) — results already cached.
+  PANEL="v55 v54 v44 v45 v14"
+
+  # Pick 3 diverse opponents from the full ladder, spanning the Elo range.
+  # Exclude panel members, heuristic, and the new version itself.
+  DIVERSE_FIXTURES=$(python3 - "$VERSION" "$LADDER" "$SCRIPT_DIR" "$PANEL" << 'PYEOF'
+import json, os, sys
+version = sys.argv[1]
+ladder_path = sys.argv[2]
+script_dir = sys.argv[3]
+panel = set(sys.argv[4].split())
+
 try:
-    d = json.load(open('$LADDER'))
-    ratings = d.get('ratings', {})
-    # Exclude the new version itself
-    others = {k: v for k, v in ratings.items() if k != '$VERSION'}
-    if others:
-        best = max(others.items(), key=lambda x: x[1].get('elo', 0))
-        print(best[0])
-    else:
-        print('v55')
+    d = json.load(open(ladder_path))
 except Exception:
-    print('v55')
-" 2>/dev/null)
+    d = {}
+ratings = d.get("ratings", {})
 
-  # 5-opponent pool (Opus-recommended, 2026-04-11):
-  # PREV_BEST (top of ladder) + v14 (anchor) + 3 mid-range from selected_fixtures.json
-  # No heuristic — heuristic is too weak to narrow Elo CI meaningfully.
-  # Round-robin of 6 models = C(6,2)=15 pairs; ~5 are new, rest cached.
-  FIXTURES_JSON="results/selected_fixtures.json"
+# Build candidate list: models with a scripted checkpoint on disk,
+# not in panel, not heuristic, not the new version.
+candidates = []
+for name, info in ratings.items():
+    if name in panel or name == version or name == "heuristic":
+        continue
+    pt = os.path.join(script_dir, f"{name}_scripted.pt")
+    if not os.path.exists(pt):
+        continue
+    candidates.append((name, info.get("elo", 1500)))
 
-  POOL_FIXTURES=$(python3 -c "
-import json, os
-exclude = {'$VERSION', '$PREV_BEST', 'v14', 'heuristic'}
-pool = []
-try:
-    d = json.load(open('$FIXTURES_JSON'))
-    # Combined fixture_paths, extract version names from paths
-    for path in d.get('fixture_paths', []):
-        name = os.path.basename(path).replace('_scripted.pt', '')
-        if name not in exclude and name not in pool:
-            pool.append(name)
-except Exception:
-    pass
-# Fallback if file missing or pool empty
-if not pool:
-    pool = ['v48', 'v45', 'v54']
-print(' '.join(pool[:3]))
-" 2>/dev/null)
+if not candidates:
+    sys.exit(0)
 
-  # Resolve to paths: PREV_BEST + v14 + 3 pool models + new version (no heuristic)
+candidates.sort(key=lambda x: x[1])
+n = len(candidates)
+
+picks = []
+# Bottom quartile
+picks.append(candidates[n // 4][0])
+# Median
+picks.append(candidates[n // 2][0])
+# Top (strongest not in panel)
+picks.append(candidates[-1][0])
+
+# Deduplicate (possible if n is small)
+seen = set()
+out = []
+for p in picks:
+    if p not in seen:
+        seen.add(p)
+        out.append(p)
+
+print(" ".join(out))
+PYEOF
+)
+
+  # Resolve new version's checkpoint path
+  NEW_PT="${RUN_DIR}/ppo_best_scripted.pt"
+  [ -f "$NEW_PT" ] || NEW_PT="${RUN_DIR}/ppo_final_scripted.pt"
+  [ -f "$NEW_PT" ] || NEW_PT="${FINISHED_SCRIPTED}"
+
+  # Build --models arg: panel + diverse + new version
   MODELS=""
   SEEN=""
-  for fixture in $PREV_BEST v14 $POOL_FIXTURES; do
-    echo "$SEEN" | grep -qw "$fixture" && continue  # skip duplicate
+  for fixture in $PANEL ${DIVERSE_FIXTURES:-}; do
+    echo "$SEEN" | grep -qw "$fixture" && continue
     SEEN="$SEEN $fixture"
     pt="${SCRIPT_DIR}/${fixture}_scripted.pt"
     [ -f "$pt" ] && MODELS="$MODELS ${fixture}:${pt}"
   done
-  # Add new version
-  NEW_PT="${RUN_DIR}/ppo_best_scripted.pt"
-  [ -f "$NEW_PT" ] || NEW_PT="${RUN_DIR}/ppo_final_scripted.pt"
-  [ -f "$NEW_PT" ] || NEW_PT="${FINISHED_SCRIPTED}"
   MODELS="${MODELS# } ${VERSION}:${NEW_PT}"
-  INCREMENTAL_FIXTURES="$PREV_BEST v14 $POOL_FIXTURES (no heuristic)"
 
-  MODEL_COUNT=$(echo $MODELS | wc -w)
-  NEW_MATCHES=$((MODEL_COUNT * (MODEL_COUNT - 1) / 2))
+  # Count: how many pairs involve VERSION (= new games to play)
+  TOTAL_OPPONENTS=$(echo "$PANEL ${DIVERSE_FIXTURES:-}" | wc -w)
+  PANEL_CACHED=5
+  NEW_GAME_PAIRS=$((TOTAL_OPPONENTS - PANEL_CACHED))
+  NEW_GAME_PAIRS=$((NEW_GAME_PAIRS < 0 ? 0 : NEW_GAME_PAIRS))
 
   if [ "$DRY_RUN" = "1" ]; then
-    echo "Step 3 (incremental): Would run round_robin on: $MODELS"
-    echo "  Pool from selected_fixtures.json: $POOL_FIXTURES"
-    echo "  ~$NEW_MATCHES total pairs (most will be cached), ~$((MODEL_COUNT - 1)) new matches"
-    echo "  Estimated runtime: <5 minutes"
+    echo "Step 3 (incremental):"
+    echo "  Panel (cached, 0 new games): $PANEL"
+    echo "  Diverse (new games):         ${DIVERSE_FIXTURES:-(none found)}"
+    echo "  New pairs to play:           ~$NEW_GAME_PAIRS × 200 games = $((NEW_GAME_PAIRS * 200)) games"
+    echo "  Estimated runtime:           ~$((NEW_GAME_PAIRS * 2 + 1)) minutes"
+    echo "  Models in pool:              $MODELS"
     exit 0
   fi
 
-  log_decision "Elo incremental placement: $VERSION vs $INCREMENTAL_FIXTURES"
+  log_decision "Elo incremental placement: $VERSION | panel(cached)=$PANEL | diverse=$DIVERSE_FIXTURES"
   echo "=== ELO incremental placement: $VERSION ===" | tee "$ELO_LOG"
 
-  # Write incremental results to a scratch file, then merge the new model's
-  # rating into the full ladder. Never overwrite elo_full_ladder.json with only
-  # the incremental subset (that would wipe all other model ratings).
+  # Write to scratch file; merge only VERSION's rating into the full ladder.
+  # Never overwrite elo_full_ladder.json with only the incremental subset.
   INCREMENTAL_OUT="${LOG_PREFIX}/elo_${VERSION}_incremental.json"
 
   uv run python scripts/run_elo_tournament.py \
@@ -199,22 +228,25 @@ print(' '.join(pool[:3]))
     --match-cache-dir results/matches \
     2>&1 | tee -a "$ELO_LOG"
 
-  # Merge new model's rating into the full ladder
+  # Merge VERSION's rating into the full ladder (atomic-ish via read-modify-write)
   python3 -c "
-import json, sys
+import json, sys, os
 try:
     incremental = json.load(open('$INCREMENTAL_OUT'))
-    ladder = json.load(open('$LADDER')) if __import__('os').path.exists('$LADDER') else {'ratings': {}}
+    ladder_path = '$LADDER'
+    ladder = json.load(open(ladder_path)) if os.path.exists(ladder_path) else {'ratings': {}}
     new_rating = incremental['ratings'].get('$VERSION')
     if new_rating:
         ladder['ratings']['$VERSION'] = new_rating
-        with open('$LADDER', 'w') as f:
+        with open(ladder_path, 'w') as f:
             json.dump(ladder, f, indent=2)
-        print(f'[confirm] Merged $VERSION into $LADDER: elo={new_rating[\"elo\"]:.0f}')
+        print(f'[confirm] Merged \$VERSION into {ladder_path}: elo={new_rating[\"elo\"]:.0f}')
     else:
-        print('[confirm] WARNING: $VERSION not found in incremental results', file=sys.stderr)
+        print('[confirm] WARNING: \$VERSION not found in incremental results', file=sys.stderr)
+        sys.exit(1)
 except Exception as e:
-    print(f'[confirm] ERROR merging into ladder: {e}', file=sys.stderr)
+    print(f'[confirm] ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
 " 2>&1 | tee -a "$ELO_LOG"
 
 else
