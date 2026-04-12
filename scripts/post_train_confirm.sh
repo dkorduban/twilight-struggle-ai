@@ -154,15 +154,39 @@ except Exception:
 
   log_decision "Elo incremental placement: $VERSION vs $INCREMENTAL_FIXTURES"
   echo "=== ELO incremental placement: $VERSION ===" | tee "$ELO_LOG"
+
+  # Write incremental results to a scratch file, then merge the new model's
+  # rating into the full ladder. Never overwrite elo_full_ladder.json with only
+  # the incremental subset (that would wipe all other model ratings).
+  INCREMENTAL_OUT="${LOG_PREFIX}/elo_${VERSION}_incremental.json"
+
   uv run python scripts/run_elo_tournament.py \
     --models $MODELS \
     --games 200 --anchor v14 --anchor-elo 2015 \
     --schedule round_robin \
     ${LADDER:+--resume-from "$LADDER"} \
-    --out "$LADDER" \
+    --out "$INCREMENTAL_OUT" \
     --script-dir "$SCRIPT_DIR" \
     --match-cache-dir results/matches \
     2>&1 | tee -a "$ELO_LOG"
+
+  # Merge new model's rating into the full ladder
+  python3 -c "
+import json, sys
+try:
+    incremental = json.load(open('$INCREMENTAL_OUT'))
+    ladder = json.load(open('$LADDER')) if __import__('os').path.exists('$LADDER') else {'ratings': {}}
+    new_rating = incremental['ratings'].get('$VERSION')
+    if new_rating:
+        ladder['ratings']['$VERSION'] = new_rating
+        with open('$LADDER', 'w') as f:
+            json.dump(ladder, f, indent=2)
+        print(f'[confirm] Merged $VERSION into $LADDER: elo={new_rating[\"elo\"]:.0f}')
+    else:
+        print('[confirm] WARNING: $VERSION not found in incremental results', file=sys.stderr)
+except Exception as e:
+    print(f'[confirm] ERROR merging into ladder: {e}', file=sys.stderr)
+" 2>&1 | tee -a "$ELO_LOG"
 
 else
   # FULL: round-robin across all models (explicit user request only)
