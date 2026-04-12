@@ -89,13 +89,13 @@ Codex does the heavy implementation. You may use other tools lightly when needed
 Call mcp__codex__codex with:
 - approval-policy: "never"
 - sandbox: "workspace-write"
-- developer-instructions: "Be concise. After each file change, run: git add <file> && git commit -m 'WIP: <what>'. After all changes, build and test. Report files changed + build/test result."
+- developer-instructions: "Be concise. After each file change, run: git add <file> && git commit -m 'WIP: <what>'. After all changes, build with `nice -n 19 cmake --build build-ninja -j` and test. Report files changed + build/test result."
 
 Resume with mcp__codex__codex-reply(threadId, "continue implementing") until done. Up to 15 calls.
 ```
 
 ### Build/test commands by language
-**C++:** `cmake --build build-ninja -j` then `ctest --test-dir build-ninja --output-on-failure`
+**C++:** `nice -n 19 cmake --build build-ninja -j` then `ctest --test-dir build-ninja --output-on-failure`
 **Python:** `uv run pytest tests/python/ -q -n 0`
 
 ---
