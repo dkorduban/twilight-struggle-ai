@@ -1,23 +1,24 @@
 {
-  "current_task": "v77_sc relaunching from ppo_v55_league/ppo_best.pt (Elo 2119) with ent_coef=0.01. Candidate tournament running, launch expected ~17:05 UTC.",
+  "current_task": "v79_sc training (PID 586847) iter2 in progress. Iter1 confirmed: t=187.5s (3.2x faster than workers=1). 8+8 fixture pool active.",
   "next_tasks": [
-    "Monitor v77_sc launch — confirm training started, ent_coef=0.01 in cmdline",
-    "v77_sc iter10 Elo (~17:09 UTC): if >2097 -> entropy fix worked; if ~2096 -> also need fixture fix or abandon SC",
-    "Opus Rec#1 (primary): after v77_sc, plan v56 non-SC — v55 lineage, self-play only, ent_coef=0.01 constant, 80-200 iters"
+    "Monitor iter2-5 for US fixture diversity (v45,v15,v58,v18,v20,v16,v21,v49 should appear in us_pool). US slots drew iter_0001 twice in iter1/iter2 (P=11% each — fine, just random).",
+    "v79_sc iter10 panel eval (ETA ~April 13 00:00-02:00 UTC at 187s/iter): target panel_wr > 0.488 (v78_sc HWM)",
+    "v79_sc iter10 Elo: target > 2097 (v78_sc). SOTA = 2119.1 (v77_sc)",
+    "At iter10: check if ppo_running_best.pt updated (panel HWM trigger)"
   ],
   "blocked_on": null,
   "active_background": [
-    "ppo_loop_step.sh relaunch (PID 555966) — candidate tournament for v76_sc running, v77_sc launch imminent",
-    "v77_sc checkpoint: ppo_v55_league/ppo_best.pt, ent_coef=0.01->0.003 (entropy shock fixed)"
+    "v79_sc training (PID 586847, iter2 in progress)",
+    "watcher PID=587007 watching v79_sc"
   ],
   "completed_this_session": [
-    "v72_sc=2097, v75_sc=2096, v76_sc=2069 — PLATEAU CONFIRMED across all SC generations",
-    "Infrastructure fix: per-gen round_robin -> instant plateau check (c82880d)",
-    "Opus analysis COMPLETE: entropy shock (ent=0.03 vs v55 at 0.01) + PFSP samples only 2/27 fixtures",
-    "FIX: ppo_loop_step.sh ent_coef 0.03->0.01 (commit 53e7e2c)",
-    "v77_sc first attempt CRASHED: scripted.pt is TorchScript (inference-only). Use ppo_best.pt for training.",
-    "v77_sc relaunch: ppo_v55_league/ppo_best.pt + ent_coef=0.01"
+    "SPEED FIX: --rollout-workers 5 confirmed 3.2x speedup (187s vs 596s iter1)",
+    "FIXTURE POOL: 8+8=13 active. USSR diversity confirmed: v20,v21 sampled iter1. US fixtures will appear in subsequent iters.",
+    "BUG FIX 1 (commit 9c69fa4): fixture_each formula fixed (removed /len(fixtures))",
+    "BUG FIX 2 (commit ddaca63): fixture_mass_mult=2.0 for iter<5 (67% fixture weight in warmup)",
+    "BUG FIX 3 (commit ddaca63): heuristic_pct=0 when __heuristic__ in fixture pool",
+    "v77_sc BREAKTHROUGH iter10 Elo=2119.1, v78_sc HWM=0.488"
   ],
-  "last_updated": "2026-04-12T17:03:30Z",
-  "context": "LESSON LEARNED: checkpoint_override files must point to ppo_best.pt (training checkpoint), NOT _scripted.pt (TorchScript inference-only). Scripted.pt files cannot be loaded with torch.load() for training. Opus root cause: (1) ent shock: SC restarts at ent=0.03 vs v55 trained at 0.01. (2) PFSP only samples 2/27 fixtures. Fix applied: ent=0.01. v77_sc tests v55 ppo_best + correct entropy. If plateau persists: abandon SC entirely, launch v56 non-SC (self-play only, ent=0.01 constant, 80-200 iters)."
+  "last_updated": "2026-04-12T20:32:00Z",
+  "context": "v79_sc running with all fixes: 8+8 fixture pool (USSR: v55,v48,v19,v21,v22,v20,v58,v45 + heuristic; US: v45,v15,v58,v18,v20,v16,v21,v49 + heuristic), --rollout-workers 5, PFSP warmup 2.0x mult, symmetric PFSP+UCB, no heuristic double-dip. At 187s/iter, iter10 ETA is ~April 13 00:00-02:00 UTC (~30min per iter group). Watcher PID=587007 auto-launches v80_sc on completion."
 }

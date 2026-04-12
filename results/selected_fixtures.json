@@ -1,24 +1,44 @@
 {
-  "ussr_pool": ["v45", "v22"],
-  "us_pool": ["v55", "v44"],
-  "combined": ["v55", "v44", "v45", "v22"],
+  "ussr_pool": ["v55", "v48", "v19", "v21", "v22", "v20", "v58", "v45"],
+  "us_pool": ["v45", "v15", "v58", "v18", "v20", "v16", "v21", "v49"],
+  "combined": ["v55", "v48", "v19", "v21", "v22", "v20", "v58", "v45", "v15", "v18", "v16", "v49"],
   "metric": "combined",
   "min_jsd": 0.01,
-  "ussr_pool_n": 2,
-  "us_pool_n": 2,
-  "_note": "Trimmed 2026-04-12: was 8+8=27 fixtures but PFSP only sampled v55+v45 (phantom pool). Reduced to 2+2=4 curated opponents spanning medium→hard. heuristic injected separately via __heuristic__. pfsp_exponent=1.5 (UCB c) stays — it's the exploration coefficient, not (1-WR)^p as the CLI help incorrectly states.",
+  "ussr_pool_n": 8,
+  "us_pool_n": 8,
+  "_note": "Restored 2026-04-12: expanded from 2+2=4 back to 8+8=12 unique (13 with heuristic) per JSD analysis in opus_analysis_20260411_145000_fixture_selection_v2.md. USSR pool = good US players (model plays USSR); US pool = good USSR players (model plays US). heuristic injected separately via __heuristic__. pfsp_exponent=1.5 (UCB c).",
   "fixture_paths": [
     "data/checkpoints/scripted_for_elo/v55_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v44_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v48_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v19_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v21_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v22_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v20_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v58_scripted.pt",
     "data/checkpoints/scripted_for_elo/v45_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v22_scripted.pt"
+    "data/checkpoints/scripted_for_elo/v15_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v18_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v16_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v49_scripted.pt"
   ],
   "ussr_fixture_paths": [
-    "data/checkpoints/scripted_for_elo/v45_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v22_scripted.pt"
+    "data/checkpoints/scripted_for_elo/v55_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v48_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v19_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v21_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v22_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v20_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v58_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v45_scripted.pt"
   ],
   "us_fixture_paths": [
-    "data/checkpoints/scripted_for_elo/v55_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v44_scripted.pt"
+    "data/checkpoints/scripted_for_elo/v45_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v15_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v58_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v18_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v20_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v16_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v21_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v49_scripted.pt"
   ]
 }
