@@ -104,6 +104,31 @@ CREATE TABLE IF NOT EXISTS elo_ladder (
     computed_at TEXT NOT NULL
 );
 
+-- Per-opponent, per-side rollout results for each training iteration.
+-- Finer-grained than rollout_stats (aggregate). Never used for BayesElo —
+-- hyperparams (temp, dir noise, PFSP sampling) differ from tournament games.
+CREATE TABLE IF NOT EXISTS rollout_opponent_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,            -- e.g. "ppo_v67_league" (args.out_dir basename)
+    checkpoint_name TEXT NOT NULL,   -- e.g. "v67_iter0120"
+    iter_num INTEGER NOT NULL,
+    opponent TEXT NOT NULL,          -- e.g. "v55_scripted", "heuristic", "self"
+    side TEXT NOT NULL,              -- "ussr" | "us" | "both"
+    wins INTEGER NOT NULL,
+    losses INTEGER NOT NULL,
+    draws INTEGER NOT NULL DEFAULT 0,
+    n_games INTEGER NOT NULL,
+    rollout_temp REAL,
+    dir_alpha REAL,
+    dir_epsilon REAL,
+    git_sha TEXT,
+    checkpoint_sha TEXT,             -- hash of the .pt file used for this rollout
+    logged_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ros_run ON rollout_opponent_stats(run_id);
+CREATE INDEX IF NOT EXISTS idx_ros_checkpoint ON rollout_opponent_stats(checkpoint_name, iter_num);
+CREATE INDEX IF NOT EXISTS idx_ros_opponent ON rollout_opponent_stats(opponent);
+
 CREATE INDEX IF NOT EXISTS idx_rollout_checkpoint ON rollout_stats(checkpoint_name);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_name ON checkpoints(name);
 CREATE INDEX IF NOT EXISTS idx_benchmarks_name ON benchmarks(checkpoint_name);
@@ -258,6 +283,64 @@ def log_rollout_wr(
             datetime.now(timezone.utc).isoformat(),
         ),
     )
+    conn.commit()
+    conn.close()
+
+
+def log_rollout_opponent_stats(
+    run_id: str,
+    checkpoint_name: str,
+    iter_num: int,
+    opponent_results: list[dict],
+    rollout_temp: float = 1.0,
+    dir_alpha: float = 0.0,
+    dir_epsilon: float = 0.0,
+    checkpoint_sha: Optional[str] = None,
+    db_path: Path = DB_PATH,
+) -> None:
+    """Log per-opponent, per-side rollout results for one training iteration.
+
+    Args:
+        run_id: Training run directory basename (e.g. "ppo_v67_league").
+        checkpoint_name: Checkpoint name at this iteration (e.g. "v67_iter0120").
+        iter_num: Training iteration number.
+        opponent_results: List of dicts, one per opponent slot:
+            {"opponent": str, "side": str, "wins": int, "losses": int,
+             "draws": int, "n_games": int}
+        rollout_temp: Temperature used for rollout sampling.
+        dir_alpha: Dirichlet alpha for root noise (0 = disabled).
+        dir_epsilon: Dirichlet epsilon for root noise (0 = disabled).
+        checkpoint_sha: Hash of the .pt file (for reproducibility).
+    """
+    conn = _get_db(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+    git = get_git_sha()
+    for r in opponent_results:
+        conn.execute(
+            """INSERT INTO rollout_opponent_stats
+               (run_id, checkpoint_name, iter_num, opponent, side,
+                wins, losses, draws, n_games,
+                rollout_temp, dir_alpha, dir_epsilon,
+                git_sha, checkpoint_sha, logged_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run_id,
+                checkpoint_name,
+                iter_num,
+                r["opponent"],
+                r["side"],
+                r.get("wins", 0),
+                r.get("losses", 0),
+                r.get("draws", 0),
+                r.get("n_games", 0),
+                rollout_temp,
+                dir_alpha,
+                dir_epsilon,
+                git,
+                checkpoint_sha,
+                now,
+            ),
+        )
     conn.commit()
     conn.close()
 

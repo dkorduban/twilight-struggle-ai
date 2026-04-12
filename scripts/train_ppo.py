@@ -1326,7 +1326,7 @@ def collect_rollout_league_batched(
         if wr_table_path:
             _update_wr_table_from_steps(wr_table, None, all_steps)
             _save_json_atomic(wr_table_path, wr_table)
-        return all_steps, {}
+        return all_steps, {}, []
 
     script_path = _export_temp_model(model)
 
@@ -1417,13 +1417,17 @@ def collect_rollout_league_batched(
             )
 
         actual_workers = min(n_workers, len(tasks))
+        # per_opp_results: [{opponent, side, wins, losses, draws, n_games}]
+        # populated below for SQL logging; keyed by task index for ordering.
+        per_opp_results: list[dict] = []
+
         with ThreadPoolExecutor(max_workers=actual_workers) as executor:
             futures_with_meta = [
-                (executor.submit(_run_one, ti, opp, cs), opp)
+                (executor.submit(_run_one, ti, opp, cs), opp, cs)
                 for ti, opp, cs in tasks
             ]
             all_steps: list[Step] = []
-            for f, opp in futures_with_meta:
+            for f, opp, collect_side in futures_with_meta:
                 batch = f.result()
                 if wr_table_path:
                     wr_key = opp
@@ -1432,6 +1436,19 @@ def collect_rollout_league_batched(
                     elif opp == HEURISTIC_FIXTURE:
                         wr_key = None
                     _update_wr_table_from_steps(wr_table, wr_key, batch)
+                # Compute per-batch W/L for SQL logging (terminal steps only)
+                terminal = [s for s in batch if s.done]
+                wins = sum(1 for s in terminal if s.reward > 0)
+                losses = sum(1 for s in terminal if s.reward < 0)
+                draws = len(terminal) - wins - losses
+                per_opp_results.append({
+                    "opponent": _label(opp),
+                    "side": collect_side,
+                    "wins": wins,
+                    "losses": losses,
+                    "draws": draws,
+                    "n_games": len(terminal),
+                })
                 all_steps.extend(batch)
 
         if wr_table_path:
@@ -1461,7 +1478,7 @@ def collect_rollout_league_batched(
                 if t_s >= 10:
                     ucb_metrics[f"ucb/{clean}_wr_us"] = int(info.get("wins_us", 0)) / t_s
 
-        return all_steps, ucb_metrics
+        return all_steps, ucb_metrics, per_opp_results
     finally:
         try:
             os.remove(script_path)
@@ -2943,7 +2960,7 @@ def main() -> None:
                 pool_path = str(Path(args.league) / f"iter_{iteration:04d}.pt")
                 _export_torchscript_model(model, pool_path, warn_only=True)
                 print(f"  Saved to league pool: {pool_path}", flush=True)
-            all_steps, ucb_metrics = collect_rollout_league_batched(
+            all_steps, ucb_metrics, _rollout_opp_results = collect_rollout_league_batched(
                 model, args.league, args.games_per_iter, seed, device,
                 vp_reward_coef=args.vp_reward_coef,
                 mix_k=args.league_mix_k,
@@ -3165,6 +3182,21 @@ def main() -> None:
                 )
             except Exception as _e:
                 print(f"[tracking] log_rollout_wr failed: {_e}")
+            # Per-opponent granular stats (league mode only)
+            if args.league and "_rollout_opp_results" in dir():
+                try:
+                    from tsrl.checkpoint_db import log_rollout_opponent_stats as _log_ros
+                    _log_ros(
+                        run_id=Path(args.out_dir).name,
+                        checkpoint_name=Path(new_ckpt_path).stem,
+                        iter_num=iteration,
+                        opponent_results=_rollout_opp_results,
+                        rollout_temp=args.rollout_temp,
+                        dir_alpha=getattr(args, "dir_alpha", 0.0),
+                        dir_epsilon=getattr(args, "dir_epsilon", 0.0),
+                    )
+                except Exception as _e:
+                    print(f"[tracking] log_rollout_opponent_stats failed: {_e}")
 
         # WS7: Launch incremental Elo confirmation non-blocking at milestones
         if _is_milestone(iteration) and os.path.exists("scripts/post_train_confirm.sh"):
