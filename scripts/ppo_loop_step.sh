@@ -188,7 +188,7 @@ echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] UPGO always enabled for $NEXT" \
 
 # --- League pool safety: guard against stale iter_*.pt from a crashed/restarted lineage ---
 if [ -d "$NEXT_DIR" ]; then
-  STALE_COUNT=$(ls "${NEXT_DIR}"/iter_*.pt 2>/dev/null | wc -l)
+  STALE_COUNT=$(find "${NEXT_DIR}" -maxdepth 1 -name "iter_*.pt" 2>/dev/null | wc -l)
   if [ "$STALE_COUNT" -gt 0 ]; then
     echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARNING: $NEXT_DIR has $STALE_COUNT stale iter_*.pt files — removing to prevent league pool mismatch" \
       >> results/autonomous_decisions.log
