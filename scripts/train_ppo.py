@@ -1068,7 +1068,7 @@ def sample_K_league_opponents(
         ]
         fixture_total = sum(fixture_pfsp_weights) or 1.0
         fixture_each = [
-            (past_total / max(len(active_fixtures), 1)) * 0.5 * (w / fixture_total)
+            past_total * 0.5 * (w / fixture_total)
             for w in fixture_pfsp_weights
         ] if active_fixtures else []
         combined_weights = past_self_weights + fixture_each
