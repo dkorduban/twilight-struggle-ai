@@ -268,14 +268,13 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
   --league-save-every 10 \
   --league-mix-k 6 \
   --ussr-league-fixtures \
-    $USSR_FIXTURES \
+    $USSR_FIXTURES __heuristic__ \
   --us-league-fixtures \
-    $US_FIXTURES \
+    $US_FIXTURES __heuristic__ \
   --league-fixtures \
-    $LEAGUE_FIXTURES \
+    $LEAGUE_FIXTURES __heuristic__ \
   --league-recency-tau 50 \
   --league-fixture-fadeout 999 \
-  --league-heuristic-pct 0.15 \
   --pfsp-exponent 1.5 \
   $UPGO_FLAG \
   --eval-every 10 \
