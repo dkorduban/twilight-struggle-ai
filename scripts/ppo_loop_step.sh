@@ -21,10 +21,14 @@ NEXT_LOG="results/logs/ppo/ppo_${NEXT}.log"
 # To regenerate: uv run python scripts/select_league_fixtures.py
 # The JSON fixture_paths field lists scripted .pt paths + __heuristic__.
 FINISHED_SCRIPTED="data/checkpoints/scripted_for_elo/${FINISHED}_scripted.pt"
-# Panel eval still uses 3 fixed references for comparability
-PANEL_WEAKEST="data/checkpoints/scripted_for_elo/v8_scripted.pt"
-PANEL_MID="data/checkpoints/scripted_for_elo/v14_scripted.pt"
-PANEL_FRONTIER="data/checkpoints/scripted_for_elo/v22_scripted.pt"
+# Panel eval and candidate tournament: same 5-opponent pool (Opus recommendation 2026-04-12).
+# Aligned so the panel HWM checkpoint (Option F) correlates directly with Elo placement score.
+# Pool: v55 (frontier) + v54/v44/v45 (top cluster) + v14 (anchor). No heuristic.
+PANEL_V55="data/checkpoints/scripted_for_elo/v55_scripted.pt"
+PANEL_V54="data/checkpoints/scripted_for_elo/v54_scripted.pt"
+PANEL_V44="data/checkpoints/scripted_for_elo/v44_scripted.pt"
+PANEL_V45="data/checkpoints/scripted_for_elo/v45_scripted.pt"
+PANEL_V14="data/checkpoints/scripted_for_elo/v14_scripted.pt"
 
 FIXTURES_JSON="results/selected_fixtures.json"
 
@@ -73,12 +77,13 @@ if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
   nohup uv run python scripts/ppo_confirm_best.py \
     --run-dir "$FINISHED_DIR" \
     --fixtures \
-      "v8:${PANEL_WEAKEST}" \
-      "v14:${PANEL_MID}" \
-      "v22:${PANEL_FRONTIER}" \
-      "heuristic" \
+      "v55:${PANEL_V55}" \
+      "v54:${PANEL_V54}" \
+      "v44:${PANEL_V44}" \
+      "v45:${PANEL_V45}" \
+      "v14:${PANEL_V14}" \
     --n-top 8 \
-    --n-games 200 \
+    --n-games 150 \
     --anchor v14 --anchor-elo 2015 \
     --script-dir data/checkpoints/scripted_for_elo \
     >> "$CONFIRM_LOG" 2>&1 &
@@ -342,10 +347,11 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
   $UPGO_FLAG \
   --eval-every 10 \
   --eval-panel \
-    "$PANEL_WEAKEST" \
-    "$PANEL_MID" \
-    "$PANEL_FRONTIER" \
-    "__heuristic__" \
+    "$PANEL_V55" \
+    "$PANEL_V54" \
+    "$PANEL_V44" \
+    "$PANEL_V45" \
+    "$PANEL_V14" \
   --rollout-workers 1 \
   --device cuda --wandb --wandb-run-name "ppo_${NEXT}" \
   >> "$NEXT_LOG" 2>&1 &

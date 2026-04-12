@@ -65,8 +65,9 @@ def score_candidates(history: dict, run_dir: str, n_top: int) -> list[tuple[floa
     Weights calibrated to Elo range: v22~2096 > v14~2015 > v8~1915 > heuristic~1751.
     Normalized over whichever opponents actually ran (some may error or be absent).
     """
-    # Weights must match --eval-panel opponents in ppo_loop_step.sh
-    PANEL_WEIGHTS: dict[str, float] = {"v22": 0.40, "v14": 0.30, "v8": 0.20, "heuristic": 0.10}
+    # Weights must match --eval-panel opponents in ppo_loop_step.sh.
+    # 5-opponent pool (Opus rec 2026-04-12): v55+v54+v44+v45+v14, no heuristic.
+    PANEL_WEIGHTS: dict[str, float] = {"v55": 0.35, "v54": 0.25, "v44": 0.20, "v45": 0.15, "v14": 0.05}
 
     scored = []
     for iter_str, res in history.items():

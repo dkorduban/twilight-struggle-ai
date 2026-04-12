@@ -2947,6 +2947,7 @@ def main() -> None:
     _panel_best_wr: float = -1.0
     _running_best_path = os.path.join(args.out_dir, "ppo_running_best.pt")
     _running_best_provenance_path = os.path.join(args.out_dir, "ppo_running_best_provenance.json")
+    _panel_launch_time: float = 0.0  # wall time when panel eval subprocess was launched
 
     for iteration in range(args.start_iteration, args.n_iterations + 1):
         t_iter_start = time.time()
@@ -3256,16 +3257,20 @@ def main() -> None:
                         panel_log[f"panel/{opp_name}_combined_wr"] = stats["combined_wr"]
                     if valid_opps:
                         # Elo-weighted panel scoring: frontier opponents count more.
-                        # Weights calibrated to Elo range: v22~2096 > v14~2015 > v8~1915 > heuristic~1751.
+                        # Weights calibrated to 5-opponent pool (Opus rec 2026-04-12):
+                        #   v55 (2124) > v54 (2108) > v44 (2106) > v45 (2102) > v14 (2015).
                         # Normalized over whichever opponents actually ran (some may error).
-                        _PANEL_WEIGHTS: dict[str, float] = {"v22": 0.40, "v14": 0.30, "v8": 0.20, "heuristic": 0.10}
+                        _PANEL_WEIGHTS: dict[str, float] = {"v55": 0.35, "v54": 0.25, "v44": 0.20, "v45": 0.15, "v14": 0.05}
                         _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in valid_opps)
                         avg_combined = sum(
                             v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in valid_opps.items()
                         ) / _wsum
+                        _panel_elapsed = time.time() - _panel_launch_time if _panel_launch_time > 0 else 0.0
                         panel_log["panel/avg_combined_wr"] = avg_combined
+                        panel_log["panel/eval_time_sec"] = _panel_elapsed
                         print(
-                            f"  [panel eval iter {_panel_trigger_iter}] avg={avg_combined:.3f}: "
+                            f"  [panel eval iter {_panel_trigger_iter}] avg={avg_combined:.3f} "
+                            f"elapsed={_panel_elapsed:.0f}s: "
                             + " | ".join(f"{k}={v['combined_wr']:.3f}" for k, v in valid_opps.items()),
                             flush=True,
                         )
@@ -3326,6 +3331,7 @@ def main() -> None:
             _panel_script_path = os.path.join(args.out_dir, f"panel_eval_{iteration:04d}.pt")
             _panel_result_path = os.path.join(args.out_dir, f"panel_eval_{iteration:04d}_result.json")
             _panel_trigger_iter = iteration
+            _panel_launch_time = time.time()
             try:
                 _export_torchscript_model(model, _panel_script_path, warn_only=False)
                 # Use "spawn" to avoid inheriting CUDA context from parent (fork + CUDA = deadlock).
