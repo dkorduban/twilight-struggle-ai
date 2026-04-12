@@ -29,7 +29,7 @@ from tsrl.policies.tune_minimal_hybrid import (
 )
 from tsrl.policies.validate_minimal_hybrid_snapshot import _load_params
 
-_RUNS_DIR = Path("python/tsrl/policies/runs")
+_RUNS_DIR = Path("results/logs/autotune_runs")
 
 
 def _log_snapshot(

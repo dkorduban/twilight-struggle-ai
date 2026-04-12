@@ -44,7 +44,7 @@ from tsrl.policies.tune_minimal_hybrid import (
 )
 from tsrl.schemas import Side
 
-_RUNS_DIR = Path("python/tsrl/policies/runs")
+_RUNS_DIR = Path("results/logs/autotune_runs")
 _INDEX_FILE = _RUNS_DIR / "index.jsonl"
 _PERTURBATION_SCALE = (
     (0.10,) * 21

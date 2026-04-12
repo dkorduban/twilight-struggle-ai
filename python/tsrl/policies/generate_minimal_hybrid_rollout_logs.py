@@ -622,7 +622,7 @@ def main() -> None:
     parser.add_argument(
         "--out-dir",
         default=(
-            "python/tsrl/policies/rollout_logs/"
+            "results/logs/rollout_logs/"
             f"{time.strftime('%Y%m%d_%H%M%S', time.localtime())}"
         ),
     )
