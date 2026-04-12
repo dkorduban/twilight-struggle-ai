@@ -9,6 +9,7 @@
 # Mirrors the structure of Snakefile (BC pipeline).
 
 import os
+import shlex
 import yaml
 
 # ---------------------------------------------------------------------------
@@ -63,6 +64,98 @@ def _ppo_train_args(name):
     if extra_args:
         parts.append(extra_args)
     return " ".join(parts)
+
+
+_DYNAMIC_TRAIN_DEFAULTS = {
+    "out_dir": "data/checkpoints/ppo_dynamic",
+    "checkpoint": "",
+    "next_version": "dynamic",
+    "prev_total_iters": 0,
+    "ussr_fixtures": "",
+    "us_fixtures": "",
+    "league_fixtures": "",
+    "upgo_flag": "",
+    "panel_v55": "",
+    "panel_v54": "",
+    "panel_v44": "",
+    "panel_v45": "",
+    "panel_v14": "",
+    "elo_log": "results/logs/ppo/ppo_dynamic.log",
+    "probe_set": "data/probe_positions.parquet",
+}
+
+
+def _split_cli_items(value):
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if value is None:
+        return []
+    text = str(value).strip()
+    return text.split() if text else []
+
+
+def _shell_join(items):
+    return " ".join(shlex.quote(str(item)) for item in items if str(item).strip())
+
+
+def _load_dynamic_train_cfg():
+    cfg = dict(_DYNAMIC_TRAIN_DEFAULTS)
+    train_config = config.get("train_config")
+    if not train_config:
+        return cfg
+    with open(train_config) as f:
+        loaded = yaml.safe_load(f) or {}
+    cfg.update(loaded)
+    return cfg
+
+
+_DYNAMIC_TRAIN_CFG = _load_dynamic_train_cfg()
+
+
+def _dynamic_ppo_train_args():
+    cfg = _DYNAMIC_TRAIN_CFG
+    prev_total_iters = int(cfg["prev_total_iters"])
+    run_name = f"ppo_{cfg['next_version']}"
+    eval_panel = [
+        cfg.get("panel_v55", ""),
+        cfg.get("panel_v54", ""),
+        cfg.get("panel_v44", ""),
+        cfg.get("panel_v45", ""),
+        cfg.get("panel_v14", ""),
+    ]
+    parts = [
+        "--n-iterations 30",
+        "--games-per-iter 200",
+        "--lr 2e-5",
+        "--clip-eps 0.12",
+        "--ent-coef 0.01",
+        "--ent-coef-final 0.003",
+        f"--global-ent-decay-start {prev_total_iters}",
+        f"--global-ent-decay-end {prev_total_iters + 30}",
+        "--max-kl 0.3",
+        "--reset-optimizer",
+        f"--league {shlex.quote(cfg['out_dir'])}",
+        "--league-save-every 10",
+        "--league-mix-k 6",
+        f"--ussr-league-fixtures {_shell_join(_split_cli_items(cfg.get('ussr_fixtures', '')))}",
+        f"--us-league-fixtures {_shell_join(_split_cli_items(cfg.get('us_fixtures', '')))}",
+        f"--league-fixtures {_shell_join(_split_cli_items(cfg.get('league_fixtures', '')))}",
+        "--league-recency-tau 50",
+        "--league-fixture-fadeout 999",
+        "--pfsp-exponent 1.5",
+        "--eval-every 10",
+        f"--eval-panel {_shell_join(_split_cli_items(eval_panel))}",
+        f"--probe-set {shlex.quote(cfg['probe_set'])}",
+        "--probe-every 10",
+        "--rollout-workers 1",
+        "--device cuda",
+        "--wandb",
+        f"--wandb-run-name {shlex.quote(run_name)}",
+    ]
+    upgo_flag = str(cfg.get("upgo_flag", "")).strip()
+    if upgo_flag:
+        parts.append(upgo_flag)
+    return " ".join(part for part in parts if part.strip())
 
 
 BENCH_GAMES = _bench["games_per_side"]
@@ -120,6 +213,36 @@ rule ppo_train:
             echo "[ppo_train] {wildcards.name}: finished at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
             touch {output.sentinel}
         fi
+        """
+
+
+rule ppo_train_dynamic:
+    input:
+        checkpoint=_DYNAMIC_TRAIN_CFG["checkpoint"]
+    output:
+        final=os.path.join(_DYNAMIC_TRAIN_CFG["out_dir"], "ppo_final.pt")
+    params:
+        out_dir=_DYNAMIC_TRAIN_CFG["out_dir"],
+        train_args=_dynamic_ppo_train_args(),
+        train_config=config.get("train_config", "")
+    resources:
+        gpu=1
+    log:
+        _DYNAMIC_TRAIN_CFG["elo_log"]
+    shell:
+        """
+        if [ -z "{params.train_config}" ]; then
+            echo "[ppo_train_dynamic] missing --config train_config=..." >&2
+            exit 1
+        fi
+        mkdir -p "{params.out_dir}" "$(dirname "{log}")"
+        echo "[ppo_train_dynamic] starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "{log}"
+        uv run python scripts/train_ppo.py \
+            --checkpoint "{input.checkpoint}" \
+            --out-dir "{params.out_dir}" \
+            {params.train_args} \
+            >> "{log}" 2>&1
+        echo "[ppo_train_dynamic] finished at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "{log}"
         """
 
 # ---------------------------------------------------------------------------

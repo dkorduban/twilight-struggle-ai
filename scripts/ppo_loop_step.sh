@@ -271,40 +271,34 @@ echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from ${FINISHED} $(basena
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=1.5, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.01->0.003 heuristic=0.15 n_iters=30 global_decay=[${PREV_TOTAL_ITERS},$((PREV_TOTAL_ITERS+30))]" \
   >> results/autonomous_decisions.log
 
-nohup nice -n 10 uv run python scripts/train_ppo.py \
-  --checkpoint "${FINISHED_CHECKPOINT}" \
-  --out-dir "$NEXT_DIR" \
-  --n-iterations 30 --games-per-iter 200 \
-  --lr 2e-5 --clip-eps 0.12 \
-  --ent-coef 0.01 --ent-coef-final 0.003 \
-  --global-ent-decay-start "${PREV_TOTAL_ITERS}" --global-ent-decay-end "$((PREV_TOTAL_ITERS + 30))" \
-  --max-kl 0.3 \
-  --reset-optimizer \
-  --league "$NEXT_DIR" \
-  --league-save-every 10 \
-  --league-mix-k 6 \
-  --ussr-league-fixtures \
-    $USSR_FIXTURES __heuristic__ \
-  --us-league-fixtures \
-    $US_FIXTURES __heuristic__ \
-  --league-fixtures \
-    $LEAGUE_FIXTURES __heuristic__ \
-  --league-recency-tau 50 \
-  --league-fixture-fadeout 999 \
-  --pfsp-exponent 1.5 \
-  $UPGO_FLAG \
-  --eval-every 10 \
-  --eval-panel \
-    "$PANEL_V55" \
-    "$PANEL_V54" \
-    "$PANEL_V44" \
-    "$PANEL_V45" \
-    "$PANEL_V14" \
-  --probe-set data/probe_positions.parquet \
-  --probe-every 10 \
-  --rollout-workers 1 \
-  --device cuda --wandb --wandb-run-name "ppo_${NEXT}" \
-  >> "$NEXT_LOG" 2>&1 &
+mkdir -p "$NEXT_DIR" results/logs/ppo
+
+cat > "$NEXT_DIR/snakemake_train_config.yaml" <<YAML
+out_dir: "$NEXT_DIR"
+checkpoint: "$FINISHED_CHECKPOINT"
+next_version: "$NEXT"
+prev_total_iters: $PREV_TOTAL_ITERS
+elo_log: "$NEXT_LOG"
+probe_set: "data/probe_positions.parquet"
+upgo_flag: "$UPGO_FLAG"
+ussr_fixtures: "$USSR_FIXTURES __heuristic__"
+us_fixtures: "$US_FIXTURES __heuristic__"
+league_fixtures: "$LEAGUE_FIXTURES __heuristic__"
+panel_v55: "$PANEL_V55"
+panel_v54: "$PANEL_V54"
+panel_v44: "$PANEL_V44"
+panel_v45: "$PANEL_V45"
+panel_v14: "$PANEL_V14"
+YAML
+
+nohup nice -n 10 uv run snakemake \
+  --snakefile /home/dkord/code/twilight-struggle-ai/Snakefile.ppo \
+  --config train_config="$NEXT_DIR/snakemake_train_config.yaml" \
+  --resources gpu=1 \
+  --cores all \
+  -j 1 \
+  ppo_train_dynamic \
+  >> "$ELO_LOG" 2>&1 &
 
 NEXT_PID=$!
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $NEXT launched PID=$NEXT_PID" \
