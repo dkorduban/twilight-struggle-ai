@@ -285,6 +285,8 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
     "$PANEL_V44" \
     "$PANEL_V45" \
     "$PANEL_V14" \
+  --probe-set data/probe_positions.parquet \
+  --probe-every 10 \
   --rollout-workers 1 \
   --device cuda --wandb --wandb-run-name "ppo_${NEXT}" \
   >> "$NEXT_LOG" 2>&1 &
