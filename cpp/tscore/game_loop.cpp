@@ -212,8 +212,9 @@ void apply_ops_randomly(
             targets.end()
         );
         if (targets.empty()) {
+            // All coup targets are DEFCON-restricted; fall back to influence placement.
             for (int i = 0; i < ops; ++i) {
-                const auto target = accessible[rng.choice_index(accessible.size())];
+                const auto target = choose_country(pub, 0, side, accessible, rng, policy_cb);
                 pub.set_influence(side, target, pub.influence_of(side, target) + 1);
             }
             return;
