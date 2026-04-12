@@ -136,6 +136,24 @@ CREATE INDEX IF NOT EXISTS idx_match_results_tournament ON match_results(tournam
 CREATE INDEX IF NOT EXISTS idx_match_results_pair ON match_results(model_a, model_b);
 CREATE INDEX IF NOT EXISTS idx_elo_ladder_model ON elo_ladder(model);
 CREATE INDEX IF NOT EXISTS idx_elo_ladder_tournament ON elo_ladder(tournament_id);
+
+-- Per-pair match cache (replaces results/matches/*.json files).
+-- model_a = min(model_a, model_b), model_b = max(...) — always normalized.
+CREATE TABLE IF NOT EXISTS match_cache (
+    model_a TEXT NOT NULL,
+    model_b TEXT NOT NULL,
+    wins_a INTEGER NOT NULL,
+    wins_b INTEGER NOT NULL,
+    draws INTEGER NOT NULL DEFAULT 0,
+    wins_a_ussr INTEGER,
+    wins_b_ussr INTEGER,
+    wins_a_us INTEGER,
+    wins_b_us INTEGER,
+    n_games INTEGER NOT NULL,
+    seed INTEGER,
+    run_at TEXT NOT NULL,
+    PRIMARY KEY (model_a, model_b)
+);
 """
 
 # Aggregate view DDL — created separately because executescript can't mix CREATE VIEW
@@ -469,3 +487,72 @@ def log_tournament(
 
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Per-pair match cache (replaces results/matches/*.json files)
+# ---------------------------------------------------------------------------
+
+
+def save_match_cache(entry: dict, db_path: Path = DB_PATH) -> None:
+    """Save/overwrite a single match result in match_cache (normalized pair order)."""
+    a, b = sorted([entry["model_a"], entry["model_b"]])
+    if a != entry["model_a"]:
+        wins_a, wins_b = entry["wins_b"], entry["wins_a"]
+        wins_a_ussr = entry.get("wins_b_ussr")
+        wins_b_ussr = entry.get("wins_a_ussr")
+        wins_a_us = entry.get("wins_b_us")
+        wins_b_us = entry.get("wins_a_us")
+    else:
+        wins_a, wins_b = entry["wins_a"], entry["wins_b"]
+        wins_a_ussr = entry.get("wins_a_ussr")
+        wins_b_ussr = entry.get("wins_b_ussr")
+        wins_a_us = entry.get("wins_a_us")
+        wins_b_us = entry.get("wins_b_us")
+
+    conn = _get_db(db_path)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO match_cache
+        (model_a, model_b, wins_a, wins_b, draws, wins_a_ussr, wins_b_ussr,
+         wins_a_us, wins_b_us, n_games, seed, run_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            a, b, wins_a, wins_b,
+            entry.get("draws", 0),
+            wins_a_ussr, wins_b_ussr, wins_a_us, wins_b_us,
+            entry.get("n_games", wins_a + wins_b),
+            entry.get("seed"),
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def load_match_cache(db_path: Path = DB_PATH) -> dict:
+    """Load all match cache entries as dict keyed by frozenset({model_a, model_b})."""
+    conn = _get_db(db_path)
+    rows = conn.execute(
+        """
+        SELECT model_a, model_b, wins_a, wins_b, draws,
+               wins_a_ussr, wins_b_ussr, wins_a_us, wins_b_us, n_games, seed
+        FROM match_cache
+        """
+    ).fetchall()
+    conn.close()
+
+    result = {}
+    for row in rows:
+        a, b, wa, wb, draws, wa_u, wb_u, wa_s, wb_s, n_games, seed = row
+        entry = {
+            "model_a": a, "model_b": b,
+            "wins_a": wa, "wins_b": wb, "draws": draws,
+            "wins_a_ussr": wa_u, "wins_b_ussr": wb_u,
+            "wins_a_us": wa_s, "wins_b_us": wb_s,
+            "n_games": n_games,
+            "seed": seed if seed is not None else -1,
+        }
+        result[frozenset([a, b])] = entry
+    return result

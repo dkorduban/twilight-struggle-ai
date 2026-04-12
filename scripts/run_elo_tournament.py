@@ -42,6 +42,7 @@ import tscore  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from cpp.tools.export_baseline_to_torchscript import export_checkpoint  # noqa: E402
+from tsrl.checkpoint_db import load_match_cache, save_match_cache  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # BayesElo solver (anchored, iterative)
@@ -427,10 +428,9 @@ def main():
     )
     p.add_argument(
         "--match-cache-dir", type=Path, default=Path("results/matches"),
-        help="Directory for per-pair match result files (one JSON per pair). "
-             "Written after each match; never overwritten by unrelated tournament runs. "
-             "Loaded before --resume-from so match history survives ladder resets. "
-             "Default: results/matches/",
+        help="DEPRECATED: match cache is now stored in results/metadata.sqlite3 "
+             "(match_cache table). This flag is accepted for backward compatibility "
+             "but has no effect.",
     )
     p.add_argument(
         "--mode", default=None,
@@ -477,21 +477,16 @@ def main():
 
     # Load prior match results when resuming
     prior_matches: dict[frozenset, dict] = {}
-    # Load per-pair match cache first (survives ladder resets).
-    cache_dir: Path = args.match_cache_dir
+    # Load per-pair match cache from SQL (replaces results/matches/*.json files).
     cache_loaded = 0
-    if cache_dir.exists():
-        for cache_file in sorted(cache_dir.glob("*.json")):
-            try:
-                entry = json.loads(cache_file.read_text())
-                key = frozenset([entry["model_a"], entry["model_b"]])
-                if key not in prior_matches:
-                    prior_matches[key] = entry
-                    cache_loaded += 1
-            except Exception:
-                pass
+    try:
+        prior_matches = load_match_cache()
+        cache_loaded = len(prior_matches)
         if cache_loaded:
-            print(f"Loaded {cache_loaded} match results from cache {cache_dir}/", flush=True)
+            print(f"Loaded {cache_loaded} match results from SQL match_cache", flush=True)
+    except Exception as e:
+        print(f"Warning: could not load SQL match cache: {e}", flush=True)
+        prior_matches = {}
 
     if args.resume_from is not None and args.resume_from.exists():
         prev = json.loads(args.resume_from.read_text())
@@ -594,11 +589,11 @@ def main():
                 "wr_a": round(wr_a, 4),
             }
             match_log.append(entry)
-            # Write to per-pair cache immediately so crash-recovery works.
-            pair_name = "__vs__".join(sorted([name_a, name_b]))
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file = cache_dir / f"{pair_name}.json"
-            cache_file.write_text(json.dumps(entry, indent=2))
+            # Write to SQL match_cache immediately (crash recovery via SQL transaction).
+            try:
+                save_match_cache(entry)
+            except Exception as e:
+                print(f"Warning: could not save to SQL match_cache: {e}", flush=True)
 
     # ---------------------------------------------------------------------------
     # Compute BayesElo: combined + bipartite per-side
