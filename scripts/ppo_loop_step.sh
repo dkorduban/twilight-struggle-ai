@@ -40,22 +40,25 @@ FIXTURES_JSON="results/selected_fixtures.json"
 # ussr_fixture_paths: ranked by elo_ussr (best USSR opponents).
 # us_fixture_paths:   ranked by elo_us  (best US opponents).
 # LEAGUE_FIXTURES = union of both sets (train_ppo.py handles per-side PFSP internally).
-read USSR_FIXTURES US_FIXTURES LEAGUE_FIXTURES <<< $(python3 -c "
+# NOTE: Do NOT use `read a b c <<< $(...)` — bash word-splits the output, so only the
+# first path goes to $a and the second path to $b. Each pool is read separately instead.
+_FIXTURES_PYTHON=$(python3 -c "
 import json
 d = json.load(open('$FIXTURES_JSON'))
-def skip(paths):
-    return [p for p in paths if '/${NEXT}_scripted.pt' not in p]
-ussr = skip(d['ussr_fixture_paths'])
-us   = skip(d['us_fixture_paths'])
-# Union preserving order: ussr first, then us extras
-seen = set()
-union = []
+skip_pat = '/${NEXT}_scripted.pt'
+ussr = [p for p in d['ussr_fixture_paths'] if skip_pat not in p]
+us   = [p for p in d['us_fixture_paths']   if skip_pat not in p]
+seen = set(); union = []
 for p in ussr + us:
     if p not in seen:
-        seen.add(p)
-        union.append(p)
-print(' '.join(ussr), '|||', ' '.join(us), '|||', ' '.join(union))
-" 2>/dev/null | awk -F'\\|\\|\\|' '{print $1, $2, $3}')
+        seen.add(p); union.append(p)
+print('USSR=' + ' '.join(ussr))
+print('US='   + ' '.join(us))
+print('UNION='+ ' '.join(union))
+" 2>/dev/null)
+USSR_FIXTURES=$(echo "$_FIXTURES_PYTHON"  | grep '^USSR='  | cut -d= -f2-)
+US_FIXTURES=$(echo "$_FIXTURES_PYTHON"    | grep '^US='    | cut -d= -f2-)
+LEAGUE_FIXTURES=$(echo "$_FIXTURES_PYTHON"| grep '^UNION=' | cut -d= -f2-)
 
 if [ -z "$LEAGUE_FIXTURES" ]; then
   echo "ERROR: Could not load fixtures from $FIXTURES_JSON" >&2
