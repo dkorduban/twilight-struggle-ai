@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
-"""Cron watchdog: detect stale/hung PPO training runs.
-
-Checks every PPO league directory for a latest_checkpoint.txt that hasn't
-been updated in >45 minutes while a training process is still running.
-Logs an alert to results/stale_training_alerts.log.
-
-Recommended crontab entry (run every 15 minutes):
-  */15 * * * * uv run python /home/dkord/code/twilight-struggle-ai/scripts/check_stale_training.py >> /home/dkord/code/twilight-struggle-ai/results/logs/stale_training_alerts.log 2>&1
+"""Watchdog: detect stale or crashed PPO training runs.
+Runs every 15 minutes via crontab. Logs to results/stale_training.log.
 """
 import glob
 import os
@@ -16,71 +10,89 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO = Path(__file__).parent.parent
-STALE_THRESHOLD_SECONDS = 45 * 60  # 45 minutes
+STALE_THRESHOLD_MINUTES = 60
+LOG_PATH = Path("results/stale_training.log")
+CHECKPOINTS_DIR = Path("data/checkpoints")
 
 
-def get_running_ppo_pids() -> dict[str, int]:
-    """Map version name -> PID for running train_ppo.py processes."""
-    result = {}
+def get_training_pids():
+    """Return list of PIDs running train_ppo.py."""
     try:
-        out = subprocess.check_output(
-            ["pgrep", "-a", "-f", "train_ppo.py"], text=True, timeout=5
-        )
-        for line in out.strip().splitlines():
-            parts = line.split(None, 1)
-            if len(parts) < 2:
-                continue
-            pid = int(parts[0])
-            cmd = parts[1]
-            # Extract --out-dir or --checkpoint path to get version name
-            for token in cmd.split():
-                if "ppo_v" in token:
-                    # e.g. data/checkpoints/ppo_v65_league → v65
-                    import re
-                    m = re.search(r"ppo_(v\d+)", token)
-                    if m:
-                        result[m.group(1)] = pid
-                        break
+        out = subprocess.check_output(["pgrep", "-f", "train_ppo.py"], text=True, timeout=5)
+        return [int(p) for p in out.strip().splitlines() if p.strip()]
     except subprocess.CalledProcessError:
-        pass  # no processes found
-    except Exception as e:
-        print(f"[check_stale] pgrep error: {e}", file=sys.stderr)
-    return result
+        return []
+    except Exception:
+        return []
 
 
-def check_stale():
+def find_newest_checkpoint(league_dir: Path):
+    """Return (path, mtime_seconds) of the newest .pt file in league_dir, or (None, 0)."""
+    latest_txt = league_dir / "latest_checkpoint.txt"
+    if latest_txt.exists():
+        try:
+            ckpt = Path(latest_txt.read_text().strip())
+            if ckpt.exists():
+                return ckpt, ckpt.stat().st_mtime
+        except Exception:
+            pass
+    pts = list(league_dir.glob("ppo_iter*.pt"))
+    if not pts:
+        return None, 0
+    newest = max(pts, key=lambda p: p.stat().st_mtime)
+    return newest, newest.stat().st_mtime
+
+
+def main():
+    os.chdir(Path(__file__).parent.parent)  # ensure we're at project root
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
     now = time.time()
-    running = get_running_ppo_pids()
-    alerts = []
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    league_dirs = sorted(REPO.glob("data/checkpoints/ppo_v*_league"))
-    for league_dir in league_dirs:
-        pointer = league_dir / "latest_checkpoint.txt"
-        if not pointer.exists():
-            continue
+    pids = get_training_pids()
+    league_dirs = sorted(CHECKPOINTS_DIR.glob("ppo_*_league"))
 
-        version = league_dir.name.replace("data/checkpoints/ppo_", "").replace("_league", "")
-        if version not in running:
-            continue  # not running, nothing to check
+    lines = []
 
-        mtime = pointer.stat().st_mtime
-        age = now - mtime
-        if age > STALE_THRESHOLD_SECONDS:
-            alerts.append(
-                f"STALE: {version} PID={running[version]} "
-                f"last_checkpoint={age/60:.0f}min ago "
-                f"({pointer})"
-            )
-
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    if alerts:
-        for a in alerts:
-            print(f"[{ts}] {a}")
+    if not pids:
+        lines.append(f"{now_str} INFO no training process running")
+        # Check for interrupted runs (no .training_complete but has checkpoints)
+        for ld in league_dirs:
+            if not (ld / ".training_complete").exists():
+                ckpt, mtime = find_newest_checkpoint(ld)
+                if ckpt and (now - mtime) < 3600 * 24:  # checkpoint < 24h old
+                    age_h = (now - mtime) / 3600
+                    lines.append(f"{now_str} WARN {ld.name}: no .training_complete, last ckpt {age_h:.1f}h ago — may be interrupted")
     else:
-        # Silent on clean check (don't fill log)
-        pass
+        lines.append(f"{now_str} INFO training running PIDs={pids}")
+        # Check freshness of checkpoints for running runs
+        for ld in league_dirs:
+            if (ld / ".training_complete").exists():
+                continue  # already done
+            ckpt, mtime = find_newest_checkpoint(ld)
+            if ckpt is None:
+                continue
+            age_min = (now - mtime) / 60
+            if age_min > STALE_THRESHOLD_MINUTES:
+                lines.append(
+                    f"{now_str} WARN {ld.name}: last checkpoint {age_min:.0f}min ago (threshold={STALE_THRESHOLD_MINUTES}min) — STALE"
+                )
+            else:
+                lines.append(f"{now_str} INFO {ld.name}: last checkpoint {age_min:.0f}min ago — OK")
+
+    with open(LOG_PATH, "a") as f:
+        for line in lines:
+            f.write(line + "\n")
+
+    # Print to stdout (for cron email / manual runs)
+    for line in lines:
+        print(line)
+
+    # Exit 1 if any WARN lines (useful for monitoring hooks)
+    if any("WARN" in l for l in lines):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    check_stale()
+    main()
