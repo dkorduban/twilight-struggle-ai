@@ -24,6 +24,7 @@ Usage (add new candidate, reuse existing results):
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import math
 import os
@@ -414,6 +415,28 @@ def main():
         os.setpriority(os.PRIO_PGRP, os.getpgid(0), 19)
     except Exception:
         pass
+
+    # Singleton guard: only one Elo tournament at a time.
+    # Uses exclusive flock — auto-released on process exit/crash.
+    _lock_path = Path("results/elo_tournament.lock")
+    _lock_path.parent.mkdir(parents=True, exist_ok=True)
+    _lock_fd = open(_lock_path, "w")
+    try:
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        try:
+            _held = open(_lock_path).read().strip()
+        except Exception:
+            _held = "unknown"
+        print(
+            f"[run_elo_tournament] ABORT: another instance already running (PID {_held}). "
+            "Only one Elo tournament may run at a time.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    _lock_fd.write(str(os.getpid()))
+    _lock_fd.flush()
+    # _lock_fd kept open for process lifetime
 
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
