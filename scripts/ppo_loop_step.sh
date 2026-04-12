@@ -28,21 +28,35 @@ PANEL_FRONTIER="data/checkpoints/scripted_for_elo/v22_scripted.pt"
 
 FIXTURES_JSON="results/selected_fixtures.json"
 
-# Load fixture paths from JSON; skip the model about to be trained
-LEAGUE_FIXTURES=$(python3 -c "
-import json, sys
+# Load per-side fixture paths from JSON; skip the model about to be trained.
+# ussr_fixture_paths: ranked by elo_ussr (best USSR opponents).
+# us_fixture_paths:   ranked by elo_us  (best US opponents).
+# LEAGUE_FIXTURES = union of both sets (train_ppo.py handles per-side PFSP internally).
+read USSR_FIXTURES US_FIXTURES LEAGUE_FIXTURES <<< $(python3 -c "
+import json
 d = json.load(open('$FIXTURES_JSON'))
-paths = d['fixture_paths']
-out = [p for p in paths if '/${NEXT}_scripted.pt' not in p]
-print(' '.join(out))
-" 2>/dev/null)
+def skip(paths):
+    return [p for p in paths if '/${NEXT}_scripted.pt' not in p]
+ussr = skip(d['ussr_fixture_paths'])
+us   = skip(d['us_fixture_paths'])
+# Union preserving order: ussr first, then us extras
+seen = set()
+union = []
+for p in ussr + us:
+    if p not in seen:
+        seen.add(p)
+        union.append(p)
+print(' '.join(ussr), '|||', ' '.join(us), '|||', ' '.join(union))
+" 2>/dev/null | awk -F'\\|\\|\\|' '{print $1, $2, $3}')
 
 if [ -z "$LEAGUE_FIXTURES" ]; then
   echo "ERROR: Could not load fixtures from $FIXTURES_JSON" >&2
   exit 1
 fi
 FIXTURE_COUNT=$(echo $LEAGUE_FIXTURES | wc -w)
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] League fixtures: $FIXTURE_COUNT opponents (from $FIXTURES_JSON)" \
+USSR_COUNT=$(echo $USSR_FIXTURES | wc -w)
+US_COUNT=$(echo $US_FIXTURES | wc -w)
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] League fixtures: $FIXTURE_COUNT unique (ussr=$USSR_COUNT us=$US_COUNT) from $FIXTURES_JSON" \
   >> results/autonomous_decisions.log
 
 # --- Confirmation tournament: pick ppo_best.pt from panel eval history ---
