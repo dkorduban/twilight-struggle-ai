@@ -335,12 +335,11 @@ nohup bash -c "
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] watcher for $NEXT launched (PID $!)" \
   >> results/autonomous_decisions.log
 
-# --- ELO plateau check + periodic full rebuild ---
-# post_train_confirm.sh --incremental already placed $FINISHED in the ladder during training.
-# We skip the per-generation round_robin (was 20-30 min, starved next gen's rollout collection).
-# Full round_robin rebuild runs every FULL_REBUILD_EVERY generations instead.
-FULL_REBUILD_EVERY=5
-REBUILD_COUNTER_FILE="results/elo_rebuild_counter.txt"
+# --- ELO plateau check + targeted extension for promising models ---
+# Incremental placement (5-6 matches) is done in post_train_confirm.sh --incremental.
+# Here we only run additional matchups if the new model looks promising (within 50 Elo of top).
+# Full round-robin of all models is NEVER run automatically — too slow (1081 pairs × 400 = 432k games).
+# To trigger a full rebuild manually: bash scripts/post_train_confirm.sh <run_dir> --full
 
 nohup bash -c "
   cd /home/dkord/code/twilight-struggle-ai
@@ -357,23 +356,101 @@ for name in ['$FINISHED', '${FINISHED}_scripted']:
 print('N/A')
 \")
 
-  # Periodic full round_robin rebuild every $FULL_REBUILD_EVERY generations
-  COUNTER=0
-  [ -f '$REBUILD_COUNTER_FILE' ] && COUNTER=\$(cat '$REBUILD_COUNTER_FILE')
-  COUNTER=\$((COUNTER + 1))
-  if [ \"\$COUNTER\" -ge \"$FULL_REBUILD_EVERY\" ]; then
-    echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] Full Elo ladder rebuild (gen \$COUNTER >= $FULL_REBUILD_EVERY)\" >> results/autonomous_decisions.log
-    nice -n 10 uv run python scripts/run_elo_tournament.py \
-      --models $MODELS \
-      --games 400 --anchor v14 --anchor-elo 2015 \
-      --schedule round_robin \
-      --resume-from '$LADDER' \
-      --out '$LADDER' \
-      --script-dir data/checkpoints/scripted_for_elo \
-      --match-cache-dir results/matches \
-      2>&1 | tee -a '$ELO_LOG'
-    # Re-read Elo after full rebuild
-    ELO_FINISHED=\$(python3 -c \"
+  # Promising-model extension: if new model is within 50 Elo of current top,
+  # play it vs up to 5 more top models to narrow the Elo CI.
+  # This is fast: 5 new pairs × 200 games = 1000 games, ~5 minutes.
+  EXTENDED=\$(python3 - '$FINISHED' '$LADDER' '$FINISHED_SCRIPTED' << 'PYEOF'
+import json, subprocess, sys, os
+finished = sys.argv[1]
+ladder_path = sys.argv[2]
+finished_pt = sys.argv[3]
+
+with open(ladder_path) as f:
+    d = json.load(f)
+ratings = d.get('ratings', {})
+elo_finished = ratings.get(finished, {}).get('elo')
+if elo_finished is None:
+    print('SKIP_NOELO')
+    sys.exit(0)
+
+# Find models already played vs finished (from incremental placement)
+played = set()
+for k, v in ratings.get(finished, {}).get('opponents', {}).items():
+    played.add(k)
+# Also check match cache directory
+cache_dir = 'results/matches'
+for fn in os.listdir(cache_dir) if os.path.isdir(cache_dir) else []:
+    if finished in fn and fn.endswith('.json'):
+        other = fn.replace(finished, '').strip('_').replace('__vs__', '').replace('.json', '')
+        played.add(other)
+
+ppo_only = {n: v for n, v in ratings.items() if n != 'heuristic'}
+ranked = sorted(ppo_only.items(), key=lambda x: -x[1].get('elo', 0))
+top_elo = ranked[0][1].get('elo', 0) if ranked else 0
+
+if elo_finished < top_elo - 50:
+    print(f'SKIP_NOT_PROMISING: {finished}({elo_finished:.0f}) is {elo_finished - top_elo:.0f} below top')
+    sys.exit(0)
+
+# Pick top-5 opponents not yet played
+script_dir = 'data/checkpoints/scripted_for_elo'
+extension_models = []
+for name, rating in ranked:
+    if name == finished:
+        continue
+    if name in played:
+        continue
+    pt = os.path.join(script_dir, f'{name}_scripted.pt')
+    if not os.path.exists(pt):
+        continue
+    extension_models.append(f'{name}:{pt}')
+    if len(extension_models) >= 5:
+        break
+
+if not extension_models:
+    print('SKIP_NO_NEW_OPPONENTS')
+    sys.exit(0)
+
+finished_pt_arg = f'{finished}:{finished_pt}' if os.path.exists(finished_pt) else ''
+if not finished_pt_arg:
+    print(f'SKIP_NO_FINISHED_PT: {finished_pt} missing')
+    sys.exit(0)
+
+models_arg = ' '.join([finished_pt_arg] + extension_models)
+print(f'EXTEND: {finished}({elo_finished:.0f}) is promising, playing vs {len(extension_models)} more: {\" \".join(n.split(\":\")[0] for n in extension_models)}')
+cmd = (
+    f'nice -n 19 uv run python scripts/run_elo_tournament.py'
+    f' --models {models_arg}'
+    f' --games 200 --anchor v14 --anchor-elo 2015'
+    f' --schedule round_robin'
+    f' --mode incremental --new-model {finished}'
+    f' --resume-from {ladder_path}'
+    f' --out results/logs/elo/elo_{finished}_extension.json'
+    f' --script-dir {script_dir}'
+    f' --match-cache-dir results/matches'
+)
+os.system(cmd)
+
+# Merge extension results into ladder
+try:
+    ext_data = json.load(open(f'results/logs/elo/elo_{finished}_extension.json'))
+    ladder_data = json.load(open(ladder_path))
+    new_r = ext_data['ratings'].get(finished)
+    if new_r:
+        ladder_data['ratings'][finished] = new_r
+        with open(ladder_path, 'w') as f:
+            json.dump(ladder_data, f, indent=2)
+        print(f'EXTENDED_OK: merged updated {finished} rating elo={new_r[\"elo\"]:.0f}')
+    else:
+        print(f'EXTENDED_NORATING: {finished} not found in extension output')
+except Exception as e:
+    print(f'EXTENDED_ERR: {e}')
+PYEOF
+)
+  echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] Extension check: \$EXTENDED\" >> results/autonomous_decisions.log
+
+  # Re-read Elo after potential extension
+  ELO_FINISHED=\$(python3 -c \"
 import json
 with open('$LADDER') as f: d=json.load(f)
 r = d.get('ratings', {})
@@ -382,9 +459,6 @@ for name in ['$FINISHED', '${FINISHED}_scripted']:
     if v: print(v); exit()
 print('N/A')
 \")
-    COUNTER=0
-  fi
-  echo \"\$COUNTER\" > '$REBUILD_COUNTER_FILE'
 
   # Plateau check
   PLATEAU_NOTE=\$(python3 - '$FINISHED' '$LADDER' '$PRE_THIRD' << 'PYEOF'
