@@ -1,17 +1,15 @@
 {
-  "current_task": "v66_sc PPO training running (PID 402749). Phase 2 DP decoder dispatched to Codex agent.",
+  "current_task": "Infrastructure sprint complete. v66_sc placed at 1982 Elo. Next: Phase 2b (DP decoder C++ wire-in) + WS4 (experiments.jsonl created). Need next PPO training run.",
   "next_tasks": [
-    "When v66_sc completes: benchmark vs v65_sc; if Elo improves \u2192 Phase 2 is confirmed working",
-    "When Codex finishes dp_decoder.py: review tests, then wire into model inference (Phase 2b)",
-    "Phase 2b: replace proportional allocation in mcts_batched.cpp with DP decoder call",
-    "After v66 benchmark: run compute_elo.py to update Elo ladder with v66_sc",
-    "WS6: extract shared constants to python/tsrl/constants.py (one extraction per commit)"
+    "Phase 2b: wire DP decoder into C++ inference — replace proportional allocation in mcts_batched.cpp or model forward with DP decoder call; requires cpp-engine-builder agent",
+    "Start next PPO generation: v67 from v66_sc or fresh from v55 checkpoint — hypothesis needed in experiments.jsonl before launch",
+    "WS10: ISMCTS search budget sweep — systematic validation of sim counts (50, 100, 200, 500) vs heuristic and v55; largest untouched strength lever",
+    "WS8: CPU saturation audit — profile ppo_loop_step.sh to find bottleneck between rollout/train/export",
+    "WS6: extract shared constants to python/tsrl/constants.py (one extraction per commit, low priority)",
+    "JSD matrix regeneration: add v66_sc to JSD analysis, re-run select_league_fixtures.py to update selected_fixtures.json"
   ],
   "blocked_on": null,
-  "active_background": [
-    "v66_sc PPO training (PID 402749) \u2014 80 iters from v65_sc, with working SmallChoice (sc_loss non-zero)",
-    "Codex agent: implementing python/tsrl/policies/dp_decoder.py + tests"
-  ],
-  "last_updated": "2026-04-11T17:15:00Z",
-  "context": "Three bugs found and fixed this session:\n1. rollout_model_vs_model_batched missing SmallChoice callback (sc_loss was 0 in all PPO runs)\n2. smoke_test.py used wrong benchmark_batched signature\n3. train_ppo.py bindings path detection: old build/bindings/ shadowed build-ninja/bindings/ when PYTHONPATH set\nAll Phase 1 acceptance criteria now verified and checked off.\nPhase 2 is CountryAllocHead DP Upgrade \u2014 dp_decoder.py is first deliverable.\nPhase 2b (wire into C++ inference) requires separate C++ work after Python module is done."
+  "active_background": [],
+  "last_updated": "2026-04-12T08:00:00Z",
+  "context": "Session 2026-04-12 completed:\n- SQL schema: tournaments + match_results + elo_ladder + rollout_opponent_stats + matchup_aggregates view\n- 1545 cached match JSONs migrated to metadata.sqlite3\n- post_train_confirm.sh: 5-opponent candidate pool (no heuristic), incremental→scratch→merge fix\n- Per-side fixture pools (ussr/us) wired through ppo_loop_step.sh → train_ppo.py\n- Autonomy policy fixed: Opus escalation blocks one lineage only, not all work\n- experiments.jsonl created with retroactive entries\n- results/analysis/ subdirectory for Opus analyses\n\nElo ladder top: v55=2124, v46=2108, v54=2108. v66_sc=1982 (last placed).\nPhase 2 DP decoder committed in Python. Phase 2b (C++ wire-in) is next major dev work.\nWS4 gap closed. WS10 (ISMCTS) remains largest untouched strength lever."
 }
