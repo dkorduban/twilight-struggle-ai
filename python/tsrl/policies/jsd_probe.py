@@ -317,7 +317,12 @@ class ProbeEvaluator:
         expected_scalars = scalars.shape[1]
         scalar_encoder = getattr(model, "scalar_encoder", None)
         if scalar_encoder is not None and hasattr(scalar_encoder, "in_features"):
-            expected_scalars = int(scalar_encoder.in_features)
+            # scalar_encoder.in_features = SCALAR_DIM + _REGION_SCALAR_DIM for models
+            # that append region scalars internally (e.g. TSCountryAttnModel).
+            # We must pass only the raw SCALAR_DIM portion; the model appends region
+            # scalars itself. Subtract _REGION_SCALAR_DIM if present.
+            region_dim = int(getattr(model, "_REGION_SCALAR_DIM", 0))
+            expected_scalars = int(scalar_encoder.in_features) - region_dim
 
         if scalars.shape[1] < expected_scalars:
             pad = torch.zeros(
