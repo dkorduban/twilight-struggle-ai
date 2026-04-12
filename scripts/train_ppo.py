@@ -19,7 +19,7 @@ import argparse
 import fcntl
 import json
 import os
-import subprocess
+import shutil
 import sys
 import tempfile
 import time
@@ -2652,6 +2652,40 @@ def export_checkpoint(
     os.replace(tmp_ptr, pointer_path)
 
 
+def _derive_version(out_dir: str) -> str:
+    version = Path(out_dir).name
+    if version.startswith("ppo_"):
+        version = version.removeprefix("ppo_")
+    if version.endswith("_league"):
+        version = version.removesuffix("_league")
+    return version or Path(out_dir).name
+
+
+def _flat_checkpoint_path(out_dir: str, version: str, iteration: int) -> str:
+    return os.path.join(out_dir, f"{version}.iter{iteration:04d}.pt")
+
+
+def _legacy_checkpoint_path(out_dir: str, iteration: int) -> str:
+    return os.path.join(out_dir, f"ppo_iter{iteration:04d}.pt")
+
+
+def _remove_if_exists(path: str) -> None:
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
+
+
+def _write_compat_alias(src_path: str, alias_path: str) -> None:
+    _remove_if_exists(alias_path)
+    try:
+        os.symlink(os.path.basename(src_path), alias_path)
+    except OSError:
+        shutil.copy2(src_path, alias_path)
+
+
 # ---------------------------------------------------------------------------
 # Main training loop
 # ---------------------------------------------------------------------------
@@ -2663,6 +2697,9 @@ def parse_args() -> argparse.Namespace:
                    help="Ignore optimizer state in checkpoint; start fresh Adam. "
                         "Use when restarting from a checkpoint trained under different code.")
     p.add_argument("--out-dir", required=True, help="Directory for PPO checkpoints")
+    p.add_argument("--version", default=None,
+                   help="Checkpoint version prefix. Defaults to deriving from --out-dir, "
+                        "e.g. ppo_v79_sc_league -> v79_sc.")
     p.add_argument("--n-iterations", type=int, default=200, help="PPO iterations")
     p.add_argument("--games-per-iter", type=int, default=200, help="Games per rollout batch")
     p.add_argument("--ppo-epochs", type=int, default=4, help="PPO update epochs per batch")
@@ -2780,6 +2817,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.version is None:
+        args.version = _derive_version(args.out_dir)
 
     # ── Singleton guard: prevent duplicate training runs ──────────────────────
     # Uses an exclusive flock so the lock auto-releases if the process crashes.
@@ -2913,6 +2952,7 @@ def main() -> None:
     # Keep a copy of BC checkpoint args for saving
     ckpt_meta = dict(ckpt_args)
     ckpt_meta["model_type"] = model_type
+    ckpt_meta["version"] = args.version
 
     # Card specs for DEFCON safety and ops values
     from tsrl.etl.game_data import load_cards
@@ -2951,7 +2991,7 @@ def main() -> None:
     # Track the last rolling checkpoint path so we can delete it after the next
     # successful save.  Milestone checkpoints (eval_every multiples and the
     # final iteration) are never deleted.
-    last_rolling_ckpt: str | None = None
+    last_rolling_iteration: int | None = None
 
     def _is_milestone(it: int) -> bool:
         return it % args.eval_every == 0 or it == args.n_iterations
@@ -3152,33 +3192,23 @@ def main() -> None:
         # ── Rolling checkpoint (every iteration) ─────────────────────────────
         # Write new checkpoint first, then delete the previous non-milestone one.
         # This ensures we always have the latest weights even after a crash.
-        new_ckpt_path = os.path.join(args.out_dir, f"ppo_iter{iteration:04d}.pt")
-        ckpt_meta["total_iters"] = global_iter_offset + iteration
-        export_checkpoint(model, new_ckpt_path, ckpt_meta, optimizer=optimizer)
-        if _TRACKING_AVAILABLE:
-            try:
-                _hp = {k: v for k, v in vars(args).items() if isinstance(v, (int, float, str, bool, type(None)))}
-                _log_checkpoint(
-                    name=Path(new_ckpt_path).stem,
-                    file_path=Path(new_ckpt_path),
-                    hyperparams=_hp,
-                    wandb_run_id=wandb_run.id if wandb_run is not None else None,
-                    parent_name=getattr(args, "checkpoint", None),
-                )
-            except Exception as _e:
-                print(f"[tracking] log_checkpoint failed: {_e}")
+        new_ckpt_path = _flat_checkpoint_path(args.out_dir, args.version, iteration)
+        export_checkpoint(model, new_ckpt_path, ckpt_meta)
+        legacy_ckpt_path = _legacy_checkpoint_path(args.out_dir, iteration)
+        _write_compat_alias(new_ckpt_path, legacy_ckpt_path)
+        _write_compat_alias(
+            new_ckpt_path.replace(".pt", "_scripted.pt"),
+            legacy_ckpt_path.replace(".pt", "_scripted.pt"),
+        )
+
         # Delete previous rolling checkpoint if it was not a milestone.
-        if last_rolling_ckpt is not None and not _is_milestone(
-            int(os.path.basename(last_rolling_ckpt).removeprefix("ppo_iter").split(".")[0])
-        ):
-            try:
-                os.remove(last_rolling_ckpt)
-                scripted = last_rolling_ckpt.replace(".pt", "_scripted.pt")
-                if os.path.exists(scripted):
-                    os.remove(scripted)
-            except OSError:
-                pass
-        last_rolling_ckpt = new_ckpt_path
+        if last_rolling_iteration is not None and not _is_milestone(last_rolling_iteration):
+            old_flat = _flat_checkpoint_path(args.out_dir, args.version, last_rolling_iteration)
+            old_legacy = _legacy_checkpoint_path(args.out_dir, last_rolling_iteration)
+            for old_path in (old_flat, old_legacy):
+                _remove_if_exists(old_path)
+                _remove_if_exists(old_path.replace(".pt", "_scripted.pt"))
+        last_rolling_iteration = iteration
 
         # WS3: Log rollout win rates to metadata DB
         if _TRACKING_AVAILABLE:
@@ -3400,32 +3430,8 @@ def main() -> None:
         except Exception as _e:
             print(f"[tracking] log_checkpoint(final) failed: {_e}")
 
-    # Option F: ppo_best.pt = ppo_running_best.pt (panel high-water mark checkpoint)
-    # if panel eval ran at least once, otherwise fall back to ppo_final.pt.
-    # Avoids the systematic ~76 Elo penalty of starting the next run from a degraded endpoint.
-    # (Opus analysis 2026-04-12: ppo_final.pt is worst or near-worst in 83% of runs.)
-    import shutil
-    best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
-    if os.path.exists(_running_best_path):
-        shutil.copy2(_running_best_path, best_ckpt_path)
-        _rb_scripted = _running_best_path.replace(".pt", "_scripted.pt")
-        if os.path.exists(_rb_scripted):
-            shutil.copy2(_rb_scripted, best_scripted)
-        # Load provenance to log which iter was selected.
-        _prov_src = "unknown"
-        if os.path.exists(_running_best_provenance_path):
-            try:
-                with open(_running_best_provenance_path) as _pf:
-                    _prov_src = json.load(_pf).get("source_checkpoint", "unknown")
-            except Exception:
-                pass
-        print(
-            f"ppo_best.pt ← ppo_running_best.pt (panel HWM: {_prov_src}, "
-            f"avg_wr={_panel_best_wr:.4f})",
-            flush=True,
-        )
-    else:
-        # No panel eval ran (eval_panel disabled or no milestone reached).
+    # When benchmarking is disabled ppo_best.pt is never written; use final as best.
+    if args.benchmark_every == 0 and not os.path.exists(best_ckpt_path):
         shutil.copy2(final_path, best_ckpt_path)
         final_scripted = final_path.replace(".pt", "_scripted.pt")
         if os.path.exists(final_scripted):
