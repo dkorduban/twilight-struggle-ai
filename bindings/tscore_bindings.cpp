@@ -592,6 +592,42 @@ PYBIND11_MODULE(tscore, m) {
         "Callback signature: (state_dict, hand_list, holds_china, side_int) -> action_dict or None."
     );
 
+    // play_traced_game_with_callback: run ONE traced game with a Python callback as both sides.
+    // Returns a TracedGame (with .steps and .result) suitable for human-readable game replay.
+    m.def(
+        "play_traced_game_with_callback",
+        [](py::function callback, py::object seed_obj) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            const ts::PolicyFn callback_fn = [&callback](const ts::PublicState& pub, const ts::CardSet& hand, bool holds_china, ts::Pcg64Rng& /*rng*/) -> std::optional<ts::ActionEncoding> {
+                py::gil_scoped_acquire gil;
+                py::dict state = public_state_to_dict(pub);
+                py::list hand_list = bitset_to_list(hand);
+                py::object result = callback(state, hand_list, holds_china, static_cast<int>(pub.phasing));
+                if (result.is_none()) {
+                    return std::nullopt;
+                }
+                py::dict action_dict = result.cast<py::dict>();
+                ts::ActionEncoding action;
+                action.card_id = static_cast<ts::CardId>(action_dict["card_id"].cast<int>());
+                action.mode = static_cast<ts::ActionMode>(action_dict["mode"].cast<int>());
+                for (auto t : action_dict["targets"].cast<std::vector<int>>()) {
+                    action.targets.push_back(static_cast<ts::CountryId>(t));
+                }
+                return action;
+            };
+            py::gil_scoped_release release;
+            return ts::play_game_traced_fn(callback_fn, callback_fn, seed);
+        },
+        py::arg("callback"),
+        py::arg("seed") = py::none(),
+        "Run ONE game where both sides use the same Python callback; returns TracedGame.\n"
+        "Callback signature: (state_dict, hand_list, holds_china, side_int) -> action_dict or None.\n"
+        "TracedGame.steps is a list of StepTrace; TracedGame.result is a GameResult."
+    );
+
 #if defined(TS_BUILD_TORCH_RUNTIME)
     m.def(
         "play_learned_matchup",
