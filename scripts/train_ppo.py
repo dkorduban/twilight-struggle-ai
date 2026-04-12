@@ -3115,34 +3115,6 @@ def main() -> None:
             flush=True,
         )
 
-        if probe_eval is not None and args.probe_every > 0 and iteration % args.probe_every == 0:
-            was_training = model.training
-            model.eval()
-            with torch.no_grad():
-                if last_rolling_ckpt and Path(last_rolling_ckpt).exists():
-                    prev_model, _, _ = load_model(last_rolling_ckpt, device=device)
-                    prev_model.eval()
-                    m = probe_eval.compare(model, prev_model)
-                    log_dict.update({
-                        "probe/card_jsd_vs_prev": m.card_jsd,
-                        "probe/mode_jsd_vs_prev": m.mode_jsd,
-                        "probe/country_jsd_vs_prev": m.country_jsd,
-                        "probe/value_mae_vs_prev": m.value_mae,
-                        "probe/top1_card_agree_vs_prev": m.top1_card_agree,
-                        "probe/card_jsd_early_vs_prev": m.card_jsd_early,
-                        "probe/card_jsd_mid_vs_prev": m.card_jsd_mid,
-                        "probe/card_jsd_late_vs_prev": m.card_jsd_late,
-                    })
-                    del prev_model
-                if probe_bc_model is not None:
-                    m_bc = probe_eval.compare(model, probe_bc_model)
-                    log_dict.update({
-                        "probe/card_jsd_vs_bc": m_bc.card_jsd,
-                        "probe/mode_jsd_vs_bc": m_bc.mode_jsd,
-                        "probe/value_mae_vs_bc": m_bc.value_mae,
-                    })
-            model.train(was_training)
-
         # ── Rolling checkpoint (every iteration) ─────────────────────────────
         # Write new checkpoint first, then delete the previous non-milestone one.
         # This ensures we always have the latest weights even after a crash.
@@ -3236,6 +3208,30 @@ def main() -> None:
         _add_region_net_delta_stats(terminal_steps, log_dict)
         if args.league and ucb_metrics:
             log_dict.update(ucb_metrics)
+        if probe_eval is not None and args.probe_every > 0 and iteration % args.probe_every == 0:
+            with torch.no_grad():
+                if last_rolling_ckpt and Path(last_rolling_ckpt).exists():
+                    prev_model, _, _ = load_model(last_rolling_ckpt, device=device)
+                    prev_model.eval()
+                    m = probe_eval.compare(model, prev_model)
+                    log_dict.update({
+                        "probe/card_jsd_vs_prev": m.card_jsd,
+                        "probe/mode_jsd_vs_prev": m.mode_jsd,
+                        "probe/country_jsd_vs_prev": m.country_jsd,
+                        "probe/value_mae_vs_prev": m.value_mae,
+                        "probe/top1_card_agree_vs_prev": m.top1_card_agree,
+                        "probe/card_jsd_early_vs_prev": m.card_jsd_early,
+                        "probe/card_jsd_mid_vs_prev": m.card_jsd_mid,
+                        "probe/card_jsd_late_vs_prev": m.card_jsd_late,
+                    })
+                    del prev_model
+                if probe_bc_model is not None:
+                    m_bc = probe_eval.compare(model, probe_bc_model)
+                    log_dict.update({
+                        "probe/card_jsd_vs_bc": m_bc.card_jsd,
+                        "probe/mode_jsd_vs_bc": m_bc.mode_jsd,
+                        "probe/value_mae_vs_bc": m_bc.value_mae,
+                    })
 
         # ── Async panel eval: collect result from previous run ────────────────
         if _panel_proc is not None and not _panel_proc.is_alive():
