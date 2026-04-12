@@ -2,57 +2,34 @@
 """Run one traced self-play game and print a human-readable action log.
 
 Usage:
-    PYTHONPATH=build-ninja/bindings uv run python scripts/run_traced_game.py [--model PATH] [--seed N]
+    PYTHONPATH=build-ninja/bindings uv run python scripts/run_traced_game.py [--model PATH] [--seed N] [--heuristic]
 """
 from __future__ import annotations
 
 import argparse
 import math
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import torch
 
-# Ensure package is importable when run from repo root.
-sys.path.insert(0, str(Path(__file__).parents[1] / "python"))
+sys.path.insert(0, "build-ninja/bindings")
 
-from tsrl.engine.game_loop import (  # noqa: E402
-    _MAX_TURNS,
-    _ars_for_turn,
-    _end_of_turn,
-    _run_action_rounds,
-    _run_extra_ar,
-    _run_headline_phase,
-    GameResult,
-    Policy,
-)
-from tsrl.engine.game_state import advance_to_late_war, advance_to_mid_war, deal_cards, reset  # noqa: E402
-from tsrl.engine.legal_actions import enumerate_actions  # noqa: E402
-from tsrl.engine.rng import make_rng  # noqa: E402
-from tsrl.engine.step import _copy_pub  # noqa: E402
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT / "python"))
+
+import tscore  # noqa: E402
 from tsrl.etl.game_data import load_cards, load_countries  # noqa: E402
-from tsrl.policies.minimal_hybrid import make_minimal_hybrid_policy  # noqa: E402
-from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side  # noqa: E402
 
 _DEFAULT_MODEL = Path("data/checkpoints/scripted_for_elo/v55_scripted.pt")
-_EARLY_SCALAR_DIM = 11
 _COUNTRY_COUNT = 86
 _CARD_MASK_SLOTS = 112
 
-
-@dataclass
-class TracedStep:
-    turn: int
-    ar: int
-    side: Side
-    holds_china: bool
-    pub_snapshot: PublicState
-    post_pub: PublicState | None
-    action: ActionEncoding
-    ussr_hand: tuple[int, ...]
-    us_hand: tuple[int, ...]
+_MODE_INFLUENCE = 0
+_MODE_COUP = 1
+_MODE_REALIGN = 2
+_MODE_SPACE = 3
+_MODE_EVENT = 4
 
 
 # ---------------------------------------------------------------------------
@@ -69,48 +46,61 @@ def _country_name(cid: int, countries: dict) -> str:
     return spec.name if spec else f"country#{cid}"
 
 
-def _side_str(side: Side) -> str:
-    return "USSR" if side == Side.USSR else "US"
+def _side_str(side: tscore.Side) -> str:
+    return "USSR" if side == tscore.Side.USSR else "US"
 
 
-def _mode_str(mode: ActionMode) -> str:
+def _mode_value(mode: object) -> int:
+    return int(mode)
+
+
+def _mode_str(mode: object) -> str:
     return {
-        ActionMode.INFLUENCE: "Place Influence",
-        ActionMode.COUP:      "Coup",
-        ActionMode.REALIGN:   "Realignment",
-        ActionMode.SPACE:     "Space Race",
-        ActionMode.EVENT:     "Event",
-    }.get(mode, str(mode))
-
-
-def _inf(pub: PublicState, side: Side, cid: int) -> int:
-    return pub.influence.get((side, cid), 0)
+        _MODE_INFLUENCE: "Place Influence",
+        _MODE_COUP: "Coup",
+        _MODE_REALIGN: "Realignment",
+        _MODE_SPACE: "Space Race",
+        _MODE_EVENT: "Event",
+    }.get(_mode_value(mode), str(mode))
 
 
 def _score_str(vp: int) -> str:
     if vp > 0:
         return f"USSR {vp}"
-    elif vp < 0:
+    if vp < 0:
         return f"US {-vp}"
     return "Tied 0"
 
 
+def _copy_state_dict(state: dict) -> dict:
+    return {
+        "turn": state["turn"],
+        "ar": state["ar"],
+        "phasing": state["phasing"],
+        "vp": state["vp"],
+        "defcon": state["defcon"],
+        "milops": tuple(state["milops"]),
+        "space": tuple(state["space"]),
+        "china_held_by": state["china_held_by"],
+        "ussr_influence": list(state["ussr_influence"]),
+        "us_influence": list(state["us_influence"]),
+        "discard": list(state["discard"]),
+        "removed": list(state["removed"]),
+    }
+
+
 def _influence_diff_lines(
-    pre: PublicState,
-    post: PublicState,
+    pre: dict,
+    post: dict,
     countries: dict,
 ) -> list[str]:
     """Return raw-log-style lines for every influence change."""
-    all_cids: set[int] = set()
-    for (_, cid) in list(pre.influence.keys()) + list(post.influence.keys()):
-        all_cids.add(cid)
-
-    lines = []
-    for cid in sorted(all_cids):
-        pre_ussr = _inf(pre, Side.USSR, cid)
-        post_ussr = _inf(post, Side.USSR, cid)
-        pre_us = _inf(pre, Side.US, cid)
-        post_us = _inf(post, Side.US, cid)
+    lines: list[str] = []
+    for cid in range(_COUNTRY_COUNT):
+        pre_ussr = pre["ussr_influence"][cid]
+        post_ussr = post["ussr_influence"][cid]
+        pre_us = pre["us_influence"][cid]
+        post_us = post["us_influence"][cid]
         d_ussr = post_ussr - pre_ussr
         d_us = post_us - pre_us
         cname = _country_name(cid, countries)
@@ -123,32 +113,47 @@ def _influence_diff_lines(
     return lines
 
 
+def _make_terminal_post_snapshot(step, result) -> dict:
+    post = _copy_state_dict(step.pub_snapshot)
+    post["vp"] = step.vp_after
+    post["defcon"] = step.defcon_after
+    if result is not None:
+        post["vp"] = result.final_vp
+    return post
+
+
+def _post_snapshot_for_step(steps: list, idx: int, result) -> dict:
+    if idx + 1 < len(steps):
+        return _copy_state_dict(steps[idx + 1].pub_snapshot)
+    return _make_terminal_post_snapshot(steps[idx], result)
+
+
 def _rich_detail(
-    step: TracedStep,
+    steps: list,
+    idx: int,
     cards: dict,
     countries: dict,
+    result,
 ) -> list[str]:
     """Generate raw-log-style sub-detail lines for a step."""
-    if step.post_pub is None:
-        return []
-
+    step = steps[idx]
     pre = step.pub_snapshot
-    post = step.post_pub
+    post = _post_snapshot_for_step(steps, idx, result)
     action = step.action
     side = step.side
-    opp = Side.US if side == Side.USSR else Side.USSR
+    opp = tscore.Side.US if side == tscore.Side.USSR else tscore.Side.USSR
     lines: list[str] = []
 
-    mode = action.mode
+    mode = _mode_value(action.mode)
 
     card_spec = cards.get(action.card_id)
     ops = card_spec.ops if card_spec else 1
 
-    if mode == ActionMode.INFLUENCE:
+    if mode == _MODE_INFLUENCE:
         lines.append(f"  Place Influence ({ops} Ops):")
         lines.extend(_influence_diff_lines(pre, post, countries))
 
-    elif mode == ActionMode.COUP:
+    elif mode == _MODE_COUP:
         target_cid = action.targets[0] if action.targets else None
         cspec = countries.get(target_cid) if target_cid is not None else None
         stab = cspec.stability if cspec else 1
@@ -158,10 +163,12 @@ def _rich_detail(
         lines.append(f"    Target: {cname}")
 
         if target_cid is not None:
-            pre_opp = _inf(pre, opp, target_cid)
-            post_opp = _inf(post, opp, target_cid)
-            pre_own = _inf(pre, side, target_cid)
-            post_own = _inf(post, side, target_cid)
+            side_idx = 0 if side == tscore.Side.USSR else 1
+            opp_idx = 1 - side_idx
+            pre_opp = pre["ussr_influence"][target_cid] if opp_idx == 0 else pre["us_influence"][target_cid]
+            post_opp = post["ussr_influence"][target_cid] if opp_idx == 0 else post["us_influence"][target_cid]
+            pre_own = pre["ussr_influence"][target_cid] if side_idx == 0 else pre["us_influence"][target_cid]
+            post_own = post["ussr_influence"][target_cid] if side_idx == 0 else post["us_influence"][target_cid]
             opp_removed = pre_opp - post_opp
             own_gained = post_own - pre_own
             net = opp_removed + own_gained
@@ -177,54 +184,58 @@ def _rich_detail(
 
         lines.extend(_influence_diff_lines(pre, post, countries))
 
-        d_milops = post.milops[int(side)] - pre.milops[int(side)]
+        side_idx = 0 if side == tscore.Side.USSR else 1
+        d_milops = post["milops"][side_idx] - pre["milops"][side_idx]
         if d_milops != 0:
-            lines.append(f"    {_side_str(side)} Military Ops to {post.milops[int(side)]}")
+            lines.append(f"    {_side_str(side)} Military Ops to {post['milops'][side_idx]}")
 
-        if post.defcon < pre.defcon:
-            lines.append(f"    DEFCON degrades to {post.defcon}")
+        if post["defcon"] < pre["defcon"]:
+            lines.append(f"    DEFCON degrades to {post['defcon']}")
 
-    elif mode == ActionMode.REALIGN:
+    elif mode == _MODE_REALIGN:
         lines.append(f"  Realignment ({ops} Ops):")
         lines.extend(_influence_diff_lines(pre, post, countries))
-        if post.defcon < pre.defcon:
-            lines.append(f"    DEFCON degrades to {post.defcon}")
+        if post["defcon"] < pre["defcon"]:
+            lines.append(f"    DEFCON degrades to {post['defcon']}")
 
-    elif mode == ActionMode.SPACE:
+    elif mode == _MODE_SPACE:
         lines.append(f"  Space Race ({ops} Ops):")
-        pre_level = pre.space[int(side)]
-        post_level = post.space[int(side)]
+        side_idx = 0 if side == tscore.Side.USSR else 1
+        pre_level = pre["space"][side_idx]
+        post_level = post["space"][side_idx]
         if post_level > pre_level:
             lines.append(f"    Success! {_side_str(side)} advances to level {post_level}.")
         else:
             lines.append("    Failed.")
 
-    elif mode == ActionMode.EVENT:
+    elif mode == _MODE_EVENT:
         lines.append(f"  Event: {_card_name(action.card_id, cards)}")
         lines.extend(_influence_diff_lines(pre, post, countries))
-        if post.defcon < pre.defcon:
-            lines.append(f"    DEFCON degrades to {post.defcon}")
-        elif post.defcon > pre.defcon:
-            lines.append(f"    DEFCON improves to {post.defcon}")
+        if post["defcon"] < pre["defcon"]:
+            lines.append(f"    DEFCON degrades to {post['defcon']}")
+        elif post["defcon"] > pre["defcon"]:
+            lines.append(f"    DEFCON improves to {post['defcon']}")
 
-    if mode != ActionMode.COUP:
-        for s in (Side.USSR, Side.US):
-            d = post.milops[int(s)] - pre.milops[int(s)]
+    if mode != _MODE_COUP:
+        for trace_side in (tscore.Side.USSR, tscore.Side.US):
+            side_idx = 0 if trace_side == tscore.Side.USSR else 1
+            d = post["milops"][side_idx] - pre["milops"][side_idx]
             if d != 0:
-                lines.append(f"    {_side_str(s)} Military Ops to {post.milops[int(s)]}")
+                lines.append(f"    {_side_str(trace_side)} Military Ops to {post['milops'][side_idx]}")
 
-    d_vp = post.vp - pre.vp
+    d_vp = post["vp"] - pre["vp"]
     if d_vp != 0:
         if d_vp > 0:
-            lines.append(f"    USSR gains {d_vp} VP. Score is {_score_str(post.vp)}.")
+            lines.append(f"    USSR gains {d_vp} VP. Score is {_score_str(post['vp'])}.")
         else:
-            lines.append(f"    US gains {-d_vp} VP. Score is {_score_str(post.vp)}.")
+            lines.append(f"    US gains {-d_vp} VP. Score is {_score_str(post['vp'])}.")
 
-    if mode == ActionMode.EVENT:
-        for s in (Side.USSR, Side.US):
-            if post.space[int(s)] > pre.space[int(s)]:
+    if mode == _MODE_EVENT:
+        for trace_side in (tscore.Side.USSR, tscore.Side.US):
+            side_idx = 0 if trace_side == tscore.Side.USSR else 1
+            if post["space"][side_idx] > pre["space"][side_idx]:
                 lines.append(
-                    f"    {_side_str(s)} advances to {post.space[int(s)]} in the Space Race."
+                    f"    {_side_str(trace_side)} advances to {post['space'][side_idx]} in the Space Race."
                 )
 
     return lines
@@ -234,7 +245,7 @@ def _rich_detail(
 # Model policy
 # ---------------------------------------------------------------------------
 
-def _card_mask(card_ids: list[int] | tuple[int, ...] | frozenset[int]) -> list[float]:
+def _card_mask(card_ids: list[int]) -> list[float]:
     mask = [0.0] * _CARD_MASK_SLOTS
     for cid in card_ids:
         if 0 < cid < _CARD_MASK_SLOTS:
@@ -242,38 +253,25 @@ def _card_mask(card_ids: list[int] | tuple[int, ...] | frozenset[int]) -> list[f
     return mask
 
 
-def _public_state_to_state_dict(pub: PublicState) -> dict:
-    return {
-        "turn": pub.turn,
-        "ar": pub.ar,
-        "vp": pub.vp,
-        "defcon": pub.defcon,
-        "milops": list(pub.milops),
-        "space": list(pub.space),
-        "china_held_by": int(pub.china_held_by),
-        "ussr_influence": [_inf(pub, Side.USSR, cid) for cid in range(_COUNTRY_COUNT)],
-        "us_influence": [_inf(pub, Side.US, cid) for cid in range(_COUNTRY_COUNT)],
-        "discard": list(pub.discard),
-        "removed": list(pub.removed),
-    }
-
-
-def _extract_features(
-    pub: PublicState,
-    hand: frozenset[int],
+def extract_features(
+    state: dict,
+    hand: list[int],
     holds_china: bool,
-    side: Side,
+    side_int: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    state = _public_state_to_state_dict(pub)
-    influence = [float(x) for x in state["ussr_influence"]] + [float(x) for x in state["us_influence"]]
+    """Build (influence, cards, scalars) CPU tensors of shape (1, D).
 
-    hand_mask = _card_mask(sorted(hand))
+    Matches C++ nn_features.cpp exactly.
+    """
+    ussr_inf = state["ussr_influence"]
+    us_inf = state["us_influence"]
+    influence = [float(x) for x in ussr_inf] + [float(x) for x in us_inf]
+
+    hand_mask = _card_mask(hand)
     discard_mask = _card_mask(state["discard"])
     removed_mask = _card_mask(state["removed"])
     cards = hand_mask + hand_mask + discard_mask + removed_mask
 
-    # 32 scalars matching cpp/tscore/nn_features.cpp fill_scalars() exactly.
-    # [0-10] Core game state
     scalars = [
         state["vp"] / 20.0,
         (state["defcon"] - 1) / 4.0,
@@ -285,85 +283,13 @@ def _extract_features(
         float(holds_china),
         state["turn"] / 10.0,
         state["ar"] / 8.0,
-        float(int(side)),
-        # [11-21] Trap / constraint effects
-        float(pub.bear_trap_active),
-        float(pub.quagmire_active),
-        float(pub.cuban_missile_crisis_active),
-        float(pub.iran_hostage_crisis_active),
-        float(pub.norad_active),
-        float(pub.shuttle_diplomacy_active),
-        float(pub.salt_active),
-        float(pub.flower_power_active),
-        float(pub.flower_power_cancelled),
-        float(pub.vietnam_revolts_active),
-        float(pub.north_sea_oil_extra_ar),
-        # [22-27] Board-modifying effects
-        float(pub.glasnost_extra_ar),
-        float(pub.nato_active),
-        float(pub.de_gaulle_active),
-        float(pub.nuclear_subs_active),
-        float(pub.formosan_active),
-        float(pub.awacs_active),
-        # [28-29] Chernobyl
-        float(pub.chernobyl_blocked_region is not None),
-        float(int(pub.chernobyl_blocked_region) / 6.0 if pub.chernobyl_blocked_region is not None else 0.0),
-        # [30-31] Per-side ops modifier
-        float(pub.ops_modifier[0]) / 3.0,
-        float(pub.ops_modifier[1]) / 3.0,
+        float(side_int),
     ]
-
     return (
         torch.tensor([influence], dtype=torch.float32),
         torch.tensor([cards], dtype=torch.float32),
         torch.tensor([scalars], dtype=torch.float32),
     )
-
-
-def _country_term_is_probabilities(country_scores: torch.Tensor) -> bool:
-    if country_scores.numel() == 0:
-        return False
-    min_v = float(country_scores.min().item())
-    max_v = float(country_scores.max().item())
-    total = float(country_scores.sum().item())
-    return min_v >= 0.0 and max_v <= 1.0 + 1e-6 and abs(total - 1.0) <= 1e-3
-
-
-def _country_score(country_scores: torch.Tensor | None, country_id: int) -> float:
-    if country_scores is None:
-        return 0.0
-    n = int(country_scores.numel())
-    if n == 86 and 0 <= country_id < 86:
-        return float(country_scores[country_id].item())
-    if n == 84 and 1 <= country_id <= 84:
-        return float(country_scores[country_id - 1].item())
-    return float("-inf")
-
-
-def _action_score(
-    action: ActionEncoding,
-    card_logits: torch.Tensor,
-    mode_logits: torch.Tensor,
-    country_scores: torch.Tensor | None,
-    country_is_probs: bool,
-) -> float:
-    score = float(card_logits[action.card_id - 1].item()) + float(mode_logits[int(action.mode)].item())
-    if not action.targets or country_scores is None:
-        return score
-
-    for target in action.targets:
-        target_score = _country_score(country_scores, target)
-        if target_score == float("-inf"):
-            return float("-inf")
-        if country_is_probs:
-            score += math.log(max(target_score, 1e-12))
-        else:
-            score += target_score
-    return score
-
-
-def _action_sort_key(action: ActionEncoding) -> tuple[int, int, tuple[int, ...]]:
-    return (action.card_id, int(action.mode), tuple(action.targets))
 
 
 def _load_model(model_path: Path):
@@ -374,14 +300,22 @@ def _load_model(model_path: Path):
         return model
     except RuntimeError:
         pass
-    # Regular PPO checkpoint — use the same registry as train_ppo.py
+
     from tsrl.policies.model import (  # noqa: E402
-        TSBaselineModel, TSCardEmbedModel, TSCountryEmbedModel, TSFullEmbedModel,
-        TSCountryAttnModel, TSCountryAttnSideModel, TSDirectCountryModel,
-        TSMarginalValueModel, TSControlFeatModel, TSControlFeatGNNModel,
+        TSBaselineModel,
+        TSCardEmbedModel,
+        TSControlFeatGNNModel,
         TSControlFeatGNNSideModel,
+        TSControlFeatModel,
+        TSCountryAttnModel,
+        TSCountryAttnSideModel,
+        TSCountryEmbedModel,
+        TSDirectCountryModel,
+        TSFullEmbedModel,
+        TSMarginalValueModel,
     )
-    MODEL_REGISTRY = {
+
+    model_registry = {
         "baseline": TSBaselineModel,
         "card_embed": TSCardEmbedModel,
         "country_embed": TSCountryEmbedModel,
@@ -394,12 +328,13 @@ def _load_model(model_path: Path):
         "control_feat_gnn": TSControlFeatGNNModel,
         "control_feat_gnn_side": TSControlFeatGNNSideModel,
     }
+
     ckpt = torch.load(str(model_path), map_location="cpu", weights_only=False)
     args = ckpt.get("args", {})
     hidden_dim = args.get("hidden_dim", 256)
     dropout = args.get("dropout", 0.1)
     model_type = args.get("model_type", "baseline")
-    cls = MODEL_REGISTRY.get(model_type, TSBaselineModel)
+    cls = model_registry.get(model_type, TSBaselineModel)
     model = cls(hidden_dim=hidden_dim, dropout=dropout)
     state = ckpt.get("model_state_dict") or ckpt
     model.load_state_dict(state, strict=False)
@@ -407,147 +342,223 @@ def _load_model(model_path: Path):
     return model
 
 
-def _make_model_policy(model_path: Path) -> Policy:
-    model = _load_model(model_path)
+def _infer_expected_scalar_dim(model) -> int:
+    state = model.state_dict()
+    scalar_weight = state.get("scalar_encoder.weight")
+    if scalar_weight is None:
+        return 11
+    input_dim = int(scalar_weight.shape[1])
+    has_region_encoder = any(key.startswith("region_encoder.") for key in state)
+    region_dim = 42 if has_region_encoder else 0
+    scalar_dim = input_dim - region_dim
+    return scalar_dim if scalar_dim > 0 else 11
 
-    def _policy(pub: PublicState, hand: frozenset[int], holds_china: bool) -> ActionEncoding | None:
-        legal_actions = enumerate_actions(hand, pub, pub.phasing, holds_china=holds_china)
-        if not legal_actions:
+
+def _adapt_scalars(scalars: torch.Tensor, expected_dim: int) -> torch.Tensor:
+    current_dim = int(scalars.shape[1])
+    if current_dim == expected_dim:
+        return scalars
+    if current_dim > expected_dim:
+        return scalars[:, :expected_dim]
+    pad = torch.zeros((scalars.shape[0], expected_dim - current_dim), dtype=scalars.dtype)
+    return torch.cat([scalars, pad], dim=1)
+
+
+def _candidate_country_ids(country_scores: torch.Tensor | None) -> list[int]:
+    if country_scores is None:
+        return list(range(_COUNTRY_COUNT))
+    n = int(country_scores.numel())
+    if n == _COUNTRY_COUNT:
+        return list(range(_COUNTRY_COUNT))
+    if n == 84:
+        return list(range(1, 85))
+    return list(range(min(n, _COUNTRY_COUNT)))
+
+
+def _country_score(country_scores: torch.Tensor | None, country_id: int) -> float:
+    if country_scores is None:
+        return 0.0
+    n = int(country_scores.numel())
+    if n == _COUNTRY_COUNT and 0 <= country_id < _COUNTRY_COUNT:
+        return float(country_scores[country_id].item())
+    if n == 84 and 1 <= country_id <= 84:
+        return float(country_scores[country_id - 1].item())
+    if 0 <= country_id < n:
+        return float(country_scores[country_id].item())
+    return float("-inf")
+
+
+def _allocate_influence_targets(country_scores: torch.Tensor | None, ops: int) -> list[int]:
+    if ops <= 0:
+        return []
+
+    country_ids = _candidate_country_ids(country_scores)
+    if not country_ids:
+        return []
+
+    weights: list[tuple[int, float]] = []
+    for cid in country_ids:
+        score = _country_score(country_scores, cid)
+        if not math.isfinite(score):
+            continue
+        weights.append((cid, max(score, 0.0)))
+
+    if not weights:
+        return []
+
+    total = sum(weight for _, weight in weights)
+    if total <= 0.0:
+        weights = [(cid, 1.0) for cid, _ in weights]
+        total = float(len(weights))
+
+    base_alloc: dict[int, int] = {}
+    remainders: list[tuple[float, int]] = []
+    allocated = 0
+    for cid, weight in weights:
+        raw = ops * weight / total
+        count = int(math.floor(raw))
+        base_alloc[cid] = count
+        allocated += count
+        remainders.append((raw - count, cid))
+
+    for _, cid in sorted(remainders, key=lambda item: (-item[0], item[1]))[: max(0, ops - allocated)]:
+        base_alloc[cid] = base_alloc.get(cid, 0) + 1
+
+    targets: list[int] = []
+    for cid, count in sorted(base_alloc.items()):
+        targets.extend([cid] * count)
+    return targets
+
+
+def _make_model_callback(model_path: Path):
+    model = _load_model(model_path)
+    cards = load_cards()
+    expected_scalar_dim = _infer_expected_scalar_dim(model)
+
+    def _callback(state_dict, hand_list, holds_china: bool, side_int: int):
+        if not hand_list:
             return None
 
-        influence, cards, scalars = _extract_features(pub, hand, holds_china, pub.phasing)
+        influence, cards_tensor, scalars = extract_features(state_dict, hand_list, holds_china, side_int)
+        scalars = _adapt_scalars(scalars, expected_scalar_dim)
         with torch.no_grad():
-            outputs = model(influence, cards, scalars)
+            outputs = model(influence, cards_tensor, scalars)
 
         card_logits = outputs["card_logits"][0].cpu()
         mode_logits = outputs["mode_logits"][0].cpu()
-        country_scores = outputs.get("country_logits")
-        if country_scores is not None:
-            country_scores = country_scores[0].cpu()
-        country_is_probs = country_scores is not None and _country_term_is_probabilities(country_scores)
+        country_logits = outputs.get("country_logits")
+        if country_logits is not None:
+            country_logits = country_logits[0].cpu()
 
-        best_action: ActionEncoding | None = None
-        best_score = float("-inf")
-        for action in legal_actions:
-            score = _action_score(action, card_logits, mode_logits, country_scores, country_is_probs)
-            if best_action is None or score > best_score or (
-                score == best_score and _action_sort_key(action) < _action_sort_key(best_action)
-            ):
-                best_action = action
-                best_score = score
-        return best_action
+        legal_hand = sorted(cid for cid in hand_list if 1 <= cid <= 111)
+        if not legal_hand:
+            return None
 
-    return _policy
+        best_card_id = max(legal_hand, key=lambda cid: (float(card_logits[cid - 1].item()), -cid))
+        best_mode = int(mode_logits.argmax().item())
+
+        if best_mode == _MODE_INFLUENCE:
+            card_spec = cards.get(best_card_id)
+            ops = card_spec.ops if card_spec else 1
+            targets = _allocate_influence_targets(country_logits, ops)
+        elif best_mode in (_MODE_COUP, _MODE_REALIGN):
+            country_ids = _candidate_country_ids(country_logits)
+            best_target = max(
+                country_ids,
+                key=lambda cid: (_country_score(country_logits, cid), -cid),
+                default=None,
+            )
+            targets = [] if best_target is None else [best_target]
+        else:
+            targets = []
+
+        return {
+            "card_id": int(best_card_id),
+            "mode": int(best_mode),
+            "targets": [int(cid) for cid in targets],
+        }
+
+    return _callback
 
 
 # ---------------------------------------------------------------------------
 # Trace collection
 # ---------------------------------------------------------------------------
 
-def _sorted_hand(hand: frozenset[int]) -> tuple[int, ...]:
-    return tuple(sorted(hand))
+def collect_traced_game(model_path: Path, seed: int, heuristic: bool):
+    if heuristic:
+        traced_game = tscore.play_traced_game(
+            tscore.PolicyKind.MinimalHybrid,
+            tscore.PolicyKind.MinimalHybrid,
+            seed=seed,
+        )
+        return traced_game.steps, traced_game.result, "Using MinimalHybrid heuristics for both sides."
 
-
-def collect_traced_game(model_path: Path, seed: int) -> tuple[list[TracedStep], GameResult, str]:
     if model_path.exists():
-        policy = _make_model_policy(model_path)
-        policy_note = f"Using scripted model: {model_path}"
-    else:
-        policy = make_minimal_hybrid_policy()
-        policy_note = (
-            f"Model not found at {model_path}; falling back to MinimalHybrid for this run."
-        )
+        callback = _make_model_callback(model_path)
+        traced_game = tscore.play_traced_game_with_callback(callback, seed=seed)
+        return traced_game.steps, traced_game.result, f"Using scripted model: {model_path}"
 
-    rng = make_rng(seed)
-    gs = reset(seed=int(rng.integers(0, 2**32)))
-    steps: list[TracedStep] = []
-    pending: list[TracedStep | None] = [None]
-
-    def _flush_pending() -> None:
-        if pending[0] is not None:
-            pending[0].post_pub = _copy_pub(gs.pub)
-            pending[0] = None
-
-    def _trace_policy(pub: PublicState, hand: frozenset[int], holds_china: bool) -> ActionEncoding | None:
-        _flush_pending()
-        action = policy(pub, hand, holds_china)
-        if action is None:
-            return None
-        step = TracedStep(
-            turn=pub.turn,
-            ar=pub.ar,
-            side=pub.phasing,
-            holds_china=holds_china,
-            pub_snapshot=_copy_pub(pub),
-            post_pub=None,
-            action=action,
-            ussr_hand=_sorted_hand(gs.hands[Side.USSR]),
-            us_hand=_sorted_hand(gs.hands[Side.US]),
-        )
-        steps.append(step)
-        pending[0] = step
-        return action
-
-    result: GameResult | None = None
-    for turn in range(1, _MAX_TURNS + 1):
-        gs.pub.turn = turn
-
-        if turn == 4:
-            advance_to_mid_war(gs, rng)
-        elif turn == 8:
-            advance_to_late_war(gs, rng)
-
-        deal_cards(gs, Side.USSR, rng)
-        deal_cards(gs, Side.US, rng)
-
-        result = _run_headline_phase(gs, _trace_policy, _trace_policy, rng)
-        _flush_pending()
-        if result is not None:
-            break
-
-        result = _run_action_rounds(gs, _trace_policy, _trace_policy, rng, _ars_for_turn(turn))
-        _flush_pending()
-        if result is not None:
-            break
-
-        if gs.pub.north_sea_oil_extra_ar:
-            gs.pub.north_sea_oil_extra_ar = False
-            result = _run_extra_ar(gs, Side.US, _trace_policy, rng)
-            _flush_pending()
-            if result is not None:
-                break
-
-        if gs.pub.glasnost_extra_ar:
-            gs.pub.glasnost_extra_ar = False
-            result = _run_extra_ar(gs, Side.USSR, _trace_policy, rng)
-            _flush_pending()
-            if result is not None:
-                break
-
-        result = _end_of_turn(gs, rng, turn)
-        if result is not None:
-            break
-
-    if result is None:
-        winner = None
-        if gs.pub.vp > 0:
-            winner = Side.USSR
-        elif gs.pub.vp < 0:
-            winner = Side.US
-        result = GameResult(
-            winner=winner,
-            final_vp=gs.pub.vp,
-            end_turn=_MAX_TURNS,
-            end_reason="turn_limit",
-        )
-
-    _flush_pending()
-    return steps, result, policy_note
+    traced_game = tscore.play_traced_game(
+        tscore.PolicyKind.MinimalHybrid,
+        tscore.PolicyKind.MinimalHybrid,
+        seed=seed,
+    )
+    return (
+        traced_game.steps,
+        traced_game.result,
+        f"Model not found at {model_path}; falling back to MinimalHybrid for this run.",
+    )
 
 
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
+
+def _sorted_hand(hand: list[int] | tuple[int, ...]) -> tuple[int, ...]:
+    return tuple(sorted(int(cid) for cid in hand))
+
+
+def _estimate_display_hands(steps: list) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:
+    display_hands: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+    known = {
+        tscore.Side.USSR: set(),
+        tscore.Side.US: set(),
+    }
+    seen = {
+        tscore.Side.USSR: False,
+        tscore.Side.US: False,
+    }
+
+    for idx, step in enumerate(steps):
+        side = step.side
+        opp = tscore.Side.US if side == tscore.Side.USSR else tscore.Side.USSR
+        actor_hand = _sorted_hand(step.hand_snapshot)
+        known[side] = set(actor_hand)
+        seen[side] = True
+
+        opp_hand: tuple[int, ...]
+        if seen[opp]:
+            opp_hand = tuple(sorted(known[opp]))
+        elif step.ar == 0 and idx + 1 < len(steps):
+            next_step = steps[idx + 1]
+            if next_step.turn == step.turn and next_step.ar == step.ar and next_step.side == opp:
+                opp_hand = _sorted_hand(next_step.hand_snapshot)
+            else:
+                opp_hand = ()
+        else:
+            opp_hand = ()
+
+        if side == tscore.Side.USSR:
+            display_hands.append((actor_hand, opp_hand))
+        else:
+            display_hands.append((opp_hand, actor_hand))
+
+        if step.action.card_id in known[side]:
+            known[side].remove(step.action.card_id)
+
+    return display_hands
+
 
 def _format_hand(hand: tuple[int, ...], cards: dict) -> str:
     if not hand:
@@ -556,7 +567,7 @@ def _format_hand(hand: tuple[int, ...], cards: dict) -> str:
     return ", ".join(named)
 
 
-def _format_target_summary(action: ActionEncoding, countries: dict) -> str:
+def _format_target_summary(action, countries: dict) -> str:
     if not action.targets:
         return ""
 
@@ -567,42 +578,48 @@ def _format_target_summary(action: ActionEncoding, countries: dict) -> str:
     ordered = sorted(counts.items(), key=lambda item: (_country_name(item[0], countries), item[0]))
     parts = []
     for cid, count in ordered:
-        suffix = f"(+{count})" if action.mode == ActionMode.INFLUENCE else ""
+        suffix = f"(+{count})" if _mode_value(action.mode) == _MODE_INFLUENCE else ""
         parts.append(f"{_country_name(cid, countries)}{suffix}")
     return " -> " + ", ".join(parts)
 
 
 def print_game_log(
-    steps: list[TracedStep],
-    result: GameResult,
+    steps: list,
+    result,
     cards: dict,
     countries: dict,
 ) -> None:
-    for step in steps:
+    display_hands = _estimate_display_hands(steps)
+
+    for idx, step in enumerate(steps):
         pub = step.pub_snapshot
         action = step.action
+        ussr_hand, us_hand = display_hands[idx]
         target_summary = _format_target_summary(action, countries)
 
         print(
-            f"=== Turn {pub.turn} AR {pub.ar} | {_side_str(step.side)} | "
-            f"DEFCON {pub.defcon} | VP: {pub.vp:+d} ==="
+            f"=== Turn {pub['turn']} AR {pub['ar']} | {_side_str(step.side)} | "
+            f"DEFCON {pub['defcon']} | VP: {pub['vp']:+d} ==="
         )
-        print(f"USSR hand: {_format_hand(step.ussr_hand, cards)}")
-        print(f"US hand: {_format_hand(step.us_hand, cards)}")
+        print(f"USSR hand: {_format_hand(ussr_hand, cards)}")
+        print(f"US hand: {_format_hand(us_hand, cards)}")
         print(
             f"Action: Play {_card_name(action.card_id, cards)} as {_mode_str(action.mode)}"
             f"{target_summary}"
         )
-        for line in _rich_detail(step, cards, countries):
+        for line in _rich_detail(steps, idx, cards, countries, result):
             print(line)
         print()
 
     print(f"{'=' * 72}")
     print("GAME OVER")
-    if result.winner is None:
-        print("Winner: Draw / Mutual Destruction")
+    if result.winner == tscore.Side.USSR:
+        winner = "USSR"
+    elif result.winner == tscore.Side.US:
+        winner = "US"
     else:
-        print(f"Winner: {_side_str(result.winner)}")
+        winner = "Draw"
+    print(f"Winner: {winner}" if winner != "Draw" else "Winner: Draw / Mutual Destruction")
     print(f"Final VP: {result.final_vp:+d}")
     print(f"End Turn: {result.end_turn}")
     print(f"Reason: {result.end_reason}")
@@ -612,15 +629,22 @@ def print_game_log(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run one traced self-play game.")
-    parser.add_argument("--model", type=Path, default=_DEFAULT_MODEL, help=f"Path to scripted model (default: {_DEFAULT_MODEL})")
+    parser.add_argument(
+        "--model",
+        type=Path,
+        default=_DEFAULT_MODEL,
+        help=f"Path to scripted model (default: {_DEFAULT_MODEL})",
+    )
     parser.add_argument("--seed", type=int, default=42, help="RNG seed (default: 42)")
+    parser.add_argument(
+        "--heuristic",
+        action="store_true",
+        help="Use MinimalHybrid heuristics for both sides instead of a model callback.",
+    )
     args = parser.parse_args()
 
-    steps, result, policy_note = collect_traced_game(args.model, args.seed)
-    if not args.model.exists():
-        print(f"[run_traced_game] {policy_note}", file=sys.stderr)
-    else:
-        print(f"[run_traced_game] {policy_note}", file=sys.stderr)
+    steps, result, policy_note = collect_traced_game(args.model, args.seed, args.heuristic)
+    print(f"[run_traced_game] {policy_note}", file=sys.stderr)
 
     cards = load_cards()
     countries = load_countries()
