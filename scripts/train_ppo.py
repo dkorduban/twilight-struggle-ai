@@ -1275,6 +1275,8 @@ def collect_rollout_league_batched(
     vp_reward_coef: float = 0.0,
     mix_k: int = 4,
     fixtures: Optional[list[str]] = None,
+    ussr_fixtures: Optional[list[str]] = None,
+    us_fixtures: Optional[list[str]] = None,
     n_workers: int = 4,
     rollout_temp: float = 1.0,
     recency_tau: float = 20.0,
@@ -1307,6 +1309,9 @@ def collect_rollout_league_batched(
 
     if fixtures is None:
         fixtures = []
+    # Per-side fixture pools: if provided, use them; otherwise fall back to combined list.
+    _ussr_fixtures = ussr_fixtures if ussr_fixtures is not None else fixtures
+    _us_fixtures   = us_fixtures   if us_fixtures   is not None else fixtures
     if mix_k < 1:
         mix_k = 1
 
@@ -1328,8 +1333,7 @@ def collect_rollout_league_batched(
     # Two independent opponent pools — USSR and US — each weighted by per-side PFSP.
     # k_per_side opponents per pool; self-play slot is always added separately.
     k_per_side = max(1, (mix_k - (1 if self_slot else 0)) // 2)
-    _sample_kwargs = dict(
-        fixtures=fixtures,
+    _common_kwargs = dict(
         recency_tau=recency_tau,
         heuristic_pct=heuristic_pct,
         fixture_fadeout=fixture_fadeout,
@@ -1339,8 +1343,8 @@ def collect_rollout_league_batched(
         wr_table=wr_table,
         pfsp_exponent=pfsp_exponent,
     )
-    ussr_opps = sample_K_league_opponents(league_dir, k_per_side, side="ussr", **_sample_kwargs)
-    us_opps   = sample_K_league_opponents(league_dir, k_per_side, side="us",   **_sample_kwargs)
+    ussr_opps = sample_K_league_opponents(league_dir, k_per_side, side="ussr", fixtures=_ussr_fixtures, **_common_kwargs)
+    us_opps   = sample_K_league_opponents(league_dir, k_per_side, side="us",   fixtures=_us_fixtures,   **_common_kwargs)
 
     # Each slot gets an equal share of n_games; self gets both sides, pools get one side each.
     total_slots = (1 if self_slot else 0) + k_per_side * 2
@@ -2699,8 +2703,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--rollout-workers", type=int, default=1,
                    help="Parallel threads for rollout collection (default: 1; >1 added overhead for vs-model rollout)")
     p.add_argument("--league-fixtures", nargs="*", default=[],
-                   help="Permanent fixture scripted .pt paths always included in league pool "
-                        "(e.g. older-gen checkpoints for cross-run diversity)")
+                   help="Permanent fixture scripted .pt paths for both sides (union fallback if "
+                        "--ussr-league-fixtures/--us-league-fixtures not provided)")
+    p.add_argument("--ussr-league-fixtures", nargs="*", default=None,
+                   help="Fixture pool for USSR-side opponent sampling (JSD-deduped USSR pool). "
+                        "If omitted, falls back to --league-fixtures.")
+    p.add_argument("--us-league-fixtures", nargs="*", default=None,
+                   help="Fixture pool for US-side opponent sampling (JSD-deduped US pool). "
+                        "If omitted, falls back to --league-fixtures.")
     p.add_argument("--league-recency-tau", type=float, default=20.0,
                    help="Recency half-life for past-self checkpoint sampling. "
                         "weight=exp(rank/tau); higher=more uniform, lower=more recency bias (default: 20)")
@@ -2938,6 +2948,8 @@ def main() -> None:
                 vp_reward_coef=args.vp_reward_coef,
                 mix_k=args.league_mix_k,
                 fixtures=args.league_fixtures,
+                ussr_fixtures=args.ussr_league_fixtures,
+                us_fixtures=args.us_league_fixtures,
                 n_workers=args.rollout_workers,
                 rollout_temp=args.rollout_temp,
                 recency_tau=args.league_recency_tau,

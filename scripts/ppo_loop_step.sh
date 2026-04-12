@@ -324,6 +324,10 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
   --league "$NEXT_DIR" \
   --league-save-every 10 \
   --league-mix-k 6 \
+  --ussr-league-fixtures \
+    $USSR_FIXTURES \
+  --us-league-fixtures \
+    $US_FIXTURES \
   --league-fixtures \
     $LEAGUE_FIXTURES \
   --league-recency-tau 50 \
