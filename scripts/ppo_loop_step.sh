@@ -252,7 +252,7 @@ PREV_TOTAL_ITERS="${PREV_TOTAL_ITERS:-0}"
 # --- Launch next PPO run ---
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from ${FINISHED} $(basename $FINISHED_CHECKPOINT)" \
   >> results/autonomous_decisions.log
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=1.5, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.03->0.01 heuristic=0.15 n_iters=30 global_decay=[${PREV_TOTAL_ITERS},$((PREV_TOTAL_ITERS+30))]" \
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=1.5, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.01->0.003 heuristic=0.15 n_iters=30 global_decay=[${PREV_TOTAL_ITERS},$((PREV_TOTAL_ITERS+30))]" \
   >> results/autonomous_decisions.log
 
 nohup nice -n 10 uv run python scripts/train_ppo.py \
@@ -260,7 +260,7 @@ nohup nice -n 10 uv run python scripts/train_ppo.py \
   --out-dir "$NEXT_DIR" \
   --n-iterations 30 --games-per-iter 200 \
   --lr 2e-5 --clip-eps 0.12 \
-  --ent-coef 0.03 --ent-coef-final 0.01 \
+  --ent-coef 0.01 --ent-coef-final 0.003 \
   --global-ent-decay-start "${PREV_TOTAL_ITERS}" --global-ent-decay-end "$((PREV_TOTAL_ITERS + 30))" \
   --max-kl 0.3 \
   --reset-optimizer \
