@@ -8,7 +8,7 @@ import polars as pl
 
 CARD_SLOTS = 111
 MODE_SLOTS = 5
-N_STRATA = 18
+STRATUM_COLUMNS = ["turn_bucket", "side_int", "defcon_bucket", "vp_bucket"]
 
 
 def _turn_bucket(turn: int) -> str:
@@ -21,10 +21,18 @@ def _turn_bucket(turn: int) -> str:
 
 def _defcon_bucket(defcon: int) -> str:
     if defcon <= 2:
-        return "1-2"
+        return "low"
     if defcon == 3:
-        return "3"
-    return "4-5"
+        return "mid"
+    return "high"
+
+
+def _vp_bucket(vp: int) -> str:
+    if vp < 0:
+        return "neg"
+    if vp > 0:
+        return "pos"
+    return "zero"
 
 
 def _card_mask_from_hand(hand_card_ids: list[int] | None) -> list[bool]:
@@ -32,20 +40,23 @@ def _card_mask_from_hand(hand_card_ids: list[int] | None) -> list[bool]:
         return [True] * CARD_SLOTS
 
     mask = [False] * CARD_SLOTS
-    for card_id in hand_card_ids:
-        if 1 <= int(card_id) <= CARD_SLOTS:
-            mask[int(card_id) - 1] = True
+    for raw_card_id in hand_card_ids:
+        card_id = int(raw_card_id)
+        if 1 <= card_id <= CARD_SLOTS:
+            mask[card_id - 1] = True
     return mask
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Build a frozen JSD probe set from rollout parquet files")
-    p.add_argument("--data-dir", type=str, default="data/ppo_rollout_combined")
-    p.add_argument("--out", type=str, default="data/probe_positions.parquet")
-    p.add_argument("--n", type=int, default=1000)
-    p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--force", action="store_true")
-    return p.parse_args()
+    parser = argparse.ArgumentParser(
+        description="Build a frozen JSD probe set from rollout parquet files"
+    )
+    parser.add_argument("--data-dir", type=str, default="data/ppo_rollout_combined")
+    parser.add_argument("--out", type=str, default="data/probe_positions.parquet")
+    parser.add_argument("--n", type=int, default=1000)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--force", action="store_true")
+    return parser.parse_args()
 
 
 def build_probe_set(
@@ -65,7 +76,7 @@ def build_probe_set(
     if not parquet_paths:
         raise FileNotFoundError(f"No *.parquet files found in {data_dir}")
 
-    needed_columns = [
+    required = {
         "influence",
         "cards",
         "scalars",
@@ -73,25 +84,27 @@ def build_probe_set(
         "side_int",
         "raw_defcon",
         "raw_vp",
-        "hand_card_ids",
-        "mode_id",
-    ]
+    }
+    optional = {"hand_card_ids", "mode_id"}
 
     frames: list[pl.DataFrame] = []
     for path in parquet_paths:
         try:
-            available = set(pl.read_parquet_schema(path).keys())
-        except Exception as e:
-            print(f"  Skipping {path}: {e}", flush=True)
+            schema = pl.read_parquet_schema(path)
+        except Exception as exc:
+            print(f"Skipping unreadable parquet {path}: {exc}", flush=True)
             continue
-        present = [col for col in needed_columns if col in available]
-        if not {"influence", "cards", "scalars", "raw_turn", "side_int", "raw_defcon", "raw_vp", "mode_id"}.issubset(available):
+
+        available = set(schema.keys())
+        if not required.issubset(available):
             continue
-        frame = pl.read_parquet(path, columns=present)
+
+        columns = sorted(required | (optional & available))
+        frame = pl.read_parquet(path, columns=columns)
         if "hand_card_ids" not in frame.columns:
-            frame = frame.with_columns(
-                pl.lit([], dtype=pl.List(pl.Int64)).alias("hand_card_ids")
-            )
+            frame = frame.with_columns(pl.lit(None, dtype=pl.List(pl.Int64)).alias("hand_card_ids"))
+        if "mode_id" not in frame.columns:
+            frame = frame.with_columns(pl.lit(-1, dtype=pl.Int64).alias("mode_id"))
         frames.append(frame)
 
     if not frames:
@@ -104,69 +117,106 @@ def build_probe_set(
     df = df.with_columns(
         pl.col("raw_turn").map_elements(_turn_bucket, return_dtype=pl.String).alias("turn_bucket"),
         pl.col("raw_defcon").map_elements(_defcon_bucket, return_dtype=pl.String).alias("defcon_bucket"),
+        pl.col("raw_vp").map_elements(_vp_bucket, return_dtype=pl.String).alias("vp_bucket"),
+        pl.col("hand_card_ids")
+        .map_elements(_card_mask_from_hand, return_dtype=pl.List(pl.Boolean))
+        .alias("card_mask"),
+        pl.lit([True] * MODE_SLOTS, dtype=pl.List(pl.Boolean)).alias("mode_mask"),
     )
 
-    grouped = df.partition_by(["turn_bucket", "side_int", "defcon_bucket"], as_dict=True)
-    base_per_stratum = n // N_STRATA
-    sample_counts: dict[tuple, int] = {}
-    total_selected = 0
+    sampled = _sample_stratified(df, n=n, seed=seed)
+    sampled = sampled.select(
+        "influence",
+        "cards",
+        "scalars",
+        "card_mask",
+        "mode_mask",
+        "raw_turn",
+        "side_int",
+        "raw_defcon",
+        "raw_vp",
+        "mode_id",
+    )
 
-    ordered_keys = sorted(grouped, key=lambda key: (-len(grouped[key]), key))
-    for key in ordered_keys:
-        count = min(base_per_stratum, len(grouped[key]))
-        sample_counts[key] = count
-        total_selected += count
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sampled.write_parquet(out_path)
+    return out_path
 
-    remainder = min(n, len(df)) - total_selected
-    while remainder > 0:
-        progressed = False
-        for key in ordered_keys:
-            available = len(grouped[key]) - sample_counts[key]
-            if available <= 0:
-                continue
-            sample_counts[key] += 1
-            remainder -= 1
-            progressed = True
-            if remainder == 0:
-                break
-        if not progressed:
-            break
+
+def _sample_stratified(df: pl.DataFrame, n: int, seed: int) -> pl.DataFrame:
+    if n <= 0:
+        raise ValueError(f"Probe set size must be positive, got {n}")
+
+    groups = df.partition_by(STRATUM_COLUMNS, as_dict=True)
+    ordered_keys = sorted(groups.keys(), key=lambda key: (key[0], key[1], key[2], key[3]))
+    target = min(n, len(df))
+    if target == 0:
+        return df.head(0)
+
+    counts = {key: 0 for key in ordered_keys}
+    nonempty = [key for key in ordered_keys if len(groups[key]) > 0]
+    initial_keys = nonempty
+    if target < len(nonempty):
+        initial_keys = sorted(nonempty, key=lambda key: (-len(groups[key]), key))[:target]
+
+    for key in initial_keys:
+        counts[key] = 1
+
+    remaining = target - sum(counts.values())
+    leftovers = {key: len(groups[key]) - counts[key] for key in ordered_keys}
+
+    if remaining > 0:
+        total_leftover = sum(max(0, leftovers[key]) for key in ordered_keys)
+        if total_leftover > 0:
+            fractional_allocations: list[tuple[float, int, tuple]] = []
+            for key in ordered_keys:
+                available = max(0, leftovers[key])
+                if available == 0:
+                    continue
+                exact = remaining * (available / total_leftover)
+                base = min(int(exact), available)
+                counts[key] += base
+                leftovers[key] -= base
+                fractional_allocations.append((exact - base, available, key))
+
+            assigned = sum(counts.values())
+            remainder = target - assigned
+            for _, _, key in sorted(fractional_allocations, key=lambda item: (-item[0], -item[1], item[2])):
+                if remainder == 0:
+                    break
+                if leftovers[key] <= 0:
+                    continue
+                counts[key] += 1
+                leftovers[key] -= 1
+                remainder -= 1
+
+            if remainder > 0:
+                for key in sorted(ordered_keys, key=lambda item: (-leftovers[item], item)):
+                    if remainder == 0:
+                        break
+                    if leftovers[key] <= 0:
+                        continue
+                    counts[key] += 1
+                    leftovers[key] -= 1
+                    remainder -= 1
 
     sampled_frames: list[pl.DataFrame] = []
     for idx, key in enumerate(ordered_keys):
-        count = sample_counts[key]
+        count = counts[key]
         if count <= 0:
             continue
-        frame = grouped[key]
+        frame = groups[key]
         if count >= len(frame):
             sampled = frame
         else:
             sampled = frame.sample(n=count, seed=seed + idx, shuffle=True)
         sampled_frames.append(sampled)
 
-    sampled_df = pl.concat(sampled_frames, how="vertical_relaxed") if sampled_frames else df.head(0)
-    sampled_df = sampled_df.with_columns(
-        pl.col("hand_card_ids")
-        .map_elements(_card_mask_from_hand, return_dtype=pl.List(pl.Boolean))
-        .alias("card_mask"),
-        pl.lit([True] * MODE_SLOTS, dtype=pl.List(pl.Boolean)).alias("mode_mask"),
-    ).select(
-        "influence",
-        "cards",
-        "scalars",
-        "raw_turn",
-        "side_int",
-        "raw_defcon",
-        "raw_vp",
-        "hand_card_ids",
-        "mode_id",
-        "card_mask",
-        "mode_mask",
-    )
+    if not sampled_frames:
+        return df.head(0)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    sampled_df.write_parquet(out_path)
-    return out_path
+    sampled = pl.concat(sampled_frames, how="vertical_relaxed")
+    return sampled.sort(["raw_turn", "side_int", "raw_defcon", "raw_vp", "mode_id"])
 
 
 def main() -> None:
