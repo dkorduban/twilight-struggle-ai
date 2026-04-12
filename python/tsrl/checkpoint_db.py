@@ -42,20 +42,50 @@ CREATE TABLE IF NOT EXISTS elo_ratings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     checkpoint_name TEXT NOT NULL,
     elo REAL NOT NULL,
+    elo_ussr REAL,
+    elo_us REAL,
     ci_lo REAL,
     ci_hi REAL,
     computed_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS rollout_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    checkpoint_name TEXT NOT NULL,
+    iter_num INTEGER NOT NULL,
+    ussr_wr REAL,
+    us_wr REAL,
+    combined_wr REAL,
+    n_games INTEGER,
+    logged_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rollout_checkpoint ON rollout_stats(checkpoint_name);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_name ON checkpoints(name);
 CREATE INDEX IF NOT EXISTS idx_benchmarks_name ON benchmarks(checkpoint_name);
 """
+
+
+def _ensure_column(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_def: str,
+) -> None:
+    columns = {
+        row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        conn.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"
+        )
 
 
 def _get_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     conn.executescript(SCHEMA)
+    _ensure_column(conn, "elo_ratings", "elo_ussr", "REAL")
+    _ensure_column(conn, "elo_ratings", "elo_us", "REAL")
     conn.commit()
     return conn
 
@@ -137,9 +167,39 @@ def log_benchmark(
     conn.close()
 
 
+def log_rollout_wr(
+    checkpoint_name: str,
+    iter_num: int,
+    ussr_wr: float,
+    us_wr: float,
+    combined_wr: float,
+    n_games: int = 0,
+    db_path: Path = DB_PATH,
+) -> None:
+    """Log per-iteration rollout win rates. Call after each training iteration."""
+    conn = _get_db(db_path)
+    conn.execute(
+        """INSERT INTO rollout_stats (checkpoint_name, iter_num, ussr_wr, us_wr, combined_wr, n_games, logged_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            checkpoint_name,
+            iter_num,
+            ussr_wr,
+            us_wr,
+            combined_wr,
+            n_games,
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
 def log_elo_rating(
     checkpoint_name: str,
     elo: float,
+    elo_ussr: Optional[float] = None,
+    elo_us: Optional[float] = None,
     ci_lo: Optional[float] = None,
     ci_hi: Optional[float] = None,
     db_path: Path = DB_PATH,
@@ -147,11 +207,13 @@ def log_elo_rating(
     """Log a BayesElo rating after it's computed."""
     conn = _get_db(db_path)
     conn.execute(
-        """INSERT INTO elo_ratings (checkpoint_name, elo, ci_lo, ci_hi, computed_at)
-           VALUES (?, ?, ?, ?, ?)""",
+        """INSERT INTO elo_ratings (checkpoint_name, elo, elo_ussr, elo_us, ci_lo, ci_hi, computed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
             checkpoint_name,
             elo,
+            elo_ussr,
+            elo_us,
             ci_lo,
             ci_hi,
             datetime.now(timezone.utc).isoformat(),

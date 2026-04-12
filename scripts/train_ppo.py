@@ -3139,6 +3139,38 @@ def main() -> None:
                 pass
         last_rolling_ckpt = new_ckpt_path
 
+        # WS3: Log rollout win rates to metadata DB
+        if _TRACKING_AVAILABLE:
+            try:
+                from tsrl.checkpoint_db import log_rollout_wr as _log_rollout_wr
+                _log_rollout_wr(
+                    checkpoint_name=Path(new_ckpt_path).stem,
+                    iter_num=iteration,
+                    ussr_wr=rollout_wr_ussr,
+                    us_wr=rollout_wr_us,
+                    combined_wr=(rollout_wr_ussr + rollout_wr_us) / 2.0,
+                    n_games=len(terminal_rewards),
+                )
+            except Exception as _e:
+                print(f"[tracking] log_rollout_wr failed: {_e}")
+
+        # WS7: Launch incremental Elo confirmation non-blocking at milestones
+        if _is_milestone(iteration) and os.path.exists("scripts/post_train_confirm.sh"):
+            try:
+                _confirm_log = open(
+                    os.path.join(args.out_dir, f"confirm_iter{iteration:04d}.log"), "w"
+                )
+                subprocess.Popen(
+                    ["nice", "-n", "15", "bash", "scripts/post_train_confirm.sh",
+                     args.out_dir, "--incremental"],
+                    stdout=_confirm_log,
+                    stderr=subprocess.STDOUT,
+                    cwd=os.getcwd(),
+                )
+                print(f"  [confirm] launched incremental Elo check for iter {iteration}", flush=True)
+            except Exception as _e:
+                print(f"  [confirm] launch failed: {_e}", flush=True)
+
         # ── Build log dict ────────────────────────────────────────────────────
         log_dict = dict(metrics)
         log_dict["rollout_wr"] = rollout_wr
