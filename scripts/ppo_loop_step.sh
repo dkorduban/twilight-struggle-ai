@@ -319,27 +319,56 @@ nohup bash -c "
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] watcher for $NEXT launched (PID $!)" \
   >> results/autonomous_decisions.log
 
-# --- ELO update + plateau check: runs in background, GPU training is already underway ---
-# Captures PRE_THIRD snapshot taken before this block, writes result to autonomous_decisions.log.
+# --- ELO plateau check + periodic full rebuild ---
+# post_train_confirm.sh --incremental already placed $FINISHED in the ladder during training.
+# We skip the per-generation round_robin (was 20-30 min, starved next gen's rollout collection).
+# Full round_robin rebuild runs every FULL_REBUILD_EVERY generations instead.
+FULL_REBUILD_EVERY=5
+REBUILD_COUNTER_FILE="results/elo_rebuild_counter.txt"
+
 nohup bash -c "
   cd /home/dkord/code/twilight-struggle-ai
-  echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] ELO update (background): adding $FINISHED\" >> results/autonomous_decisions.log
-  echo '=== ELO update: adding $FINISHED ===' | tee '$ELO_LOG'
-  uv run python scripts/run_elo_tournament.py \
-    --models $MODELS \
-    --games 400 --anchor v14 --anchor-elo 2015 \
-    --schedule round_robin \
-    --resume-from '$LADDER' \
-    --out '$LADDER' \
-    --script-dir data/checkpoints/scripted_for_elo \
-    --match-cache-dir results/matches \
-    2>&1 | tee -a '$ELO_LOG'
+  echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] ELO plateau check (incremental already placed $FINISHED)\" >> results/autonomous_decisions.log
 
+  # Read Elo from ladder — already placed by post_train_confirm.sh --incremental
   ELO_FINISHED=\$(python3 -c \"
 import json
 with open('$LADDER') as f: d=json.load(f)
-print(d['ratings'].get('$FINISHED', {}).get('elo', 'N/A'))
+r = d.get('ratings', {})
+for name in ['$FINISHED', '${FINISHED}_scripted']:
+    v = r.get(name, {}).get('elo')
+    if v: print(v); exit()
+print('N/A')
 \")
+
+  # Periodic full round_robin rebuild every $FULL_REBUILD_EVERY generations
+  COUNTER=0
+  [ -f '$REBUILD_COUNTER_FILE' ] && COUNTER=\$(cat '$REBUILD_COUNTER_FILE')
+  COUNTER=\$((COUNTER + 1))
+  if [ \"\$COUNTER\" -ge \"$FULL_REBUILD_EVERY\" ]; then
+    echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] Full Elo ladder rebuild (gen \$COUNTER >= $FULL_REBUILD_EVERY)\" >> results/autonomous_decisions.log
+    uv run python scripts/run_elo_tournament.py \
+      --models $MODELS \
+      --games 400 --anchor v14 --anchor-elo 2015 \
+      --schedule round_robin \
+      --resume-from '$LADDER' \
+      --out '$LADDER' \
+      --script-dir data/checkpoints/scripted_for_elo \
+      --match-cache-dir results/matches \
+      2>&1 | tee -a '$ELO_LOG'
+    # Re-read Elo after full rebuild
+    ELO_FINISHED=\$(python3 -c \"
+import json
+with open('$LADDER') as f: d=json.load(f)
+r = d.get('ratings', {})
+for name in ['$FINISHED', '${FINISHED}_scripted']:
+    v = r.get(name, {}).get('elo')
+    if v: print(v); exit()
+print('N/A')
+\")
+    COUNTER=0
+  fi
+  echo \"\$COUNTER\" > '$REBUILD_COUNTER_FILE'
 
   # Plateau check
   PLATEAU_NOTE=\$(python3 - '$FINISHED' '$LADDER' '$PRE_THIRD' << 'PYEOF'
