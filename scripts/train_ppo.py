@@ -933,13 +933,14 @@ def _pfsp_weight(
     total_games_all: int = 0,
     side: str = "ussr",
 ) -> float:
-    """UCB-based opponent selection weight for one side.
+    """Symmetric UCB-based opponent selection weight for one side.
 
-    Uses UCB1 formula: (1 - WR) + c * sqrt(ln(N) / n_i)
+    Uses symmetric PFSP: weight = 4*WR*(1-WR) * (1 + c * sqrt(ln(N)/n_i))
     where c = pfsp_exponent, N = total games across all opponents, n_i = games vs this one.
-    - Hard opponents (low WR) get high base weight.
-    - Under-explored opponents (low n_i) get high exploration bonus.
-    - Well-explored easy opponents naturally fade out.
+    - Opponents near WR=0.5 get maximum base weight (learning sweet spot).
+    - Too-easy (WR→1) and too-hard (WR→0) opponents get low base weight (symmetric).
+    - Under-explored opponents (low n_i) get multiplicative UCB boost.
+    - The multiplicative structure preserves the symmetric signal's zeros.
 
     side: "ussr" → use USSR WR   "us" → use US WR
     Always call with an explicit side; the two pools use this independently.
@@ -953,12 +954,17 @@ def _pfsp_weight(
     if total < MIN_GAMES:
         return 1.0
     wr = wins / total
-    exploitation = 1.0 - wr
+
+    # Symmetric base: parabola peaking at 1.0 when WR=0.5, zero at extremes
+    symmetric = 4.0 * wr * (1.0 - wr)
+
+    # Multiplicative UCB exploration bonus
     if total_games_all > 0 and total > 0:
-        exploration = pfsp_exponent * math.sqrt(math.log(total_games_all) / total)
+        ucb = pfsp_exponent * math.sqrt(math.log(total_games_all) / total)
     else:
-        exploration = 0.0
-    return max(0.01, exploitation + exploration)
+        ucb = 0.0
+
+    return max(0.01, symmetric * (1.0 + ucb))
 
 
 def _update_wr_table_from_steps(

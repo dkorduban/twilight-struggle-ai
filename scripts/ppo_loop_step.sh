@@ -218,7 +218,7 @@ if [ -f "${FINISHED_DIR}/wr_table.json" ]; then
 import json, math
 with open('${FINISHED_DIR}/wr_table.json') as f:
     data = json.load(f)
-DECAY = 0.7
+DECAY = 0.5
 out = {}
 for key, val in data.items():
     if key.startswith('iter_') or key == '__self__':
@@ -231,9 +231,9 @@ for key, val in data.items():
     }
 with open('${NEXT_DIR}/wr_table.json', 'w') as f:
     json.dump(out, f, indent=2, sort_keys=True)
-print(f'Carried over {len(out)} fixture WR entries (0.7x decay for discounted UCB)')
+print(f'Carried over {len(out)} fixture WR entries (0.5x decay for discounted UCB)')
 "
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Copied WR table from $FINISHED to $NEXT (0.7x decay, fixtures only)" \
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Copied WR table from $FINISHED to $NEXT (0.5x decay, fixtures only)" \
     >> results/autonomous_decisions.log
 fi
 
