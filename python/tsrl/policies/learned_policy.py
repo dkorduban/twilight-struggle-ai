@@ -23,6 +23,8 @@ from tsrl.policies.minimal_hybrid import _DEFCON_LOWERING_CARDS
 from tsrl.policies.model import TSBaselineModel
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Side
 
+from .dp_decoder import bounded_knapsack_dp
+
 _CHINA_CARD_ID = 6
 
 
@@ -74,8 +76,8 @@ def _build_action_from_country_logits(
     """Build an action using country_logits to score targets.
 
     COUP/REALIGN: sample one accessible country from the masked softmax.
-    INFLUENCE: allocate ops with largest-remainder proportional assignment
-               from the chosen strategy distribution.
+    INFLUENCE: allocate ops with the bounded-knapsack DP decoder from the
+               chosen strategy distribution.
     """
     accessible = sorted(accessible_countries(side, pub, adj, mode=mode))
     if not accessible:
@@ -105,28 +107,26 @@ def _build_action_from_country_logits(
         target = int(torch.multinomial(probs, 1).item())
         return ActionEncoding(card_id=card_id, mode=mode, targets=(target,))
 
-    # INFLUENCE: allocate integer ops by largest remainder after proportional split.
-    ops = effective_ops(card_id, pub, side)
-    accessible_probs = probs[indices]
-    alloc = accessible_probs * ops
-    floor_alloc = torch.floor(alloc).to(dtype=torch.long)
-    remainder = ops - int(floor_alloc.sum().item())
+    # INFLUENCE: allocate integer ops with the bounded-knapsack DP decoder.
+    budget_val = effective_ops(card_id, pub, side)
+    if budget_val == 0:
+        return None
 
-    if remainder > 0:
-        fractional = alloc - floor_alloc.to(dtype=alloc.dtype)
-        order = sorted(
-            range(len(valid_accessible)),
-            key=lambda idx: (
-                -float(fractional[idx].item()),
-                valid_accessible[idx],
-            ),
-        )
-        for idx in order[:remainder]:
-            floor_alloc[idx] += 1
+    n_countries = source_logits.shape[0]
+    t_max = max(budget_val, 1)
+    scores = source_logits.new_zeros((1, n_countries, t_max))
+    legal_mask = torch.zeros((1, n_countries), device=source_logits.device, dtype=torch.bool)
+    for country_id in valid_accessible:
+        scores[0, country_id, :] = source_logits[country_id]
+        legal_mask[0, country_id] = True
+
+    budget_t = torch.tensor([budget_val], device=source_logits.device, dtype=torch.long)
+    alloc_t = bounded_knapsack_dp(scores, budget_t, legal_mask)
+    alloc_row = alloc_t[0]
 
     targets_list: list[int] = []
-    for country_id, count in zip(valid_accessible, floor_alloc.tolist()):
-        targets_list.extend([country_id] * count)
+    for country_id in valid_accessible:
+        targets_list.extend([country_id] * int(alloc_row[country_id].item()))
     return ActionEncoding(card_id=card_id, mode=mode, targets=tuple(targets_list))
 
 
