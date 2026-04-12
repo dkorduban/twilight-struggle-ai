@@ -401,6 +401,9 @@ def _sample_action_and_step(
     country_logits = outputs.get("country_logits")
     if country_logits is not None:
         country_logits = country_logits[0]        # (86,)
+    marginal_logits = outputs.get("marginal_logits")
+    if marginal_logits is not None:
+        marginal_logits = marginal_logits[0]      # (86, T_MAX)
     value = float(outputs["value"][0, 0].item())
 
     defcon = state["defcon"]
@@ -524,17 +527,27 @@ def _sample_action_and_step(
         target = int(torch.multinomial(country_probs, 1).item())
         country_targets = [target]
     else:
-        # INFLUENCE: proportional allocation using card ops
+        # INFLUENCE: DP allocation when marginal_logits available, else proportional
         spec = card_specs.get(card_id)
         ops = max(1, getattr(spec, "ops", 1) or 1) if spec else 1
-        alloc = country_probs * ops
-        floor_alloc = torch.floor(alloc).long()
-        remainder = ops - int(floor_alloc.sum().item())
-        if remainder > 0:
-            fractional = alloc - floor_alloc.float()
-            _, top_idx = fractional.topk(min(remainder, len(fractional)))
-            for i in top_idx:
-                floor_alloc[i] += 1
+        if marginal_logits is not None:
+            from tsrl.policies.dp_decoder import dp_decode_allocation
+            budget_t = torch.tensor([ops], dtype=torch.long, device=device)
+            alloc_t = dp_decode_allocation(
+                marginal_logits.unsqueeze(0),   # (1, 86, T_MAX)
+                budget_t,
+                country_mask.unsqueeze(0),      # (1, 86)
+            )
+            floor_alloc = alloc_t[0]            # (86,) int
+        else:
+            alloc = country_probs * ops
+            floor_alloc = torch.floor(alloc).long()
+            remainder = ops - int(floor_alloc.sum().item())
+            if remainder > 0:
+                fractional = alloc - floor_alloc.float()
+                _, top_idx = fractional.topk(min(remainder, len(fractional)))
+                for i in top_idx:
+                    floor_alloc[i] += 1
         for cid in range(COUNTRY_SLOTS):
             country_targets.extend([cid] * int(floor_alloc[cid].item()))
 
