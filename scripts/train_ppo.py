@@ -1058,7 +1058,10 @@ def sample_K_league_opponents(
     # Active fixtures (hard-removed after fixture_fadeout iterations)
     active_fixtures = [] if current_iter >= fixture_fadeout else list(fixtures)
 
-    # Combined pool: past-self (recency*pfsp weighted) + fixtures (pfsp weighted, half past-self mass)
+    # Combined pool: past-self (recency*pfsp weighted) + fixtures (pfsp weighted).
+    # Fixture mass ratio: 2.0x during warm-up (iter<5) for diversity before self-play
+    # history builds, 1.0x at steady state (fixtures get 67% → 50% of combined weight).
+    # This ensures external opponents are sampled early and often.
     combined_pool: list[str] = past_self_paths + active_fixtures
     if combined_pool:
         past_total = sum(past_self_weights) if past_self_weights else 0.0
@@ -1067,8 +1070,11 @@ def sample_K_league_opponents(
                          _wr, pfsp_exponent, total_games_all, side=side) for f in active_fixtures
         ]
         fixture_total = sum(fixture_pfsp_weights) or 1.0
+        # Early-iteration boost: 2.0x fixture mass for iter<5 to counter self-play dominance
+        # at warm-up when only iter_0001 exists in past-self pool. At steady state: 1.0x.
+        fixture_mass_mult = 2.0 if current_iter < 5 else 1.0
         fixture_each = [
-            past_total * 0.5 * (w / fixture_total)
+            past_total * fixture_mass_mult * (w / fixture_total)
             for w in fixture_pfsp_weights
         ] if active_fixtures else []
         combined_weights = past_self_weights + fixture_each
@@ -1082,6 +1088,10 @@ def sample_K_league_opponents(
     else:
         combined_weights = []
 
+    # Don't double-count heuristic: if __heuristic__ is an explicit fixture, its PFSP
+    # weight handles allocation. The coin-flip mechanism would oversample it.
+    _heuristic_pct = 0.0 if HEURISTIC_FIXTURE in fixtures else heuristic_pct
+
     opponents: list[Optional[str]] = []
 
     # Slot 0: always current model (true self-play signal)
@@ -1091,7 +1101,7 @@ def sample_K_league_opponents(
     # Remaining slots: recency*pfsp-weighted pool (includes heuristic as a fixture if set).
     # heuristic_pct fallback still applies when pool is empty.
     for _ in range(k - len(opponents)):
-        if not combined_pool or random.random() < heuristic_pct:
+        if not combined_pool or random.random() < _heuristic_pct:
             opponents.append(None)  # heuristic
         else:
             chosen = random.choices(combined_pool, weights=combined_weights, k=1)[0]
