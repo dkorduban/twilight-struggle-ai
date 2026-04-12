@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import tempfile
 import time
@@ -408,6 +409,12 @@ def _bipartite_matches(matches: list[MatchResult]) -> list[MatchResult]:
 # ---------------------------------------------------------------------------
 
 def main():
+    # Self-renice: tournament is background work, should never block interactive use.
+    try:
+        os.setpriority(os.PRIO_PGRP, os.getpgid(0), 19)
+    except Exception:
+        pass
+
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--models", nargs="+", required=True,

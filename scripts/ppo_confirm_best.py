@@ -92,6 +92,11 @@ def score_candidates(history: dict, run_dir: str, n_top: int) -> list[tuple[floa
 
 
 def main() -> None:
+    try:
+        os.setpriority(os.PRIO_PGRP, os.getpgid(0), 19)
+    except Exception:
+        pass
+
     args = parse_args()
     run_dir = args.run_dir
     out_json = args.out_json or os.path.join(run_dir, "candidate_tournament.json")
