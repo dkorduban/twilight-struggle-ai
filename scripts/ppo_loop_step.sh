@@ -94,7 +94,7 @@ CONFIRM_LOG="results/logs/elo/confirm_${FINISHED}.log"
 if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Launching candidate tournament for $FINISHED (non-blocking) ..." \
     >> results/autonomous_decisions.log
-  nohup uv run python scripts/ppo_confirm_best.py \
+  nohup nice -n 10 uv run python scripts/ppo_confirm_best.py \
     --run-dir "$FINISHED_DIR" \
     --fixtures \
       "v55:${PANEL_V55}" \
@@ -363,7 +363,7 @@ print('N/A')
   COUNTER=\$((COUNTER + 1))
   if [ \"\$COUNTER\" -ge \"$FULL_REBUILD_EVERY\" ]; then
     echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] Full Elo ladder rebuild (gen \$COUNTER >= $FULL_REBUILD_EVERY)\" >> results/autonomous_decisions.log
-    uv run python scripts/run_elo_tournament.py \
+    nice -n 10 uv run python scripts/run_elo_tournament.py \
       --models $MODELS \
       --games 400 --anchor v14 --anchor-elo 2015 \
       --schedule round_robin \

@@ -2831,6 +2831,16 @@ def main() -> None:
     _lock_fd.write(str(os.getpid()))
     _lock_fd.flush()
     # lock_fd intentionally kept open for process lifetime; closed on exit
+
+    # Renice the whole process group to nice 10 so training doesn't starve
+    # interactive work. os.setpriority covers the calling process; the rollout
+    # worker children inherit the priority automatically.
+    try:
+        import signal as _signal
+        _pgid = os.getpgid(0)
+        os.setpriority(os.PRIO_PGRP, _pgid, 10)
+    except Exception:
+        pass  # non-fatal — Linux-only, ignore on other platforms
     # ─────────────────────────────────────────────────────────────────────────
 
     if args.league_heuristic_pct > 0:
