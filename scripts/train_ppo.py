@@ -2942,6 +2942,11 @@ def main() -> None:
 
     t_start = time.time()
     best_ckpt_path = os.path.join(args.out_dir, "ppo_best.pt")
+    # Option F: track panel high-water mark to avoid warm-starting next run from ppo_final.pt
+    # (which is systematically the worst checkpoint ~83% of runs per Opus analysis 2026-04-12).
+    _panel_best_wr: float = -1.0
+    _running_best_path = os.path.join(args.out_dir, "ppo_running_best.pt")
+    _running_best_provenance_path = os.path.join(args.out_dir, "ppo_running_best_provenance.json")
 
     for iteration in range(args.start_iteration, args.n_iterations + 1):
         t_iter_start = time.time()
@@ -3270,6 +3275,37 @@ def main() -> None:
                         _save_json_atomic(history_path, history)
                     except Exception as he:
                         print(f"  [panel eval] history save failed: {he}", flush=True)
+                    # Option F: save ppo_running_best.pt when panel avg is a new high-water mark.
+                    # The evaluated checkpoint is ppo_iter{_panel_trigger_iter:04d}.pt
+                    # (always retained since panel eval only fires at milestones).
+                    if valid_opps and avg_combined > _panel_best_wr:
+                        _panel_best_wr = avg_combined
+                        _hwm_ckpt = os.path.join(
+                            args.out_dir, f"ppo_iter{_panel_trigger_iter:04d}.pt"
+                        )
+                        if os.path.exists(_hwm_ckpt):
+                            import shutil as _shutil
+                            _shutil.copy2(_hwm_ckpt, _running_best_path)
+                            _hwm_scripted = _hwm_ckpt.replace(".pt", "_scripted.pt")
+                            if os.path.exists(_hwm_scripted):
+                                _shutil.copy2(_hwm_scripted, _running_best_path.replace(".pt", "_scripted.pt"))
+                            # Provenance sidecar: records which iter checkpoint became running_best.
+                            _prov = {
+                                "source_checkpoint": os.path.basename(_hwm_ckpt),
+                                "source_path": _hwm_ckpt,
+                                "panel_avg_wr": round(avg_combined, 6),
+                                "panel_trigger_iter": _panel_trigger_iter,
+                                "run_dir": args.out_dir,
+                                "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "panel_opponents": list(valid_opps.keys()),
+                            }
+                            _save_json_atomic(_running_best_provenance_path, _prov)
+                            print(
+                                f"  [panel eval] NEW HIGH-WATER MARK iter={_panel_trigger_iter} "
+                                f"avg_wr={avg_combined:.4f} → ppo_running_best.pt "
+                                f"(provenance: {os.path.basename(_hwm_ckpt)})",
+                                flush=True,
+                            )
                 except Exception as e:
                     print(f"  [panel eval] result read failed: {e}", flush=True)
             if _panel_script_path:
@@ -3321,15 +3357,40 @@ def main() -> None:
         except Exception as _e:
             print(f"[tracking] log_checkpoint(final) failed: {_e}")
 
-    # ppo_best.pt = ppo_final.pt. H2H-based checkpoint selection was removed because
-    # 200-game H2H has ~3.5% SE (barely better than random) and caused echo-chamber
-    # regression (v24-v26). Panel eval results are logged to W&B for monitoring only.
+    # Option F: ppo_best.pt = ppo_running_best.pt (panel high-water mark checkpoint)
+    # if panel eval ran at least once, otherwise fall back to ppo_final.pt.
+    # Avoids the systematic ~76 Elo penalty of starting the next run from a degraded endpoint.
+    # (Opus analysis 2026-04-12: ppo_final.pt is worst or near-worst in 83% of runs.)
     import shutil
-    shutil.copy2(final_path, best_ckpt_path)
-    final_scripted = final_path.replace(".pt", "_scripted.pt")
     best_scripted = best_ckpt_path.replace(".pt", "_scripted.pt")
-    if os.path.exists(final_scripted):
-        shutil.copy2(final_scripted, best_scripted)
+    if os.path.exists(_running_best_path):
+        shutil.copy2(_running_best_path, best_ckpt_path)
+        _rb_scripted = _running_best_path.replace(".pt", "_scripted.pt")
+        if os.path.exists(_rb_scripted):
+            shutil.copy2(_rb_scripted, best_scripted)
+        # Load provenance to log which iter was selected.
+        _prov_src = "unknown"
+        if os.path.exists(_running_best_provenance_path):
+            try:
+                with open(_running_best_provenance_path) as _pf:
+                    _prov_src = json.load(_pf).get("source_checkpoint", "unknown")
+            except Exception:
+                pass
+        print(
+            f"ppo_best.pt ← ppo_running_best.pt (panel HWM: {_prov_src}, "
+            f"avg_wr={_panel_best_wr:.4f})",
+            flush=True,
+        )
+    else:
+        # No panel eval ran (eval_panel disabled or no milestone reached).
+        shutil.copy2(final_path, best_ckpt_path)
+        final_scripted = final_path.replace(".pt", "_scripted.pt")
+        if os.path.exists(final_scripted):
+            shutil.copy2(final_scripted, best_scripted)
+        print(
+            "ppo_best.pt ← ppo_final.pt (panel eval did not run; consider --eval-panel)",
+            flush=True,
+        )
 
     # Clean up any still-running panel eval process
     if _panel_proc is not None and _panel_proc.is_alive():
