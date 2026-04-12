@@ -11,6 +11,10 @@ cd /home/dkord/code/twilight-struggle-ai
 FINISHED=$1   # e.g. v14
 NEXT=$2       # e.g. v15
 
+# Corrupted-era models: trained with T=1.2 + log_prob bugs (v27-v41). Excluded permanently.
+EXCLUDED_VERSIONS="27 28 29 30 31 32 33 34 35 36 37 38 39 40 41"
+MIN_SCRIPTED_VERSION=8
+
 FINISHED_DIR="data/checkpoints/ppo_${FINISHED}_league"
 NEXT_DIR="data/checkpoints/ppo_${NEXT}_league"
 LADDER="results/elo/elo_full_ladder.json"
