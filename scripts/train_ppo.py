@@ -18,13 +18,12 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
-import math
 import os
 import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -76,6 +75,12 @@ if not _TRACKING_AVAILABLE:
         _TRACKING_AVAILABLE = False
 
 import tscore  # noqa: E402
+from tsrl.constants import (
+    MODEL_REGISTRY,
+    NUM_CARDS,
+    NUM_COUNTRIES,
+    SCALAR_DIM,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -154,11 +159,8 @@ _REGION_COUNTRY_IDS["Asia"] = tuple(sorted(
     set(_REGION_COUNTRY_IDS["Asia"]) | set(_REGION_COUNTRY_IDS["SoutheastAsia"])
 ))
 
-CARD_SLOTS = 112      # kMaxCardId(111) + 1; index 0 unused
-COUNTRY_SLOTS = 86    # country IDs 0..85
-SCALAR_DIM = 32  # bumped from 11 after PPO v3; includes 21 active-effect features
-CARD_DIM = CARD_SLOTS * 4   # 448
-INFLUENCE_DIM = COUNTRY_SLOTS * 2  # 172
+CARD_SLOTS = NUM_CARDS
+COUNTRY_SLOTS = NUM_COUNTRIES
 
 # DEFCON-lowering cards (kept in sync with C++ learned_policy.cpp / mcts_batched.cpp)
 DEFCON_LOWERING_CARDS = frozenset({
@@ -283,32 +285,7 @@ class Step:
 
 def load_model(checkpoint_path: str, device: str = "cuda") -> nn.Module:
     """Load a checkpoint and return the model in training mode on device."""
-    from tsrl.policies.model import (
-        TSBaselineModel,
-        TSCardEmbedModel,
-        TSControlFeatGNNModel,
-        TSControlFeatGNNSideModel,
-        TSControlFeatModel,
-        TSCountryAttnModel,
-        TSCountryAttnSideModel,
-        TSCountryEmbedModel,
-        TSDirectCountryModel,
-        TSFullEmbedModel,
-        TSMarginalValueModel,
-    )
-    MODEL_REGISTRY = {
-        "baseline": TSBaselineModel,
-        "card_embed": TSCardEmbedModel,
-        "country_embed": TSCountryEmbedModel,
-        "full_embed": TSFullEmbedModel,
-        "country_attn": TSCountryAttnModel,
-        "country_attn_side": TSCountryAttnSideModel,
-        "direct_country": TSDirectCountryModel,
-        "marginal_value": TSMarginalValueModel,
-        "control_feat": TSControlFeatModel,
-        "control_feat_gnn": TSControlFeatGNNModel,
-        "control_feat_gnn_side": TSControlFeatGNNSideModel,
-    }
+    from tsrl.policies.model import TSBaselineModel, TSControlFeatGNNModel
 
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = ckpt.get("model_state_dict", ckpt)

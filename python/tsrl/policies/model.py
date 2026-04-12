@@ -34,16 +34,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from tsrl.constants import (
+    CARD_DIM,
+    INFLUENCE_DIM,
+    NUM_CARDS,
+    NUM_COUNTRIES,
+    NUM_MODES,
+    NUM_PLAYABLE_CARDS,
+    NUM_STRATEGIES,
+    SCALAR_DIM,
+)
 
-NUM_COUNTRIES = 86  # countries 0..85 (Austria=0, Taiwan=85)
-NUM_STRATEGIES = 4
-NUM_CARDS = 112  # card IDs 0..111, but index 0 unused; masks are len 112
-NUM_PLAYABLE_CARDS = 111  # card IDs 1..111
-NUM_MODES = 5
-SMALL_CHOICE_MAX = 8  # max options for SmallChoiceHead (covers all known TS decisions)
-INFLUENCE_DIM = NUM_COUNTRIES * 2        # 172
-CARD_DIM = NUM_CARDS * 4                 # 448
-SCALAR_DIM = 32  # bumped from 11 after PPO v3; includes 21 active-effect features
 INFLUENCE_HIDDEN = 128
 CARD_HIDDEN = 128
 SCALAR_HIDDEN = 64
