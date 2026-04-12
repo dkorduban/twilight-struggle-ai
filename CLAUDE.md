@@ -426,3 +426,12 @@ Keep this file concise. If project guidance becomes too large, move topic-specif
 
 ## Long-form design documents
 `long-prompts/` contains extended conversations (human ↔ external LLM) about architecture, action spaces, and analysis. These are food-for-thought documents — directionally useful but may need adaptation. Check them when facing a design decision in the relevant area. They are **not** authoritative — the codebase and `docs/` take precedence.
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `uv run python -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('python/')); _rebuild_code(Path('cpp/')); _rebuild_code(Path('scripts/'))"` to keep the graph current

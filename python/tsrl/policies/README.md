@@ -35,7 +35,7 @@ They must not invent new action or state interfaces from inside this directory.
 - `proxy_corpus.py`
   The richer deterministic proxy corpus used by the tuning tooling for fast policy-local scoring.
 - `autotune_minimal_hybrid.py`
-  An autonomous campaign runner that logs parameter snapshots and evaluation history under `python/tsrl/policies/runs/`, then validates shortlisted candidates with paired mini-match and full-game checks.
+  An autonomous campaign runner that logs parameter snapshots and evaluation history under `results/logs/autotune_runs/`, then validates shortlisted candidates with paired mini-match and full-game checks.
 - `minimal_hybrid.md`
   The implementation-oriented spec for `minimal_hybrid.py`.
 - `classic.md`

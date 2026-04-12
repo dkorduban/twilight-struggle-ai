@@ -1,6 +1,6 @@
 state: weight_tuning_plateau_detected
 iteration: 20260328_iter12
-baseline_log_dir: python/tsrl/policies/rollout_logs/20260327_iter8_coup_milops_urgency_v2
+baseline_log_dir: results/logs/rollout_logs/20260327_iter8_coup_milops_urgency_v2
 baseline_wr: 47.5%
 
 final_stats:

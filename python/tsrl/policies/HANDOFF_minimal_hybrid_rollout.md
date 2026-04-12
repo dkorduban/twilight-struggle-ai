@@ -102,7 +102,7 @@ Important behavior:
 Initial 5-game detailed batch:
 
 - directory:
-  - `python/tsrl/policies/rollout_logs/20260327_110757`
+  - `results/logs/rollout_logs/20260327_110757`
 - seeds:
   - `20260410` to `20260414`
 
@@ -137,7 +137,7 @@ Representative aggregate tallies from the baseline batch:
 After adding offside penalties, MilOps urgency, and the Iran-coup hook:
 
 - directory:
-  - `python/tsrl/policies/rollout_logs/20260327_postfix_mp`
+  - `results/logs/rollout_logs/20260327_postfix_mp`
 
 Observed effect:
 
@@ -169,7 +169,7 @@ Interpretation:
 After adding the DEFCON-2 battleground coup veto plus the Nuclear Subs exception:
 
 - directory:
-  - `python/tsrl/policies/rollout_logs/20260327_114100_defcon2_safety_mp`
+  - `results/logs/rollout_logs/20260327_114100_defcon2_safety_mp`
 
 Summary from `summary.json`:
 
@@ -210,7 +210,7 @@ Interpretation:
 After strengthening the DEFCON-3 battleground coup penalty from `-2.5` to `-6.0` and adding a suicide veto for low-MilOps cases:
 
 - directory:
-  - `python/tsrl/policies/rollout_logs/20260327_162106_defcon3_fix`
+  - `results/logs/rollout_logs/20260327_162106_defcon3_fix`
 - seeds:
   - `20260410` to `20260414` (same seeds as baseline for direct comparison)
 
@@ -269,11 +269,11 @@ These already exist under `python/tsrl/policies/`:
 
 Existing run-artifact directories worth preserving:
 
-- `python/tsrl/policies/runs/20260327_024617`
-- `python/tsrl/policies/runs/20260327_031638`
-- `python/tsrl/policies/runs/20260327_035600`
-- `python/tsrl/policies/runs/20260327_084930`
-- `python/tsrl/policies/runs/20260327_090505`
+- `results/logs/autotune_runs/20260327_024617`
+- `results/logs/autotune_runs/20260327_031638`
+- `results/logs/autotune_runs/20260327_035600`
+- `results/logs/autotune_runs/20260327_084930`
+- `results/logs/autotune_runs/20260327_090505`
 
 Important conclusion from that tuning phase:
 
@@ -313,7 +313,7 @@ It is not a playing-strength benchmark.
 If another agent resumes from here, the best next loop is:
 
 1. inspect the newest detailed logs in:
-   - `python/tsrl/policies/rollout_logs/20260327_114100_defcon2_safety_mp`
+   - `results/logs/rollout_logs/20260327_114100_defcon2_safety_mp`
 2. compare step-by-step against:
    - `minimal_hybrid.md`
    - `classic.md`
@@ -349,7 +349,7 @@ nice -n 10 uv run python python/tsrl/policies/generate_minimal_hybrid_rollout_lo
   --games 5 \
   --seed-start 20260410 \
   --workers 20 \
-  --out-dir python/tsrl/policies/rollout_logs/$(date +%Y%m%d_%H%M%S)_<suffix>
+  --out-dir results/logs/rollout_logs/$(date +%Y%m%d_%H%M%S)_<suffix>
 ```
 
 Run the micro benchmark:
