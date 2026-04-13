@@ -1,5 +1,6 @@
 """Policy helpers for Twilight Struggle rollouts."""
 
+from tsrl.policies.jsd_probe import ProbeEvaluator
 from tsrl.policies.minimal_hybrid import (
     DEFAULT_MINIMAL_HYBRID_PARAMS,
     MinimalHybridParams,
@@ -10,6 +11,7 @@ from tsrl.policies.minimal_hybrid import (
 __all__ = [
     "DEFAULT_MINIMAL_HYBRID_PARAMS",
     "MinimalHybridParams",
+    "ProbeEvaluator",
     "choose_minimal_hybrid",
     "make_minimal_hybrid_policy",
 ]
