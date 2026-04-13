@@ -186,6 +186,9 @@ std::vector<ActionMode> legal_modes(CardId card_id, const PublicState& pub, Side
     if (card_id == 103 && pub.defcon != 2) {
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
     }
+    if (card_id == 104 && !pub.john_paul_ii_played) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
+    }
 
     std::sort(modes.begin(), modes.end(), [](ActionMode lhs, ActionMode rhs) {
         return static_cast<int>(lhs) < static_cast<int>(rhs);
