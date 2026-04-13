@@ -1,33 +1,41 @@
 {
-  "current_task": "PPO running v158_sc (old panel, last run with v55/v54/v44/v45/v14). v159_sc will be first with new sc-lineage panel (v67_sc/v136_sc/v77_sc/v78_sc/v132_sc, ELO 2017-2097).",
+  "current_task": "Two parallel Codex architecture agents running. v159_sc+ running with new sc-lineage panel at T=1.0. v160_sc will be first with corrected temperature.",
   "next_tasks": [
-    "Monitor v159_sc panel eval iter10/20 — expect ~0.20-0.30 WR with new harder sc-lineage panel",
-    "Track panel eval trend with new panel over 3-5 runs to establish new baseline",
-    "Architecture work (Codex): Phase 1 = decode_helpers.hpp (learned_policy.cpp vs mcts_batched.cpp greedy decode dedup)",
-    "Architecture work (Codex): Phase 2 = search_common.hpp (WS6 Phase 2, MCTS semantic helpers)",
-    "GAP-005: Core ops placement legality (complex, keep separate)",
-    "Python engine full removal: migrate 51 callers to tscore bindings",
+    "Wait for Codex agents (arch Phase 1: decode_helpers.hpp, arch Phase 2: search_common.hpp) to complete and merge",
+    "Monitor v160_sc panel eval iter10 — expect ~0.30-0.50 WR with T=1.0 and sc-lineage panel",
+    "After Phase 1+2 done: Phase 3 = push Observation through read-only search interfaces",
+    "Phase 4: move hand-dependent event logic out of game_loop.cpp",
+    "GAP-005: Core ops placement legality (keep separate)",
+    "Python engine full removal: 51 callers",
     "Task #46: Hash-based match cache identity"
   ],
   "blocked_on": null,
   "active_background": [
-    "v158_sc PPO training (old panel, auto-chains to v159_sc with new panel)"
+    "v159_sc PPO training (sc-lineage panel but T=0.0 — still old temperature, last such run)",
+    "Codex agent: arch Phase 1 — decode_helpers.hpp (learned_policy.cpp ↔ mcts_batched.cpp)",
+    "Codex agent: arch Phase 2 — search_common.hpp (WS6 Phase 2, MCTS semantic helpers)"
   ],
   "completed_this_session": [
     "Panel eval formula bug fixed",
-    "Fixture pool rebalanced to symmetric 8+8 with near-equal sc-lineage models",
-    "LR increased 2e-5 → 5e-5: KL 0.0005-0.001 → 0.002-0.003",
+    "Fixture pool rebalanced to symmetric 8+8",
+    "LR increased 2e-5 → 5e-5 (KL 10x improvement)",
     "ccache integrated in CMakeLists.txt",
-    "Panel upgraded from saturated old-engine opponents to sc-lineage (v67_sc/v136_sc/v77_sc/v78_sc/v132_sc)"
+    "Panel upgraded from saturated old-engine to sc-lineage (v67_sc/v136_sc/v77_sc/v78_sc/v132_sc)",
+    "Panel eval temperature fixed: 0.0→1.0 (T=0.0 was inflating WR to 87%+ against all opponents)"
   ],
-  "panel_eval_trend_old_panel": {
-    "note": "Old panel (v55/v54/v44/v45/v14) saturated at 0.878 WR (v157_sc). Trend: v148=0.698→v157=0.878. Panel was too easy — old-engine models play suboptimally in new engine.",
-    "v148_sc": 0.698, "v149_sc": 0.706, "v151_sc": 0.708, "v152_sc": 0.727,
-    "v153_sc": 0.733, "v154_sc": 0.752, "v155_sc": 0.754, "v156_sc": 0.785, "v157_sc": 0.878
+  "panel_eval_issues": {
+    "old_panel_saturation": "v55/v54/v44/v45/v14 (old-engine) saturated at 0.878 WR",
+    "new_panel_saturation": "v67_sc/v136_sc/v77_sc/v78_sc/v132_sc (sc-lineage ELO 2017-2097) also 0.867 at T=0.0",
+    "root_cause": "T=0.0 greedy play: tiny logit differences compound over 100+ game steps, inflating WR to 85-90% regardless of opponent strength",
+    "fix": "T=1.0 in panel eval (matches rollout temperature). Expected WR ~30-50% for good discrimination. Effective v160_sc+"
   },
-  "panel_eval_trend_new_panel": {
-    "note": "New panel: v67_sc(2017), v136_sc(2022), v77_sc(2092), v78_sc(2097), v132_sc(2092). Expected WR at ~1800 ELO: 18-25%. Effective v159_sc+."
+  "architecture_refactor": {
+    "plan_source": "results/analysis/codex_analysis_20260413_clean_architecture_status.md",
+    "phase1_status": "DISPATCHED to Codex — decode_helpers.hpp extraction from learned_policy.cpp and mcts_batched.cpp",
+    "phase2_status": "DISPATCHED to Codex — search_common.hpp for MCTS semantic helpers (WS6 Phase 2)",
+    "phase3_status": "PENDING — Observation boundary through read-only search interfaces",
+    "phase4_status": "PENDING — move hand-dependent event logic out of game_loop.cpp"
   },
-  "last_updated": "2026-04-13T23:12:00+00:00",
-  "context": "Three root cause fixes (panel formula + fixture balance + LR=5e-5) drove panel WR 0.698→0.878 in 10 runs. But panel saturated because old-engine opponents (v44/v45/v55 nominal ELO 2042-2096) play poorly in the new engine. New sc-lineage panel will give honest discrimination. Model is genuinely strong — beating old frontier models 87% of the time."
+  "last_updated": "2026-04-13T23:20:00+00:00",
+  "context": "Panel eval at T=0.0 is broken as a cross-run metric — model beats all opponents (old-engine OR sc-lineage ELO 2092) at 87%. Fixed to T=1.0. Architecture refactor started with two parallel Codex agents covering the two highest-value deduplication targets identified in the clean architecture analysis."
 }
