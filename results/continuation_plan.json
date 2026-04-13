@@ -1,24 +1,27 @@
 {
-  "current_task": "Engine + tech debt cleanup (no new training). 4 bg agents completed.",
+  "current_task": "v81_sc PPO training running (PID 770977). WS6 Phase 2 dispatched to Codex.",
   "next_tasks": [
-    "Wait for run_traced_game.py migration agent (a3c2559e) to complete",
-    "WS10 ISMCTS: DEFCON-1 rate 92.5% post-fix \u2014 not a bug, model needs DEFCON defense training; do search budget sweep (200/400/800 sims) to find diminishing returns",
-    "Pragmatic Heads Phase 3: Ask Not (card37) + Our Man in Tehran (card84) PolicyCallback",
-    "Next training run: v80_sc from v55 checkpoint, with DP allocation + SmallChoice; target >2118 Elo",
-    "Consider DEFCON-aware reward shaping: penalize DEFCON-1 losses harder in PPO loss"
+    "After WS6 Phase 2 Codex completes: build + test, then commit",
+    "Collect BC data on corrected engine (v80_sc+), retrain BC baseline",
+    "DEFCON-1 rate: v80_sc=0% (scoring_card_held artifact), heuristic=6.8% (partially valid play)",
+    "Update MODEL_PATH in test_engine_integration.py once post-fix trained model available",
+    "WS6 Phase 3: FullState/Observation split (deferred until Phase 1+2 done)"
   ],
   "blocked_on": null,
   "active_background": [
-    "run_traced_game.py migration (a3c2559e)"
+    "v81_sc PPO training (PID 770977)",
+    "WS6 Phase 2 Codex agent (search_common.hpp)"
   ],
   "completed_this_session": [
-    "SPEED FIX: --rollout-workers 5 confirmed 3.2x speedup (187s vs 596s iter1)",
-    "FIXTURE POOL: 8+8=13 active. USSR diversity confirmed: v20,v21 sampled iter1. US fixtures will appear in subsequent iters.",
-    "BUG FIX 1 (commit 9c69fa4): fixture_each formula fixed (removed /len(fixtures))",
-    "BUG FIX 2 (commit ddaca63): fixture_mass_mult=2.0 for iter<5 (67% fixture weight in warmup)",
-    "BUG FIX 3 (commit ddaca63): heuristic_pct=0 when __heuristic__ in fixture pool",
-    "v77_sc BREAKTHROUGH iter10 Elo=2119.1, v78_sc HWM=0.488"
+    "v80_sc RECOVERY: ppo_final.pt missing \u2192 created from ppo_iter0030.pt; ppo_best.pt from ppo_running_best (iter0020, panel_avg_wr=0.533)",
+    "train_ppo.py: ppo_running_best\u2192ppo_best promotion at end of training (critical bug fix)",
+    "train_ppo.py: fix undefined best_scripted variable",
+    "ppo_loop_step.sh: watcher accepts ppo_running_best.pt as fallback",
+    "experiments_ppo.yaml: v81_sc added",
+    "v81_sc launched from v80_sc ppo_best.pt (PID 770977)",
+    "DEFCON-1 measurement: Random=39.5%, MinimalHybrid=6.8%, v80_sc=0% (scoring_card_held artifact)",
+    "WS6 Phase 2 dispatched: search_common.hpp extraction"
   ],
-  "last_updated": "2026-04-12T23:49:13.963113+00:00",
-  "context": "v79_sc running with all fixes: 8+8 fixture pool (USSR: v55,v48,v19,v21,v22,v20,v58,v45 + heuristic; US: v45,v15,v58,v18,v20,v16,v21,v49 + heuristic), --rollout-workers 5, PFSP warmup 2.0x mult, symmetric PFSP+UCB, no heuristic double-dip. At 187s/iter, iter10 ETA is ~April 13 00:00-02:00 UTC (~30min per iter group). Watcher PID=587007 auto-launches v80_sc on completion."
+  "last_updated": "2026-04-13T16:12:46.059837+00:00",
+  "context": "Engine fixes in place. v80_sc first trained model on corrected engine (30 iters). v81_sc continues lineage. DEFCON-1 rate <5% for trained model (0%). WS6 Phase 1 done (kDefconLoweringCards consolidated). WS6 Phase 2 in progress (search_common.hpp). Heuristic 6.8% includes valid Summit-endgame scenarios."
 }
