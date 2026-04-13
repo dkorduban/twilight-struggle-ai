@@ -190,4 +190,21 @@ int hand_count(const CardSet& hand) {
     return static_cast<int>(hand.count());
 }
 
+Observation make_observation(const GameState& gs, Side side) {
+    Observation obs;
+    obs.pub = gs.pub;
+    obs.own_hand = gs.hands[to_index(side)];
+    obs.side = side;
+    obs.opponent_hand_support.reset();
+    for (int raw = 1; raw <= kMaxCardId; ++raw) {
+        const auto card_id = static_cast<CardId>(raw);
+        if (!obs.own_hand.test(card_id) &&
+            !gs.pub.discard.test(card_id) &&
+            !gs.pub.removed.test(card_id)) {
+            obs.opponent_hand_support.set(card_id);
+        }
+    }
+    return obs;
+}
+
 }  // namespace ts

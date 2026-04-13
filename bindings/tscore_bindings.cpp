@@ -390,6 +390,18 @@ PYBIND11_MODULE(tscore, m) {
         .def_readonly("mode", &ts::ActionEncoding::mode)
         .def_readonly("targets", &ts::ActionEncoding::targets);
 
+    py::class_<ts::Observation>(m, "Observation")
+        .def_property_readonly("pub", [](const ts::Observation& obs) {
+            return public_state_to_dict(obs.pub);
+        })
+        .def_property_readonly("own_hand", [](const ts::Observation& obs) {
+            return bitset_to_list(obs.own_hand);
+        })
+        .def_property_readonly("opponent_hand_support", [](const ts::Observation& obs) {
+            return bitset_to_list(obs.opponent_hand_support);
+        })
+        .def_readonly("side", &ts::Observation::side);
+
     py::class_<ts::StepTrace>(m, "StepTrace")
         .def_readonly("turn", &ts::StepTrace::turn)
         .def_readonly("ar", &ts::StepTrace::ar)
@@ -504,6 +516,15 @@ PYBIND11_MODULE(tscore, m) {
             return ts::summarize_results(results);
         },
         py::arg("results")
+    );
+    m.def(
+        "make_observation",
+        [](const py::dict& state_dict, ts::Side side) {
+            return ts::make_observation(game_state_from_dict(state_dict), side);
+        },
+        py::arg("gs"),
+        py::arg("side"),
+        "Build an Observation (own hand + support mask) for the given side."
     );
 
     // play_callback_matchup: run games with a Python callable as one side's policy.

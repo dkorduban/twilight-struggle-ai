@@ -138,6 +138,16 @@ struct GameState {
     std::array<int, 2> setup_influence_remaining = {kUSSRSetupInfluence, kUSSetupInfluence};
 };
 
+// What the searching side is allowed to observe.
+// Pass this to search helpers instead of the full GameState to prevent
+// hidden-information leaks.
+struct Observation {
+    PublicState pub;
+    CardSet own_hand;
+    CardSet opponent_hand_support;
+    Side side = Side::USSR;
+};
+
 // Turn-specific constants and reset helpers used by normal play plus parity
 // tools that need exact setup control.
 int ars_for_turn(int turn);
@@ -151,5 +161,6 @@ void advance_to_mid_war(GameState& gs, Pcg64Rng& rng);
 void advance_to_late_war(GameState& gs, Pcg64Rng& rng);
 std::vector<CardId> hand_to_vector(const CardSet& hand);
 int hand_count(const CardSet& hand);
+Observation make_observation(const GameState& gs, Side side);
 
 }  // namespace ts
