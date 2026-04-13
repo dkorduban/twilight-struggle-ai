@@ -732,7 +732,6 @@ def main():
 
     # Persist to SQL for provenance and cross-tournament aggregation.
     try:
-        import sys
         sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
         from tsrl.checkpoint_db import log_tournament, DB_PATH
         from datetime import datetime, timezone
