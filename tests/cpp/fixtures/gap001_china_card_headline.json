@@ -1,0 +1,43 @@
+{
+  "name": "gap001_china_card_headline",
+  "gap_id": "GAP-001",
+  "description": "China Card must never be selected as a headline card",
+  "setup": {
+    "turn": 1,
+    "defcon": 5,
+    "ar": 0,
+    "ussr_hand": [
+      6,
+      11,
+      16
+    ],
+    "us_hand": [
+      4,
+      23,
+      35
+    ],
+    "influence": {}
+  },
+  "actions": [
+    {
+      "side": "USSR",
+      "card_id": 11,
+      "mode": "Event",
+      "note": "Representative legal USSR headline; fixture asserts card 6 is not eligible"
+    }
+  ],
+  "assertions": [
+    {
+      "field": "headline_choices_ussr",
+      "op": "not_contains",
+      "value": 6,
+      "note": "China Card (id=6) must not appear in the legal USSR headline set"
+    },
+    {
+      "field": "headline_choices_us",
+      "op": "not_contains",
+      "value": 6,
+      "note": "China Card must not leak into the opponent headline choice set either"
+    }
+  ]
+}

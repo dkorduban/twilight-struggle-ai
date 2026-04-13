@@ -1,0 +1,33 @@
+{
+  "name": "gap003_space_suppression",
+  "gap_id": "GAP-003",
+  "description": "Spacing an opponent card must not fire the opponent event",
+  "setup": {
+    "turn": 1,
+    "defcon": 5,
+    "ar": 1,
+    "ussr_hand": [
+      11
+    ],
+    "us_hand": [
+      12
+    ],
+    "influence": {}
+  },
+  "actions": [
+    {
+      "side": "US",
+      "card_id": 11,
+      "mode": "Space",
+      "note": "US spaces USSR card 11 (Korean War)"
+    }
+  ],
+  "assertions": [
+    {
+      "field": "milops_ussr",
+      "op": "eq",
+      "value": 0,
+      "note": "Korean War event did NOT fire (would give 2 milops)"
+    }
+  ]
+}
