@@ -155,7 +155,11 @@ std::vector<ActionMode> legal_modes(CardId card_id, const PublicState& pub, Side
         const auto level = pub.space[to_index(side)];
         const auto opp_level = pub.space[to_index(other_side(side))];
         const auto max_space = (level >= 2 && opp_level < 2) ? 2 : 1;
-        if (level < 8 && pub.space_attempts[to_index(side)] < max_space) {
+        if (
+            level < 8 &&
+            pub.space_attempts[to_index(side)] < max_space &&
+            effective_ops(card_id, pub, side) >= kSpaceOpsMinimum[static_cast<size_t>(level)]
+        ) {
             modes.push_back(ActionMode::Space);
         }
     }
