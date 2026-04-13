@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import random
 from pathlib import Path
 
 import polars as pl
@@ -52,45 +51,71 @@ def _all_true_mode_mask() -> list[bool]:
     return [True] * MODE_SLOTS
 
 
-def _load_source_rows(data_dir: Path) -> pl.DataFrame:
+def _source_paths(data_dir: Path) -> list[Path]:
     paths = sorted(data_dir.glob("*.parquet"))
     if not paths:
         raise FileNotFoundError(f"No *.parquet files found in {data_dir}")
+    return paths
 
-    needed_cols = {
-        "influence",
-        "cards",
-        "scalars",
-        "raw_turn",
-        "side_int",
-        "raw_defcon",
-        "raw_vp",
-        "hand_card_ids",
-        "mode_id",
-    }
+
+def _load_strata_index(data_dir: Path) -> pl.DataFrame:
+    """Load only scalar columns needed for stratified sampling + global row index.
+
+    Two-pass design: strata index uses <1% of the memory of the full dataset.
+    """
+    scalar_cols = {"raw_turn", "side_int", "raw_defcon", "raw_vp", "mode_id"}
+    paths = _source_paths(data_dir)
 
     frames: list[pl.DataFrame] = []
+    offset = 0
     for path in paths:
         available = set(pl.read_parquet_schema(path).keys())
-        cols = sorted(needed_cols & available)
-        frames.append(pl.read_parquet(path, columns=cols))
+        cols = sorted(scalar_cols & available)
+        f = pl.read_parquet(path, columns=cols).with_row_index(name="_local_idx")
+        f = f.with_columns(
+            (pl.col("_local_idx") + offset).alias("row_idx"),
+            pl.lit(str(path)).alias("_src_path"),
+        ).drop("_local_idx")
+        offset += len(f)
+        frames.append(f)
 
     frame = pl.concat(frames, how="vertical_relaxed")
-    for column in ("influence", "cards", "scalars"):
-        if column not in frame.columns:
-            raise ValueError(f"Source parquet missing required column {column!r}")
     for column in ("raw_turn", "side_int", "raw_defcon", "raw_vp"):
         if column not in frame.columns:
             raise ValueError(f"Source parquet missing required column {column!r}")
-
-    if "hand_card_ids" not in frame.columns:
-        frame = frame.with_columns(
-            pl.lit(None, dtype=pl.List(pl.Int32)).alias("hand_card_ids"),
-        )
     if "mode_id" not in frame.columns:
         frame = frame.with_columns(pl.lit(-1, dtype=pl.Int32).alias("mode_id"))
+    return frame
 
-    return frame.with_row_index(name="row_idx")
+
+def _load_full_rows_for_indices(data_dir: Path, selected_idx: set[int]) -> pl.DataFrame:
+    """Load full feature columns for a specific set of global row indices."""
+    needed_cols = {"influence", "cards", "scalars", "raw_turn", "side_int",
+                   "raw_defcon", "raw_vp", "hand_card_ids", "mode_id"}
+    paths = _source_paths(data_dir)
+
+    frames: list[pl.DataFrame] = []
+    offset = 0
+    for path in paths:
+        available = set(pl.read_parquet_schema(path).keys())
+        cols = sorted(needed_cols & available)
+        f = pl.read_parquet(path, columns=cols).with_row_index(name="_local_idx")
+        n_rows = len(f)
+        local_needed = [i - offset for i in selected_idx if offset <= i < offset + n_rows]
+        if local_needed:
+            f = f.filter(pl.col("_local_idx").is_in(local_needed))
+            f = f.with_columns((pl.col("_local_idx") + offset).alias("row_idx")).drop("_local_idx")
+            frames.append(f)
+        offset += n_rows
+
+    if not frames:
+        return pl.DataFrame()
+    frame = pl.concat(frames, how="vertical_relaxed")
+    if "hand_card_ids" not in frame.columns:
+        frame = frame.with_columns(pl.lit(None, dtype=pl.List(pl.Int32)).alias("hand_card_ids"))
+    if "mode_id" not in frame.columns:
+        frame = frame.with_columns(pl.lit(-1, dtype=pl.Int32).alias("mode_id"))
+    return frame
 
 
 def _allocate_counts(group_sizes: dict[str, int], n: int) -> dict[str, int]:
@@ -148,55 +173,63 @@ def build_probe_set(
     if out_path.exists() and not force:
         raise FileExistsError(f"{out_path} already exists; pass --force to overwrite")
 
-    frame = _load_source_rows(data_dir)
-    rows = frame.to_dicts()
-    strata: dict[str, list[dict]] = {}
-    for row in rows:
-        key = "|".join(
-            (
-                _turn_bucket(int(row["raw_turn"])),
-                str(int(row["side_int"])),
-                _defcon_bucket(int(row["raw_defcon"])),
-                _vp_bucket(int(row["raw_vp"])),
-            )
-        )
-        strata.setdefault(key, []).append(row)
+    # Pass 1: load only scalar columns for stratified sampling (memory-efficient).
+    index_frame = _load_strata_index(data_dir)
+    index_frame = index_frame.with_columns(
+        pl.col("raw_turn").map_elements(_turn_bucket, return_dtype=pl.String).alias("_tb"),
+        pl.col("side_int").cast(pl.String).alias("_si"),
+        pl.col("raw_defcon").map_elements(_defcon_bucket, return_dtype=pl.String).alias("_db"),
+        pl.col("raw_vp").map_elements(_vp_bucket, return_dtype=pl.String).alias("_vb"),
+    ).with_columns(
+        (pl.col("_tb") + "|" + pl.col("_si") + "|" + pl.col("_db") + "|" + pl.col("_vb")).alias("_stratum")
+    )
 
-    allocations = _allocate_counts({key: len(items) for key, items in strata.items()}, n)
-    rng = random.Random(seed)
+    group_sizes = {
+        row["_stratum"]: row["count"]
+        for row in index_frame.group_by("_stratum").agg(pl.len().alias("count")).to_dicts()
+    }
+    allocations = _allocate_counts(group_sizes, n)
 
-    selected_rows: list[dict] = []
-    for key in sorted(strata):
-        group = strata[key]
-        want = allocations.get(key, 0)
+    # Sample row_idx values per stratum.
+    selected_indices: list[int] = []
+    for idx, (stratum_key, want) in enumerate(sorted(allocations.items())):
         if want <= 0:
             continue
+        group = index_frame.filter(pl.col("_stratum") == stratum_key)
         if want >= len(group):
-            chosen = list(group)
+            chosen = group
         else:
-            chosen = rng.sample(group, want)
-        selected_rows.extend(chosen)
+            chosen = group.sample(n=want, seed=seed + idx, shuffle=True)
+        selected_indices.extend(chosen["row_idx"].to_list())
 
-    selected_rows.sort(key=lambda row: int(row["row_idx"]))
-    out_rows = []
-    for row in selected_rows:
-        out_rows.append(
-            {
-                "influence": row["influence"],
-                "cards": row["cards"],
-                "scalars": row["scalars"],
-                "card_mask": _hand_to_card_mask(row.get("hand_card_ids")),
-                "mode_mask": _all_true_mode_mask(),
-                "raw_turn": int(row["raw_turn"]),
-                "side_int": int(row["side_int"]),
-                "raw_defcon": int(row["raw_defcon"]),
-                "raw_vp": int(row["raw_vp"]),
-                "mode_id": int(row.get("mode_id", -1)),
-            }
+    selected_indices_set = set(selected_indices)
+
+    # Pass 2: load full feature columns only for the selected row indices.
+    selected = _load_full_rows_for_indices(data_dir, selected_indices_set).sort("row_idx")
+
+    # Build card_mask and mode_mask.
+    if "hand_card_ids" in selected.columns:
+        selected = selected.with_columns(
+            pl.col("hand_card_ids")
+            .map_elements(_hand_to_card_mask, return_dtype=pl.List(pl.Boolean))
+            .alias("card_mask")
         )
+    else:
+        selected = selected.with_columns(
+            pl.Series("card_mask", [[True] * CARD_SLOTS] * len(selected))
+        )
+    selected = selected.with_columns(
+        pl.Series("mode_mask", [[True] * MODE_SLOTS] * len(selected))
+    )
+
+    output = selected.select(
+        "influence", "cards", "scalars",
+        "card_mask", "mode_mask",
+        "raw_turn", "side_int", "raw_defcon", "raw_vp", "mode_id",
+    )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    pl.DataFrame(out_rows).write_parquet(out_path)
+    output.write_parquet(out_path)
     return out_path
 
 

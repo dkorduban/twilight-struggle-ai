@@ -1,0 +1,129 @@
+# Snakefile.data — Data collection pipeline
+#
+# Usage:
+#   # Collect heuristic self-play games (N=1000)
+#   uv run snakemake --snakefile Snakefile.data -j1 --resources gpu=1 \
+#       data/ppo_rollout_combined/heuristic_1000.parquet
+#
+#   # Build probe set from existing rollout directory
+#   uv run snakemake --snakefile Snakefile.data -j1 data/probe_positions.parquet
+#
+#   # Collect BC dataset from a trained model
+#   uv run snakemake --snakefile Snakefile.data -j1 --resources gpu=1 \
+#       --config bc_model=data/checkpoints/ppo_v55_league/ppo_best.pt \
+#               bc_n_games=4000 bc_tag=v55 bc_seed=90000
+
+import os
+
+# ---------------------------------------------------------------------------
+# Default target
+# ---------------------------------------------------------------------------
+rule data_all:
+    input:
+        "data/probe_positions.parquet"
+
+# ---------------------------------------------------------------------------
+# Rule: collect heuristic self-play games
+#   Output: data/ppo_rollout_combined/heuristic_{n_games}.parquet
+#   Wildcard n_games: number of games to play (e.g. 1000)
+# ---------------------------------------------------------------------------
+rule collect_heuristic_games:
+    output:
+        parquet="data/ppo_rollout_combined/heuristic_{n_games}.parquet"
+    params:
+        n_games=lambda wc: int(wc.n_games)
+    resources:
+        gpu=1
+    log:
+        "results/logs/data/heuristic_{n_games}.log"
+    shell:
+        """
+        mkdir -p data/ppo_rollout_combined results/logs/data
+        echo "[collect_heuristic_games] n={params.n_games} starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        uv run python scripts/collect_heuristic_selfplay.py \
+            --n-games {params.n_games} \
+            --out {output.parquet} \
+            --seed 42 \
+            --workers 4 \
+            2>&1 | tee -a {log}
+        echo "[collect_heuristic_games] done at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        """
+
+# ---------------------------------------------------------------------------
+# Rule: build probe position set from rollout parquet files
+#   Input:  data/ppo_rollout_combined/ directory (any *.parquet files inside)
+#   Output: data/probe_positions.parquet
+# ---------------------------------------------------------------------------
+rule build_probe_set:
+    input:
+        data_dir="data/ppo_rollout_combined"
+    output:
+        probe="data/probe_positions.parquet"
+    log:
+        "results/logs/data/build_probe_set.log"
+    shell:
+        """
+        mkdir -p results/logs/data
+        echo "[build_probe_set] starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        uv run python scripts/build_probe_set.py \
+            --data-dir {input.data_dir} \
+            --out {output.probe} \
+            --n 1000 \
+            --seed 42 \
+            --force \
+            2>&1 | tee -a {log}
+        echo "[build_probe_set] done at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        """
+
+# ---------------------------------------------------------------------------
+# Rule: collect BC dataset from a trained model checkpoint
+#   Config keys (pass via --config):
+#     bc_model    — path to model checkpoint (required)
+#     bc_n_games  — number of games (default: 4000)
+#     bc_out_dir  — output directory (default: data/bc_dataset)
+#     bc_seed     — RNG seed (default: 90000)
+#     bc_tag      — dataset tag for file naming (default: model)
+#     bc_mode     — "onesided" or "selfplay" (default: onesided)
+# ---------------------------------------------------------------------------
+_BC_MODEL   = config.get("bc_model", "")
+_BC_NGAMES  = config.get("bc_n_games", 4000)
+_BC_OUT_DIR = config.get("bc_out_dir", "data/bc_dataset")
+_BC_SEED    = config.get("bc_seed", 90000)
+_BC_TAG     = config.get("bc_tag", "model")
+_BC_MODE    = config.get("bc_mode", "onesided")
+
+rule collect_bc_dataset:
+    input:
+        model=lambda _: [_BC_MODEL] if _BC_MODEL else []
+    output:
+        sentinel=os.path.join(str(_BC_OUT_DIR), ".bc_collection_complete")
+    params:
+        model=_BC_MODEL,
+        n_games=_BC_NGAMES,
+        out_dir=_BC_OUT_DIR,
+        seed=_BC_SEED,
+        tag=_BC_TAG,
+        mode=_BC_MODE,
+    resources:
+        gpu=1
+    log:
+        "results/logs/data/collect_bc_{tag}.log".format(tag=_BC_TAG)
+    shell:
+        """
+        if [ -z "{params.model}" ]; then
+            echo "[collect_bc_dataset] missing --config bc_model=<path>" >&2
+            exit 1
+        fi
+        mkdir -p "{params.out_dir}" results/logs/data
+        echo "[collect_bc_dataset] model={params.model} n={params.n_games} mode={params.mode} starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        PYTHONPATH=build-ninja/bindings uv run python scripts/collect_bc_dataset.py \
+            --model "{params.model}" \
+            --n-games {params.n_games} \
+            --out-dir "{params.out_dir}" \
+            --seed {params.seed} \
+            --tag "{params.tag}" \
+            --mode "{params.mode}" \
+            2>&1 | tee -a {log}
+        touch "{output.sentinel}"
+        echo "[collect_bc_dataset] done at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        """

@@ -218,7 +218,7 @@ rule ppo_train:
 
 rule ppo_train_dynamic:
     input:
-        checkpoint=_DYNAMIC_TRAIN_CFG["checkpoint"]
+        checkpoint=lambda _: [_DYNAMIC_TRAIN_CFG["checkpoint"]] if _DYNAMIC_TRAIN_CFG["checkpoint"] else []
     output:
         final=os.path.join(_DYNAMIC_TRAIN_CFG["out_dir"], "ppo_final.pt")
     params:
@@ -237,8 +237,10 @@ rule ppo_train_dynamic:
         fi
         mkdir -p "{params.out_dir}" "$(dirname "{log}")"
         echo "[ppo_train_dynamic] starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "{log}"
+        CKPT_ARG=""
+        if [ -n "{input.checkpoint}" ]; then CKPT_ARG="--checkpoint {input.checkpoint}"; fi
         uv run python scripts/train_ppo.py \
-            --checkpoint "{input.checkpoint}" \
+            $CKPT_ARG \
             --out-dir "{params.out_dir}" \
             {params.train_args} \
             >> "{log}" 2>&1
@@ -369,6 +371,32 @@ rule ppo_confirm:
             2>&1 | tee -a {log}
         touch {output.confirmed}
         echo "[ppo_confirm] {wildcards.name}: done at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        """
+
+# ---------------------------------------------------------------------------
+# Rollout collection: self-play games from a trained checkpoint
+# ---------------------------------------------------------------------------
+rule collect_selfplay_rollout:
+    input:
+        model="data/checkpoints/scripted_for_elo/{version}_scripted.pt"
+    output:
+        parquet="data/ppo_rollout_combined/{version}_selfplay_{n_games}.parquet"
+    params:
+        n_games=lambda wc: int(wc.n_games)
+    resources:
+        gpu=1
+    log:
+        "results/logs/ppo/rollout_{version}_{n_games}.log"
+    shell:
+        """
+        mkdir -p data/ppo_rollout_combined results/logs/ppo
+        echo "[collect_selfplay_rollout] {wildcards.version} n={params.n_games} starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
+        PYTHONPATH=build-ninja/bindings uv run python scripts/collect_learned_selfplay_batched.py \
+            --checkpoint {input.model} \
+            --n-games {params.n_games} \
+            --out {output.parquet} \
+            2>&1 | tee -a {log}
+        echo "[collect_selfplay_rollout] done at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a {log}
         """
 
 # Quick target: just run confirmation tournaments for all experiments
