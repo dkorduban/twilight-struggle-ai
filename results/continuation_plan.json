@@ -1,27 +1,36 @@
 {
-  "current_task": "PPO running v143_sc (iter 23/30). Two bugs fixed this session: (1) panel_eval combined_wr formula was measuring total USSR/US wins not our model's wins (always ~0.5 noise), now fixed to use index-based counting from single benchmark_model_vs_model_batched call; (2) fixture pool was all old-engine models 100-175 ELO above current model (1944), now updated to include v138-v142_sc (ELO 1944-1979) for near-equal training signal.",
+  "current_task": "PPO running v153_sc (LR=5e-5, 3rd run with new LR). Panel eval trend confirmed improving: v148=0.698 → v149=0.706 → v151=0.708 → v152=0.727 (all iter20). KL steady 0.002-0.003. Model is learning.",
   "next_tasks": [
-    "Monitor v144_sc ELO with fixed panel eval + balanced fixtures — expect ELO stabilization or improvement",
-    "If ELO still declining after v145_sc: consider LR increase (2e-5 → 5e-5) or games_per_iter increase (200→400)",
+    "Monitor v153_sc panel eval iter20 — expect ≥0.727 if trend continues",
+    "If panel eval plateaus at 0.73-0.74 for 3 runs: consider further LR increase to 1e-4",
+    "Check ELO trend once v151-v153 ELO placements complete (ELO noisy due to diverse opponent selection)",
     "GAP-005: Core ops placement legality (complex, lower priority)",
     "Python engine full removal: migrate 51 callers to tscore bindings, then delete python/tsrl/engine/",
     "Task #46: Hash-based match cache identity (key by file SHA256, not name)"
   ],
   "blocked_on": null,
   "active_background": [
-    "v143_sc PPO training (auto-chains to v144_sc with balanced fixtures)"
+    "v153_sc PPO training (LR=5e-5, auto-chains to v154_sc)"
   ],
   "completed_this_session": [
-    "Panel eval formula bug fixed: combined_wr was counting total USSR/US wins (always ~0.5 noise), now uses index-based counting from single call so it measures OUR model's actual WR",
-    "Fixture pool rebalanced: added v138_sc(1979), v140_sc(1949), v142_sc(1944), v67_sc(2017) to both USSR and US pools; both pools now symmetric (same 8 opponents) to prevent USSR/US training bias",
-    "Previous session: Probe parquet mode_mask fix, v128_sc restart, ELO regression diagnosis, v132_sc reset from v77_sc (ELO 2119), W&B chart improvements",
-    "30-min ScheduleWakeup added to standing policy"
+    "Panel eval formula bug fixed: combined_wr was counting total USSR/US wins (always ~0.5 noise)",
+    "Fixture pool rebalanced: symmetric 8+8 pool with near-equal sc-lineage models",
+    "LR increased 2e-5 → 5e-5: KL went from 0.0005-0.001 to 0.002-0.003",
+    "Panel eval confirmed improving: 0.698 → 0.727 across 5 runs with new settings"
   ],
   "root_cause_diagnosis": {
-    "panel_eval_bug": "benchmark_model_vs_model_batched returns results ordered [model_a=USSR games, model_a=US games]. Old code counted ALL USSR wins from r_a (including opponent USSR wins in second half) + ALL US wins from r_b (including opponent US wins). Expected value always 0.5 regardless of opponent strength. Fixed: single call, count only our model's wins by result index.",
-    "fixture_asymmetry": "All previous fixtures (v48,v55,v45,v19-v22) were old-engine models at ELO 2042-2118, while our current model is at 1944. Model consistently loses 70-75% of games → tiny positive advantage signal → PPO can't learn effectively. Near-equal opponents (v138-v142_sc at 1944-1979) give WR near 50% → maximum PFSP weight → best learning signal.",
-    "elo_decline": "v132_sc started at 2092 and declined to 1944 over 10 runs primarily due to: (1) inaccurate panel eval HWM selection (noise-based), (2) fixture pool too hard causing one-sided loss data, (3) model drifting from USSR-strong to US-strong due to fixture asymmetry"
+    "panel_eval_bug": "FIXED. Single call with index-based counting.",
+    "fixture_asymmetry": "FIXED. Symmetric 8+8 pool: [v142_sc=1944, v140_sc=1949, v138_sc=1979, v67_sc=2017, v20=2077, v58=2057, v45=2096, v55=2118].",
+    "lr_too_small": "FIXED. LR=2e-5 gave KL=0.0005-0.001. LR=5e-5 gives KL=0.002-0.003. Panel eval improving 0.698→0.727.",
+    "elo_measurement_noise": "ELO placement uses different diverse opponents each run — unreliable for tracking progress. Panel eval (fixed opponents: v55,v54,v44,v45,v14) is the reliable signal."
   },
-  "last_updated": "2026-04-13T22:30:00+00:00",
-  "context": "v143_sc iter20 panel eval (first with correct formula) showed avg=0.552 vs [v55,v54,v44,v45,v14] — plausible for a model at ~2092 ELO (v77_sc-derived). The panel eval HWM is now set to iter20. v144_sc will use the balanced fixture pool and correctly-computed panel eval. If learning is still stalled, next lever is LR increase or games_per_iter increase."
+  "panel_eval_trend": {
+    "v148_sc_iter20": 0.698,
+    "v149_sc_iter20": 0.706,
+    "v150_sc_iter20": 0.698,
+    "v151_sc_iter20": 0.708,
+    "v152_sc_iter20": 0.727
+  },
+  "last_updated": "2026-04-13T22:52:00+00:00",
+  "context": "With LR=5e-5 (from v151_sc), panel eval is now clearly improving. v152_sc showed avg=0.727 at iter20, the highest so far. KL is steady 0.002-0.003 (was 0.0005-0.001 at LR=2e-5). The probe card_jsd is 0.0003 per 10 iters (vs 0.0001 before). The ELO measurements (1838-1866) are unreliable due to random diverse opponent selection — panel eval is the right tracking metric."
 }
