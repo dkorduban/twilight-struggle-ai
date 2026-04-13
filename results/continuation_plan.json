@@ -1,36 +1,33 @@
 {
-  "current_task": "PPO running v157_sc (LR=5e-5). Panel eval at iter20 is strongly improving run-over-run. v156_sc hit 0.785. Model is learning effectively after three fixes: panel formula, fixture balance, LR increase.",
+  "current_task": "PPO running v158_sc (old panel, last run with v55/v54/v44/v45/v14). v159_sc will be first with new sc-lineage panel (v67_sc/v136_sc/v77_sc/v78_sc/v132_sc, ELO 2017-2097).",
   "next_tasks": [
-    "Monitor v157_sc panel eval iter20 — expect ~0.78-0.80",
-    "If panel eval reaches 0.82+ and plateaus: consider if 30-iter run is long enough (may need 50 iters to keep compounding)",
-    "Architecture work (Codex ready): Phase 1 = decode_helpers.hpp (learned_policy.cpp vs mcts_batched.cpp greedy decode dedup)",
-    "Architecture work (Codex ready): Phase 2 = search_common.hpp (WS6 Phase 2, MCTS semantic helpers)",
-    "GAP-005: Core ops placement legality (keep separate from arch refactor)",
+    "Monitor v159_sc panel eval iter10/20 — expect ~0.20-0.30 WR with new harder sc-lineage panel",
+    "Track panel eval trend with new panel over 3-5 runs to establish new baseline",
+    "Architecture work (Codex): Phase 1 = decode_helpers.hpp (learned_policy.cpp vs mcts_batched.cpp greedy decode dedup)",
+    "Architecture work (Codex): Phase 2 = search_common.hpp (WS6 Phase 2, MCTS semantic helpers)",
+    "GAP-005: Core ops placement legality (complex, keep separate)",
     "Python engine full removal: migrate 51 callers to tscore bindings",
-    "Task #46: Hash-based match cache identity (key by file SHA256, not name)"
+    "Task #46: Hash-based match cache identity"
   ],
   "blocked_on": null,
   "active_background": [
-    "v157_sc PPO training (LR=5e-5, auto-chains)"
+    "v158_sc PPO training (old panel, auto-chains to v159_sc with new panel)"
   ],
   "completed_this_session": [
     "Panel eval formula bug fixed",
     "Fixture pool rebalanced to symmetric 8+8 with near-equal sc-lineage models",
     "LR increased 2e-5 → 5e-5: KL 0.0005-0.001 → 0.002-0.003",
-    "ccache integrated in CMakeLists.txt (CMAKE_CXX_COMPILER_LAUNCHER); cache max 15GB"
+    "ccache integrated in CMakeLists.txt",
+    "Panel upgraded from saturated old-engine opponents to sc-lineage (v67_sc/v136_sc/v77_sc/v78_sc/v132_sc)"
   ],
-  "panel_eval_trend": {
-    "v148_sc_iter20": 0.698,
-    "v149_sc_iter20": 0.706,
-    "v150_sc_iter20": 0.698,
-    "v151_sc_iter20": 0.708,
-    "v152_sc_iter20": 0.727,
-    "v153_sc_iter20": 0.733,
-    "v154_sc_iter20": 0.752,
-    "v155_sc_iter20": 0.754,
-    "v156_sc_iter20": 0.785
+  "panel_eval_trend_old_panel": {
+    "note": "Old panel (v55/v54/v44/v45/v14) saturated at 0.878 WR (v157_sc). Trend: v148=0.698→v157=0.878. Panel was too easy — old-engine models play suboptimally in new engine.",
+    "v148_sc": 0.698, "v149_sc": 0.706, "v151_sc": 0.708, "v152_sc": 0.727,
+    "v153_sc": 0.733, "v154_sc": 0.752, "v155_sc": 0.754, "v156_sc": 0.785, "v157_sc": 0.878
   },
-  "elo_trend_note": "ELO noisy due to random diverse opponents (1769-1809 range). Panel eval (fixed) is reliable signal. v155_sc ELO ticked up to 1809 from 1769.",
-  "last_updated": "2026-04-13T23:05:00+00:00",
-  "context": "v156_sc hit 0.785 at iter20 — the highest panel eval so far. Total gain from fixes: +0.087 over 6 LR=5e-5 runs. The panel opponents (v55/v54/v44/v45/v14, ELO 2042-2118 old-engine) are being beaten 78.5% of the time. If model continues to improve, the panel opponents may become too easy as a signal (~2 more runs). Watch for plateau near 0.80+ and consider upgrading panel to sc-lineage opponents."
+  "panel_eval_trend_new_panel": {
+    "note": "New panel: v67_sc(2017), v136_sc(2022), v77_sc(2092), v78_sc(2097), v132_sc(2092). Expected WR at ~1800 ELO: 18-25%. Effective v159_sc+."
+  },
+  "last_updated": "2026-04-13T23:12:00+00:00",
+  "context": "Three root cause fixes (panel formula + fixture balance + LR=5e-5) drove panel WR 0.698→0.878 in 10 runs. But panel saturated because old-engine opponents (v44/v45/v55 nominal ELO 2042-2096) play poorly in the new engine. New sc-lineage panel will give honest discrimination. Model is genuinely strong — beating old frontier models 87% of the time."
 }
