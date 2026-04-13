@@ -22,7 +22,7 @@
 
 #include <torch/torch.h>
 
-#include "card_properties.hpp"
+#include "decode_helpers.hpp"
 #include "game_data.hpp"
 #include "game_loop.hpp"
 #include "human_openings.hpp"
@@ -301,83 +301,9 @@ struct AggregatedVisitCount {
 };
 
 torch::Tensor tensor_at(const torch::Tensor& tensor, int64_t index) {
-    return tensor.index({index});
+    return decode::tensor_at(tensor, index);
 }
 
-int argmax_index(const torch::Tensor& tensor) {
-    return tensor.argmax(/*dim=*/0).item<int>();
-}
-
-ActionEncoding build_action_from_country_logits(
-    CardId card_id,
-    ActionMode mode,
-    const torch::Tensor& country_logits,
-    const PublicState& pub,
-    Side side,
-    const torch::Tensor& strategy_logits,
-    const torch::Tensor& country_strategy_logits
-) {
-    const auto accessible = accessible_countries_filtered(pub, side, card_id, mode);
-    if (accessible.empty()) {
-        return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {}};
-    }
-
-    auto source_logits = country_logits;
-    if (strategy_logits.defined() && country_strategy_logits.defined()) {
-        const auto strategy_index = strategy_logits.argmax(/*dim=*/0).item<int64_t>();
-        source_logits = country_strategy_logits.index({strategy_index});
-    }
-
-    auto masked = torch::full_like(source_logits, -std::numeric_limits<float>::infinity());
-    for (const auto cid : accessible) {
-        const auto index = static_cast<int64_t>(cid);
-        masked.index_put_({index}, tensor_at(source_logits, index));
-    }
-    const auto probs = torch::softmax(masked, 0);
-
-    if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
-        const auto target = static_cast<CountryId>(argmax_index(probs));
-        return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {target}};
-    }
-
-    const auto ops = effective_ops(card_id, pub, side);
-    const auto accessible_indices = torch::tensor(
-        std::vector<int64_t>(accessible.begin(), accessible.end()),
-        torch::TensorOptions().dtype(torch::kInt64)
-    );
-    auto accessible_probs = probs.index({accessible_indices});
-    auto alloc = accessible_probs * static_cast<double>(ops);
-    auto floor_alloc = torch::floor(alloc).to(torch::kInt64);
-    auto remainder = ops - static_cast<int>(floor_alloc.sum().item<int64_t>());
-    if (remainder > 0) {
-        auto fractional = alloc - floor_alloc.to(torch::kFloat32);
-        std::vector<std::pair<float, CountryId>> order;
-        order.reserve(accessible.size());
-        for (size_t i = 0; i < accessible.size(); ++i) {
-            const auto index = static_cast<int64_t>(i);
-            order.emplace_back(-tensor_at(fractional, index).item<float>(), accessible[i]);
-        }
-        std::sort(order.begin(), order.end());
-        for (int i = 0; i < remainder && i < static_cast<int>(order.size()); ++i) {
-            const auto target = order[static_cast<size_t>(i)].second;
-            const auto pos = static_cast<long long>(
-                std::find(accessible.begin(), accessible.end(), target) - accessible.begin()
-            );
-            const auto pos64 = static_cast<int64_t>(pos);
-            floor_alloc.index_put_({pos64}, tensor_at(floor_alloc, pos64).item<int64_t>() + 1);
-        }
-    }
-
-    ActionEncoding action{.card_id = card_id, .mode = mode, .targets = {}};
-    for (size_t i = 0; i < accessible.size(); ++i) {
-        const auto index = static_cast<int64_t>(i);
-        const auto count = tensor_at(floor_alloc, index).item<int64_t>();
-        for (int64_t j = 0; j < count; ++j) {
-            action.targets.push_back(accessible[i]);
-        }
-    }
-    return action;
-}
 
 void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng& rng) {
     const auto side = state.pub.phasing;
@@ -3353,8 +3279,9 @@ void collect_games_batched(
 
 namespace {
 
-// Exact mirror of TorchScriptPolicy::choose_action logic from learned_policy.cpp,
-// but reads from BatchOutputs instead of calling forward_model individually.
+// Greedy decode shares TorchScriptPolicy::choose_action semantics via
+// decode_helpers.hpp, while rollout decode below keeps the same mask/log-prob
+// bookkeeping around that shared logic.
 // Sample from logits using temperature. T=0 → argmax, T>0 → softmax sampling.
 CardId sample_from_masked_logits(torch::Tensor masked, float temperature, Pcg64Rng& rng) {
     if (temperature <= 0.0f) {
@@ -3607,15 +3534,8 @@ ActionEncoding greedy_action_from_outputs(
     float temperature = 0.0f
 ) {
     const auto& pub = state.pub;
-    const auto side = pub.phasing;
-    const auto holds_china = holds_china_for(state, side);
-    const auto& hand = state.hands[to_index(side)];
-
-    auto playable = legal_cards(hand, pub, side, holds_china);
-    if (playable.empty()) {
-        return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
-            .value_or(ActionEncoding{});
-    }
+    const auto holds_china = holds_china_for(state, pub.phasing);
+    const auto& hand = state.hands[to_index(pub.phasing)];
 
     const auto card_logits = outputs.card_logits.index({batch_index});
     const auto mode_logits = outputs.mode_logits.index({batch_index});
@@ -3626,147 +3546,36 @@ ActionEncoding greedy_action_from_outputs(
     const auto country_strategy_logits_raw = outputs.country_strategy_logits.defined()
         ? outputs.country_strategy_logits.index({batch_index}) : torch::Tensor{};
 
-    // ── Card selection with DEFCON safety (mirrors learned_policy.cpp) ──
-    auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
-    for (const auto card_id : playable) {
-        if (is_defcon_lowering_card(card_id)) {
-            const auto& ci = card_spec(card_id);
-            const bool is_opp = (ci.side != side && ci.side != Side::Neutral);
-            const bool is_neutral = (ci.side == Side::Neutral);
-            if (is_opp) {
-                if (pub.defcon <= 2) continue;
-                if (pub.defcon == 3 && pub.ar == 0) continue;
-            }
-            if (is_neutral && pub.ar == 0 && pub.defcon <= 3) continue;
-        }
-        const auto index = static_cast<int64_t>(card_id - 1);
-        masked_card.index_put_({index}, tensor_at(card_logits, index));
-    }
-
-    // If all masked, fall back to heuristic.
-    {
-        bool all_masked = true;
-        for (const auto card_id : playable) {
-            const auto index = static_cast<int64_t>(card_id - 1);
-            if (tensor_at(masked_card, index).item<float>() > -std::numeric_limits<float>::infinity()) {
-                all_masked = false;
-                break;
-            }
-        }
-        if (all_masked) {
-            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
-                .value_or(ActionEncoding{});
-        }
-    }
-
-    auto sampled_card_id = sample_from_masked_logits(masked_card, temperature, rng);
-
-    // ── Mode selection (mirrors learned_policy.cpp) ──
-    auto modes = legal_modes(sampled_card_id, pub, side);
-    if (modes.empty()) {
+    auto heuristic_fallback = [&]() {
         return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
             .value_or(ActionEncoding{});
-    }
+    };
 
-    auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
-    for (const auto m : modes) {
-        const auto index = static_cast<int64_t>(static_cast<int>(m));
-        masked_mode.index_put_({index}, tensor_at(mode_logits, index));
-    }
-    auto mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
-
-    // DEFCON safety: no coup at DEFCON ≤ 2.
-    if (mode == ActionMode::Coup && pub.defcon <= 2) {
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
-        if (modes.empty()) {
-            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
-                .value_or(ActionEncoding{});
-        }
-        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
-        for (const auto m : modes) {
-            masked_mode.index_put_({static_cast<int64_t>(static_cast<int>(m))}, tensor_at(mode_logits, static_cast<int>(m)));
-        }
-        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
-    }
-
-    // DEFCON safety: no event for DEFCON-lowering cards at DEFCON ≤ 2.
-    if (pub.defcon <= 2 && mode == ActionMode::Event && is_defcon_lowering_card(sampled_card_id)) {
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
-        if (modes.empty()) {
-            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
-                .value_or(ActionEncoding{});
-        }
-        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
-        for (const auto m : modes) {
-            masked_mode.index_put_({static_cast<int64_t>(static_cast<int>(m))}, tensor_at(mode_logits, static_cast<int>(m)));
-        }
-        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
-    }
-
-    // Re-apply coup guard after event guard may have changed mode.
-    if (mode == ActionMode::Coup && pub.defcon <= 2) {
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
-        if (modes.empty()) {
-            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
-                .value_or(ActionEncoding{});
-        }
-        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
-        for (const auto m : modes) {
-            masked_mode.index_put_({static_cast<int64_t>(static_cast<int>(m))}, tensor_at(mode_logits, static_cast<int>(m)));
-        }
-        if (temperature <= 0.0f) {
-            mode = static_cast<ActionMode>(masked_mode.argmax(0).item<int64_t>());
-        } else {
+    return decode::choose_action_from_outputs(
+        pub,
+        hand,
+        holds_china,
+        /*use_country_head=*/true,
+        card_logits,
+        mode_logits,
+        country_logits_raw,
+        strategy_logits_raw,
+        country_strategy_logits_raw,
+        rng,
+        [&](const torch::Tensor& masked_card) -> CardId {
+            return sample_from_masked_logits(masked_card, temperature, rng);
+        },
+        [&](const torch::Tensor& masked_mode) -> ActionMode {
+            if (temperature <= 0.0f) {
+                return static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+            }
             auto scaled = masked_mode / temperature;
             auto probs = torch::softmax(scaled, 0);
-            mode = static_cast<ActionMode>(torch::multinomial(probs, 1).item<int64_t>());
-        }
-    }
-
-    // Belt-and-suspenders DEFCON safety gate.
-    if (pub.defcon <= 2 && is_defcon_lowering_card(sampled_card_id)) {
-        const auto& ci = card_spec(sampled_card_id);
-        const bool event_fires_for_any_mode = (ci.side != side && ci.side != Side::Neutral);
-        const bool event_fires_for_event_space =
-            (mode == ActionMode::Event) ||
-            (mode == ActionMode::Space && event_fires_for_any_mode);
-        if (event_fires_for_any_mode || event_fires_for_event_space) {
-            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
-                .value_or(ActionEncoding{});
-        }
-    }
-
-    // ── Target selection ──
-    if (mode == ActionMode::Event || mode == ActionMode::Space) {
-        return ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {}};
-    }
-
-    if (country_logits_raw.defined()) {
-        auto action = build_action_from_country_logits(
-            sampled_card_id, mode, country_logits_raw,
-            pub, side, strategy_logits_raw, country_strategy_logits_raw);
-        if (!action.targets.empty()) {
-            return action;
-        }
-    }
-
-    // Fallback: random target selection (mirrors learned_policy.cpp).
-    const auto accessible = accessible_countries_filtered(pub, side, sampled_card_id, mode);
-    if (!accessible.empty()) {
-        if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
-            const auto target = accessible[rng.choice_index(accessible.size())];
-            return ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {target}};
-        }
-        const auto ops = effective_ops(sampled_card_id, pub, side);
-        ActionEncoding action{.card_id = sampled_card_id, .mode = mode, .targets = {}};
-        for (int i = 0; i < ops; ++i) {
-            action.targets.push_back(accessible[rng.choice_index(accessible.size())]);
-        }
-        return action;
-    }
-
-    return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
-        .value_or(ActionEncoding{});
+            return static_cast<ActionMode>(torch::multinomial(probs, 1).item<int64_t>());
+        },
+        heuristic_fallback,
+        heuristic_fallback
+    );
 }
 
 void commit_greedy_action(GameSlot& slot, const ActionEncoding& action, const PolicyCallbackFn* policy_cb = nullptr) {

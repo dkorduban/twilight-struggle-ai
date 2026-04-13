@@ -19,6 +19,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 add_executable(test_tscore
+    test_decode_helpers.cpp
     test_public_state.cpp
 )
 
