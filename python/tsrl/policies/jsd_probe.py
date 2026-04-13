@@ -156,8 +156,9 @@ class ProbeEvaluator:
                     country_head_a = out_a.get("country_logits")
                     country_head_b = out_b.get("country_logits")
                     if country_head_a is not None and country_head_b is not None:
-                        country_active = (
-                            (mode_ids == 0) | (mode_ids == 1) | (mode_ids == 2)
+                        country_active = torch.tensor(
+                            [int(mode_id) in _COUNTRY_ACTIVE_MODES for mode_id in mode_ids.tolist()],
+                            dtype=torch.bool,
                         )
                         if country_active.any():
                             country_mask = torch.ones(
