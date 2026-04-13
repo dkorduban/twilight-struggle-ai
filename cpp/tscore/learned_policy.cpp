@@ -12,6 +12,7 @@
 
 #include <torch/torch.h>
 
+#include "card_properties.hpp"
 #include "game_data.hpp"
 #include "nn_features.hpp"
 #include "policies.hpp"
@@ -161,24 +162,8 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
     const auto country_strategy_logits_raw = get_tensor(outputs, "country_strategy_logits", false);
 
     // Cards whose event drops DEFCON or triggers a coup as part of the effect.
-    // Must be kept in sync with the mode guard below.
-    static constexpr std::array<int, 15> kDefconLoweringCards = {
-        4,   // Duck and Cover (US): lowers DEFCON
-        11,  // Korean War (USSR): coup in Korea
-        13,  // Arab-Israeli War (USSR): coup in Israel
-        20,  // Olympic Games (Neutral): DEFCON drops on boycott
-        24,  // Indo-Pakistani War (USSR): coup
-        39,  // Brush War (USSR): free coup in non-BG
-        48,  // Summit (Neutral): can lower DEFCON
-        49,  // How I Learned to Stop Worrying (USSR): free coup
-        50,  // Junta (Neutral): free coup in Central/South America
-        52,  // Missile Envy (Neutral): event applies random ops and may coup
-        53,  // We Will Bury You (USSR): lowers DEFCON
-        68,  // Grain Sales to Soviets (US): event applies random ops and may coup
-        83,  // Che (USSR): free coup in Latin America / Africa
-        92,  // SALT Negotiations (Neutral): affects DEFCON
-        105, // Iran-Iraq War (USSR): war / coup
-    };
+    // Canonical list in cpp/tscore/card_properties.hpp.
+    using tscore::kDefconLoweringCards;
 
     auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
     for (const auto card_id : playable) {

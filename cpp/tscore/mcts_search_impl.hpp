@@ -17,15 +17,14 @@
 
 #include "game_data.hpp"
 #include "game_loop.hpp"
+#include "card_properties.hpp"
 #include "mcts.hpp"
 #include "nn_features.hpp"
 #include "policies.hpp"
 
 namespace ts::search_impl {
 
-inline constexpr std::array<int, 15> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
-};
+using tscore::kDefconLoweringCards;
 
 struct ModeDraft {
     ActionMode mode = ActionMode::Influence;

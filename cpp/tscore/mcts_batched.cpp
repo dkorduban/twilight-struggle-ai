@@ -22,6 +22,7 @@
 
 #include <torch/torch.h>
 
+#include "card_properties.hpp"
 #include "game_data.hpp"
 #include "human_openings.hpp"
 #include "mcts.hpp"
@@ -38,9 +39,7 @@ constexpr int kMidWarTurn = 4;
 constexpr int kLateWarTurn = 8;
 constexpr int kMaxTurns = 10;
 constexpr int kSpaceShuttleArs = 8;
-constexpr std::array<int, 15> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
-};
+using tscore::kDefconLoweringCards;
 
 constexpr int kMaxCardLogits = 112;
 constexpr int kMaxModeLogits = 8;

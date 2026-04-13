@@ -34,6 +34,10 @@ constexpr double kDefcon3NonBgSafeCoupBonus = 5.0;
 constexpr double kDefcon2NonBgSafeCoupBonus = 12.0;
 constexpr int kMaxInfluenceTargets = 86;
 
+// Heuristic scoring uses a 3-way split. The canonical MCTS set is in card_properties.hpp.
+// kDefconLoweringCards here = "certainly lowers DEFCON" (used for heavy penalty).
+// kDefconProbLoweringCards = "probabilistically lowers DEFCON".
+// kDefconRandomCoupCards   = "calls apply_ops_randomly which may coup a BG".
 constexpr std::array<CardId, 9> kDefconLoweringCards = {4, 11, 13, 24, 52, 53, 68, 92, 105};
 constexpr std::array<CardId, 1> kDefconProbLoweringCards = {20};
 constexpr std::array<CardId, 4> kDefconRandomCoupCards = {39, 52, 68, 83};

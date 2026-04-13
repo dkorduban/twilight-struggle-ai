@@ -22,6 +22,7 @@
 
 #include <torch/torch.h>
 
+#include "../tscore/card_properties.hpp"
 #include "game_data.hpp"
 #include "game_loop.hpp"
 #include "human_openings.hpp"
@@ -44,10 +45,7 @@ constexpr int kMaxCountryLogits = 86;
 constexpr int kMaxStrategies = 8;
 constexpr int kMaxInfluenceTargetsPerEdge = 8;
 constexpr bool kValidateCompactTree = false;
-constexpr std::array<int, 15> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
-    // 52=Missile Envy, 68=Grain Sales: both call apply_ops_randomly which can coup BGs
-};
+using tscore::kDefconLoweringCards;
 
 struct ModeDraft {
     ActionMode mode = ActionMode::Influence;

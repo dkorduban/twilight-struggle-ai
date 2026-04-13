@@ -15,6 +15,7 @@
 
 #include <torch/torch.h>
 
+#include "card_properties.hpp"
 #include "game_data.hpp"
 #include "game_loop.hpp"
 #include "nn_features.hpp"
@@ -58,9 +59,7 @@ inline int extract_float_array(const torch::Tensor& tensor, float* out, int max_
     return copy_n;
 }
 
-constexpr std::array<int, 15> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
-};
+using tscore::kDefconLoweringCards;
 
 struct ModeDraft {
     ActionMode mode = ActionMode::Influence;
