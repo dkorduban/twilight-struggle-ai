@@ -475,7 +475,11 @@ def _sample_action_and_step(
         mode_mask[MODE_COUP] = False
 
     # DEFCON safety: no event for DEFCON-lowering cards at DEFCON <= 2
-    if defcon <= 2 and card_id in DEFCON_LOWERING_CARDS:
+    # Exceptions: cards whose events cannot reach DEFCON 1 even when played as event.
+    #   #49 How I Learned to Stop Worrying: phasing player sets DEFCON to 2-5 (min=2, never 1)
+    #   #48 Summit: winner chooses +1/-1; a rational model never chooses -1 at DEFCON 2
+    DEFCON2_EVENT_SAFE = {49, 48}
+    if defcon <= 2 and card_id in DEFCON_LOWERING_CARDS and card_id not in DEFCON2_EVENT_SAFE:
         mode_mask[MODE_EVENT] = False
 
     # Sample mode from masked distribution
@@ -594,10 +598,12 @@ def _compute_reward(result: "tscore.GameResult", side_int: int, vp_coef: float =
     won = result.winner == (tscore.Side.USSR if is_ussr else tscore.Side.US)
     base = 1.0 if won else -1.0
     end_reason = getattr(result, "end_reason", "")
-    # DEFCON-1 suicide penalty: losing via DEFCON-1 is worse than a normal loss.
-    # Give a -1.5 signal (below -1.0) so the model learns DEFCON-1 is catastrophic.
+    # DEFCON-1 suicide penalty: extra signal beyond -1.0 normal loss.
+    # Reduced from -1.5 to -1.2: comprehensive masking now blocks most avoidable suicides;
+    # residual DEFCON-1 losses (last-card forced play, headline collisions) are partly
+    # unavoidable, so a harsh -1.5 adds value-function noise without strategic benefit.
     if end_reason == "defcon1" and not won:
-        return -1.5
+        return -1.2
     if vp_coef <= 0.0:
         return base
     if end_reason == "europe_control":
