@@ -2883,7 +2883,6 @@ def main() -> None:
     # ─────────────────────────────────────────────────────────────────────────
 
     if args.league_heuristic_pct > 0:
-        import sys
         print(
             f"\n[DEPRECATED] --league-heuristic-pct={args.league_heuristic_pct} is deprecated and will be removed.\n"
             "  The coin-flip approach gives P(zero heuristic games) = (1-pct)^k per iteration.\n"
