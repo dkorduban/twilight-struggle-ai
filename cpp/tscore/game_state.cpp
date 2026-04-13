@@ -8,8 +8,8 @@
 namespace ts {
 namespace {
 
-// Build the draw deck for all cards up to an era, excluding scoring cards and
-// anything already removed from the live game.
+// Build the draw deck for all cards up to an era (including scoring cards),
+// excluding the China Card and anything already removed from the live game.
 std::vector<CardId> build_era_deck(Era era_max, const CardSet& removed) {
     std::vector<CardId> out;
     for (const auto card_id : all_card_ids()) {
@@ -17,7 +17,7 @@ std::vector<CardId> build_era_deck(Era era_max, const CardSet& removed) {
             continue;
         }
         const auto& spec = card_spec(card_id);
-        if (spec.is_scoring || static_cast<int>(spec.era) > static_cast<int>(era_max)) {
+        if (static_cast<int>(spec.era) > static_cast<int>(era_max)) {
             continue;
         }
         if (removed.test(card_id)) {

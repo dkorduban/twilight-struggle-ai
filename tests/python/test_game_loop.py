@@ -276,10 +276,22 @@ def test_era_deck_early_only():
     assert 6 not in deck
 
 
-def test_era_deck_excludes_scoring_cards():
+def test_era_deck_includes_scoring_cards():
+    """Scoring cards must be in the draw deck — they are dealt to players and played as events."""
     deck = _build_era_deck(era_max=2)
     scoring_ids = {1, 2, 3, 40, 41, 80, 82}
-    assert not scoring_ids & set(deck)
+    # All 7 scoring cards should be in the full (all-era) deck.
+    assert scoring_ids.issubset(set(deck)), f"Missing scoring cards: {scoring_ids - set(deck)}"
+
+
+def test_era_deck_early_war_has_three_scoring_cards():
+    """Early War deck has exactly 3 scoring cards: Asia(1), Europe(2), Middle East(3)."""
+    deck = _build_era_deck(era_max=0)
+    scoring_ids = {1, 2, 3}
+    assert scoring_ids.issubset(set(deck)), f"Missing early-war scoring cards: {scoring_ids - set(deck)}"
+    # Mid/Late War scoring cards should NOT be in Early War deck.
+    late_scoring = {40, 41, 80, 82}
+    assert not (late_scoring & set(deck)), f"Unexpected late-war scoring in early deck: {late_scoring & set(deck)}"
 
 
 # ---------------------------------------------------------------------------

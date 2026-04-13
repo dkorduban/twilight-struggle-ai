@@ -855,7 +855,8 @@ std::optional<GameResult> run_headline_phase(
         if (lhs_ops != rhs_ops) {
             return lhs_ops > rhs_ops;
         }
-        return static_cast<int>(lhs.side) > static_cast<int>(rhs.side);
+        // USSR (side=0) resolves first on headline tiebreak per official TS rules.
+        return static_cast<int>(lhs.side) < static_cast<int>(rhs.side);
     });
 
     for (const auto& pending : ordered) {

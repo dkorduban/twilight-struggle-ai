@@ -215,17 +215,17 @@ def _reshuffle(gs: GameState, rng: RNG) -> None:
 
 
 def _build_era_deck(era_max: int, exclude: set[int] | None = None) -> list[int]:
-    """Return all non-scoring draw-deck cards with era <= era_max.
+    """Return all draw-deck cards (including scoring cards) with era <= era_max.
 
     era_max: 0=Early only, 1=Early+Mid, 2=Early+Mid+Late.
-    Excludes China Card (id=6) and scoring cards (is_scoring=True).
+    Excludes only China Card (id=6) and cards in 'exclude'.
+    Scoring cards are included — they must be played as events when drawn.
     """
     exclude = exclude or set()
     cards = load_cards()
     return [
         cid for cid, spec in cards.items()
         if cid != _CHINA_CARD_ID
-        and not spec.is_scoring
         and int(spec.era) <= era_max
         and cid not in exclude
     ]
