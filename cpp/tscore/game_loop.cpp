@@ -735,10 +735,32 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     if (action.mode != ActionMode::Event && action.mode != ActionMode::Space) {
         const auto owner = card_spec(action.card_id).side;
         if (owner == other_side(side)) {
-            auto [new_pub, over, winner] = fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
-            if (over) {
-                return {new_pub, true, winner};
+            const auto ordering = choose_option(gs.pub, action.card_id, side, 2, rng, policy_cb);
+            const bool event_first = ordering == 0;
+
+            if (event_first) {
+                auto [event_pub, event_over, event_winner] = fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
+                gs.pub = event_pub;
+                if (event_over) {
+                    return {event_pub, true, event_winner};
+                }
             }
+
+            auto [ops_pub, ops_over, ops_winner] = apply_action(gs.pub, action, side, rng, policy_cb);
+            gs.pub = ops_pub;
+            if (ops_over) {
+                return {ops_pub, true, ops_winner};
+            }
+
+            if (!event_first) {
+                auto [event_pub, event_over, event_winner] = fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
+                gs.pub = event_pub;
+                if (event_over) {
+                    return {event_pub, true, event_winner};
+                }
+            }
+
+            return {gs.pub, false, std::nullopt};
         }
     }
 

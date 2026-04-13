@@ -328,3 +328,38 @@ TEST_CASE("Missile Envy free ops keeps the event card as the country-select cont
     }
     REQUIRE(gs.hands[to_index(Side::USSR)].test(kArabIsraeliWarId));
 }
+
+TEST_CASE("Opponent-card ops can resolve before the event when the player chooses ops first", "[game_loop]") {
+    constexpr CardId kDuckAndCoverId = 4;
+    constexpr CountryId kFranceId = 7;
+
+    GameState gs;
+    gs.pub = PublicState{};
+    gs.pub.defcon = 2;
+
+    int ordering_calls = 0;
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+        REQUIRE(decision.kind == DecisionKind::SmallChoice);
+        REQUIRE(decision.source_card == kDuckAndCoverId);
+        REQUIRE(decision.n_options == 2);
+        REQUIRE(decision.acting_side == Side::USSR);
+        ++ordering_calls;
+        return 1;  // Ops first
+    };
+
+    const ActionEncoding action{
+        .card_id = kDuckAndCoverId,
+        .mode = ActionMode::Influence,
+        .targets = {kFranceId},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action_live(gs, action, Side::USSR, rng, &policy_cb);
+
+    REQUIRE(over);
+    REQUIRE(winner == Side::US);
+    REQUIRE(ordering_calls == 1);
+    REQUIRE(next.influence_of(Side::USSR, kFranceId) == 1);
+    REQUIRE(next.defcon == 1);
+    REQUIRE(next.discard.test(kDuckAndCoverId));
+}
