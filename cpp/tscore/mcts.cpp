@@ -101,6 +101,11 @@ struct ExpansionResult {
     if (is_neutral_card && pub.ar == 0 && pub.defcon <= 3) {
         return true;
     }
+    // Own DEFCON-lowering card in headline (ar==0) fires as event — self-nukes at DEFCON <= 2
+    const bool is_own_card = !is_opponent_card && !is_neutral_card;
+    if (is_own_card && pub.ar == 0 && pub.defcon <= 2) {
+        return true;
+    }
     return false;
 }
 

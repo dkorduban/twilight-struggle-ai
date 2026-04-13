@@ -1461,7 +1461,8 @@ TracedGame play_game_traced_from_state_ref_with_rng(
         traced.result = GameResult{.winner = Side::US, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
         return traced;
     }
-    traced.result = GameResult{.winner = std::nullopt, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
+    // Tie at VP=0: USSR wins per rules
+    traced.result = GameResult{.winner = Side::USSR, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
     return traced;
 }
 
@@ -1569,7 +1570,8 @@ GameResult play_game_from_mid_state_fn(
     if (gs.pub.vp < 0) {
         return GameResult{.winner = Side::US, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
     }
-    return GameResult{.winner = std::nullopt, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
+    // Tie at VP=0: USSR wins per rules
+    return GameResult{.winner = Side::USSR, .final_vp = gs.pub.vp, .end_turn = kMaxTurns, .end_reason = "turn_limit"};
 }
 
 TracedGame play_game_traced_fn(

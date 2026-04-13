@@ -270,7 +270,12 @@ def extract_features(
     hand_mask = _card_mask(hand)
     discard_mask = _card_mask(state["discard"])
     removed_mask = _card_mask(state["removed"])
-    cards = hand_mask + hand_mask + discard_mask + removed_mask
+    # Slot 2: opponent support mask — cards not known to be in own hand, discard, or removed
+    _excluded = set(hand) | set(state["discard"]) | set(state["removed"])
+    opponent_support_mask = [
+        0.0 if cid in _excluded else 1.0 for cid in range(_CARD_MASK_SLOTS)
+    ]
+    cards = hand_mask + opponent_support_mask + discard_mask + removed_mask
 
     scalars = [
         state["vp"] / 20.0,
@@ -430,10 +435,12 @@ def _allocate_influence_targets(country_scores: torch.Tensor | None, ops: int) -
     return targets
 
 
-def _make_model_callback(model_path: Path):
+def _make_model_callback(model_path: Path, temperature: float = 0.0, seed: int = 0):
     model = _load_model(model_path)
     cards = load_cards()
     expected_scalar_dim = _infer_expected_scalar_dim(model)
+    rng = torch.Generator()
+    rng.manual_seed(seed ^ 0xDEADBEEF)
 
     def _callback(state_dict, hand_list, holds_china: bool, side_int: int):
         if not hand_list:
@@ -454,8 +461,18 @@ def _make_model_callback(model_path: Path):
         if not legal_hand:
             return None
 
-        best_card_id = max(legal_hand, key=lambda cid: (float(card_logits[cid - 1].item()), -cid))
-        best_mode = int(mode_logits.argmax().item())
+        if temperature > 0.0:
+            # Sampled card selection
+            legal_logits = torch.tensor([float(card_logits[cid - 1].item()) for cid in legal_hand])
+            probs = torch.softmax(legal_logits / temperature, dim=0)
+            idx = int(torch.multinomial(probs, 1, generator=rng).item())
+            best_card_id = legal_hand[idx]
+            # Sampled mode
+            mode_probs = torch.softmax(mode_logits / temperature, dim=0)
+            best_mode = int(torch.multinomial(mode_probs, 1, generator=rng).item())
+        else:
+            best_card_id = max(legal_hand, key=lambda cid: (float(card_logits[cid - 1].item()), -cid))
+            best_mode = int(mode_logits.argmax().item())
 
         if best_mode == _MODE_INFLUENCE:
             card_spec = cards.get(best_card_id)
@@ -485,7 +502,7 @@ def _make_model_callback(model_path: Path):
 # Trace collection
 # ---------------------------------------------------------------------------
 
-def collect_traced_game(model_path: Path, seed: int, heuristic: bool):
+def collect_traced_game(model_path: Path, seed: int, heuristic: bool, temperature: float = 0.0):
     if heuristic:
         traced_game = tscore.play_traced_game(
             tscore.PolicyKind.MinimalHybrid,
@@ -495,9 +512,10 @@ def collect_traced_game(model_path: Path, seed: int, heuristic: bool):
         return traced_game.steps, traced_game.result, "Using MinimalHybrid heuristics for both sides."
 
     if model_path.exists():
-        callback = _make_model_callback(model_path)
+        callback = _make_model_callback(model_path, temperature=temperature, seed=seed)
         traced_game = tscore.play_traced_game_with_callback(callback, seed=seed)
-        return traced_game.steps, traced_game.result, f"Using scripted model: {model_path}"
+        mode_str = "greedy" if temperature == 0.0 else f"T={temperature}"
+        return traced_game.steps, traced_game.result, f"Using scripted model: {model_path} ({mode_str})"
 
     traced_game = tscore.play_traced_game(
         tscore.PolicyKind.MinimalHybrid,
@@ -641,9 +659,13 @@ def main() -> None:
         action="store_true",
         help="Use MinimalHybrid heuristics for both sides instead of a model callback.",
     )
+    parser.add_argument(
+        "--temperature", type=float, default=0.0,
+        help="Sampling temperature (0=greedy, 1.0=full sampling; default: 0=greedy)",
+    )
     args = parser.parse_args()
 
-    steps, result, policy_note = collect_traced_game(args.model, args.seed, args.heuristic)
+    steps, result, policy_note = collect_traced_game(args.model, args.seed, args.heuristic, args.temperature)
     print(f"[run_traced_game] {policy_note}", file=sys.stderr)
 
     cards = load_cards()
