@@ -2440,6 +2440,7 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                 auto [new_pub, over, winner] = apply_action_live(slot.root_state, pending.action, pending.side, slot.rng);
                 (void)new_pub;
                 if (slot.record_history) {
+                    // Full-info MCTS: OK to access both hands (self-play only).
                     slot.traces.push_back(StepTrace{
                         .turn = slot.root_state.pub.turn,
                         .ar = 0,
@@ -2692,6 +2693,7 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
     auto [new_pub, over, winner] = apply_action_live(slot.root_state, action, decision.side, slot.rng);
     (void)new_pub;
     if (slot.record_history) {
+        // Full-info MCTS: OK to access both hands (self-play only).
         slot.traces.push_back(StepTrace{
             .turn = decision.turn,
             .ar = decision.ar,

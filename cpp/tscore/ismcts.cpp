@@ -148,6 +148,16 @@ int count_hand_excluding_china(const CardSet& hand) {
     return count;
 }
 
+int observed_opponent_hand_size(const GameState& gs, Side acting_side) {
+    const auto obs = make_observation(gs, acting_side);
+    const auto hidden_cards = count_hand_excluding_china(obs.opponent_hand_support);
+    const auto deck_cards = gs.deck.size();
+    if (hidden_cards < deck_cards) {
+        throw std::invalid_argument("observation support smaller than hidden deck");
+    }
+    return hidden_cards - deck_cards;
+}
+
 bool action_less(const ActionEncoding& lhs, const ActionEncoding& rhs) {
     if (lhs.card_id != rhs.card_id) {
         return lhs.card_id < rhs.card_id;
@@ -1466,7 +1476,7 @@ void start_search(IsmctsGameSlot& slot, const IsmctsConfig& config) {
     }
 
     const auto acting_side = slot.decision->side;
-    const auto opp_hand_size = count_hand_excluding_china(slot.game_state.hands[to_index(other_side(acting_side))]);
+    const auto opp_hand_size = observed_opponent_hand_size(slot.game_state, acting_side);
 
     slot.dets.clear();
     slot.dets.reserve(static_cast<size_t>(config.n_determinizations));
@@ -1611,25 +1621,15 @@ GameState sample_determinization(
 
     auto determinized = clone_game_state(gs);
     const auto opponent = other_side(acting_side);
+    const auto obs = make_observation(gs, acting_side);
     auto& opponent_hand = determinized.hands[to_index(opponent)];
-    auto hidden_pool = determinized.deck;
-
-    // The live state carries the opponent's true hand. For determinization,
-    // treat every non-China opponent card as hidden by returning it to the
-    // resampling pool before drawing a replacement hand of the same size.
-    for (const auto card_id : hand_to_vector(opponent_hand)) {
-        if (card_id == kChinaCardId) {
-            continue;
-        }
-        hidden_pool.push_back(card_id);
-        opponent_hand.reset(card_id);
+    auto hidden_pool = hand_to_vector(obs.opponent_hand_support);
+    opponent_hand.reset();
+    if (gs.pub.china_held_by == opponent) {
+        opponent_hand.set(kChinaCardId);
     }
-
-    hidden_pool.erase(
-        std::remove(hidden_pool.begin(), hidden_pool.end(), kChinaCardId),
-        hidden_pool.end()
-    );
-    shuffle_with_numpy_rng(std::span<CardId>(hidden_pool.begin(), hidden_pool.end()), rng);
+    hidden_pool.erase(std::remove(hidden_pool.begin(), hidden_pool.end(), kChinaCardId), hidden_pool.end());
+    shuffle_with_numpy_rng(hidden_pool, rng);
 
     const auto hidden_needed = opp_hand_size;
     if (hidden_needed > static_cast<int>(hidden_pool.size())) {
@@ -1752,11 +1752,7 @@ std::vector<GameResult> play_ismcts_matchup(
             const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& local_rng
         ) -> std::optional<ActionEncoding> {
             const auto acting = pub.phasing;
-            const auto opp_idx = to_index(other_side(acting));
-            auto opp_hand_size = static_cast<int>(gs.hands[opp_idx].count());
-            if (gs.hands[opp_idx].test(kChinaCardId)) {
-                --opp_hand_size;
-            }
+            const auto opp_hand_size = observed_opponent_hand_size(gs, acting);
             auto result = ismcts_search(gs, acting, opp_hand_size, model, config, local_rng);
             return result.best_action;
         };
