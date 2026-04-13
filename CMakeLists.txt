@@ -10,6 +10,17 @@ project(tscore
 # Global settings
 # ---------------------------------------------------------------------------
 
+# ccache — speeds up rebuilds in the main tree and all Codex agent worktrees.
+# The cache lives at ~/.cache/ccache and is shared across all worktrees, so
+# an agent that recompiles a file that was already built locally gets a hit.
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    message(STATUS "ccache found: ${CCACHE_PROGRAM}")
+else()
+    message(STATUS "ccache not found — builds will not be cached")
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
