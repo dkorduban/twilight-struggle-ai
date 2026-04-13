@@ -3215,29 +3215,37 @@ def main() -> None:
 
         probe_metrics: dict[str, float] = {}
         if probe_eval is not None and iteration % args.probe_every == 0:
-            with torch.no_grad():
-                if last_rolling_ckpt and Path(last_rolling_ckpt).exists():
-                    prev_model, _, _ = load_model(last_rolling_ckpt, device=device)
-                    prev_model.eval()
-                    m = probe_eval.compare(model, prev_model)
-                    probe_metrics.update({
-                        "probe/card_jsd_vs_prev": m.card_jsd,
-                        "probe/mode_jsd_vs_prev": m.mode_jsd,
-                        "probe/country_jsd_vs_prev": m.country_jsd,
-                        "probe/value_mae_vs_prev": m.value_mae,
-                        "probe/top1_card_agree_vs_prev": m.top1_card_agree,
-                        "probe/card_jsd_early_vs_prev": m.card_jsd_early,
-                        "probe/card_jsd_mid_vs_prev": m.card_jsd_mid,
-                        "probe/card_jsd_late_vs_prev": m.card_jsd_late,
-                    })
-                    del prev_model
-                if probe_bc_model is not None:
-                    m_bc = probe_eval.compare(model, probe_bc_model)
-                    probe_metrics.update({
-                        "probe/card_jsd_vs_bc": m_bc.card_jsd,
-                        "probe/mode_jsd_vs_bc": m_bc.mode_jsd,
-                        "probe/value_mae_vs_bc": m_bc.value_mae,
-                    })
+            try:
+                with torch.no_grad():
+                    if last_rolling_ckpt and Path(last_rolling_ckpt).exists():
+                        prev_model, _, _ = load_model(last_rolling_ckpt, device=device)
+                        prev_model.eval()
+                        m = probe_eval.compare(model, prev_model)
+                        probe_metrics.update({
+                            "probe/card_jsd_vs_prev": m.card_jsd,
+                            "probe/mode_jsd_vs_prev": m.mode_jsd,
+                            "probe/country_jsd_vs_prev": m.country_jsd,
+                            "probe/value_mae_vs_prev": m.value_mae,
+                            "probe/top1_card_agree_vs_prev": m.top1_card_agree,
+                            "probe/card_jsd_early_vs_prev": m.card_jsd_early,
+                            "probe/card_jsd_mid_vs_prev": m.card_jsd_mid,
+                            "probe/card_jsd_late_vs_prev": m.card_jsd_late,
+                        })
+                        print(
+                            f"  [probe] iter={iteration} card_jsd={m.card_jsd:.4f} "
+                            f"top1={m.top1_card_agree:.3f} val_mae={m.value_mae:.4f}",
+                            flush=True,
+                        )
+                        del prev_model
+                    if probe_bc_model is not None:
+                        m_bc = probe_eval.compare(model, probe_bc_model)
+                        probe_metrics.update({
+                            "probe/card_jsd_vs_bc": m_bc.card_jsd,
+                            "probe/mode_jsd_vs_bc": m_bc.mode_jsd,
+                            "probe/value_mae_vs_bc": m_bc.value_mae,
+                        })
+            except Exception as _probe_err:
+                print(f"  [probe] error (non-fatal): {_probe_err}", flush=True)
 
         # ── Rolling checkpoint (every iteration) ─────────────────────────────
         # Write new checkpoint first, then delete the previous non-milestone one.
