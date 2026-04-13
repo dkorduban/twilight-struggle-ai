@@ -2967,6 +2967,16 @@ def main() -> None:
     ckpt_meta["model_type"] = model_type
     ckpt_meta["version"] = args.version
 
+    probe_eval = None
+    probe_bc_model: Optional[nn.Module] = None
+    if args.probe_set and args.probe_every > 0 and Path(args.probe_set).exists():
+        from tsrl.policies.jsd_probe import ProbeEvaluator
+
+        probe_eval = ProbeEvaluator(args.probe_set, device=device)
+        if args.probe_bc_checkpoint:
+            probe_bc_model, _, _ = load_model(args.probe_bc_checkpoint, device=device)
+            probe_bc_model.eval()
+
     # Card specs for DEFCON safety and ops values
     from tsrl.etl.game_data import load_cards
     card_specs = load_cards()
@@ -3202,6 +3212,32 @@ def main() -> None:
             flush=True,
         )
 
+        probe_metrics: dict[str, float] = {}
+        if probe_eval is not None and iteration % args.probe_every == 0:
+            with torch.no_grad():
+                if last_rolling_ckpt and Path(last_rolling_ckpt).exists():
+                    prev_model, _, _ = load_model(last_rolling_ckpt, device=device)
+                    prev_model.eval()
+                    m = probe_eval.compare(model, prev_model)
+                    probe_metrics.update({
+                        "probe/card_jsd_vs_prev": m.card_jsd,
+                        "probe/mode_jsd_vs_prev": m.mode_jsd,
+                        "probe/country_jsd_vs_prev": m.country_jsd,
+                        "probe/value_mae_vs_prev": m.value_mae,
+                        "probe/top1_card_agree_vs_prev": m.top1_card_agree,
+                        "probe/card_jsd_early_vs_prev": m.card_jsd_early,
+                        "probe/card_jsd_mid_vs_prev": m.card_jsd_mid,
+                        "probe/card_jsd_late_vs_prev": m.card_jsd_late,
+                    })
+                    del prev_model
+                if probe_bc_model is not None:
+                    m_bc = probe_eval.compare(model, probe_bc_model)
+                    probe_metrics.update({
+                        "probe/card_jsd_vs_bc": m_bc.card_jsd,
+                        "probe/mode_jsd_vs_bc": m_bc.mode_jsd,
+                        "probe/value_mae_vs_bc": m_bc.value_mae,
+                    })
+
         # ── Rolling checkpoint (every iteration) ─────────────────────────────
         # Write new checkpoint first, then delete the previous non-milestone one.
         # This ensures we always have the latest weights even after a crash.
@@ -3424,6 +3460,7 @@ def main() -> None:
                 _panel_proc = None
 
         if wandb_run is not None:
+            log_dict.update(probe_metrics)
             wandb_run.log(log_dict, step=iteration)
 
     # ── Final checkpoint + summary ────────────────────────────────────────────
