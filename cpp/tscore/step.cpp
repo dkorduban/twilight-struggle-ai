@@ -516,7 +516,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 49: {
-            next.defcon = rng.uniform_int(1, 5);
+            next.defcon = rng.choice_index(4) + 2;
             next.milops[to_index(side)] = 5;
             break;
         }
