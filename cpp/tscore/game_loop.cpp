@@ -78,7 +78,8 @@ std::optional<ActionEncoding> choose_headline_action_with_config(
 ) {
     const auto exploration_rate = normalized_exploration_rate(config);
     if (exploration_rate > 0.0f && rng.bernoulli(static_cast<double>(exploration_rate))) {
-        const auto cards = legal_cards(hand, pub, side, holds_china);
+        auto cards = legal_cards(hand, pub, side, holds_china);
+        cards.erase(std::remove(cards.begin(), cards.end(), kChinaCardId), cards.end());
         if (cards.empty()) {
             return std::nullopt;
         }
