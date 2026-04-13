@@ -151,6 +151,12 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
     if (accessible.empty()) {
         return;
     }
+    const auto place_influence = [&]() {
+        for (int i = 0; i < ops; ++i) {
+            const auto target = accessible[rng.choice_index(accessible.size())];
+            pub.set_influence(side, target, pub.influence_of(side, target) + 1);
+        }
+    };
     const std::array<ActionMode, 4> modes = {
         ActionMode::Influence,
         ActionMode::Influence,
@@ -161,10 +167,12 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
     const auto opponent = other_side(side);
 
     if (mode == ActionMode::Influence) {
-        for (int i = 0; i < ops; ++i) {
-            const auto target = accessible[rng.choice_index(accessible.size())];
-            pub.set_influence(side, target, pub.influence_of(side, target) + 1);
-        }
+        place_influence();
+        return;
+    }
+
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        place_influence();
         return;
     }
 
