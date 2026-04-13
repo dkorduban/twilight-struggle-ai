@@ -177,21 +177,7 @@ void apply_ops_randomly(PublicState& pub, Side side, int ops, Pcg64Rng& rng) {
     }
 
     if (mode == ActionMode::Coup) {
-        auto targets = accessible;
-        if (pub.defcon <= 2) {
-            targets.erase(
-                std::remove_if(
-                    targets.begin(),
-                    targets.end(),
-                    [](CountryId cid) { return country_spec(cid).is_battleground; }
-                ),
-                targets.end()
-            );
-            if (targets.empty()) {
-                targets = accessible;
-            }
-        }
-        const auto target = targets[rng.choice_index(targets.size())];
+        const auto target = accessible[rng.choice_index(accessible.size())];
         const auto net = coup_result(ops, country_spec(target).stability, rng);
         if (net > 0) {
             const auto removed = std::min(net, pub.influence_of(opponent, target));
