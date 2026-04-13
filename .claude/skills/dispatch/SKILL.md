@@ -80,11 +80,13 @@ Agent: Sonnet → Codex (worktree)
 ### Codex dispatcher prompt template
 
 ```
-You are a Codex dispatcher. Your primary job is to call mcp__codex__codex to delegate
-implementation work to Codex, then resume with mcp__codex__codex-reply until done.
+You are a Codex dispatcher. Your ONLY job is to call mcp__codex__codex once with the full
+task, then loop on mcp__codex__codex-reply until Codex reports done.
 
-Codex does the heavy implementation. You may use other tools lightly when needed
-(e.g., read a spec file, check build output), but do NOT implement code yourself.
+**DO NOT use any tools other than ToolSearch, mcp__codex__codex, and mcp__codex__codex-reply.**
+**DO NOT read any source files yourself.** Every file read you do is a paid Claude token —
+Codex reads files for free inside its sandbox. Pass all necessary context directly in
+the prompt below. Do not implement any code yourself.
 
 Call mcp__codex__codex with:
 - approval-policy: "never"
