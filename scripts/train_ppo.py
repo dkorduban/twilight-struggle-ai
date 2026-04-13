@@ -3492,12 +3492,27 @@ def main() -> None:
         except Exception as _e:
             print(f"[tracking] log_checkpoint(final) failed: {_e}")
 
-    # When benchmarking is disabled ppo_best.pt is never written; use final as best.
-    if args.benchmark_every == 0 and not os.path.exists(best_ckpt_path):
+    # Promote ppo_running_best.pt → ppo_best.pt (Option F: panel high-water mark).
+    # ppo_running_best is set during training when a new panel eval high-water mark is found.
+    # ppo_loop_step.sh checks for ppo_best.pt first; if missing it falls back to ppo_final.pt
+    # (the last iteration, usually worse). Always promote running_best so the next run warm-starts
+    # from the best-evaluated checkpoint, not the last one.
+    best_scripted_path = best_ckpt_path.replace(".pt", "_scripted.pt")
+    if os.path.exists(_running_best_path) and not os.path.exists(best_ckpt_path):
+        shutil.copy2(_running_best_path, best_ckpt_path)
+        _rb_scripted = _running_best_path.replace(".pt", "_scripted.pt")
+        if os.path.exists(_rb_scripted):
+            shutil.copy2(_rb_scripted, best_scripted_path)
+        print(
+            "ppo_best.pt ← ppo_running_best.pt (Option F: panel high-water mark → next run warmstart)",
+            flush=True,
+        )
+    elif args.benchmark_every == 0 and not os.path.exists(best_ckpt_path):
+        # When benchmarking is disabled ppo_best.pt is never written; use final as best.
         shutil.copy2(final_path, best_ckpt_path)
         final_scripted = final_path.replace(".pt", "_scripted.pt")
         if os.path.exists(final_scripted):
-            shutil.copy2(final_scripted, best_scripted)
+            shutil.copy2(final_scripted, best_scripted_path)
         print(
             "ppo_best.pt ← ppo_final.pt (panel eval did not run; consider --eval-panel)",
             flush=True,

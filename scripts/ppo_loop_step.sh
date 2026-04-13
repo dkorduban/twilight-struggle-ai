@@ -311,7 +311,7 @@ nohup bash -c "
   cd /home/dkord/code/twilight-struggle-ai
   echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] watcher: polling $NEXT (PID $NEXT_PID)\" >> results/autonomous_decisions.log
   while kill -0 $NEXT_PID 2>/dev/null; do sleep 15; done
-  if [ -f data/checkpoints/ppo_${NEXT}_league/ppo_final.pt ]; then
+  if [ -f data/checkpoints/ppo_${NEXT}_league/ppo_final.pt ] || [ -f data/checkpoints/ppo_${NEXT}_league/ppo_running_best.pt ]; then
     # Parse version: v65 -> num=65 suffix=''; v65_sc -> num=65 suffix='_sc'
     VSTR='$NEXT'
     VBODY=\"\${VSTR#v}\"
