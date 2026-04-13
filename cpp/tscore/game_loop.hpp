@@ -77,6 +77,12 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad_
     const PolicyCallbackFn* policy_cb = nullptr
 );
 
+void resolve_glasnost_free_ops_live(
+    PublicState& pub,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
+);
+
 std::optional<GameResult> run_extra_action_round_live(
     GameState& gs,
     Side side,

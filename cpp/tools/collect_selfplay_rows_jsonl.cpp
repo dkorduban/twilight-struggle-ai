@@ -495,7 +495,8 @@ int main(int argc, char** argv) {
                 << ",\"opec_cancelled\":" << (pub.opec_cancelled ? "true" : "false")
                 << ",\"awacs_active\":" << (pub.awacs_active ? "true" : "false")
                 << ",\"north_sea_oil_extra_ar\":" << (pub.north_sea_oil_extra_ar ? "true" : "false")
-                << ",\"glasnost_extra_ar\":" << (pub.glasnost_extra_ar ? "true" : "false")
+                << ",\"glasnost_free_ops\":" << pub.glasnost_free_ops
+                << ",\"glasnost_extra_ar\":" << (pub.glasnost_free_ops > 0 ? "true" : "false")
                 << ",\"formosan_active\":" << (pub.formosan_active ? "true" : "false")
                 << ",\"cuban_missile_crisis_active\":" << (pub.cuban_missile_crisis_active ? "true" : "false")
                 << ",\"vietnam_revolts_active\":" << (pub.vietnam_revolts_active ? "true" : "false")

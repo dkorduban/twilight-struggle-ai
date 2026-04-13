@@ -1058,7 +1058,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             next.vp += 2;
             next.defcon = std::min(5, next.defcon + 1);
             if (next.salt_active) {
-                next.glasnost_extra_ar = true;
+                next.glasnost_free_ops = 4;
             }
             break;
 

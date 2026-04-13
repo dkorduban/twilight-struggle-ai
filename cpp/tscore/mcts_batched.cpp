@@ -24,6 +24,7 @@
 
 #include "card_properties.hpp"
 #include "game_data.hpp"
+#include "game_loop.hpp"
 #include "human_openings.hpp"
 #include "mcts.hpp"
 #include "nn_features.hpp"
@@ -2248,7 +2249,7 @@ std::optional<GameResult> finish_turn(GameState& gs, int turn) {
     gs.pub.ops_modifier = {0, 0};
     gs.pub.vietnam_revolts_active = false;
     gs.pub.north_sea_oil_extra_ar = false;
-    gs.pub.glasnost_extra_ar = false;
+    gs.pub.glasnost_free_ops = 0;
     gs.pub.cuban_missile_crisis_active = false;
     gs.pub.chernobyl_blocked_region.reset();
     gs.pub.latam_coup_bonus.reset();
@@ -2318,19 +2319,15 @@ void move_to_post_round_stage(GameSlot& slot) {
         slot.stage = BatchedGameStage::ExtraActionRoundUS;
         return;
     }
-    if (slot.root_state.pub.glasnost_extra_ar) {
-        slot.root_state.pub.glasnost_extra_ar = false;
-        slot.stage = BatchedGameStage::ExtraActionRoundUSSR;
-        return;
+    if (slot.root_state.pub.glasnost_free_ops > 0) {
+        resolve_glasnost_free_ops_live(slot.root_state.pub, slot.rng);
     }
     slot.stage = BatchedGameStage::Cleanup;
 }
 
 void move_to_followup_stage_after_extra(GameSlot& slot, Side side) {
-    if (side == Side::US && slot.root_state.pub.glasnost_extra_ar) {
-        slot.root_state.pub.glasnost_extra_ar = false;
-        slot.stage = BatchedGameStage::ExtraActionRoundUSSR;
-        return;
+    if (side == Side::US && slot.root_state.pub.glasnost_free_ops > 0) {
+        resolve_glasnost_free_ops_live(slot.root_state.pub, slot.rng);
     }
     slot.stage = BatchedGameStage::Cleanup;
 }

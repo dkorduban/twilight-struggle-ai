@@ -370,7 +370,11 @@ ts::GameState game_state_from_json_object(const JsonValue::Object& object) {
     pub.opec_cancelled = require_field(object, "opec_cancelled").as_bool("opec_cancelled");
     pub.awacs_active = require_field(object, "awacs_active").as_bool("awacs_active");
     pub.north_sea_oil_extra_ar = require_field(object, "north_sea_oil_extra_ar").as_bool("north_sea_oil_extra_ar");
-    pub.glasnost_extra_ar = require_field(object, "glasnost_extra_ar").as_bool("glasnost_extra_ar");
+    if (const auto it = object.find("glasnost_free_ops"); it != object.end()) {
+        pub.glasnost_free_ops = it->second.as_int("glasnost_free_ops");
+    } else {
+        pub.glasnost_free_ops = require_field(object, "glasnost_extra_ar").as_bool("glasnost_extra_ar") ? 4 : 0;
+    }
     pub.formosan_active = require_field(object, "formosan_active").as_bool("formosan_active");
     pub.cuban_missile_crisis_active = require_field(object, "cuban_missile_crisis_active").as_bool("cuban_missile_crisis_active");
     pub.vietnam_revolts_active = require_field(object, "vietnam_revolts_active").as_bool("vietnam_revolts_active");
@@ -465,7 +469,7 @@ std::optional<ts::GameResult> end_of_turn_cleanup(ts::GameState& gs, int turn) {
     gs.pub.ops_modifier = {0, 0};
     gs.pub.vietnam_revolts_active = false;
     gs.pub.north_sea_oil_extra_ar = false;
-    gs.pub.glasnost_extra_ar = false;
+    gs.pub.glasnost_free_ops = 0;
     gs.pub.chernobyl_blocked_region.reset();
     gs.pub.latam_coup_bonus.reset();
 
@@ -567,14 +571,8 @@ ts::GameState fresh_state_for_turn(int target_turn, std::optional<uint32_t> seed
                 );
             }
         }
-        if (gs.pub.glasnost_extra_ar) {
-            gs.pub.glasnost_extra_ar = false;
-            if (auto result = ts::run_extra_action_round_live(gs, ts::Side::USSR, policy, rng, nullptr); result.has_value()) {
-                throw std::runtime_error(
-                    "game ended before requested turn " + std::to_string(target_turn) +
-                    " during extra USSR action round of turn " + std::to_string(turn)
-                );
-            }
+        if (gs.pub.glasnost_free_ops > 0) {
+            ts::resolve_glasnost_free_ops_live(gs.pub, rng);
         }
         if (auto result = end_of_turn_cleanup(gs, turn); result.has_value()) {
             throw std::runtime_error(

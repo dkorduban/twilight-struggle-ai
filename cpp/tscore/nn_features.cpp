@@ -64,7 +64,7 @@ void fill_scalars(float* ptr, const PublicState& pub, bool holds_china, Side sid
     ptr[20] = pub.vietnam_revolts_active ? 1.0f : 0.0f;
     ptr[21] = pub.north_sea_oil_extra_ar ? 1.0f : 0.0f;
     // [22-28] Board-modifying effects
-    ptr[22] = pub.glasnost_extra_ar ? 1.0f : 0.0f;
+    ptr[22] = static_cast<float>(pub.glasnost_free_ops) / 4.0f;
     ptr[23] = pub.nato_active ? 1.0f : 0.0f;
     ptr[24] = pub.de_gaulle_active ? 1.0f : 0.0f;
     ptr[25] = pub.nuclear_subs_active ? 1.0f : 0.0f;

@@ -78,7 +78,8 @@ py::dict public_state_to_dict(const ts::PublicState& pub) {
     out["opec_cancelled"] = pub.opec_cancelled;
     out["awacs_active"] = pub.awacs_active;
     out["north_sea_oil_extra_ar"] = pub.north_sea_oil_extra_ar;
-    out["glasnost_extra_ar"] = pub.glasnost_extra_ar;
+    out["glasnost_free_ops"] = pub.glasnost_free_ops;
+    out["glasnost_extra_ar"] = pub.glasnost_free_ops > 0;
     out["formosan_active"] = pub.formosan_active;
     out["cuban_missile_crisis_active"] = pub.cuban_missile_crisis_active;
     out["vietnam_revolts_active"] = pub.vietnam_revolts_active;
@@ -150,7 +151,11 @@ ts::GameState game_state_from_dict(const py::dict& d) {
     pub.opec_cancelled              = d["opec_cancelled"].cast<bool>();
     pub.awacs_active                = d["awacs_active"].cast<bool>();
     pub.north_sea_oil_extra_ar      = d["north_sea_oil_extra_ar"].cast<bool>();
-    pub.glasnost_extra_ar           = d["glasnost_extra_ar"].cast<bool>();
+    if (d.contains("glasnost_free_ops")) {
+        pub.glasnost_free_ops = d["glasnost_free_ops"].cast<int>();
+    } else if (d.contains("glasnost_extra_ar")) {
+        pub.glasnost_free_ops = d["glasnost_extra_ar"].cast<bool>() ? 4 : 0;
+    }
     pub.formosan_active             = d["formosan_active"].cast<bool>();
     pub.cuban_missile_crisis_active = d["cuban_missile_crisis_active"].cast<bool>();
     pub.vietnam_revolts_active      = d["vietnam_revolts_active"].cast<bool>();

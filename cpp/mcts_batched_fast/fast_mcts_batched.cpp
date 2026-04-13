@@ -2507,7 +2507,7 @@ std::optional<GameResult> finish_turn(GameState& state, int turn) {
     state.pub.ops_modifier = {0, 0};
     state.pub.vietnam_revolts_active = false;
     state.pub.north_sea_oil_extra_ar = false;
-    state.pub.glasnost_extra_ar = false;
+    state.pub.glasnost_free_ops = 0;
     state.pub.cuban_missile_crisis_active = false;
     state.pub.chernobyl_blocked_region.reset();
     state.pub.latam_coup_bonus.reset();
@@ -2577,19 +2577,15 @@ void move_to_post_round_stage(FastGameSlot& slot) {
         slot.stage = BatchedGameStage::ExtraActionRoundUS;
         return;
     }
-    if (slot.root_state.pub.glasnost_extra_ar) {
-        slot.root_state.pub.glasnost_extra_ar = false;
-        slot.stage = BatchedGameStage::ExtraActionRoundUSSR;
-        return;
+    if (slot.root_state.pub.glasnost_free_ops > 0) {
+        ts::resolve_glasnost_free_ops_live(slot.root_state.pub, slot.rng);
     }
     slot.stage = BatchedGameStage::Cleanup;
 }
 
 void move_to_followup_stage_after_extra(FastGameSlot& slot, Side side) {
-    if (side == Side::US && slot.root_state.pub.glasnost_extra_ar) {
-        slot.root_state.pub.glasnost_extra_ar = false;
-        slot.stage = BatchedGameStage::ExtraActionRoundUSSR;
-        return;
+    if (side == Side::US && slot.root_state.pub.glasnost_free_ops > 0) {
+        ts::resolve_glasnost_free_ops_live(slot.root_state.pub, slot.rng);
     }
     slot.stage = BatchedGameStage::Cleanup;
 }

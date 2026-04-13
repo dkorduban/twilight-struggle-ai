@@ -2,6 +2,7 @@
 
 #include "public_state.hpp"
 #include "game_data.hpp"
+#include "game_loop.hpp"
 #include "hand_knowledge.hpp"
 #include "legal_actions.hpp"
 #include "rng.hpp"
@@ -219,4 +220,35 @@ TEST_CASE("Cuban Missile Crisis battleground coup loses immediately", "[step]") 
     REQUIRE(over);
     REQUIRE(winner == Side::US);
     REQUIRE(next.defcon == 1);
+}
+
+TEST_CASE("Glasnost with SALT grants four free ops", "[step]") {
+    PublicState pub;
+    pub.salt_active = true;
+
+    const ActionEncoding event{
+        .card_id = 93,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action(pub, event, Side::USSR, rng);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(next.glasnost_free_ops == 4);
+}
+
+TEST_CASE("Resolving Glasnost free ops clears the pending budget", "[game_loop]") {
+    constexpr CountryId kVietnamId = 80;
+
+    PublicState pub;
+    pub.glasnost_free_ops = 4;
+    pub.set_influence(Side::USSR, kVietnamId, 1);
+
+    Pcg64Rng rng(0);
+    resolve_glasnost_free_ops_live(pub, rng);
+
+    REQUIRE(pub.glasnost_free_ops == 0);
 }

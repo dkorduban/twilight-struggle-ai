@@ -4,6 +4,7 @@
 #include "game_loop.hpp"
 
 #include <algorithm>
+#include <cstdio>
 
 #include "human_openings.hpp"
 
@@ -172,7 +173,7 @@ std::optional<CardId> draw_one(GameState& gs, Pcg64Rng& rng) {
     return card;
 }
 
-void apply_ops_randomly(
+void apply_ops_randomly_impl(
     PublicState& pub,
     Side side,
     int ops,
@@ -413,7 +414,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 const auto chosen = choose_card(pub, 32, side, eligible, rng, policy_cb);
                 const auto ops = effective_ops(chosen, pub, side);
                 discard_from_hand(gs, side, chosen, pub);
-                apply_ops_randomly(pub, side, ops, rng, policy_cb);
+                apply_ops_randomly_impl(pub, side, ops, rng, policy_cb);
             }
             break;
         }
@@ -492,7 +493,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             if (!candidates.empty()) {
                 const auto chosen = choose_card(pub, 52, side, candidates, rng, policy_cb);
                 gs.hands[to_index(opponent)].reset(chosen);
-                apply_ops_randomly(pub, side, effective_ops(chosen, pub, side), rng, policy_cb);
+                apply_ops_randomly_impl(pub, side, effective_ops(chosen, pub, side), rng, policy_cb);
                 gs.hands[to_index(opponent)].set(chosen);
             }
             break;
@@ -531,7 +532,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             if (!candidates.empty()) {
                 const auto chosen = choose_card(pub, 68, Side::US, candidates, rng, policy_cb);
                 gs.hands[to_index(Side::USSR)].reset(chosen);
-                apply_ops_randomly(pub, Side::US, effective_ops(chosen, pub, Side::US), rng, policy_cb);
+                apply_ops_randomly_impl(pub, Side::US, effective_ops(chosen, pub, Side::US), rng, policy_cb);
                 gs.hands[to_index(Side::USSR)].set(chosen);
             }
             break;
@@ -1140,7 +1141,7 @@ std::optional<GameResult> end_of_turn(GameState& gs, int turn) {
     gs.pub.ops_modifier = {0, 0};
     gs.pub.vietnam_revolts_active = false;
     gs.pub.north_sea_oil_extra_ar = false;
-    gs.pub.glasnost_extra_ar = false;
+    gs.pub.glasnost_free_ops = 0;
     gs.pub.cuban_missile_crisis_active = false;
     gs.pub.chernobyl_blocked_region.reset();
     gs.pub.latam_coup_bonus.reset();
@@ -1196,6 +1197,24 @@ std::optional<GameResult> end_of_turn(GameState& gs, int turn) {
 }
 
 }  // namespace
+
+void resolve_glasnost_free_ops_live(
+    PublicState& pub,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
+) {
+    if (pub.glasnost_free_ops <= 0) {
+        return;
+    }
+    static bool warned_placeholder = false;
+    if (!warned_placeholder) {
+        warned_placeholder = true;
+        std::fprintf(stderr, "[Glasnost] resolving SALT bonus with random ops placeholder\n");
+    }
+    const auto ops = pub.glasnost_free_ops;
+    pub.glasnost_free_ops = 0;
+    apply_ops_randomly_impl(pub, Side::USSR, ops, rng, policy_cb);
+}
 
 std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     GameState& gs,
@@ -1443,12 +1462,8 @@ TracedGame play_game_traced_from_state_ref_with_rng(
                 return traced;
             }
         }
-        if (gs.pub.glasnost_extra_ar) {
-            gs.pub.glasnost_extra_ar = false;
-            if (auto result = run_extra_action_round(gs, Side::USSR, ussr_policy, rng, &traced.steps, config); result.has_value()) {
-                traced.result = *result;
-                return traced;
-            }
+        if (gs.pub.glasnost_free_ops > 0) {
+            resolve_glasnost_free_ops_live(gs.pub, rng);
         }
         if (auto result = end_of_turn(gs, turn); result.has_value()) {
             traced.result = *result;
@@ -1556,11 +1571,8 @@ GameResult play_game_from_mid_state_fn(
                 return *result;
             }
         }
-        if (gs.pub.glasnost_extra_ar) {
-            gs.pub.glasnost_extra_ar = false;
-            if (auto result = run_extra_action_round(gs, Side::USSR, ussr_policy, rng, nullptr, config); result.has_value()) {
-                return *result;
-            }
+        if (gs.pub.glasnost_free_ops > 0) {
+            resolve_glasnost_free_ops_live(gs.pub, rng);
         }
         if (auto result = end_of_turn(gs, turn); result.has_value()) {
             return *result;
