@@ -3479,6 +3479,16 @@ def main() -> None:
     final_path = os.path.join(args.out_dir, "ppo_final.pt")
     ckpt_meta["total_iters"] = global_iter_offset + args.n_iterations
     export_checkpoint(model, final_path, ckpt_meta)
+    # Verify ppo_final.pt was written; if missing, copy from last rolling checkpoint.
+    # This guard catches a rare race condition where ppo_final.pt gets deleted after writing.
+    if not os.path.exists(final_path):
+        _last_flat = _flat_checkpoint_path(args.out_dir, args.version, global_iter_offset + args.n_iterations)
+        _fallback = _last_flat if os.path.exists(_last_flat) else _running_best_path
+        if os.path.exists(_fallback):
+            shutil.copy2(_fallback, final_path)
+            print(f"  Warning: ppo_final.pt was missing after export; copied from {_fallback}", flush=True)
+        else:
+            print(f"  Warning: ppo_final.pt missing and no fallback found; watcher may not auto-chain", flush=True)
     if _TRACKING_AVAILABLE:
         try:
             _hp = {k: v for k, v in vars(args).items() if isinstance(v, (int, float, str, bool, type(None)))}
