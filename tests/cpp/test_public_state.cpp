@@ -2,6 +2,8 @@
 
 #include "public_state.hpp"
 #include "hand_knowledge.hpp"
+#include "rng.hpp"
+#include "step.hpp"
 #include "types.hpp"
 
 using namespace ts;
@@ -92,4 +94,26 @@ TEST_CASE("MAX_CARDS and MAX_COUNTRIES are large enough", "[types]") {
     // TS has 110 cards and ~68 countries; our arrays must accommodate them.
     REQUIRE(MAX_CARDS     >= 110);
     REQUIRE(MAX_COUNTRIES >= 68);
+}
+
+TEST_CASE("HLSTW event never sets DEFCON to 1", "[step]") {
+    PublicState pub;
+    pub.defcon = 5;
+
+    const ActionEncoding action{
+        .card_id = 49,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    for (uint64_t seed = 0; seed < 64; ++seed) {
+        Pcg64Rng rng(seed);
+        const auto [next, force_game_over, forced_winner] = apply_action(pub, action, Side::USSR, rng);
+
+        REQUIRE_FALSE(force_game_over);
+        REQUIRE_FALSE(forced_winner.has_value());
+        REQUIRE(next.defcon >= 2);
+        REQUIRE(next.defcon <= 5);
+        REQUIRE(next.milops[to_index(Side::USSR)] == 5);
+    }
 }
