@@ -29,25 +29,6 @@ constexpr int kMaxModeLogits = 8;     // generous upper bound for ActionMode val
 constexpr int kMaxCountryLogits = 86; // kCountrySlots
 constexpr int kMaxStrategies = 8;     // generous upper bound
 
-/// Compute softmax in-place over buf[0..n), writing probabilities back into buf.
-inline void softmax_inplace(float* buf, int n) {
-    float max_val = -std::numeric_limits<float>::infinity();
-    for (int i = 0; i < n; ++i) {
-        if (buf[i] > max_val) max_val = buf[i];
-    }
-    float sum = 0.0f;
-    for (int i = 0; i < n; ++i) {
-        buf[i] = std::exp(buf[i] - max_val);
-        sum += buf[i];
-    }
-    if (sum > 0.0f) {
-        const float inv_sum = 1.0f / sum;
-        for (int i = 0; i < n; ++i) {
-            buf[i] *= inv_sum;
-        }
-    }
-}
-
 /// Extract a contiguous float tensor slice into a stack array.
 /// tensor must be 1-D and contiguous.  Returns element count (== tensor.size(0)).
 inline int extract_float_array(const torch::Tensor& tensor, float* out, int max_n) {
