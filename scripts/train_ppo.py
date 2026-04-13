@@ -3054,6 +3054,12 @@ def main() -> None:
     _running_best_provenance_path = os.path.join(args.out_dir, "ppo_running_best_provenance.json")
     _panel_launch_time: float = 0.0  # wall time when panel eval subprocess was launched
 
+    # W&B chart history: accumulate per-iteration values for multi-line charts.
+    _chart_iters: list[int] = []
+    _chart_wr_ussr: list[float] = []
+    _chart_wr_us: list[float] = []
+    _chart_wr_combined: list[float] = []
+
     for iteration in range(args.start_iteration, args.n_iterations + 1):
         t_iter_start = time.time()
 
@@ -3454,6 +3460,68 @@ def main() -> None:
 
         if wandb_run is not None:
             log_dict.update(probe_metrics)
+
+            # ── Rename flat metrics to prefixed keys for W&B section grouping ──
+            # W&B auto-groups metrics by prefix (e.g. "train/" → one section).
+            # Old flat keys are kept alongside so existing saved charts still work.
+            _prefix_map = {
+                "policy_loss": "train/policy_loss",
+                "value_loss": "train/value_loss",
+                "sc_loss": "train/sc_loss",
+                "entropy": "train/entropy",
+                "clip_fraction": "train/clip_fraction",
+                "approx_kl": "train/approx_kl",
+                "ent_coef": "train/ent_coef",
+                "rollout_wr": "rollout/wr_combined",
+                "rollout_wr_ussr": "rollout/wr_ussr",
+                "rollout_wr_us": "rollout/wr_us",
+                "sp_rollout_wr_ussr": "rollout/sp_wr_ussr",
+                "sp_rollout_wr_us": "rollout/sp_wr_us",
+                "n_steps": "rollout/n_steps",
+                "iter_time_s": "meta/iter_time_s",
+                "core_scalar_weight_norm": "weights/core_scalar_norm",
+                "new_scalar_weight_norm": "weights/new_scalar_norm",
+                "region_scalar_weight_norm": "weights/region_scalar_norm",
+            }
+            for old_key, new_key in _prefix_map.items():
+                if old_key in log_dict:
+                    log_dict[new_key] = log_dict[old_key]
+
+            # ── Named composite charts (same layout for every run) ─────────────
+            # charts/rollout_wr: multi-line USSR/US/combined on one plot.
+            _chart_iters.append(iteration)
+            _chart_wr_ussr.append(rollout_wr_ussr)
+            _chart_wr_us.append(rollout_wr_us)
+            _chart_wr_combined.append((rollout_wr_ussr + rollout_wr_us) / 2.0)
+            try:
+                log_dict["charts/rollout_wr"] = wandb.plot.line_series(
+                    xs=[list(_chart_iters)] * 3,
+                    ys=[_chart_wr_ussr, _chart_wr_us, _chart_wr_combined],
+                    keys=["USSR", "US", "combined"],
+                    title="Rollout win rate",
+                    xname="iteration",
+                )
+            except Exception:
+                pass  # line_series may not be available in all wandb versions
+
+            # charts/turn_dist, vp_dist, defcon_dist: histograms from terminal steps.
+            if terminal_steps:
+                _end_turns = [s.raw_turn for s in terminal_steps if s.raw_turn is not None]
+                _end_vps = [s.raw_vp for s in terminal_steps if s.raw_vp is not None]
+                _end_defcons = [s.raw_defcon for s in terminal_steps if s.raw_defcon is not None]
+                if _end_turns:
+                    log_dict["charts/turn_dist"] = wandb.Histogram(
+                        _end_turns, num_bins=10
+                    )
+                if _end_vps:
+                    log_dict["charts/vp_dist"] = wandb.Histogram(
+                        _end_vps, num_bins=30
+                    )
+                if _end_defcons:
+                    log_dict["charts/defcon_dist"] = wandb.Histogram(
+                        _end_defcons, num_bins=5
+                    )
+
             wandb_run.log(log_dict, step=iteration)
 
     # ── Final checkpoint + summary ────────────────────────────────────────────
