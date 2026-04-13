@@ -3022,6 +3022,7 @@ def main() -> None:
     # successful save.  Milestone checkpoints (eval_every multiples and the
     # final iteration) are never deleted.
     last_rolling_iteration: int | None = None
+    last_rolling_ckpt: str | None = None  # path to previous iteration's checkpoint
 
     def _is_milestone(it: int) -> bool:
         return it % args.eval_every == 0 or it == args.n_iterations
@@ -3265,6 +3266,7 @@ def main() -> None:
                 _remove_if_exists(old_path)
                 _remove_if_exists(old_path.replace(".pt", "_scripted.pt"))
         last_rolling_iteration = iteration
+        last_rolling_ckpt = new_ckpt_path
 
         # WS3: Log rollout win rates to metadata DB
         if _TRACKING_AVAILABLE:
