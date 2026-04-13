@@ -177,6 +177,7 @@ void apply_ops_randomly_impl(
     PublicState& pub,
     Side side,
     int ops,
+    CardId context_card_id,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr
 ) {
@@ -186,7 +187,7 @@ void apply_ops_randomly_impl(
     }
     const auto place_influence = [&]() {
         for (int i = 0; i < ops; ++i) {
-            const auto target = accessible[rng.choice_index(accessible.size())];
+            const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb);
             pub.set_influence(side, target, pub.influence_of(side, target) + 1);
         }
     };
@@ -228,7 +229,7 @@ void apply_ops_randomly_impl(
             place_influence();
             return;
         }
-        const auto target = choose_country(pub, 0, side, targets, rng, policy_cb);
+        const auto target = choose_country(pub, context_card_id, side, targets, rng, policy_cb);
         const auto net = coup_result(ops, country_spec(target).stability, rng);
         if (net > 0) {
             const auto removed = std::min(net, pub.influence_of(opponent, target));
@@ -245,7 +246,7 @@ void apply_ops_randomly_impl(
     }
 
     for (int i = 0; i < std::min(ops, static_cast<int>(accessible.size())); ++i) {
-        const auto target = choose_country(pub, 0, side, accessible, rng, policy_cb);
+        const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb);
         const auto ussr_inf = pub.influence_of(Side::USSR, target);
         const auto us_inf = pub.influence_of(Side::US, target);
         auto count_adj = [&](Side player) {
@@ -414,7 +415,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 const auto chosen = choose_card(pub, 32, side, eligible, rng, policy_cb);
                 const auto ops = effective_ops(chosen, pub, side);
                 discard_from_hand(gs, side, chosen, pub);
-                apply_ops_randomly_impl(pub, side, ops, rng, policy_cb);
+                apply_ops_randomly_impl(pub, side, ops, static_cast<CardId>(32), rng, policy_cb);
             }
             break;
         }
@@ -493,7 +494,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             if (!candidates.empty()) {
                 const auto chosen = choose_card(pub, 52, side, candidates, rng, policy_cb);
                 gs.hands[to_index(opponent)].reset(chosen);
-                apply_ops_randomly_impl(pub, side, effective_ops(chosen, pub, side), rng, policy_cb);
+                apply_ops_randomly_impl(
+                    pub,
+                    side,
+                    effective_ops(chosen, pub, side),
+                    static_cast<CardId>(52),
+                    rng,
+                    policy_cb
+                );
                 gs.hands[to_index(opponent)].set(chosen);
             }
             break;
@@ -532,7 +540,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             if (!candidates.empty()) {
                 const auto chosen = choose_card(pub, 68, Side::US, candidates, rng, policy_cb);
                 gs.hands[to_index(Side::USSR)].reset(chosen);
-                apply_ops_randomly_impl(pub, Side::US, effective_ops(chosen, pub, Side::US), rng, policy_cb);
+                apply_ops_randomly_impl(
+                    pub,
+                    Side::US,
+                    effective_ops(chosen, pub, Side::US),
+                    static_cast<CardId>(68),
+                    rng,
+                    policy_cb
+                );
                 gs.hands[to_index(Side::USSR)].set(chosen);
             }
             break;
@@ -1213,7 +1228,7 @@ void resolve_glasnost_free_ops_live(
     }
     const auto ops = pub.glasnost_free_ops;
     pub.glasnost_free_ops = 0;
-    apply_ops_randomly_impl(pub, Side::USSR, ops, rng, policy_cb);
+    apply_ops_randomly_impl(pub, Side::USSR, ops, static_cast<CardId>(93), rng, policy_cb);
 }
 
 std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(

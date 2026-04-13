@@ -252,3 +252,79 @@ TEST_CASE("Resolving Glasnost free ops clears the pending budget", "[game_loop]"
 
     REQUIRE(pub.glasnost_free_ops == 0);
 }
+
+TEST_CASE("Glasnost free ops routes influence targets through the policy callback", "[game_loop]") {
+    constexpr CardId kGlasnostId = 93;
+
+    PublicState pub;
+    pub.glasnost_free_ops = 2;
+
+    std::array<int, kCountrySlots> expected_counts = {};
+    int country_select_calls = 0;
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+        if (decision.kind == DecisionKind::SmallChoice) {
+            return 0;  // Influence
+        }
+        if (decision.kind == DecisionKind::CountrySelect) {
+            REQUIRE(decision.source_card == kGlasnostId);
+            REQUIRE(decision.n_options > 1);
+            const auto choice = decision.n_options - 1;
+            ++expected_counts[decision.eligible_ids[choice]];
+            ++country_select_calls;
+            return choice;
+        }
+        return 0;
+    };
+
+    Pcg64Rng rng(0);
+    resolve_glasnost_free_ops_live(pub, rng, &policy_cb);
+
+    REQUIRE(pub.glasnost_free_ops == 0);
+    REQUIRE(country_select_calls == 2);
+    for (CountryId cid = 0; cid < kCountrySlots; ++cid) {
+        REQUIRE(pub.influence_of(Side::USSR, cid) == expected_counts[cid]);
+    }
+}
+
+TEST_CASE("Missile Envy free ops keeps the event card as the country-select context", "[game_loop]") {
+    constexpr CardId kMissileEnvyId = 52;
+    constexpr CardId kArabIsraeliWarId = 13;
+
+    GameState gs;
+    gs.pub = PublicState{};
+    gs.hands[to_index(Side::USSR)].set(kArabIsraeliWarId);
+
+    std::array<int, kCountrySlots> expected_counts = {};
+    int country_select_calls = 0;
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+        if (decision.kind == DecisionKind::SmallChoice) {
+            return 0;  // Influence
+        }
+        if (decision.kind == DecisionKind::CountrySelect) {
+            REQUIRE(decision.source_card == kMissileEnvyId);
+            REQUIRE(decision.n_options > 1);
+            const auto choice = decision.n_options - 1;
+            ++expected_counts[decision.eligible_ids[choice]];
+            ++country_select_calls;
+            return choice;
+        }
+        return 0;
+    };
+
+    const ActionEncoding action{
+        .card_id = kMissileEnvyId,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action_live(gs, action, Side::US, rng, &policy_cb);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(country_select_calls == effective_ops(kArabIsraeliWarId, gs.pub, Side::US));
+    for (CountryId cid = 0; cid < kCountrySlots; ++cid) {
+        REQUIRE(next.influence_of(Side::US, cid) == expected_counts[cid]);
+    }
+    REQUIRE(gs.hands[to_index(Side::USSR)].test(kArabIsraeliWarId));
+}
