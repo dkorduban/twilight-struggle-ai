@@ -3473,26 +3473,31 @@ def main() -> None:
     # ppo_loop_step.sh checks for ppo_best.pt first; if missing it falls back to ppo_final.pt
     # (the last iteration, usually worse). Always promote running_best so the next run warm-starts
     # from the best-evaluated checkpoint, not the last one.
-    best_scripted_path = best_ckpt_path.replace(".pt", "_scripted.pt")
-    if os.path.exists(_running_best_path) and not os.path.exists(best_ckpt_path):
-        shutil.copy2(_running_best_path, best_ckpt_path)
-        _rb_scripted = _running_best_path.replace(".pt", "_scripted.pt")
-        if os.path.exists(_rb_scripted):
-            shutil.copy2(_rb_scripted, best_scripted_path)
-        print(
-            "ppo_best.pt ← ppo_running_best.pt (Option F: panel high-water mark → next run warmstart)",
-            flush=True,
-        )
-    elif getattr(args, 'benchmark_every', 0) == 0 and not os.path.exists(best_ckpt_path):
-        # When benchmarking is disabled ppo_best.pt is never written; use final as best.
-        shutil.copy2(final_path, best_ckpt_path)
-        final_scripted = final_path.replace(".pt", "_scripted.pt")
-        if os.path.exists(final_scripted):
-            shutil.copy2(final_scripted, best_scripted_path)
-        print(
-            "ppo_best.pt ← ppo_final.pt (panel eval did not run; consider --eval-panel)",
-            flush=True,
-        )
+    # NOTE: This block is wrapped in try/except because Snakemake deletes declared outputs
+    # (ppo_final.pt) if the process exits non-zero. Any error here must not propagate.
+    try:
+        best_scripted_path = best_ckpt_path.replace(".pt", "_scripted.pt")
+        if os.path.exists(_running_best_path) and not os.path.exists(best_ckpt_path):
+            shutil.copy2(_running_best_path, best_ckpt_path)
+            _rb_scripted = _running_best_path.replace(".pt", "_scripted.pt")
+            if os.path.exists(_rb_scripted):
+                shutil.copy2(_rb_scripted, best_scripted_path)
+            print(
+                "ppo_best.pt ← ppo_running_best.pt (Option F: panel high-water mark → next run warmstart)",
+                flush=True,
+            )
+        elif not os.path.exists(best_ckpt_path):
+            # No panel eval ran (or benchmark_every=0); use ppo_final.pt as best.
+            shutil.copy2(final_path, best_ckpt_path)
+            final_scripted = final_path.replace(".pt", "_scripted.pt")
+            if os.path.exists(final_scripted):
+                shutil.copy2(final_scripted, best_scripted_path)
+            print(
+                "ppo_best.pt ← ppo_final.pt (panel eval did not run; consider --eval-panel)",
+                flush=True,
+            )
+    except Exception as _promote_err:
+        print(f"  Warning: ppo_best.pt promotion failed (non-fatal): {_promote_err}", flush=True)
 
     # Clean up any still-running panel eval process
     if _panel_proc is not None and _panel_proc.is_alive():
