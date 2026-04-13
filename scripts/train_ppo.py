@@ -585,9 +585,13 @@ def _compute_reward(result: "tscore.GameResult", side_int: int, vp_coef: float =
     is_ussr = side_int == 0
     won = result.winner == (tscore.Side.USSR if is_ussr else tscore.Side.US)
     base = 1.0 if won else -1.0
+    end_reason = getattr(result, "end_reason", "")
+    # DEFCON-1 suicide penalty: losing via DEFCON-1 is worse than a normal loss.
+    # Give a -1.5 signal (below -1.0) so the model learns DEFCON-1 is catastrophic.
+    if end_reason == "defcon1" and not won:
+        return -1.5
     if vp_coef <= 0.0:
         return base
-    end_reason = getattr(result, "end_reason", "")
     if end_reason == "europe_control":
         # Instant win: treat as full VP margin regardless of board state.
         vp_scaled = 1.0 if won else -1.0

@@ -432,6 +432,7 @@ Keep this file concise. If project guidance becomes too large, move topic-specif
 This project has a graphify knowledge graph at graphify-out/.
 
 Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- Read graphify-out/GRAPH_REPORT.md when: starting a new investigation in an unfamiliar subsystem, asking "how does X relate to Y?", or before a large refactor to understand what a function touches
+- SKIP graphify when: you know the exact file/function target, or the search is a simple keyword grep — direct Grep/Glob is faster
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - After modifying code files in this session, run `uv run python -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('python/')); _rebuild_code(Path('cpp/')); _rebuild_code(Path('scripts/'))"` to keep the graph current
