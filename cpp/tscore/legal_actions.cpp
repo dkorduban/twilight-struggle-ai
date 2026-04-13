@@ -19,6 +19,16 @@ bool is_defcon_restricted(CountryId country_id, const PublicState& pub) {
     return pub.defcon <= threshold;
 }
 
+int vietnam_revolts_ops_bonus(const PublicState& pub, Side side, std::span<const CountryId> targets) {
+    if (!pub.vietnam_revolts_active || side != Side::USSR || targets.empty()) {
+        return 0;
+    }
+    const auto all_in_sea = std::all_of(targets.begin(), targets.end(), [](CountryId cid) {
+        return country_spec(cid).region == Region::SoutheastAsia;
+    });
+    return all_in_sea ? 1 : 0;
+}
+
 namespace {
 
 constexpr std::array<int, 8> kSpaceOpsMinimum = {2, 2, 2, 2, 3, 3, 3, 4};
@@ -259,6 +269,27 @@ std::vector<ActionEncoding> enumerate_actions(
                 });
             }
 
+            if (pub.vietnam_revolts_active && side == Side::USSR) {
+                std::vector<CountryId> sea_accessible;
+                for (const auto cid : accessible) {
+                    if (country_spec(cid).region == Region::SoutheastAsia) {
+                        sea_accessible.push_back(cid);
+                    }
+                }
+                if (!sea_accessible.empty()) {
+                    combos.clear();
+                    current.clear();
+                    enumerate_multisets<CountryId>(sea_accessible, ops + 1, 0, current, combos);
+                    for (auto& combo : combos) {
+                        actions.push_back(ActionEncoding{
+                            .card_id = card_id,
+                            .mode = mode,
+                            .targets = std::move(combo),
+                        });
+                    }
+                }
+            }
+
             if (card_id == kChinaCardId) {
                 std::vector<CountryId> asia_accessible;
                 for (const auto cid : accessible) {
@@ -325,6 +356,12 @@ std::optional<ActionEncoding> sample_action(
 
         auto ops = effective_ops(card_id, pub, side);
         std::vector<CountryId> pool = accessible;
+        std::vector<CountryId> sea_pool;
+        if (pub.vietnam_revolts_active && side == Side::USSR) {
+            std::copy_if(accessible.begin(), accessible.end(), std::back_inserter(sea_pool), [](CountryId cid) {
+                return country_spec(cid).region == Region::SoutheastAsia;
+            });
+        }
         if (card_id == kChinaCardId) {
             std::vector<CountryId> asia_pool;
             std::copy_if(pool.begin(), pool.end(), std::back_inserter(asia_pool), [](CountryId cid) {
@@ -336,6 +373,10 @@ std::optional<ActionEncoding> sample_action(
                     ++ops;
                 }
             }
+        }
+        if (!sea_pool.empty() && rng.bernoulli(0.5)) {
+            pool = std::move(sea_pool);
+            ++ops;
         }
 
         ActionEncoding action{
