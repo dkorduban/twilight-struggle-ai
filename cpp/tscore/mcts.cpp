@@ -245,15 +245,6 @@ void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng&
     }
 }
 
-double rollout_value(const GameState& state, const MctsConfig& config, Pcg64Rng& rng) {
-    (void)config.rollout_depth_limit;
-    const PolicyFn heuristic = [](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& local_rng) {
-        return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, local_rng);
-    };
-    const auto result = play_game_from_mid_state_fn(state, heuristic, heuristic, rng.next_u32());
-    return winner_value(result.winner);
-}
-
 double evaluate(
     const GameState& state,
     const c10::impl::GenericDict& outputs,

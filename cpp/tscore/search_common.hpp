@@ -1,4 +1,5 @@
 // Shared helpers for MCTS, ISMCTS, and batched search implementations.
+// Include from search .cpp files only.
 
 #pragma once
 
@@ -11,7 +12,9 @@
 
 #include "card_properties.hpp"
 #include "game_data.hpp"
+#include "game_loop.hpp"
 #include "mcts.hpp"
+#include "policies.hpp"
 
 namespace ts {
 namespace {
@@ -103,6 +106,35 @@ inline void softmax_inplace(float* buf, int n) {
         accessible.end()
     );
     return accessible;
+}
+
+[[nodiscard, maybe_unused]] inline double rollout_value(const GameState& state, const MctsConfig& config, Pcg64Rng& rng) {
+    (void)config.rollout_depth_limit;
+    const PolicyFn heuristic = [](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& local_rng) {
+        return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, local_rng);
+    };
+    const auto result = play_game_from_mid_state_fn(state, heuristic, heuristic, rng.next_u32());
+    return winner_value(result.winner);
+}
+
+// evaluate_leaf_value_raw: used by mcts_batched.cpp and ismcts.cpp (float-pointer value tensors).
+// Note: mcts.cpp uses a different signature (GenericDict outputs) — not deduplicated here.
+[[nodiscard, maybe_unused]] inline double evaluate_leaf_value_raw(
+    const GameState& state,
+    const float* value_ptr,
+    int value_stride,
+    int batch_index,
+    const MctsConfig& config,
+    Pcg64Rng& rng
+) {
+    auto value = static_cast<double>(value_ptr[batch_index * value_stride]);
+    value = calibrate_value(value, config);
+    if (!config.use_rollout_backup) {
+        return value;
+    }
+    const auto rollout = rollout_value(state, config, rng);
+    return static_cast<double>(config.value_weight) * value +
+        static_cast<double>(1.0f - config.value_weight) * rollout;
 }
 
 }  // namespace

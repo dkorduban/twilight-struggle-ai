@@ -196,33 +196,7 @@ void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng&
     }
 }
 
-double rollout_value(const GameState& state, const MctsConfig& config, Pcg64Rng& rng) {
-    (void)config.rollout_depth_limit;
-    const PolicyFn heuristic = [](const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& local_rng) {
-        return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, local_rng);
-    };
-    const auto result = play_game_from_mid_state_fn(state, heuristic, heuristic, rng.next_u32());
-    return winner_value(result.winner);
-}
 
-
-double evaluate_leaf_value_raw(
-    const GameState& state,
-    const float* value_ptr,
-    int value_stride,
-    int batch_index,
-    const MctsConfig& config,
-    Pcg64Rng& rng
-) {
-    auto value = static_cast<double>(value_ptr[batch_index * value_stride]);
-    value = calibrate_value(value, config);
-    if (!config.use_rollout_backup) {
-        return value;
-    }
-    const auto rollout = rollout_value(state, config, rng);
-    return static_cast<double>(config.value_weight) * value +
-        static_cast<double>(1.0f - config.value_weight) * rollout;
-}
 
 // Precomputed accessible countries for all three action modes — avoids repeated BFS.
 struct AccessibleCache {
