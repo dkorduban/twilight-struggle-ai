@@ -565,10 +565,25 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     discardable.push_back(candidate);
                 }
             }
-            const auto discard_count = discardable.empty() ? 0 : rng.uniform_int(0, static_cast<int>(discardable.size()));
-            shuffle_with_numpy_rng(discardable, rng);
-            discardable.resize(static_cast<size_t>(discard_count));
-            for (const auto chosen : discardable) {
+            if (discardable.size() > 4) {
+                discardable.resize(4);
+            }
+            const auto discard_count = choose_option(
+                pub,
+                static_cast<CardId>(78),
+                Side::US,
+                static_cast<int>(discardable.size()) + 1,
+                rng,
+                policy_cb
+            );
+            std::vector<CardId> chosen_discards;
+            chosen_discards.reserve(static_cast<size_t>(discard_count));
+            for (int i = 0; i < discard_count; ++i) {
+                const auto chosen = choose_card(pub, 78, Side::US, discardable, rng, policy_cb);
+                chosen_discards.push_back(chosen);
+                discardable.erase(std::remove(discardable.begin(), discardable.end(), chosen), discardable.end());
+            }
+            for (const auto chosen : chosen_discards) {
                 discard_from_hand(gs, Side::US, chosen, pub);
             }
             gs.pub = pub;
