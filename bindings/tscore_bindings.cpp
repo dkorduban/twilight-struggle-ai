@@ -8,9 +8,12 @@
 #include <optional>
 #include <random>
 
+#include "adjacency.hpp"
+#include "game_data.hpp"
 #include "game_loop.hpp"
 #include "game_state.hpp"
 #include "ismcts.hpp"
+#include "legal_actions.hpp"
 #include "learned_policy.hpp"
 #include "mcts.hpp"
 #include "mcts_batched.hpp"
@@ -90,6 +93,181 @@ py::dict public_state_to_dict(const ts::PublicState& pub) {
     out["handicap_us"] = pub.handicap_us;
     out["ops_modifier"] = py::make_tuple(pub.ops_modifier[0], pub.ops_modifier[1]);
     out["state_hash"] = pub.state_hash;
+    return out;
+}
+
+py::object get_field(const py::handle& obj, const char* name) {
+    if (py::isinstance<py::dict>(obj)) {
+        auto d = py::reinterpret_borrow<py::dict>(obj);
+        py::str key(name);
+        if (d.contains(key)) {
+            return d[key];
+        }
+        return py::none();
+    }
+    if (py::hasattr(obj, name)) {
+        return obj.attr(name);
+    }
+    return py::none();
+}
+
+template <typename T>
+T get_field_or(const py::handle& obj, const char* name, T default_value) {
+    py::object value = get_field(obj, name);
+    if (value.is_none()) {
+        return default_value;
+    }
+    return value.cast<T>();
+}
+
+ts::Side side_from_python(const py::handle& obj) {
+    return static_cast<ts::Side>(py::cast<int>(obj));
+}
+
+ts::ActionMode action_mode_from_python(const py::handle& obj) {
+    return static_cast<ts::ActionMode>(py::cast<int>(obj));
+}
+
+std::optional<ts::Side> optional_side_from_python(const py::object& obj) {
+    if (obj.is_none()) {
+        return std::nullopt;
+    }
+    return side_from_python(obj);
+}
+
+std::optional<ts::Region> optional_region_from_python(const py::object& obj) {
+    if (obj.is_none()) {
+        return std::nullopt;
+    }
+    return static_cast<ts::Region>(obj.cast<int>());
+}
+
+template <size_t N>
+void fill_int_array(std::array<int, N>& out, const py::object& value) {
+    if (value.is_none()) {
+        return;
+    }
+    const auto values = value.cast<std::vector<int>>();
+    for (size_t i = 0; i < std::min(N, values.size()); ++i) {
+        out[i] = values[i];
+    }
+}
+
+void fill_card_set(ts::CardSet& out, const py::object& value) {
+    if (value.is_none()) {
+        return;
+    }
+    for (const auto item : value.cast<py::iterable>()) {
+        out.set(static_cast<size_t>(item.cast<int>()));
+    }
+}
+
+ts::CardSet card_set_from_iterable(const py::iterable& cards) {
+    ts::CardSet out;
+    fill_card_set(out, cards);
+    return out;
+}
+
+ts::PublicState public_state_from_python(const py::handle& obj) {
+    ts::PublicState pub;
+
+    pub.turn = get_field_or<int>(obj, "turn", 0);
+    pub.ar = get_field_or<int>(obj, "ar", 0);
+    pub.phasing = side_from_python(get_field(obj, "phasing").is_none() ? py::int_(0) : get_field(obj, "phasing"));
+    pub.vp = get_field_or<int>(obj, "vp", 0);
+    pub.defcon = get_field_or<int>(obj, "defcon", 5);
+
+    fill_int_array(pub.milops, get_field(obj, "milops"));
+    fill_int_array(pub.space, get_field(obj, "space"));
+    fill_int_array(pub.space_attempts, get_field(obj, "space_attempts"));
+    fill_int_array(pub.ops_modifier, get_field(obj, "ops_modifier"));
+
+    pub.china_held_by = side_from_python(
+        get_field(obj, "china_held_by").is_none() ? py::int_(0) : get_field(obj, "china_held_by")
+    );
+    pub.china_playable = get_field_or<bool>(obj, "china_playable", true);
+
+    py::object influence = get_field(obj, "influence");
+    if (!influence.is_none() && py::hasattr(influence, "items")) {
+        for (const auto item_obj : influence.attr("items")()) {
+            py::tuple item = item_obj.cast<py::tuple>();
+            py::tuple key = item[0].cast<py::tuple>();
+            const auto side = side_from_python(key[0]);
+            const auto country_id = key[1].cast<int>();
+            pub.influence[ts::to_index(side)][country_id] = static_cast<int16_t>(item[1].cast<int>());
+        }
+    } else {
+        py::object ussr_influence = get_field(obj, "ussr_influence");
+        if (!ussr_influence.is_none()) {
+            const auto values = ussr_influence.cast<std::vector<int>>();
+            for (size_t i = 0; i < values.size() && i <= static_cast<size_t>(ts::kMaxCountryId); ++i) {
+                pub.influence[ts::to_index(ts::Side::USSR)][i] = static_cast<int16_t>(values[i]);
+            }
+        }
+        py::object us_influence = get_field(obj, "us_influence");
+        if (!us_influence.is_none()) {
+            const auto values = us_influence.cast<std::vector<int>>();
+            for (size_t i = 0; i < values.size() && i <= static_cast<size_t>(ts::kMaxCountryId); ++i) {
+                pub.influence[ts::to_index(ts::Side::US)][i] = static_cast<int16_t>(values[i]);
+            }
+        }
+    }
+
+    fill_card_set(pub.discard, get_field(obj, "discard"));
+    fill_card_set(pub.removed, get_field(obj, "removed"));
+
+    pub.space_level4_first = optional_side_from_python(get_field(obj, "space_level4_first"));
+    pub.space_level6_first = optional_side_from_python(get_field(obj, "space_level6_first"));
+    pub.warsaw_pact_played = get_field_or<bool>(obj, "warsaw_pact_played", false);
+    pub.marshall_plan_played = get_field_or<bool>(obj, "marshall_plan_played", false);
+    pub.truman_doctrine_played = get_field_or<bool>(obj, "truman_doctrine_played", false);
+    pub.john_paul_ii_played = get_field_or<bool>(obj, "john_paul_ii_played", false);
+    pub.nato_active = get_field_or<bool>(obj, "nato_active", false);
+    pub.de_gaulle_active = get_field_or<bool>(obj, "de_gaulle_active", false);
+    pub.willy_brandt_active = get_field_or<bool>(obj, "willy_brandt_active", false);
+    pub.us_japan_pact_active = get_field_or<bool>(obj, "us_japan_pact_active", false);
+    pub.nuclear_subs_active = get_field_or<bool>(obj, "nuclear_subs_active", false);
+    pub.norad_active = get_field_or<bool>(obj, "norad_active", false);
+    pub.shuttle_diplomacy_active = get_field_or<bool>(obj, "shuttle_diplomacy_active", false);
+    pub.flower_power_active = get_field_or<bool>(obj, "flower_power_active", false);
+    pub.flower_power_cancelled = get_field_or<bool>(obj, "flower_power_cancelled", false);
+    pub.salt_active = get_field_or<bool>(obj, "salt_active", false);
+    pub.opec_cancelled = get_field_or<bool>(obj, "opec_cancelled", false);
+    pub.awacs_active = get_field_or<bool>(obj, "awacs_active", false);
+    pub.north_sea_oil_extra_ar = get_field_or<bool>(obj, "north_sea_oil_extra_ar", false);
+    if (auto glasnost_free_ops = get_field(obj, "glasnost_free_ops"); !glasnost_free_ops.is_none()) {
+        pub.glasnost_free_ops = glasnost_free_ops.cast<int>();
+    } else if (get_field_or<bool>(obj, "glasnost_extra_ar", false)) {
+        pub.glasnost_free_ops = 4;
+    }
+    pub.formosan_active = get_field_or<bool>(obj, "formosan_active", false);
+    pub.cuban_missile_crisis_active = get_field_or<bool>(obj, "cuban_missile_crisis_active", false);
+    pub.vietnam_revolts_active = get_field_or<bool>(obj, "vietnam_revolts_active", false);
+    pub.bear_trap_active = get_field_or<bool>(obj, "bear_trap_active", false);
+    pub.quagmire_active = get_field_or<bool>(obj, "quagmire_active", false);
+    pub.iran_hostage_crisis_active = get_field_or<bool>(obj, "iran_hostage_crisis_active", false);
+    pub.handicap_ussr = get_field_or<int>(obj, "handicap_ussr", 0);
+    pub.handicap_us = get_field_or<int>(obj, "handicap_us", 0);
+    pub.chernobyl_blocked_region = optional_region_from_python(get_field(obj, "chernobyl_blocked_region"));
+    pub.latam_coup_bonus = optional_side_from_python(get_field(obj, "latam_coup_bonus"));
+    pub.state_hash = get_field_or<uint32_t>(obj, "state_hash", 0);
+
+    return pub;
+}
+
+py::dict adjacency_to_dict() {
+    py::dict out;
+    const auto& graph = ts::adjacency();
+    for (int country_id = 0; country_id <= ts::kMaxCountryId; ++country_id) {
+        if (!ts::has_country_spec(country_id)) {
+            continue;
+        }
+        py::set neighbors;
+        for (const auto neighbor : graph[static_cast<size_t>(country_id)]) {
+            neighbors.add(neighbor);
+        }
+        out[py::int_(country_id)] = py::frozenset(neighbors);
+    }
     return out;
 }
 
@@ -516,6 +694,114 @@ PYBIND11_MODULE(tscore, m) {
             return ts::summarize_results(results);
         },
         py::arg("results")
+    );
+    m.def("ars_for_turn", &ts::ars_for_turn, py::arg("turn"));
+    m.def("hand_size_for_turn", &ts::hand_size_for_turn, py::arg("turn"));
+    m.def(
+        "load_adjacency",
+        []() {
+            return adjacency_to_dict();
+        },
+        "Load the canonical country adjacency graph as {country_id: frozenset[int]}."
+    );
+    m.def(
+        "accessible_countries",
+        [](py::object side_obj, py::object pub_obj, py::object mode_obj) {
+            const auto side = side_from_python(side_obj);
+            const auto mode = mode_obj.is_none() ? ts::ActionMode::Influence : action_mode_from_python(mode_obj);
+            return ts::accessible_countries(side, public_state_from_python(pub_obj), mode);
+        },
+        py::arg("side"),
+        py::arg("pub"),
+        py::arg("mode") = py::none()
+    );
+    m.def(
+        "effective_ops",
+        [](int card_id, py::object pub_obj, py::object side_obj) {
+            return ts::effective_ops(
+                static_cast<ts::CardId>(card_id),
+                public_state_from_python(pub_obj),
+                side_from_python(side_obj)
+            );
+        },
+        py::arg("card_id"),
+        py::arg("pub"),
+        py::arg("side")
+    );
+    m.def(
+        "legal_cards",
+        [](py::iterable hand, py::object pub_obj, py::object side_obj, bool holds_china) {
+            return ts::legal_cards(
+                card_set_from_iterable(hand),
+                public_state_from_python(pub_obj),
+                side_from_python(side_obj),
+                holds_china
+            );
+        },
+        py::arg("hand"),
+        py::arg("pub"),
+        py::arg("side"),
+        py::arg("holds_china") = false
+    );
+    m.def(
+        "legal_modes",
+        [](int card_id, py::object pub_obj, py::object side_obj) {
+            return ts::legal_modes(
+                static_cast<ts::CardId>(card_id),
+                public_state_from_python(pub_obj),
+                side_from_python(side_obj)
+            );
+        },
+        py::arg("card_id"),
+        py::arg("pub"),
+        py::arg("side")
+    );
+    m.def(
+        "legal_countries",
+        [](int card_id, py::object mode_obj, py::object pub_obj, py::object side_obj) {
+            return ts::legal_countries(
+                static_cast<ts::CardId>(card_id),
+                action_mode_from_python(mode_obj),
+                public_state_from_python(pub_obj),
+                side_from_python(side_obj)
+            );
+        },
+        py::arg("card_id"),
+        py::arg("mode"),
+        py::arg("pub"),
+        py::arg("side")
+    );
+    m.def(
+        "enumerate_actions",
+        [](py::iterable hand, py::object pub_obj, py::object side_obj, bool holds_china, int max_influence_targets) {
+            return ts::enumerate_actions(
+                card_set_from_iterable(hand),
+                public_state_from_python(pub_obj),
+                side_from_python(side_obj),
+                holds_china,
+                max_influence_targets
+            );
+        },
+        py::arg("hand"),
+        py::arg("pub"),
+        py::arg("side"),
+        py::arg("holds_china") = false,
+        py::arg("max_influence_targets") = 84
+    );
+    m.def(
+        "has_legal_action",
+        [](py::iterable hand, py::object pub_obj, py::object side_obj, bool holds_china) {
+            return ts::has_legal_action(
+                card_set_from_iterable(hand),
+                public_state_from_python(pub_obj),
+                side_from_python(side_obj),
+                holds_china
+            );
+        },
+        py::arg("hand"),
+        py::arg("pub"),
+        py::arg("side"),
+        py::arg("holds_china") = false
     );
     m.def(
         "make_observation",

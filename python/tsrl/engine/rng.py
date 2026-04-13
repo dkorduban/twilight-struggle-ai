@@ -34,6 +34,10 @@ API differences vs random.Random
 
 from __future__ import annotations
 
+from ._deprecation import warn_engine_deprecated
+
+warn_engine_deprecated(__name__)
+
 import numpy as np
 
 # First generation trained with PCG64 seeds (v1–v27 used MT19937 / random.Random).

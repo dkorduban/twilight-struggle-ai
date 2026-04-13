@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from ._deprecation import warn_engine_deprecated
+
+warn_engine_deprecated(__name__)
+
 from copy import copy
 
 from tsrl.engine.rng import make_rng

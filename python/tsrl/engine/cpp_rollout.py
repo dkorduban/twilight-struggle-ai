@@ -9,6 +9,10 @@ Fallback: if tscore is not importable, returns 0.0 with a one-time warning.
 """
 from __future__ import annotations
 
+from ._deprecation import warn_engine_deprecated
+
+warn_engine_deprecated(__name__)
+
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING

@@ -27,6 +27,10 @@ Remaining stubs (not yet enforced in legality):
 """
 from __future__ import annotations
 
+from ._deprecation import warn_engine_deprecated
+
+warn_engine_deprecated(__name__)
+
 from itertools import combinations_with_replacement
 from typing import Sequence
 

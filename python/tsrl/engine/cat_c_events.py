@@ -14,6 +14,10 @@ Handler contract:
 """
 from __future__ import annotations
 
+from ._deprecation import warn_engine_deprecated
+
+warn_engine_deprecated(__name__)
+
 from typing import Optional
 
 from tsrl.engine.rng import RNG

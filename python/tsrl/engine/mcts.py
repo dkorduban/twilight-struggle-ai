@@ -28,6 +28,10 @@ All UCB1 statistics are stored from USSR's perspective for consistency.
 """
 from __future__ import annotations
 
+from ._deprecation import warn_engine_deprecated
+
+warn_engine_deprecated(__name__)
+
 import math
 from dataclasses import dataclass, field
 from typing import Callable, Optional

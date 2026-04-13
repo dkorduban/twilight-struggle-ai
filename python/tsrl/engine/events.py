@@ -15,6 +15,10 @@ Remaining stubs (noted in individual docstrings):
 """
 from __future__ import annotations
 
+from ._deprecation import warn_engine_deprecated
+
+warn_engine_deprecated(__name__)
+
 from typing import Callable, Collection, Optional
 
 import numpy as np

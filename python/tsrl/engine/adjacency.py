@@ -14,6 +14,10 @@ Reachability rules (ITS competitive rules):
 """
 from __future__ import annotations
 
+from ._deprecation import warn_engine_deprecated
+
+warn_engine_deprecated(__name__)
+
 import csv
 from functools import lru_cache
 from pathlib import Path
