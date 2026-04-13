@@ -2599,9 +2599,13 @@ def _panel_eval_worker(
                 # both halves of each call, which always summed to ~n_games/2 regardless
                 # of opponent strength (always ~0.5 combined WR).
                 n_total = max(4, n_games_per_opp)
+                # temperature=1.0 matches rollout conditions and keeps WR in the
+                # 30-60% discriminating range. temperature=0.0 (greedy) inflates WR
+                # to 85-90% even against 2092 ELO opponents (tiny logit differences
+                # compound over 100+ moves), making the panel useless for tracking.
                 r = _tscore.benchmark_model_vs_model_batched(
                     model_a_path=our_script, model_b_path=opp, n_games=n_total,
-                    pool_size=pool, seed=seed, device="cpu", temperature=0.0,
+                    pool_size=pool, seed=seed, device="cpu", temperature=1.0,
                 )
                 half_c = len(r) // 2
                 # Games 0..half_c-1: our_script=USSR, opponent=US
