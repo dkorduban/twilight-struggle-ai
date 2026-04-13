@@ -1,36 +1,27 @@
 {
-  "current_task": "PPO loop running (v128_sc+). Engine refactor (Phases 0-5) complete. Probe parquet fixed.",
+  "current_task": "PPO running v143_sc (iter 23/30). Two bugs fixed this session: (1) panel_eval combined_wr formula was measuring total USSR/US wins not our model's wins (always ~0.5 noise), now fixed to use index-based counting from single benchmark_model_vs_model_batched call; (2) fixture pool was all old-engine models 100-175 ELO above current model (1944), now updated to include v138-v142_sc (ELO 1944-1979) for near-equal training signal.",
   "next_tasks": [
-    "Monitor v128_sc+ ELO — investigate regression from v78_sc(2097) to v127_sc(1646)",
+    "Monitor v144_sc ELO with fixed panel eval + balanced fixtures — expect ELO stabilization or improvement",
+    "If ELO still declining after v145_sc: consider LR increase (2e-5 → 5e-5) or games_per_iter increase (200→400)",
     "GAP-005: Core ops placement legality (complex, lower priority)",
     "Python engine full removal: migrate 51 callers to tscore bindings, then delete python/tsrl/engine/",
-    "Task #46: Hash-based match cache identity (key by file SHA256, not name)",
-    "BC retraining: when PPO plateaus, collect 2000 games on corrected engine + retrain BC model"
+    "Task #46: Hash-based match cache identity (key by file SHA256, not name)"
   ],
   "blocked_on": null,
   "active_background": [
-    "v128_sc PPO training (PID 877664, watcher PID 877666)"
+    "v143_sc PPO training (auto-chains to v144_sc with balanced fixtures)"
   ],
   "completed_this_session": [
-    "Phase 0: promo cards excluded, mcts_search_impl.hpp dead code removed",
-    "Phase 1A: GAP-001/003/004/040/043 (China card, Space Race, Formosan, Solidarity)",
-    "Phase 1B: GAP-039/041/042 (Vietnam Revolts SEA-only, CMC cleanup, Glasnost free ops)",
-    "Phase 1C: GAP-008/009/014/021/038 (war card mechanic: apply_war_card)",
-    "Phase 0D+E: test harness (51 Python event tests) + observation interface doc",
-    "Phase 2A: GAP-002/006/018/024/027 (event timing player choice + apply_ops_randomly -> choose_country)",
-    "Phase 2B: GAP-007/010-020/025-037 (20 step.cpp + 3 game_loop.cpp choose_country fixes)",
-    "Phase 3: Observation struct added, ISMCTS hidden-info leaks fixed (4 hands[] accesses replaced)",
-    "Phase 5: Python engine deprecated with warnings, 10 new C++ bindings added",
-    "Probe parquet fixed: added mode_mask column (all-True) — was crashing v128_sc at startup",
-    "PPO loop restarted: v128_sc relaunched, running correctly"
+    "Panel eval formula bug fixed: combined_wr was counting total USSR/US wins (always ~0.5 noise), now uses index-based counting from single call so it measures OUR model's actual WR",
+    "Fixture pool rebalanced: added v138_sc(1979), v140_sc(1949), v142_sc(1944), v67_sc(2017) to both USSR and US pools; both pools now symmetric (same 8 opponents) to prevent USSR/US training bias",
+    "Previous session: Probe parquet mode_mask fix, v128_sc restart, ELO regression diagnosis, v132_sc reset from v77_sc (ELO 2119), W&B chart improvements",
+    "30-min ScheduleWakeup added to standing policy"
   ],
-  "gap_closure_progress": {
-    "total_gaps": 46,
-    "closed": 45,
-    "pending": 1,
-    "pending_ids": ["GAP-005"],
-    "notes": "GAP-022/023 (cards 49/50 HILSTW/Junta) confirmed already correct. GAP-044/045/046 (promo cards) excluded from deck in Phase 0."
+  "root_cause_diagnosis": {
+    "panel_eval_bug": "benchmark_model_vs_model_batched returns results ordered [model_a=USSR games, model_a=US games]. Old code counted ALL USSR wins from r_a (including opponent USSR wins in second half) + ALL US wins from r_b (including opponent US wins). Expected value always 0.5 regardless of opponent strength. Fixed: single call, count only our model's wins by result index.",
+    "fixture_asymmetry": "All previous fixtures (v48,v55,v45,v19-v22) were old-engine models at ELO 2042-2118, while our current model is at 1944. Model consistently loses 70-75% of games → tiny positive advantage signal → PPO can't learn effectively. Near-equal opponents (v138-v142_sc at 1944-1979) give WR near 50% → maximum PFSP weight → best learning signal.",
+    "elo_decline": "v132_sc started at 2092 and declined to 1944 over 10 runs primarily due to: (1) inaccurate panel eval HWM selection (noise-based), (2) fixture pool too hard causing one-sided loss data, (3) model drifting from USSR-strong to US-strong due to fixture asymmetry"
   },
-  "last_updated": "2026-04-13T21:30:00+00:00",
-  "context": "Engine refactor complete. v128_sc PPO running with fixed probe parquet. ELO concern: v127_sc=1646 vs v78_sc=2097 — large regression suggests something changed between v79-v127 training runs. Needs investigation. Engine is now correct (choose_country/choose_option for all 30+ affected cards), decoupled (Observation struct), and clean. Build (13:44) is newer than source changes (13:08) — new engine IS active in training."
+  "last_updated": "2026-04-13T22:30:00+00:00",
+  "context": "v143_sc iter20 panel eval (first with correct formula) showed avg=0.552 vs [v55,v54,v44,v45,v14] — plausible for a model at ~2092 ELO (v77_sc-derived). The panel eval HWM is now set to iter20. v144_sc will use the balanced fixture pool and correctly-computed panel eval. If learning is still stalled, next lever is LR increase or games_per_iter increase."
 }

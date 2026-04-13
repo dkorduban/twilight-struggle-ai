@@ -1,44 +1,40 @@
 {
-  "ussr_pool": ["v55", "v48", "v19", "v21", "v22", "v20", "v58", "v45"],
-  "us_pool": ["v45", "v15", "v58", "v18", "v20", "v16", "v21", "v49"],
-  "combined": ["v55", "v48", "v19", "v21", "v22", "v20", "v58", "v45", "v15", "v18", "v16", "v49"],
+  "ussr_pool": ["v142_sc", "v140_sc", "v138_sc", "v67_sc", "v20", "v58", "v45", "v55"],
+  "us_pool": ["v142_sc", "v140_sc", "v138_sc", "v67_sc", "v20", "v58", "v45", "v55"],
+  "combined": ["v142_sc", "v140_sc", "v138_sc", "v67_sc", "v20", "v58", "v45", "v55"],
   "metric": "combined",
   "min_jsd": 0.01,
   "ussr_pool_n": 8,
   "us_pool_n": 8,
-  "_note": "Restored 2026-04-12: expanded from 2+2=4 back to 8+8=12 unique (13 with heuristic) per JSD analysis in opus_analysis_20260411_145000_fixture_selection_v2.md. USSR pool = good US players (model plays USSR); US pool = good USSR players (model plays US). heuristic injected separately via __heuristic__. pfsp_exponent=1.5 (UCB c).",
+  "_note": "Updated 2026-04-13: added recent sc-lineage models (v138-v142_sc ELO 1944-1979) to both pools as near-equal opponents. Previous pool (v48,v19,v21,v22,v15,v16,v18,v49) was all old-engine models 100-175 ELO above current model (1944), causing asymmetric training signal. New pool mixes near-equal (v142_sc=1944, v140_sc=1949, v138_sc=1979) with challenging (v67_sc=2017, v20=2077, v58=2057, v45=2096, v55=2118). Both pools are symmetric to prevent USSR/US bias. heuristic injected separately.",
   "fixture_paths": [
-    "data/checkpoints/scripted_for_elo/v55_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v48_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v19_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v21_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v22_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v142_sc_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v140_sc_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v138_sc_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v67_sc_scripted.pt",
     "data/checkpoints/scripted_for_elo/v20_scripted.pt",
     "data/checkpoints/scripted_for_elo/v58_scripted.pt",
     "data/checkpoints/scripted_for_elo/v45_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v15_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v18_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v16_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v49_scripted.pt"
+    "data/checkpoints/scripted_for_elo/v55_scripted.pt"
   ],
   "ussr_fixture_paths": [
-    "data/checkpoints/scripted_for_elo/v55_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v48_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v19_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v21_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v22_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v142_sc_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v140_sc_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v138_sc_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v67_sc_scripted.pt",
     "data/checkpoints/scripted_for_elo/v20_scripted.pt",
     "data/checkpoints/scripted_for_elo/v58_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v45_scripted.pt"
+    "data/checkpoints/scripted_for_elo/v45_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v55_scripted.pt"
   ],
   "us_fixture_paths": [
-    "data/checkpoints/scripted_for_elo/v45_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v15_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v58_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v18_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v142_sc_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v140_sc_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v138_sc_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v67_sc_scripted.pt",
     "data/checkpoints/scripted_for_elo/v20_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v16_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v21_scripted.pt",
-    "data/checkpoints/scripted_for_elo/v49_scripted.pt"
+    "data/checkpoints/scripted_for_elo/v58_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v45_scripted.pt",
+    "data/checkpoints/scripted_for_elo/v55_scripted.pt"
   ]
 }

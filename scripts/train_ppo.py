@@ -2593,16 +2593,21 @@ def _panel_eval_worker(
         else:
             opp_name = _Path(opp).stem.replace("_scripted", "")
             try:
-                r_a = _tscore.benchmark_model_vs_model_batched(
-                    model_a_path=our_script, model_b_path=opp, n_games=half,
+                # Single call: our_script=model_a plays both sides (first half as USSR,
+                # second half as US). Count only our model's wins using result ordering.
+                # Bug note: the old two-call approach counted total USSR/US wins across
+                # both halves of each call, which always summed to ~n_games/2 regardless
+                # of opponent strength (always ~0.5 combined WR).
+                n_total = max(4, n_games_per_opp)
+                r = _tscore.benchmark_model_vs_model_batched(
+                    model_a_path=our_script, model_b_path=opp, n_games=n_total,
                     pool_size=pool, seed=seed, device="cpu", temperature=0.0,
                 )
-                r_b = _tscore.benchmark_model_vs_model_batched(
-                    model_a_path=opp, model_b_path=our_script, n_games=half,
-                    pool_size=pool, seed=seed + half, device="cpu", temperature=0.0,
-                )
-                ussr_wins = sum(1 for r in r_a if r.winner == _tscore.Side.USSR)
-                us_wins = sum(1 for r in r_b if r.winner == _tscore.Side.US)
+                half_c = len(r) // 2
+                # Games 0..half_c-1: our_script=USSR, opponent=US
+                ussr_wins = sum(1 for i, r_ in enumerate(r) if i < half_c and r_.winner == _tscore.Side.USSR)
+                # Games half_c..end: our_script=US, opponent=USSR
+                us_wins = sum(1 for i, r_ in enumerate(r) if i >= half_c and r_.winner == _tscore.Side.US)
             except Exception as e:
                 results[opp_name] = {"error": str(e)}
                 continue
