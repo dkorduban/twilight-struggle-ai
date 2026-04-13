@@ -28,6 +28,7 @@
 #include "human_openings.hpp"
 #include "nn_features.hpp"
 #include "policies.hpp"
+#include "search_common.hpp"
 #include "scoring.hpp"
 #include "step.hpp"
 
@@ -43,8 +44,6 @@ constexpr int kMaxCardLogits = 112;
 constexpr int kMaxModeLogits = 8;
 constexpr int kMaxCountryLogits = 86;
 constexpr int kMaxStrategies = 8;
-using tscore::kDefconLoweringCards;
-
 struct ModeDraft {
     ActionMode mode = ActionMode::Influence;
     std::vector<ActionEncoding> edges;
@@ -167,86 +166,6 @@ bool aggregated_edge_better(const MctsEdge& lhs, const MctsEdge& rhs) {
         return lhs.prior > rhs.prior;
     }
     return action_less(lhs.action, rhs.action);
-}
-
-[[nodiscard]] bool is_defcon_lowering_card(CardId card_id) {
-    return std::find(kDefconLoweringCards.begin(), kDefconLoweringCards.end(), static_cast<int>(card_id)) !=
-        kDefconLoweringCards.end();
-}
-
-[[nodiscard]] bool is_card_blocked_by_defcon(const PublicState& pub, Side side, CardId card_id) {
-    if (!is_defcon_lowering_card(card_id)) {
-        return false;
-    }
-
-    const auto& card_info = card_spec(card_id);
-    const bool is_opponent_card = (card_info.side != side && card_info.side != Side::Neutral);
-    const bool is_neutral_card = (card_info.side == Side::Neutral);
-    if (is_opponent_card) {
-        if (pub.defcon <= 2) {
-            return true;
-        }
-        if (pub.defcon == 3 && pub.ar == 0) {
-            return true;
-        }
-    }
-    if (is_neutral_card && pub.ar == 0 && pub.defcon <= 3) {
-        return true;
-    }
-    // Own DEFCON-lowering card in headline (ar==0) fires as event — self-nukes at DEFCON <= 2
-    const bool is_own_card = !is_opponent_card && !is_neutral_card;
-    if (is_own_card && pub.ar == 0 && pub.defcon <= 2) {
-        return true;
-    }
-    return false;
-}
-
-[[nodiscard]] double winner_value(std::optional<Side> winner) {
-    if (winner == Side::USSR) {
-        return 1.0;
-    }
-    if (winner == Side::US) {
-        return -1.0;
-    }
-    return 0.0;
-}
-
-[[nodiscard]] double calibrate_value(double raw_value, const MctsConfig& config) {
-    if (config.calib_a == 1.0f && config.calib_b == 0.0f) {
-        return raw_value;
-    }
-    const auto logit = static_cast<double>(config.calib_a) * raw_value + static_cast<double>(config.calib_b);
-    const auto probability = 1.0 / (1.0 + std::exp(-logit));
-    return 2.0 * probability - 1.0;
-}
-
-[[nodiscard]] bool holds_china_for(const GameState& state, Side side) {
-    return side == Side::USSR ? state.ussr_holds_china : state.us_holds_china;
-}
-
-void sync_china_flags(GameState& state) {
-    state.ussr_holds_china = state.pub.china_held_by == Side::USSR;
-    state.us_holds_china = state.pub.china_held_by == Side::US;
-}
-
-
-/// Compute softmax in-place over buf[0..n), writing probabilities back into buf.
-inline void softmax_inplace(float* buf, int n) {
-    float max_val = -std::numeric_limits<float>::infinity();
-    for (int i = 0; i < n; ++i) {
-        if (buf[i] > max_val) max_val = buf[i];
-    }
-    float sum = 0.0f;
-    for (int i = 0; i < n; ++i) {
-        buf[i] = std::exp(buf[i] - max_val);
-        sum += buf[i];
-    }
-    if (sum > 0.0f) {
-        const float inv_sum = 1.0f / sum;
-        for (int i = 0; i < n; ++i) {
-            buf[i] *= inv_sum;
-        }
-    }
 }
 
 void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng& rng) {
