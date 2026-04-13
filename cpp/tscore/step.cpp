@@ -333,8 +333,13 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 3, rng)) {
+            for (int i = 0; i < 3; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(7), Side::USSR, pool, rng, policy_cb);
                 add_influence(next, Side::USSR, cid, 1);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
         }
@@ -388,11 +393,21 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                         pool.push_back(cid);
                     }
                 }
-                for (const auto cid : sample_up_to(pool, 4, rng)) {
+                for (int i = 0; i < 4; ++i) {
+                    if (pool.empty()) {
+                        break;
+                    }
+                    const auto cid = choose_country(next, static_cast<CardId>(16), Side::USSR, pool, rng, policy_cb);
                     remove_all_influence(next, Side::US, cid);
+                    pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
                 }
             } else {
-                for (const auto cid : sample_up_to(kEasternBlocIds, 5, rng)) {
+                const std::vector<CountryId> pool(kEasternBlocIds.begin(), kEasternBlocIds.end());
+                for (int i = 0; i < 5; ++i) {
+                    if (pool.empty()) {
+                        break;
+                    }
+                    const auto cid = choose_country(next, static_cast<CardId>(16), Side::USSR, pool, rng, policy_cb);
                     add_influence(next, Side::USSR, cid, 1);
                 }
             }
@@ -407,7 +422,9 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 const auto accessible = accessible_countries(side, next, ActionMode::Influence);
                 if (!accessible.empty()) {
                     for (int i = 0; i < 4; ++i) {
-                        add_influence(next, side, sample_one<CountryId>(accessible, rng), 1);
+                        const auto cid =
+                            choose_country(next, static_cast<CardId>(20), side, accessible, rng, policy_cb);
+                        add_influence(next, side, cid, 1);
                     }
                 }
             } else {
@@ -440,8 +457,13 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 7, rng)) {
+            for (int i = 0; i < 7; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(23), Side::US, pool, rng, policy_cb);
                 add_influence(next, Side::US, cid, 1);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             next.marshall_plan_played = true;
             break;
@@ -480,7 +502,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             if (!pool.empty()) {
-                remove_all_influence(next, Side::USSR, sample_one<CountryId>(pool, rng));
+                remove_all_influence(
+                    next,
+                    Side::USSR,
+                    choose_country(next, static_cast<CardId>(19), Side::US, pool, rng, policy_cb)
+                );
             }
             next.truman_doctrine_played = true;
             break;
@@ -495,18 +521,31 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             gain_control(next, Side::US, kJapanId);
             break;
 
-        case 28:
-            for (const auto cid : sample_up_to(std::array<CountryId, 3>{kFranceId, kUkId, kIsraelId}, 2, rng)) {
+        case 28: {
+            std::vector<CountryId> pool = {kFranceId, kUkId, kIsraelId};
+            for (int i = 0; i < 2; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(28), Side::USSR, pool, rng, policy_cb);
                 add_influence(next, Side::US, cid, -2);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
+        }
 
         case 29: {
             // East European Unrest: remove 1 USSR influence from 3 E.Europe countries
             // (2 each in Late War, turns 8-10).
             const int amount = (next.turn >= 8) ? 2 : 1;
-            for (const auto cid : sample_up_to(kEasternBlocIds, 3, rng)) {
+            std::vector<CountryId> pool(kEasternBlocIds.begin(), kEasternBlocIds.end());
+            for (int i = 0; i < 3; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(29), Side::US, pool, rng, policy_cb);
                 add_influence(next, Side::USSR, cid, -amount);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
         }
@@ -519,7 +558,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 4, rng)) {
+            for (int i = 0; i < 4; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(30), Side::USSR, pool, rng, policy_cb);
                 add_influence(next, Side::USSR, cid, 1);
             }
             break;
@@ -558,8 +601,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 if (available_sources.empty() || destinations.empty()) {
                     break;
                 }
-                const auto src = sample_one<CountryId>(available_sources, rng);
-                const auto dst = sample_one<CountryId>(destinations, rng);
+                const auto src =
+                    choose_country(next, static_cast<CardId>(33), Side::USSR, available_sources, rng, policy_cb);
+                const auto dst =
+                    choose_country(next, static_cast<CardId>(33), Side::USSR, destinations, rng, policy_cb);
                 add_influence(next, Side::USSR, src, -1);
                 add_influence(next, Side::USSR, dst, 1);
             }
@@ -587,10 +632,16 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     }
                 }
                 for (int i = 0; i < 2 && !pool.empty(); ++i) {
-                    add_influence(next, Side::US, sample_one<CountryId>(pool, rng), 1);
+                    const auto cid = choose_country(next, static_cast<CardId>(37), Side::US, pool, rng, policy_cb);
+                    add_influence(next, Side::US, cid, 1);
                 }
             } else {
-                add_influence(next, Side::US, sample_one<CountryId>(kWesternEuropeIds, rng), 1);
+                add_influence(
+                    next,
+                    Side::US,
+                    choose_country(next, static_cast<CardId>(37), Side::US, kWesternEuropeIds, rng, policy_cb),
+                    1
+                );
             }
             break;
 
@@ -746,8 +797,13 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             if (eligible.size() < 2) {
                 eligible.assign(kPool.begin(), kPool.end());
             }
-            for (const auto cid : sample_up_to(eligible, 2, rng)) {
+            for (int i = 0; i < 2; ++i) {
+                if (eligible.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(59), Side::USSR, eligible, rng, policy_cb);
                 remove_all_influence(next, Side::US, cid);
+                eligible.erase(std::remove(eligible.begin(), eligible.end(), cid), eligible.end());
             }
             break;
         }
@@ -762,7 +818,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             for (int i = 0; i < 2 && !eligible.empty(); ++i) {
-                add_influence(next, side, sample_one<CountryId>(eligible, rng), 1);
+                const auto cid = choose_country(next, static_cast<CardId>(60), side, eligible, rng, policy_cb);
+                add_influence(next, side, cid, 1);
             }
             break;
         }
@@ -826,8 +883,13 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 3, rng)) {
+            for (int i = 0; i < 3; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(67), Side::US, pool, rng, policy_cb);
                 add_influence(next, Side::US, cid, 1);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
         }
@@ -847,7 +909,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             for (int i = 0; i < 2 && !pool.empty(); ++i) {
-                add_influence(next, Side::US, sample_one<CountryId>(pool, rng), 1);
+                const auto cid = choose_country(next, static_cast<CardId>(71), Side::US, pool, rng, policy_cb);
+                add_influence(next, Side::US, cid, 1);
             }
             break;
         }
@@ -884,8 +947,13 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 4, rng)) {
+            for (int i = 0; i < 4; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(75), Side::US, pool, rng, policy_cb);
                 add_influence(next, Side::USSR, cid, -1);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
         }
@@ -897,7 +965,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 3, rng)) {
+            for (int i = 0; i < 3; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(76), Side::USSR, pool, rng, policy_cb);
                 add_influence(next, Side::USSR, cid, 1);
             }
             break;
@@ -914,13 +986,16 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 next.china_held_by = Side::US;
                 next.china_playable = true;
                 for (int i = 0; i < 4 && !pool.empty(); ++i) {
-                    add_influence(next, Side::USSR, sample_one<CountryId>(pool, rng), 1);
+                    const auto cid =
+                        choose_country(next, static_cast<CardId>(77), Side::USSR, pool, rng, policy_cb);
+                    add_influence(next, Side::USSR, cid, 1);
                 }
             } else {
                 next.china_held_by = Side::USSR;
                 next.china_playable = true;
                 for (int i = 0; i < 4 && !pool.empty(); ++i) {
-                    add_influence(next, Side::US, sample_one<CountryId>(pool, rng), 1);
+                    const auto cid = choose_country(next, static_cast<CardId>(77), Side::US, pool, rng, policy_cb);
+                    add_influence(next, Side::US, cid, 1);
                 }
             }
             break;
@@ -973,7 +1048,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             if (!pool.empty()) {
-                const auto first = sample_one<CountryId>(pool, rng);
+                const auto first = choose_country(next, static_cast<CardId>(83), Side::USSR, pool, rng, policy_cb);
                 const auto first_region = region_key(first);
                 apply_free_coup(next, Side::USSR, first, 3, rng, false);
                 std::vector<CountryId> second_pool;
@@ -983,7 +1058,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     }
                 }
                 if (!second_pool.empty()) {
-                    apply_free_coup(next, Side::USSR, sample_one<CountryId>(second_pool, rng), 3, rng, false);
+                    apply_free_coup(
+                        next,
+                        Side::USSR,
+                        choose_country(next, static_cast<CardId>(83), Side::USSR, second_pool, rng, policy_cb),
+                        3,
+                        rng,
+                        false
+                    );
                 }
             }
             break;
@@ -1011,7 +1093,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             }
             const int base = 4;
             const int bonus = (next.space[to_index(Side::USSR)] > next.space[to_index(Side::US)]) ? 2 : 0;
-            for (const auto cid : sample_up_to(pool, base + bonus, rng)) {
+            for (int i = 0; i < (base + bonus); ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(90), Side::USSR, pool, rng, policy_cb);
                 add_influence(next, Side::USSR, cid, 1);
             }
             next.defcon = std::min(5, next.defcon + 1);
@@ -1029,8 +1115,13 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 2, rng)) {
+            for (int i = 0; i < 2; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(next, static_cast<CardId>(91), Side::US, pool, rng, policy_cb);
                 add_influence(next, Side::US, cid, -1);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
         }
