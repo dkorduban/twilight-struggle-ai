@@ -1,17 +1,17 @@
 {
-  "current_task": "PPO running v155_sc (LR=5e-5, 5th run). Strong upward panel eval trend: +0.01-0.02 per run. v154_sc hit 0.752. ELO ladder measurements are noisy (different diverse opponents each run) — panel eval is the reliable signal.",
+  "current_task": "PPO running v157_sc (LR=5e-5). Panel eval at iter20 is strongly improving run-over-run. v156_sc hit 0.785. Model is learning effectively after three fixes: panel formula, fixture balance, LR increase.",
   "next_tasks": [
-    "Monitor v155_sc panel eval iter20 — expect ~0.75+ if trend holds",
-    "If panel eval plateaus at ~0.75 for 3+ runs: investigate whether model has found a ceiling against old-engine opponents (v55/v54/v44/v45/v14), consider swapping panel to sc-lineage models",
-    "Architecture work (Codex): Phase 1 = decode_helpers.hpp (learned_policy.cpp ↔ mcts_batched.cpp greedy decode dedup)",
-    "Architecture work (Codex): Phase 2 = search_common.hpp (WS6 Phase 2, MCTS semantic helpers)",
-    "GAP-005: Core ops placement legality (complex, keep separate from arch refactor)",
+    "Monitor v157_sc panel eval iter20 — expect ~0.78-0.80",
+    "If panel eval reaches 0.82+ and plateaus: consider if 30-iter run is long enough (may need 50 iters to keep compounding)",
+    "Architecture work (Codex ready): Phase 1 = decode_helpers.hpp (learned_policy.cpp vs mcts_batched.cpp greedy decode dedup)",
+    "Architecture work (Codex ready): Phase 2 = search_common.hpp (WS6 Phase 2, MCTS semantic helpers)",
+    "GAP-005: Core ops placement legality (keep separate from arch refactor)",
     "Python engine full removal: migrate 51 callers to tscore bindings",
     "Task #46: Hash-based match cache identity (key by file SHA256, not name)"
   ],
   "blocked_on": null,
   "active_background": [
-    "v155_sc PPO training (LR=5e-5, auto-chains)"
+    "v157_sc PPO training (LR=5e-5, auto-chains)"
   ],
   "completed_this_session": [
     "Panel eval formula bug fixed",
@@ -26,9 +26,11 @@
     "v151_sc_iter20": 0.708,
     "v152_sc_iter20": 0.727,
     "v153_sc_iter20": 0.733,
-    "v154_sc_iter20": 0.752
+    "v154_sc_iter20": 0.752,
+    "v155_sc_iter20": 0.754,
+    "v156_sc_iter20": 0.785
   },
-  "elo_trend_note": "ELO measurements (1838, 1795, 1769) are declining due to random diverse opponent selection each run — not reliable. Panel eval (fixed opponents) is the real signal and is clearly improving.",
-  "last_updated": "2026-04-13T23:00:00+00:00",
-  "context": "v154_sc hit panel eval 0.752 — up from 0.698 before the three fixes (panel formula, fixture balance, LR). ~+0.01-0.02 per run. v155_sc running. If plateau forms near 0.75-0.76, the ceiling may be against the fixed old-engine panel opponents rather than true model capability. At that point: either swap panel to sc-lineage models, or look at ELO with a consistent anchor set."
+  "elo_trend_note": "ELO noisy due to random diverse opponents (1769-1809 range). Panel eval (fixed) is reliable signal. v155_sc ELO ticked up to 1809 from 1769.",
+  "last_updated": "2026-04-13T23:05:00+00:00",
+  "context": "v156_sc hit 0.785 at iter20 — the highest panel eval so far. Total gain from fixes: +0.087 over 6 LR=5e-5 runs. The panel opponents (v55/v54/v44/v45/v14, ELO 2042-2118 old-engine) are being beaten 78.5% of the time. If model continues to improve, the panel opponents may become too easy as a signal (~2 more runs). Watch for plateau near 0.80+ and consider upgrading panel to sc-lineage opponents."
 }
