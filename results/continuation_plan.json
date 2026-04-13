@@ -1,26 +1,36 @@
 {
-  "current_task": "v90_sc PPO training running. Pipeline healthy after ppo_final.pt fix.",
+  "current_task": "PPO loop running (v128_sc+). Engine refactor (Phases 0-5) complete. Probe parquet fixed.",
   "next_tasks": [
-    "BC collection: ~600/2000 games done (PID 782058), ETA ~30min. When done: train BC model on corrected engine data",
-    "WS6 Phase 3: FullState/Observation split (deferred)",
-    "Monitor scoring_card_held regression in v80-v89 lineage via ELO",
-    "Task #46: Hash-based match cache identity"
+    "Monitor v128_sc+ ELO — investigate regression from v78_sc(2097) to v127_sc(1646)",
+    "GAP-005: Core ops placement legality (complex, lower priority)",
+    "Python engine full removal: migrate 51 callers to tscore bindings, then delete python/tsrl/engine/",
+    "Task #46: Hash-based match cache identity (key by file SHA256, not name)",
+    "BC retraining: when PPO plateaus, collect 2000 games on corrected engine + retrain BC model"
   ],
   "blocked_on": null,
   "active_background": [
-    "v90_sc PPO training",
-    "BC data collection (PID 782058)"
+    "v128_sc PPO training (PID 877664, watcher PID 877666)"
   ],
   "completed_this_session": [
-    "WS6 Phase 2 merged: search_common.hpp extracts shared MCTS helpers (8 functions)",
-    "ppo_final.pt root cause found: Snakemake deletes declared outputs on non-zero exit",
-    "Fixed: try/except around ppo_best.pt promotion + getattr for benchmark_every",
-    "v89_sc confirmed clean exit (first with fix, Training complete in 3.2 minutes)",
-    "JSD probe: confirmed all 6 tests pass, train_ppo.py integrated, probe_positions.parquet exists (1000 rows)",
-    "Removed duplicate probe_eval blocks in train_ppo.py",
-    "BC data collection restarted correctly (PID 782058, ~600/2000 games)",
-    "Recovered v87_sc, v88_sc ppo_final.pt manually"
+    "Phase 0: promo cards excluded, mcts_search_impl.hpp dead code removed",
+    "Phase 1A: GAP-001/003/004/040/043 (China card, Space Race, Formosan, Solidarity)",
+    "Phase 1B: GAP-039/041/042 (Vietnam Revolts SEA-only, CMC cleanup, Glasnost free ops)",
+    "Phase 1C: GAP-008/009/014/021/038 (war card mechanic: apply_war_card)",
+    "Phase 0D+E: test harness (51 Python event tests) + observation interface doc",
+    "Phase 2A: GAP-002/006/018/024/027 (event timing player choice + apply_ops_randomly -> choose_country)",
+    "Phase 2B: GAP-007/010-020/025-037 (20 step.cpp + 3 game_loop.cpp choose_country fixes)",
+    "Phase 3: Observation struct added, ISMCTS hidden-info leaks fixed (4 hands[] accesses replaced)",
+    "Phase 5: Python engine deprecated with warnings, 10 new C++ bindings added",
+    "Probe parquet fixed: added mode_mask column (all-True) — was crashing v128_sc at startup",
+    "PPO loop restarted: v128_sc relaunched, running correctly"
   ],
-  "last_updated": "2026-04-13T16:34:44.755012+00:00",
-  "context": "Pipeline stable. ppo_final.pt deletion bug fixed. v80-v89 lineage shows scoring_card_held regression (ELO 1945-2009 vs v79_sc=2068). BC collection to build corrected-engine training data. JSD probe live in v88_sc+ runs."
+  "gap_closure_progress": {
+    "total_gaps": 46,
+    "closed": 45,
+    "pending": 1,
+    "pending_ids": ["GAP-005"],
+    "notes": "GAP-022/023 (cards 49/50 HILSTW/Junta) confirmed already correct. GAP-044/045/046 (promo cards) excluded from deck in Phase 0."
+  },
+  "last_updated": "2026-04-13T21:30:00+00:00",
+  "context": "Engine refactor complete. v128_sc PPO running with fixed probe parquet. ELO concern: v127_sc=1646 vs v78_sc=2097 — large regression suggests something changed between v79-v127 training runs. Needs investigation. Engine is now correct (choose_country/choose_option for all 30+ affected cards), decoupled (Observation struct), and clean. Build (13:44) is newer than source changes (13:08) — new engine IS active in training."
 }
