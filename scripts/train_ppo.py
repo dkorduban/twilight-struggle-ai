@@ -76,7 +76,7 @@ INFLUENCE_DIM = COUNTRY_SLOTS * 2  # 172
 
 # DEFCON-lowering cards (kept in sync with C++ learned_policy.cpp / mcts_batched.cpp)
 DEFCON_LOWERING_CARDS = frozenset({
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
+    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
 })
 
 # Action mode indices
