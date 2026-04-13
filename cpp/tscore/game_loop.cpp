@@ -614,17 +614,32 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     }
                 }
                 if (!drawn.empty()) {
-                    const auto keep_count = rng.uniform_int(0, static_cast<int>(drawn.size()));
-                    shuffle_with_numpy_rng(drawn, rng);
-                    const auto discard_split = static_cast<size_t>(drawn.size() - keep_count);
-                    for (size_t i = 0; i < discard_split; ++i) {
-                        if (card_spec(drawn[i]).starred) {
-                            pub.removed.set(drawn[i]);
+                    pub = gs.pub;
+                    const auto keep_count = choose_option(
+                        pub,
+                        static_cast<CardId>(84),
+                        Side::US,
+                        static_cast<int>(drawn.size()) + 1,
+                        rng,
+                        policy_cb
+                    );
+                    std::vector<CardId> kept_cards;
+                    kept_cards.reserve(static_cast<size_t>(keep_count));
+                    for (int i = 0; i < keep_count; ++i) {
+                        const auto kept_card = choose_card(pub, 84, Side::US, drawn, rng, policy_cb);
+                        kept_cards.push_back(kept_card);
+                        drawn.erase(std::remove(drawn.begin(), drawn.end(), kept_card), drawn.end());
+                    }
+                    for (const auto kept_card : kept_cards) {
+                        gs.hands[to_index(Side::US)].set(kept_card);
+                    }
+                    for (const auto discarded_card : drawn) {
+                        if (card_spec(discarded_card).starred) {
+                            pub.removed.set(discarded_card);
                         } else {
-                            pub.discard.set(drawn[i]);
+                            pub.discard.set(discarded_card);
                         }
                     }
-                    gs.deck.insert(gs.deck.begin(), drawn.begin() + static_cast<std::ptrdiff_t>(discard_split), drawn.end());
                 }
             }
             break;
