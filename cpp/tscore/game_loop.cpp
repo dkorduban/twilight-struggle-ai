@@ -716,7 +716,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr
 ) {
-    if (action.mode != ActionMode::Event) {
+    if (action.mode != ActionMode::Event && action.mode != ActionMode::Space) {
         const auto owner = card_spec(action.card_id).side;
         if (owner == other_side(side)) {
             auto [new_pub, over, winner] = fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
