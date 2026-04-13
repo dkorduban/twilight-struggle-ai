@@ -9,6 +9,12 @@
 
 namespace ts {
 
+struct WarResult {
+    bool success = false;
+    int die_roll = 0;
+    int threshold = 0;
+};
+
 int choose_option(
     const PublicState& pub,
     CardId card_id,
@@ -34,6 +40,15 @@ CardId choose_card(
     std::span<const CardId> pool,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr
+);
+
+WarResult apply_war_card(
+    PublicState& next,
+    Side attacker,
+    CountryId target,
+    int vp_on_success,
+    int ops_for_milops,
+    Pcg64Rng& rng
 );
 
 std::tuple<PublicState, bool, std::optional<Side>> apply_action(

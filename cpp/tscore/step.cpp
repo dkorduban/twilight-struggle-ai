@@ -86,6 +86,50 @@ CardId choose_card(
     return pool[rng.choice_index(pool.size())];
 }
 
+WarResult apply_war_card(
+    PublicState& next,
+    Side attacker,
+    CountryId target,
+    int vp_on_success,
+    int ops_for_milops,
+    Pcg64Rng& rng
+) {
+    const auto defender = other_side(attacker);
+    const auto& graph = adjacency();
+    int attacker_adjacent = 0;
+    int defender_adjacent = 0;
+    for (const auto neighbor : graph[target]) {
+        if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
+            continue;
+        }
+        if (controls_country(attacker, neighbor, next)) {
+            ++attacker_adjacent;
+        }
+        if (controls_country(defender, neighbor, next)) {
+            ++defender_adjacent;
+        }
+    }
+
+    const auto threshold = country_spec(target).stability - attacker_adjacent + defender_adjacent;
+    const auto die_roll = static_cast<int>((rng() % 6) + 1);
+    const auto success = die_roll >= threshold;
+    if (success) {
+        next.set_influence(attacker, target, country_spec(target).stability + 1);
+        next.set_influence(defender, target, 0);
+        if (attacker == Side::USSR) {
+            next.vp += vp_on_success;
+        } else {
+            next.vp -= vp_on_success;
+        }
+    }
+    next.milops[to_index(attacker)] = std::max(next.milops[to_index(attacker)], ops_for_milops);
+    return WarResult{
+        .success = success,
+        .die_roll = die_roll,
+        .threshold = threshold,
+    };
+}
+
 namespace {
 
 // Card-group constants used by event implementations below.
@@ -128,6 +172,24 @@ bool contains(std::span<const CardId> values, CardId value) {
 template <typename T>
 const T& sample_one(std::span<const T> values, Pcg64Rng& rng) {
     return values[rng.choice_index(values.size())];
+}
+
+CountryId resolve_event_country_choice(
+    const PublicState& pub,
+    const ActionEncoding& action,
+    CardId card_id,
+    Side side,
+    std::span<const CountryId> pool,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
+) {
+    if (!action.targets.empty()) {
+        const auto requested = action.targets.front();
+        if (std::find(pool.begin(), pool.end(), requested) != pool.end()) {
+            return requested;
+        }
+    }
+    return choose_country(pub, card_id, side, pool, rng, policy_cb);
 }
 
 void apply_vp_delta(PublicState& pub, Side side, int delta) {
@@ -255,7 +317,6 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         case 9:
             add_influence(next, Side::USSR, kVietnamId, 2);
             next.vietnam_revolts_active = true;
-            next.ops_modifier[to_index(Side::USSR)] += 1;
             break;
 
         case 4: {
@@ -284,12 +345,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 11: {
-            const auto net = apply_free_coup(next, Side::USSR, kSouthKoreaId, 2, rng, true);
-            if (net > 0) {
-                next.vp += 2;
-            } else {
-                next.vp -= 1;
-            }
+            apply_war_card(next, Side::USSR, kSouthKoreaId, 2, 2, rng);
             break;
         }
 
@@ -299,10 +355,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 13: {
-            const auto net = apply_free_coup(next, Side::USSR, kIsraelId, 2, rng, true);
-            if (net <= 0) {
-                next.vp -= 1;
-            }
+            apply_war_card(next, Side::USSR, kIsraelId, 2, 2, rng);
             break;
         }
 
@@ -395,11 +448,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 24: {
-            // Indo-Pakistani War: choose India or Pakistan via masked country selection
             static constexpr std::array<CountryId, 2> kTargets = {kIndiaId, kPakistanId};
-            const auto target = choose_country(next, 24, side, kTargets, rng, policy_cb);
-            const auto net = apply_free_coup(next, side, target, 2, rng, true);
-            apply_vp_delta(next, side, net > 0 ? 2 : -1);
+            const auto target = resolve_event_country_choice(
+                next, action, 24, side, std::span<const CountryId>(kTargets), rng, policy_cb
+            );
+            apply_war_card(next, side, target, 2, 2, rng);
             break;
         }
 
@@ -546,7 +599,6 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 39: {
-            // Brush War: pick stability ≤ 2 country via masked country selection
             std::vector<CountryId> pool;
             for (const auto cid : all_country_ids()) {
                 if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
@@ -557,10 +609,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             if (!pool.empty()) {
-                const auto target = choose_country(next, 39, Side::USSR, pool, rng, policy_cb);
-                const auto net = apply_free_coup(next, Side::USSR, target, 3, rng, false);
-                if (net > 0) {
-                    add_influence(next, Side::US, target, -std::min(2, next.influence_of(Side::US, target)));
+                const auto target = resolve_event_country_choice(
+                    next, action, 39, side, std::span<const CountryId>(pool), rng, policy_cb
+                );
+                const auto result = apply_war_card(next, side, target, 1, 3, rng);
+                if (result.success) {
+                    remove_all_influence(next, other_side(side), target);
                 }
             }
             break;
@@ -1089,9 +1143,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
 
         case 105: {
             static constexpr std::array<CountryId, 2> kTargets = {kIranId, kIraqId};
-            const auto target = sample_one<CountryId>(kTargets, rng);
-            const auto net = apply_free_coup(next, side, target, 2, rng, false);
-            apply_vp_delta(next, side, net > 0 ? 2 : -1);
+            const auto target = resolve_event_country_choice(
+                next, action, 105, side, std::span<const CountryId>(kTargets), rng, policy_cb
+            );
+            apply_war_card(next, side, target, 2, 2, rng);
             break;
         }
 
@@ -1148,6 +1203,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
             if (action.card_id == kChinaCardId && country_spec(target).region == Region::Asia) {
                 ++ops;
             }
+            ops += vietnam_revolts_ops_bonus(pub, side, action.targets);
             auto net = coup_result(ops, country_spec(target).stability, rng);
             if (
                 pub.latam_coup_bonus.has_value() &&
