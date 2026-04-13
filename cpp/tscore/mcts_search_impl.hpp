@@ -23,8 +23,8 @@
 
 namespace ts::search_impl {
 
-inline constexpr std::array<int, 13> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
+inline constexpr std::array<int, 15> kDefconLoweringCards = {
+    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
 };
 
 struct ModeDraft {
