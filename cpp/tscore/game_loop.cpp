@@ -684,22 +684,16 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     candidates.push_back(candidate);
                 }
             }
-            std::optional<std::pair<CardId, CardId>> best_pair;
-            int best_total = 999;
-            for (size_t i = 0; i < candidates.size(); ++i) {
-                for (size_t j = i + 1; j < candidates.size(); ++j) {
-                    const auto total = card_spec(candidates[i]).ops + card_spec(candidates[j]).ops;
-                    if (total >= 4 && total < best_total) {
-                        best_total = total;
-                        best_pair = {candidates[i], candidates[j]};
-                    }
-                }
-            }
-            if (best_pair.has_value()) {
-                discard_from_hand(gs, Side::US, best_pair->first, pub);
-                discard_from_hand(gs, Side::US, best_pair->second, pub);
+            if (candidates.size() >= 2) {
+                const auto first = choose_card(pub, 98, Side::US, candidates, rng, policy_cb);
+                candidates.erase(std::remove(candidates.begin(), candidates.end(), first), candidates.end());
+                const auto second = choose_card(pub, 98, Side::US, candidates, rng, policy_cb);
+                discard_from_hand(gs, Side::US, first, pub);
+                discard_from_hand(gs, Side::US, second, pub);
             } else {
-                pub.vp += 2;
+                for (const auto chosen : candidates) {
+                    discard_from_hand(gs, Side::US, chosen, pub);
+                }
             }
             break;
         }
