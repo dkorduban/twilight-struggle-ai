@@ -1,27 +1,26 @@
 {
-  "current_task": "v81_sc PPO training running (PID 770977). WS6 Phase 2 dispatched to Codex.",
+  "current_task": "v90_sc PPO training running. Pipeline healthy after ppo_final.pt fix.",
   "next_tasks": [
-    "After WS6 Phase 2 Codex completes: build + test, then commit",
-    "Collect BC data on corrected engine (v80_sc+), retrain BC baseline",
-    "DEFCON-1 rate: v80_sc=0% (scoring_card_held artifact), heuristic=6.8% (partially valid play)",
-    "Update MODEL_PATH in test_engine_integration.py once post-fix trained model available",
-    "WS6 Phase 3: FullState/Observation split (deferred until Phase 1+2 done)"
+    "BC collection: ~600/2000 games done (PID 782058), ETA ~30min. When done: train BC model on corrected engine data",
+    "WS6 Phase 3: FullState/Observation split (deferred)",
+    "Monitor scoring_card_held regression in v80-v89 lineage via ELO",
+    "Task #46: Hash-based match cache identity"
   ],
   "blocked_on": null,
   "active_background": [
-    "v81_sc PPO training (PID 770977)",
-    "WS6 Phase 2 Codex agent (search_common.hpp)"
+    "v90_sc PPO training",
+    "BC data collection (PID 782058)"
   ],
   "completed_this_session": [
-    "v80_sc RECOVERY: ppo_final.pt missing \u2192 created from ppo_iter0030.pt; ppo_best.pt from ppo_running_best (iter0020, panel_avg_wr=0.533)",
-    "train_ppo.py: ppo_running_best\u2192ppo_best promotion at end of training (critical bug fix)",
-    "train_ppo.py: fix undefined best_scripted variable",
-    "ppo_loop_step.sh: watcher accepts ppo_running_best.pt as fallback",
-    "experiments_ppo.yaml: v81_sc added",
-    "v81_sc launched from v80_sc ppo_best.pt (PID 770977)",
-    "DEFCON-1 measurement: Random=39.5%, MinimalHybrid=6.8%, v80_sc=0% (scoring_card_held artifact)",
-    "WS6 Phase 2 dispatched: search_common.hpp extraction"
+    "WS6 Phase 2 merged: search_common.hpp extracts shared MCTS helpers (8 functions)",
+    "ppo_final.pt root cause found: Snakemake deletes declared outputs on non-zero exit",
+    "Fixed: try/except around ppo_best.pt promotion + getattr for benchmark_every",
+    "v89_sc confirmed clean exit (first with fix, Training complete in 3.2 minutes)",
+    "JSD probe: confirmed all 6 tests pass, train_ppo.py integrated, probe_positions.parquet exists (1000 rows)",
+    "Removed duplicate probe_eval blocks in train_ppo.py",
+    "BC data collection restarted correctly (PID 782058, ~600/2000 games)",
+    "Recovered v87_sc, v88_sc ppo_final.pt manually"
   ],
-  "last_updated": "2026-04-13T16:12:46.059837+00:00",
-  "context": "Engine fixes in place. v80_sc first trained model on corrected engine (30 iters). v81_sc continues lineage. DEFCON-1 rate <5% for trained model (0%). WS6 Phase 1 done (kDefconLoweringCards consolidated). WS6 Phase 2 in progress (search_common.hpp). Heuristic 6.8% includes valid Summit-endgame scenarios."
+  "last_updated": "2026-04-13T16:34:44.755012+00:00",
+  "context": "Pipeline stable. ppo_final.pt deletion bug fixed. v80-v89 lineage shows scoring_card_held regression (ELO 1945-2009 vs v79_sc=2068). BC collection to build corrected-engine training data. JSD probe live in v88_sc+ runs."
 }
