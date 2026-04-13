@@ -30,7 +30,7 @@ namespace tscore {
 //   53  We Will Bury You (USSR): lowers DEFCON
 //   68  Grain Sales to Soviets (US): calls apply_ops_randomly -> can coup BG
 //   83  Che (USSR): free coup in Latin America / Africa
-//   92  SALT Negotiations (Neutral): affects DEFCON
+//   92  Soviets Shoot Down KAL 007 (US): lowers DEFCON by 1, -2 VP
 //   105 Iran-Iraq War (USSR): war / coup
 constexpr std::array<int, 15> kDefconLoweringCards = {
     4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
