@@ -5,8 +5,7 @@
 //
 // Keep this in sync with scripts/train_ppo.py (DEFCON_LOWERING_CARDS).
 // Duplicates existed in: mcts.cpp, ismcts.cpp, mcts_batched.cpp,
-//   mcts_search_impl.hpp, learned_policy.cpp, policies.cpp,
-//   fast_mcts_batched.cpp — all should #include this header.
+//   learned_policy.cpp, policies.cpp — all should #include this header.
 #include <algorithm>
 #include <array>
 

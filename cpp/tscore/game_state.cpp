@@ -11,9 +11,16 @@ namespace {
 // Build the draw deck for all cards up to an era (including scoring cards),
 // excluding the China Card and anything already removed from the live game.
 std::vector<CardId> build_era_deck(Era era_max, const CardSet& removed) {
+    // Promo cards (109-111): IDs exist for log-parsing completeness but their
+    // event effects are not implemented. Permanently excluded from all decks.
+    static constexpr std::array<int, 3> kPromoCardIds = {109, 110, 111};
     std::vector<CardId> out;
     for (const auto card_id : all_card_ids()) {
         if (card_id == kChinaCardId) {
+            continue;
+        }
+        const int id = static_cast<int>(card_id);
+        if (std::find(kPromoCardIds.begin(), kPromoCardIds.end(), id) != kPromoCardIds.end()) {
             continue;
         }
         const auto& spec = card_spec(card_id);
