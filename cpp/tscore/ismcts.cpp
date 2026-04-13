@@ -42,8 +42,8 @@ constexpr int kMaxCardLogits = 112;
 constexpr int kMaxModeLogits = 8;
 constexpr int kMaxCountryLogits = 86;
 constexpr int kMaxStrategies = 8;
-constexpr std::array<int, 13> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
+constexpr std::array<int, 15> kDefconLoweringCards = {
+    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
 };
 
 struct ModeDraft {

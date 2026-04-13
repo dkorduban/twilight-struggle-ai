@@ -38,8 +38,8 @@ constexpr int kMidWarTurn = 4;
 constexpr int kLateWarTurn = 8;
 constexpr int kMaxTurns = 10;
 constexpr int kSpaceShuttleArs = 8;
-constexpr std::array<int, 13> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
+constexpr std::array<int, 15> kDefconLoweringCards = {
+    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
 };
 
 constexpr int kMaxCardLogits = 112;

@@ -603,9 +603,9 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 49: {
-            // How I Learned: player sets DEFCON to any level 1-5.
-            // Options: 0→DEFCON 1, 1→DEFCON 2, 2→DEFCON 3, 3→DEFCON 4, 4→DEFCON 5
-            next.defcon = choose_option(next, 49, side, 5, rng, policy_cb) + 1;
+            // How I Learned: player sets DEFCON to 2-5 (never 1 — suicide for phasing player).
+            // Options: 0→DEFCON 2, 1→DEFCON 3, 2→DEFCON 4, 3→DEFCON 5
+            next.defcon = choose_option(next, 49, side, 4, rng, policy_cb) + 2;
             next.milops[to_index(side)] = 5;
             break;
         }

@@ -34,9 +34,9 @@ constexpr double kDefcon3NonBgSafeCoupBonus = 5.0;
 constexpr double kDefcon2NonBgSafeCoupBonus = 12.0;
 constexpr int kMaxInfluenceTargets = 86;
 
-constexpr std::array<CardId, 7> kDefconLoweringCards = {4, 11, 13, 24, 53, 92, 105};
+constexpr std::array<CardId, 9> kDefconLoweringCards = {4, 11, 13, 24, 52, 53, 68, 92, 105};
 constexpr std::array<CardId, 1> kDefconProbLoweringCards = {20};
-constexpr std::array<CardId, 2> kDefconRandomCoupCards = {39, 83};
+constexpr std::array<CardId, 4> kDefconRandomCoupCards = {39, 52, 68, 83};
 constexpr double kDefconLoweringDefcon3Penalty = 20.0;
 constexpr double kDefconProbDefcon3Penalty = 50.0;
 constexpr double kDefconRandomCoupDefcon3Penalty = 100.0;

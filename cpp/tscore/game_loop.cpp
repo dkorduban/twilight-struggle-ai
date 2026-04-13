@@ -182,6 +182,12 @@ void apply_ops_randomly(
     if (accessible.empty()) {
         return;
     }
+    const auto place_influence = [&]() {
+        for (int i = 0; i < ops; ++i) {
+            const auto target = accessible[rng.choice_index(accessible.size())];
+            pub.set_influence(side, target, pub.influence_of(side, target) + 1);
+        }
+    };
     const std::array<ActionMode, 4> modes = {
         ActionMode::Influence,
         ActionMode::Influence,
@@ -194,10 +200,14 @@ void apply_ops_randomly(
     const auto opponent = other_side(side);
 
     if (mode == ActionMode::Influence) {
-        for (int i = 0; i < ops; ++i) {
-            const auto target = choose_country(pub, 0, side, accessible, rng, policy_cb);
-            pub.set_influence(side, target, pub.influence_of(side, target) + 1);
-        }
+        place_influence();
+        return;
+    }
+
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        // Coup at DEFCON 2 would lower DEFCON to 1 on battleground targets — game over.
+        // Fall back to influence placement (always safe).
+        place_influence();
         return;
     }
 
@@ -213,10 +223,7 @@ void apply_ops_randomly(
         );
         if (targets.empty()) {
             // All coup targets are DEFCON-restricted; fall back to influence placement.
-            for (int i = 0; i < ops; ++i) {
-                const auto target = choose_country(pub, 0, side, accessible, rng, policy_cb);
-                pub.set_influence(side, target, pub.influence_of(side, target) + 1);
-            }
+            place_influence();
             return;
         }
         const auto target = choose_country(pub, 0, side, targets, rng, policy_cb);

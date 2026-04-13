@@ -58,8 +58,8 @@ inline int extract_float_array(const torch::Tensor& tensor, float* out, int max_
     return copy_n;
 }
 
-constexpr std::array<int, 13> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
+constexpr std::array<int, 15> kDefconLoweringCards = {
+    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
 };
 
 struct ModeDraft {
