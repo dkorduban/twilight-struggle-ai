@@ -185,3 +185,38 @@ TEST_CASE("Vietnam Revolts enumerates SEA-only influence actions with one extra 
 
     REQUIRE(found);
 }
+
+TEST_CASE("Cuban Missile Crisis keeps coup mode legal", "[legal_actions]") {
+    constexpr CountryId kAngolaId = 67;
+
+    PublicState pub;
+    pub.defcon = 3;
+    pub.cuban_missile_crisis_active = true;
+    pub.set_influence(Side::USSR, kAngolaId, 1);
+
+    const auto modes = legal_modes(7, pub, Side::USSR);
+
+    REQUIRE(std::find(modes.begin(), modes.end(), ActionMode::Coup) != modes.end());
+}
+
+TEST_CASE("Cuban Missile Crisis battleground coup loses immediately", "[step]") {
+    constexpr CountryId kThailandId = 79;
+
+    PublicState pub;
+    pub.cuban_missile_crisis_active = true;
+    pub.defcon = 3;
+    pub.set_influence(Side::US, kThailandId, 2);
+
+    const ActionEncoding coup{
+        .card_id = 7,
+        .mode = ActionMode::Coup,
+        .targets = {kThailandId},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action(pub, coup, Side::USSR, rng);
+
+    REQUIRE(over);
+    REQUIRE(winner == Side::US);
+    REQUIRE(next.defcon == 1);
+}

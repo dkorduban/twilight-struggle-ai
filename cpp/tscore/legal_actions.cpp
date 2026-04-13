@@ -190,9 +190,6 @@ std::vector<ActionMode> legal_modes(CardId card_id, const PublicState& pub, Side
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Space), modes.end());
     }
 
-    if (pub.cuban_missile_crisis_active) {
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
-    }
     if (card_id == 103 && pub.defcon != 2) {
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
     }

@@ -1199,6 +1199,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
 
         case ActionMode::Coup: {
             const auto target = action.targets.front();
+            if (pub.cuban_missile_crisis_active && country_spec(target).is_battleground) {
+                next.defcon = 1;
+                handle_card_played(next, action.card_id, side, ActionMode::Coup);
+                return {next, true, other_side(side)};
+            }
             auto ops = effective_ops(action.card_id, pub, side);
             if (action.card_id == kChinaCardId && country_spec(target).region == Region::Asia) {
                 ++ops;

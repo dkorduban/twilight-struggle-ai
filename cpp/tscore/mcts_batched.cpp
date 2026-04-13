@@ -537,7 +537,6 @@ DraftsResult collect_card_drafts_cached(const GameState& state) {
         auto try_add_mode = [&](ActionMode mode, const std::vector<CountryId>& countries) {
             if (countries.empty()) return;
             if (mode == ActionMode::Coup && pub.defcon <= 2) return;
-            if (pub.cuban_missile_crisis_active && mode == ActionMode::Coup) return;
 
             ModeDraft mode_draft{.mode = mode, .edges = {}};
             mode_draft.edges.reserve(countries.size());
@@ -644,7 +643,7 @@ CompactLegalCardsResult collect_compact_legal_cards(const GameState& state) {
             .card_id = card_id,
             .ops = ops,
             .has_influence = spec.ops > 0 && !cache.influence.empty(),
-            .has_coup = spec.ops > 0 && !cache.coup.empty() && pub.defcon > 2 && !pub.cuban_missile_crisis_active,
+            .has_coup = spec.ops > 0 && !cache.coup.empty() && pub.defcon > 2,
             .has_realign = spec.ops > 0 && !cache.realign.empty(),
             .has_space = spec.ops > 0 && cache.can_space && spec.ops >= cache.space_ops_min && !trapped,
             .has_event = false,
@@ -1762,7 +1761,7 @@ bool has_any_model_action_cached_exact(const GameState& state) {
             if (!cache.influence.empty()) {
                 return true;
             }
-            if (!cache.coup.empty() && pub.defcon > 2 && !pub.cuban_missile_crisis_active) {
+            if (!cache.coup.empty() && pub.defcon > 2) {
                 return true;
             }
             if (!cache.realign.empty()) {
@@ -2250,6 +2249,7 @@ std::optional<GameResult> finish_turn(GameState& gs, int turn) {
     gs.pub.vietnam_revolts_active = false;
     gs.pub.north_sea_oil_extra_ar = false;
     gs.pub.glasnost_extra_ar = false;
+    gs.pub.cuban_missile_crisis_active = false;
     gs.pub.chernobyl_blocked_region.reset();
     gs.pub.latam_coup_bonus.reset();
 

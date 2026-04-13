@@ -312,7 +312,6 @@ DraftsResult collect_card_drafts(const GameState& state) {
         auto try_add_mode = [&](ActionMode mode, const std::vector<CountryId>& countries) {
             if (countries.empty()) return;
             if (mode == ActionMode::Coup && pub.defcon <= 2) return;
-            if (pub.cuban_missile_crisis_active && mode == ActionMode::Coup) return;
 
             ModeDraft mode_draft{.mode = mode, .edges = {}};
             mode_draft.edges.reserve(countries.size());
@@ -809,6 +808,7 @@ std::optional<GameResult> finish_turn(GameState& gs, int turn) {
     gs.pub.vietnam_revolts_active = false;
     gs.pub.north_sea_oil_extra_ar = false;
     gs.pub.glasnost_extra_ar = false;
+    gs.pub.cuban_missile_crisis_active = false;
     gs.pub.chernobyl_blocked_region.reset();
     gs.pub.latam_coup_bonus.reset();
 

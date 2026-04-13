@@ -1141,6 +1141,7 @@ std::optional<GameResult> end_of_turn(GameState& gs, int turn) {
     gs.pub.vietnam_revolts_active = false;
     gs.pub.north_sea_oil_extra_ar = false;
     gs.pub.glasnost_extra_ar = false;
+    gs.pub.cuban_missile_crisis_active = false;
     gs.pub.chernobyl_blocked_region.reset();
     gs.pub.latam_coup_bonus.reset();
 
