@@ -25,14 +25,17 @@ NEXT_LOG="results/logs/ppo/ppo_${NEXT}.log"
 # To regenerate: uv run python scripts/select_league_fixtures.py
 # The JSON fixture_paths field lists scripted .pt paths + __heuristic__.
 FINISHED_SCRIPTED="data/checkpoints/scripted_for_elo/${FINISHED}_scripted.pt"
-# Panel eval and candidate tournament: same 5-opponent pool (Opus recommendation 2026-04-12).
-# Aligned so the panel HWM checkpoint (Option F) correlates directly with Elo placement score.
-# Pool: v55 (frontier) + v54/v44/v45 (top cluster) + v14 (anchor). No heuristic.
-PANEL_V55="data/checkpoints/scripted_for_elo/v55_scripted.pt"
-PANEL_V54="data/checkpoints/scripted_for_elo/v54_scripted.pt"
-PANEL_V44="data/checkpoints/scripted_for_elo/v44_scripted.pt"
-PANEL_V45="data/checkpoints/scripted_for_elo/v45_scripted.pt"
-PANEL_V14="data/checkpoints/scripted_for_elo/v14_scripted.pt"
+# Panel eval and candidate tournament: same 5-opponent pool.
+# Upgraded 2026-04-13: old-engine panel (v55/v54/v44/v45/v14) saturated at 0.878 WR
+# (those models play suboptimally in the new engine). New panel = sc-lineage models
+# spanning ELO 2017-2097. Expected WR at current model (~1800 ELO): ~18-25% avg.
+# As model reaches 2000+ ELO, avg WR will reach 50% — good discrimination range.
+# v67_sc=2017 | v136_sc=2022 | v77_sc=2092 | v78_sc=2097 | v132_sc=2092
+PANEL_V55="data/checkpoints/scripted_for_elo/v67_sc_scripted.pt"
+PANEL_V54="data/checkpoints/scripted_for_elo/v136_sc_scripted.pt"
+PANEL_V44="data/checkpoints/scripted_for_elo/v77_sc_scripted.pt"
+PANEL_V45="data/checkpoints/scripted_for_elo/v78_sc_scripted.pt"
+PANEL_V14="data/checkpoints/scripted_for_elo/v132_sc_scripted.pt"
 
 FIXTURES_JSON="results/selected_fixtures.json"
 
