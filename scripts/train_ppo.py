@@ -469,7 +469,9 @@ def _sample_action_and_step(
     mode_mask = torch.ones(5, dtype=torch.bool, device=device)
 
     # DEFCON safety: no coup at DEFCON <= 2
-    if defcon <= 2:
+    # Exception: US with Nuclear Subs active — coups don't lower DEFCON (mirrors C++ game_loop.cpp:238)
+    nuclear_subs_safe = (side_int == 1 and bool(state.get("nuclear_subs_active", False)))
+    if defcon <= 2 and not nuclear_subs_safe:
         mode_mask[MODE_COUP] = False
 
     # DEFCON safety: no event for DEFCON-lowering cards at DEFCON <= 2
