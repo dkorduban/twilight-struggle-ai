@@ -9,21 +9,17 @@
 #include <optional>
 #include <vector>
 
+#include "card_properties.hpp"
 #include "game_data.hpp"
 #include "mcts.hpp"
 
 namespace ts {
 namespace {
 
-inline constexpr std::array<int, 13> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
-};
-
 inline constexpr double kVirtualLossPenalty = 1.0;
 
 [[nodiscard]] inline bool is_defcon_lowering_card(CardId card_id) {
-    return std::find(kDefconLoweringCards.begin(), kDefconLoweringCards.end(), static_cast<int>(card_id)) !=
-        kDefconLoweringCards.end();
+    return tscore::is_defcon_lowering(static_cast<int>(card_id));
 }
 
 [[nodiscard]] inline bool is_card_blocked_by_defcon(const PublicState& pub, Side side, CardId card_id) {
