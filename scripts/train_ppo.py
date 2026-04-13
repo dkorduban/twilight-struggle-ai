@@ -3517,7 +3517,7 @@ def main() -> None:
             "ppo_best.pt ← ppo_running_best.pt (Option F: panel high-water mark → next run warmstart)",
             flush=True,
         )
-    elif args.benchmark_every == 0 and not os.path.exists(best_ckpt_path):
+    elif getattr(args, 'benchmark_every', 0) == 0 and not os.path.exists(best_ckpt_path):
         # When benchmarking is disabled ppo_best.pt is never written; use final as best.
         shutil.copy2(final_path, best_ckpt_path)
         final_scripted = final_path.replace(".pt", "_scripted.pt")
