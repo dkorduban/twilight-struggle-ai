@@ -1,0 +1,57 @@
+Traceback (most recent call last):
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_traced_game.py", line 564, in <module>
+    main()
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_traced_game.py", line 552, in main
+    steps, result, policy_note = collect_traced_game(args.model, args.seed)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_traced_game.py", line 436, in collect_traced_game
+    result = _run_headline_phase(gs, _trace_policy, _trace_policy, rng)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/python/tsrl/engine/game_loop.py", line 408, in _run_headline_phase
+    return _drive_policy_gen(gen, ussr_policy, us_policy)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/python/tsrl/engine/game_loop.py", line 831, in _drive_policy_gen
+    action = policy(req.pub, req.hand, req.holds_china)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_traced_game.py", line 406, in _trace_policy
+    action = policy(pub, hand, holds_china)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_traced_game.py", line 353, in _policy
+    outputs = model(influence, cards, scalars)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: The following operation failed in the TorchScript interpreter.
+Traceback of TorchScript, serialized code (most recent call last):
+  File "code/__torch__/tsrl/policies/model.py", line 55, in forward
+    _3 = (region_encoder).forward(influence, )
+    input = torch.cat([scalars, _3], -1)
+    h_scalar = torch.relu((scalar_encoder).forward(input, ))
+                           ~~~~~~~~~~~~~~~~~~~~~~~ <--- HERE
+    _4 = torch.slice(scalars, 0, 0, 9223372036854775807)
+    input0 = torch.to(torch.select(_4, 1, 10), 4)
+  File "code/__torch__/torch/nn/modules/linear/___torch_mangle_9.py", line 12, in forward
+    bias = self.bias
+    weight = self.weight
+    return torch.linear(input, weight, bias)
+           ~~~~~~~~~~~~ <--- HERE
+
+Traceback of TorchScript, original code (most recent call last):
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/linear.py(125): forward
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py(1729): _slow_forward
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py(1750): _call_impl
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py(1739): _wrapped_call_impl
+/home/dkord/code/twilight-struggle-ai/python/tsrl/policies/model.py(1649): forward
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py(1729): _slow_forward
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py(1750): _call_impl
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py(1739): _wrapped_call_impl
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/jit/_trace.py(1276): trace_module
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/jit/_trace.py(696): _trace_impl
+/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/jit/_trace.py(1000): trace
+<string>(34): <module>
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (1x53 and 74x64)
+
