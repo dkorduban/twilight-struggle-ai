@@ -1480,3 +1480,54 @@ The next useful step is to write the exact `encode_legacy_move(*m, builder)` fun
 
 [1]: https://raw.githubusercontent.com/Twilight-Struggle/TSGE/refs/heads/main/include/tsge/actions/move.hpp "raw.githubusercontent.com"
 [2]: https://raw.githubusercontent.com/Twilight-Struggle/TSGE/refs/heads/main/src/core/game.cpp "raw.githubusercontent.com"
+
+---
+
+## Engine / Game-Loop / Policy / Search Decoupling — Task Sequence
+
+**Status:** In progress. Phases 1-2 partially done via decode_helpers.hpp + search_common.hpp.
+**Goal:** `game_loop.cpp` becomes a pure turn scheduler; engine transitions live in `step.cpp`; search backends share semantic helpers; `Observation` is the read-only policy/search boundary.
+
+---
+
+### Task A: Unify NN decode path (PARTIAL — decode_helpers.hpp exists)
+
+- **A1** — Move all masked card/mode/country/value decode logic out of `mcts_batched.cpp` into `decode_helpers.hpp` (the "exact mirror" comment is the target)
+- **A2** — Make `TorchScriptPolicy::choose_action` in `learned_policy.cpp` a thin wrapper over the same helpers
+- **A3** — Delete the mirrored copy in `mcts_batched.cpp`; run fixed-seed trace comparison to confirm parity
+- **Done when:** `mcts_batched.cpp` greedy decode path calls helpers from `decode_helpers.hpp`, no semantic duplication
+
+### Task B: Extract shared search-support layer (PARTIAL — search_common.hpp exists)
+
+- **B1** — Identify all duplicated semantic helpers across `mcts.cpp`, `ismcts.cpp`, `mcts_batched.cpp`: `apply_tree_action`, `rollout_value`, `evaluate_leaf_value_raw`, `AccessibleCache`, card-draft / legal-card collection, country-logit resolution
+- **B2** — Move each into `search_common.hpp` (or a `.cpp` if non-trivial) with unit tests
+- **B3** — Replace each call site in the three search files; do NOT unify node structs, edge storage, batching strategy, or pool management
+- **Done when:** DEFCON safety, accessible-country masking, and decode semantics have one implementation referenced by all three search backends
+
+### Task C: Push Observation as the read-only search/policy boundary
+
+- **C1** — Add observation-shaped input overloads to legality/feature helpers that currently take `(PublicState, CardSet, bool)`
+- **C2** — Make batched feature filling (`nn_features.cpp`) accept `Observation` directly
+- **C3** — Convert ISMCTS root code to derive everything it needs from `Observation`; restrict full-`GameState` access to determinization only
+- **C4** — Keep `PolicyFn(const PublicState&, const CardSet&, bool, Pcg64Rng&)` as a stable adapter at the boundary — do NOT change its signature yet
+- **Done when:** read-only search paths take `Observation`; full-state reach-through is deliberate and commented, not the default
+
+### Task D: Move hand-dependent event logic out of game_loop.cpp
+
+- **D1** — Identify all rule logic in `game_loop.cpp` that belongs in the engine: `apply_hand_event`, `apply_action_with_hands`, `apply_ops_randomly_impl`, extra-AR / NORAD / Glasnost mutation
+- **D2** — Add fixed-seed trace tests for each (headline, Cat-C, extra AR, Glasnost, Missile Envy) before touching code
+- **D3** — Move `apply_hand_event` into `step.cpp` (or a new `step_hand.cpp`); replace call site in `game_loop.cpp` with the engine call
+- **D4** — Move `apply_ops_randomly_impl` (and its policy-callback successor) behind the same boundary
+- **D5** — `game_loop.cpp` becomes: phase scheduling + tracing + turn cleanup only
+- **Done when:** `game_loop.cpp` contains no rule execution; all state mutation goes through `step.cpp`
+
+### Task E: Decide fate of cpp/mcts_batched_fast/
+
+- **E1** — After A–D are done, evaluate: archive as experimental, or rebase on shared helpers from B
+- **Defer** until live `tscore` path is clean — do not refactor in parallel
+
+---
+
+**Sequencing rule:** A → B → C → D → E. Don't mix correctness gap fixes (GAP-NNN) with structural cleanup in the same patch.
+
+**Fixed-seed trace tests required before D:** headline, Cat-C events, extra AR, batched greedy decode.
