@@ -71,46 +71,38 @@ def accessible_countries(
     pub: PublicState,
     adj: dict[int, frozenset[int]] | None = None,
 ) -> frozenset[int]:
-    """Return the set of countries a side can reach for ops (influence/coup/realign).
+    """Return the set of countries a side can reach for influence placement.
 
-    Reachability rules (matching the TSEspionage digital game):
-      1. Superpower anchor adjacency (1-hop only): any country adjacent to EITHER
-         superpower (USA id=81 or USSR id=82) is always accessible for both sides.
-         This lets USSR place in Cuba (adj USA) and US place in Finland (adj USSR)
-         from game start, without requiring existing influence.
-      2. Own-influence BFS (full depth): any country reachable via a connected path
-         through the adjacency graph starting from countries where the side has ≥ 1
-         influence is accessible — regardless of whether intermediate countries have
-         influence.  This matches the digital game's chaining model: the path to a
-         country via existing influence is sufficient; you do NOT need to spend ops
-         on intermediate countries first.
+    Reachability rules (TS ITS competitive rules, matching C++ engine):
+      1. Own-influence 1-hop: any country where the side has ≥ 1 influence, plus
+         every country directly adjacent to such a country (1-hop only — no
+         transitive chaining through newly placed influence).
+      2. Own superpower anchor (1-hop only): each side gets the direct neighbors
+         of their OWN anchor (USSR → {Finland, Poland, Romania, Afghanistan, N.Korea};
+         US → {Canada, Cuba, Mexico, Japan, Philippines, S.Korea}).
+         The opponent's anchor neighbors are NOT included.
 
     Superpower anchors themselves (id=81, id=82) are excluded from the result.
+    Note: for Coup and Realign accessibility use legal_actions.accessible_countries
+    which returns all non-DEFCON-restricted countries instead.
     """
-    from collections import deque
     g = adj if adj is not None else _default_adjacency()
 
-    own_influence: set[int] = {
-        cid for (s, cid), inf in pub.influence.items()
-        if s == side and inf > 0
-    }
+    own_anchor = _USSR_ID if side == Side.USSR else _USA_ID
 
-    # Rule 1: 1-hop from superpower anchors (both anchors for both players).
-    superpower_nbrs: set[int] = {
-        nbr
-        for sp in _SUPERPOWER_IDS
-        for nbr in g.get(sp, frozenset())
-        if nbr not in _SUPERPOWER_IDS
-    }
+    visited: set[int] = set()
 
-    # Rule 2: full BFS from own-influence network.
-    visited: set[int] = set(own_influence)
-    q: deque[int] = deque(own_influence)
-    while q:
-        node = q.popleft()
-        for nbr in g.get(node, frozenset()):
-            if nbr not in _SUPERPOWER_IDS and nbr not in visited:
-                visited.add(nbr)
-                q.append(nbr)
+    # Rule 1: countries with own influence + their direct neighbors (1-hop).
+    for (s, cid), inf in pub.influence.items():
+        if s == side and inf > 0:
+            visited.add(cid)
+            for nbr in g.get(cid, frozenset()):
+                if nbr not in _SUPERPOWER_IDS:
+                    visited.add(nbr)
 
-    return frozenset(visited | superpower_nbrs)
+    # Rule 2: own anchor's direct neighbors only (not opponent's anchor).
+    for nbr in g.get(own_anchor, frozenset()):
+        if nbr not in _SUPERPOWER_IDS:
+            visited.add(nbr)
+
+    return frozenset(visited)

@@ -213,9 +213,11 @@ def accessible_countries(
     and Japan (if US-Japan Pact active), for USSR only.
     """
     from tsrl.engine.adjacency import accessible_countries as _base_accessible
-    base = _base_accessible(side, pub, adj)
+    _SUPERPOWER_IDS_LOCAL: frozenset[int] = frozenset({81, 82})
 
     if mode == ActionMode.INFLUENCE:
+        # Influence: 1-hop adjacency from own influence + own anchor.
+        base = _base_accessible(side, pub, adj)
         # Chernobyl (97): USSR cannot place ops-influence in the designated region this turn.
         if side == Side.USSR and pub.chernobyl_blocked_region is not None:
             countries = load_countries()
@@ -226,6 +228,10 @@ def accessible_countries(
             if blocked:
                 return frozenset(base - blocked)
         return base
+
+    # For COUP/REALIGN: all map countries (DEFCON/NATO filter applied below).
+    # Matches C++ accessible_countries(mode=Coup/Realign) which returns all countries.
+    base = frozenset(cid for cid in load_countries() if cid not in _SUPERPOWER_IDS_LOCAL)
 
     # For COUP/REALIGN (both sides): filter DEFCON-restricted regions.
     excluded: set[int] = set()
