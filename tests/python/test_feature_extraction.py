@@ -51,8 +51,8 @@ class TestDimensionConstants:
         assert NUM_PLAYABLE_CARDS == 111, f"NUM_PLAYABLE_CARDS={NUM_PLAYABLE_CARDS}"
 
     def test_num_modes(self):
-        """NUM_MODES should be 5 (influence, realign, coup, event, space)."""
-        assert NUM_MODES == 5, f"NUM_MODES={NUM_MODES}"
+        """NUM_MODES should be 6 (influence, coup, realign, space, event, event_first)."""
+        assert NUM_MODES == 6, f"NUM_MODES={NUM_MODES}"
 
     def test_num_countries(self):
         """NUM_COUNTRIES should be 86."""

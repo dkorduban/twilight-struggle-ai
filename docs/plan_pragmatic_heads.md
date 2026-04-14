@@ -358,3 +358,54 @@ Record (card_id, decision_kind, chosen_country, legal_mask) → train on these.
 - TSMarginalValueModel exists (70% of Phase 2 allocation head)
 - Engine is 85% rules-accurate; 15% gap is player agency on events
 - Phase 1 can start immediately — no blockers
+
+---
+
+## Design Note: EventFirst Mode (2026-04-14)
+
+### Decision
+`ActionMode::EventFirst = 5` encodes the player's choice to fire an opponent's card
+event **before** executing ops. `ActionMode::Influence = 0` with an opponent card
+defaults to **ops-first** (event fires after).
+
+### Correct two-step flow for EventFirst
+
+`EventFirst` is a **zero-target ordering action**. Country targets must NOT be bundled
+into it because the board state after the event may differ from before (DEFCON change,
+influence moved by event sub-choices, etc).
+
+```
+Step 1 — Player action: {card=X, mode=EventFirst, targets=[]}
+  → Engine fires opponent's event
+  → Opponent may have sub-choices during event resolution
+  → State updated
+
+Step 2 — Engine calls back to player: "choose your ops"
+  → legal_modes on updated state (Influence/Coup/Realign only, no Event/Space/EventFirst)
+  → Player picks mode + country targets on post-event board
+  → Engine applies ops
+```
+
+This is identical in spirit to Glasnost/Missile Envy deferred ops — the engine fires
+an effect, then calls the policy callback for the follow-up ops decision.
+
+### Implementation plan (TODO)
+
+1. **`legal_actions.cpp`** — `enumerate_actions` for EventFirst: push one action per
+   eligible opponent card with `targets={}`. `filtered_accessible_countries` for
+   EventFirst returns `{}`.
+
+2. **`game_loop.cpp`** — In the EventFirst branch of `apply_action_with_hands`, after
+   firing the event call a new helper `execute_deferred_ops(gs, card_id, side, rng, policy_cb)`:
+   - Enumerate legal ops modes on updated state (filter to Influence/Coup/Realign)
+   - SmallChoice callback for mode if >1 legal option
+   - Country-select callback for targets (existing choose_countries pattern)
+   - Apply ops via `apply_action`
+
+3. **Tests** — EventFirst action has empty targets; verify ops targets are chosen on
+   post-event state (e.g. DEFCON-1 after event → game over before ops run).
+
+### Current state (2026-04-14)
+EventFirst rename is done (commit 6b8a6cc). Two-step flow not yet implemented —
+currently EventFirst still bundles country targets (wrong). The redesign is the next
+engine task after other standing work clears.

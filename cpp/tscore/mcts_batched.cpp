@@ -40,7 +40,7 @@ namespace {
 constexpr int kMidWarTurn = 4;
 constexpr int kLateWarTurn = 8;
 constexpr int kMaxTurns = 10;
-constexpr int kSpaceShuttleArs = 8;
+// kSpaceShuttleArs is in search_common.hpp
 constexpr int kMaxCardLogits = 112;
 constexpr int kMaxModeLogits = 8;
 constexpr int kMaxCountryLogits = 86;

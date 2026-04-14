@@ -13,6 +13,7 @@
 #include "card_properties.hpp"
 #include "game_data.hpp"
 #include "game_loop.hpp"
+#include "game_state.hpp"
 #include "mcts.hpp"
 #include "policies.hpp"
 
@@ -20,6 +21,47 @@ namespace ts {
 namespace {
 
 inline constexpr double kVirtualLossPenalty = 1.0;
+
+// AR count at which the Space Shuttle gives an extra action round.
+inline constexpr int kSpaceShuttleArs = 8;
+
+// Count how many scoring cards the side holds.
+[[nodiscard]] inline int count_scoring_cards(const CardSet& hand) {
+    int n = 0;
+    for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
+        if (hand.test(card_id) && card_spec(static_cast<CardId>(card_id)).is_scoring) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+// How many card-play decisions remain for `side` this turn (including the current AR)?
+[[nodiscard]] inline int remaining_action_decisions_for_side(const GameState& state, Side side) {
+    int max_ar = ars_for_turn(state.pub.turn);
+    if (state.pub.space[to_index(side)] >= kSpaceShuttleArs) {
+        max_ar = std::max(max_ar, kSpaceShuttleArs);
+    }
+    if (side == Side::US && state.pub.north_sea_oil_extra_ar) {
+        max_ar += 1;
+    }
+    return std::max(1, max_ar - state.pub.ar + 1);
+}
+
+// Progressive prior boost for scoring cards as their deadline approaches.
+// Returns >= 1.0 (1.0 = no boost; 10-1000x as slack shrinks).
+[[nodiscard]] inline double scoring_card_prior_multiplier(const GameState& state, Side side, int scoring_cards) {
+    if (state.pub.ar <= 0 || scoring_cards <= 0) {
+        return 1.0;
+    }
+    const int remaining = remaining_action_decisions_for_side(state, side);
+    const int slack = remaining - scoring_cards;
+    if (slack <= 0) {
+        return 1.0;  // Already forced in collect_card_drafts; no additional boost needed.
+    }
+    const int urgency = std::max(1, 4 - std::min(slack, 3));
+    return std::pow(10.0, static_cast<double>(urgency));
+}
 
 
 [[nodiscard]] inline double winner_value(std::optional<Side> winner) {

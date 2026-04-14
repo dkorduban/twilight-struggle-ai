@@ -348,7 +348,7 @@ def test_apply_action_event_scoring_card():
 def test_play_random_game_completes():
     result = play_random_game(seed=42)
     assert isinstance(result, GameResult)
-    assert result.end_reason in ("vp_threshold", "defcon1", "turn_limit", "europe_control")
+    assert result.end_reason in ("vp_threshold", "defcon1", "turn_limit", "europe_control", "scoring_card_held")
 
 
 def test_play_random_game_has_winner_or_draw():
