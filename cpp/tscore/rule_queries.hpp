@@ -1,18 +1,49 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+
 #include "game_data.hpp"
 #include "legal_actions.hpp"
+#include "scoring.hpp"
 
 namespace ts {
 
 inline constexpr CardId kNatoCardId = static_cast<CardId>(21);
 inline constexpr CardId kWargamesCardId = static_cast<CardId>(103);
 inline constexpr CardId kSolidarityCardId = static_cast<CardId>(104);
+inline constexpr std::array<CountryId, 12> kNatoWesternEurope = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};
 
 [[nodiscard]] inline bool is_chernobyl_blocked(const PublicState& pub, Side side, CountryId country_id) {
     return side == Side::USSR &&
         pub.chernobyl_blocked_region.has_value() &&
         country_spec(country_id).region == *pub.chernobyl_blocked_region;
+}
+
+[[nodiscard]] inline bool is_nato_protected(const PublicState& pub, CountryId country_id) {
+    const bool in_nato =
+        std::find(kNatoWesternEurope.begin(), kNatoWesternEurope.end(), country_id) != kNatoWesternEurope.end();
+    if (!pub.nato_active || !in_nato) {
+        return false;
+    }
+    if (country_id == 7 && pub.de_gaulle_active) {
+        return false;
+    }
+    if (country_id == 18 && pub.willy_brandt_active) {
+        return false;
+    }
+    return controls_country(Side::US, country_id, pub);
+}
+
+[[nodiscard]] inline bool is_military_target_blocked(const PublicState& pub, Side side, CountryId country_id) {
+    if (is_defcon_restricted(country_id, pub)) {
+        return true;
+    }
+    if (side != Side::USSR) {
+        return false;
+    }
+    return is_nato_protected(pub, country_id) ||
+        (pub.us_japan_pact_active && country_id == static_cast<CountryId>(22));
 }
 
 [[nodiscard]] inline bool is_trap_blocked(const PublicState& pub, Side side, CardId card_id) {

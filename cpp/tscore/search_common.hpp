@@ -19,6 +19,7 @@
 #include "legal_actions.hpp"
 #include "mcts.hpp"
 #include "policies.hpp"
+#include "rule_queries.hpp"
 #include "scoring.hpp"
 
 namespace ts {
@@ -52,17 +53,14 @@ struct AccessibleCache {
         auto base_inf = accessible_countries(side, pub, ActionMode::Influence);
         auto base_coup = accessible_countries(side, pub, ActionMode::Coup);
 
-        if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
-            const auto blocked = *pub.chernobyl_blocked_region;
-            base_inf.erase(
-                std::remove_if(
-                    base_inf.begin(),
-                    base_inf.end(),
-                    [blocked](CountryId cid) { return country_spec(cid).region == blocked; }
-                ),
-                base_inf.end()
-            );
-        }
+        base_inf.erase(
+            std::remove_if(
+                base_inf.begin(),
+                base_inf.end(),
+                [&](CountryId cid) { return is_chernobyl_blocked(pub, side, cid); }
+            ),
+            base_inf.end()
+        );
         cache.influence = std::move(base_inf);
 
         auto filter_military = [&](std::vector<CountryId>& countries) {
@@ -70,38 +68,7 @@ struct AccessibleCache {
                 std::remove_if(
                     countries.begin(),
                     countries.end(),
-                    [&](CountryId cid) {
-                        if (cid == kUsaAnchorId || cid == kUssrAnchorId) {
-                            return true;
-                        }
-                        constexpr std::array<int, 7> kDefconRegionThreshold = {4, 3, 2, 1, 1, 1, 3};
-                        const auto threshold =
-                            kDefconRegionThreshold[static_cast<size_t>(country_spec(cid).region)];
-                        if (pub.defcon <= threshold) {
-                            return true;
-                        }
-                        if (side == Side::USSR) {
-                            if (pub.nato_active) {
-                                constexpr std::array<CountryId, 12> kNatoWe = {
-                                    1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18
-                                };
-                                const bool in_nato =
-                                    std::find(kNatoWe.begin(), kNatoWe.end(), cid) != kNatoWe.end();
-                                if (in_nato) {
-                                    const bool exempted =
-                                        (cid == 7 && pub.de_gaulle_active) ||
-                                        (cid == 18 && pub.willy_brandt_active);
-                                    if (!exempted && controls_country(Side::US, cid, pub)) {
-                                        return true;
-                                    }
-                                }
-                            }
-                            if (pub.us_japan_pact_active && cid == 22) {
-                                return true;
-                            }
-                        }
-                        return false;
-                    }
+                    [&](CountryId cid) { return is_military_target_blocked(pub, side, cid); }
                 ),
                 countries.end()
             );
