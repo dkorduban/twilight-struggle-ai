@@ -70,9 +70,13 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
     const auto card_logits = get_tensor(outputs, "card_logits").index({0});
     const auto mode_logits = get_tensor(outputs, "mode_logits").index({0});
     const auto country_logits_raw = get_tensor(outputs, "country_logits", false);
+    const auto marginal_logits_raw = get_tensor(outputs, "marginal_logits", false);
     const auto strategy_logits_raw = get_tensor(outputs, "strategy_logits", false);
     const auto country_strategy_logits_raw = get_tensor(outputs, "country_strategy_logits", false);
     const auto country_logits = country_logits_raw.defined() ? country_logits_raw.index({0}) : torch::Tensor{};
+    const auto marginal_logits = (marginal_logits_raw.defined() && marginal_logits_raw.numel() > 0)
+        ? marginal_logits_raw.index({0})
+        : torch::Tensor{};
     const auto strategy_logits = strategy_logits_raw.defined() ? strategy_logits_raw.index({0}) : torch::Tensor{};
     const auto country_strategy_logits = country_strategy_logits_raw.defined()
         ? country_strategy_logits_raw.index({0}) : torch::Tensor{};
@@ -95,7 +99,8 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
             return static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
         },
         [&]() { return ts::choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng); },
-        []() -> std::optional<ActionEncoding> { return std::nullopt; }
+        []() -> std::optional<ActionEncoding> { return std::nullopt; },
+        marginal_logits
     );
 }
 

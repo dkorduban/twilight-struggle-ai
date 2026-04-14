@@ -12,12 +12,14 @@
 #include <array>
 #include <limits>
 #include <optional>
+#include <set>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <torch/torch.h>
 
+#include "dp_decoder.hpp"
 #include "game_data.hpp"
 #include "legal_actions.hpp"
 #include "rng.hpp"
@@ -135,6 +137,76 @@ inline ActionEncoding build_action_from_country_logits(
     return action;
 }
 
+inline ActionEncoding build_action_from_marginal_logits(
+    CardId card_id,
+    ActionMode mode,
+    const torch::Tensor& marginal_logits,
+    const PublicState& pub,
+    Side side,
+    int t_max = 4
+) {
+    const auto accessible = accessible_countries_filtered(pub, side, card_id, mode);
+    if (accessible.empty() || !marginal_logits.defined() || marginal_logits.numel() == 0 || marginal_logits.dim() != 2) {
+        return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {}};
+    }
+
+    const auto country_count = static_cast<int>(marginal_logits.size(0));
+    const auto marginal_steps = std::min(t_max, static_cast<int>(marginal_logits.size(1)));
+    if (country_count <= 0 || marginal_steps <= 0) {
+        return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {}};
+    }
+
+    if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
+        auto found_target = false;
+        auto best_target = CountryId{};
+        auto best_logit = -std::numeric_limits<float>::infinity();
+        for (const auto cid : accessible) {
+            const auto country_index = static_cast<int>(cid);
+            if (country_index < 0 || country_index >= country_count) {
+                continue;
+            }
+            const auto logit =
+                marginal_logits.index({static_cast<int64_t>(country_index), 0}).item<float>();
+            if (!found_target || logit > best_logit) {
+                found_target = true;
+                best_target = cid;
+                best_logit = logit;
+            }
+        }
+        if (!found_target) {
+            return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {}};
+        }
+        return ActionEncoding{.card_id = card_id, .mode = mode, .targets = {best_target}};
+    }
+
+    const auto budget = effective_ops(card_id, pub, side);
+    const auto accessible_set = std::set<CountryId>(accessible.begin(), accessible.end());
+    std::vector<std::vector<float>> scores(static_cast<size_t>(country_count), std::vector<float>(static_cast<size_t>(marginal_steps), 0.0f));
+    std::vector<bool> legal(static_cast<size_t>(country_count), false);
+    const auto capped_budget = std::min(budget, marginal_steps);
+    std::vector<int> cap(static_cast<size_t>(country_count), capped_budget);
+    std::vector<int> cost(static_cast<size_t>(country_count), 1);  // TODO: model enemy-control doubling via per-country cost.
+
+    for (int country = 0; country < country_count; ++country) {
+        for (int step = 0; step < marginal_steps; ++step) {
+            scores[static_cast<size_t>(country)][static_cast<size_t>(step)] =
+                marginal_logits.index({static_cast<int64_t>(country), static_cast<int64_t>(step)}).item<float>();
+        }
+        legal[static_cast<size_t>(country)] =
+            accessible_set.find(static_cast<CountryId>(country)) != accessible_set.end();
+    }
+
+    const auto alloc = ts::knapsack_alloc(scores, budget, legal, cap, cost);
+    ActionEncoding action{.card_id = card_id, .mode = mode, .targets = {}};
+    for (int country = 0; country < country_count; ++country) {
+        const auto take = alloc[static_cast<size_t>(country)];
+        for (int count = 0; count < take; ++count) {
+            action.targets.push_back(static_cast<CountryId>(country));
+        }
+    }
+    return action;
+}
+
 inline ActionEncoding build_random_target_action(
     CardId card_id,
     ActionMode mode,
@@ -175,7 +247,8 @@ inline auto choose_action_from_outputs(
     SelectCardFn&& select_card,
     SelectModeFn&& select_mode,
     HeuristicFallbackFn&& heuristic_fallback,
-    NoActionFn&& no_action
+    NoActionFn&& no_action,
+    const torch::Tensor& marginal_logits = torch::Tensor{}
 ) {
     using Result = std::invoke_result_t<NoActionFn>;
     static_assert(
@@ -266,16 +339,28 @@ inline auto choose_action_from_outputs(
         return Result{ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {}}};
     }
 
-    if (use_country_head && country_logits.defined()) {
-        auto action = build_action_from_country_logits(
-            sampled_card_id,
-            mode,
-            country_logits,
-            pub,
-            side,
-            strategy_logits,
-            country_strategy_logits
-        );
+    const auto has_marginal_logits = marginal_logits.defined() && marginal_logits.numel() > 0;
+    if (use_country_head && (has_marginal_logits || country_logits.defined())) {
+        ActionEncoding action;
+        if (has_marginal_logits) {
+            action = build_action_from_marginal_logits(
+                sampled_card_id,
+                mode,
+                marginal_logits,
+                pub,
+                side
+            );
+        } else {
+            action = build_action_from_country_logits(
+                sampled_card_id,
+                mode,
+                country_logits,
+                pub,
+                side,
+                strategy_logits,
+                country_strategy_logits
+            );
+        }
         if (!action.targets.empty()) {
             return Result{std::move(action)};
         }
