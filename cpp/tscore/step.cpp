@@ -90,39 +90,27 @@ WarResult apply_war_card(
     PublicState& next,
     Side attacker,
     CountryId target,
-    int vp_on_success,
-    int ops_for_milops,
+    int card_ops,
+    int influence_on_success,
     Pcg64Rng& rng
 ) {
     const auto defender = other_side(attacker);
-    const auto& graph = adjacency();
-    int attacker_adjacent = 0;
-    int defender_adjacent = 0;
-    for (const auto neighbor : graph[target]) {
-        if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
-            continue;
-        }
-        if (controls_country(attacker, neighbor, next)) {
-            ++attacker_adjacent;
-        }
-        if (controls_country(defender, neighbor, next)) {
-            ++defender_adjacent;
-        }
-    }
-
-    const auto threshold = country_spec(target).stability - attacker_adjacent + defender_adjacent;
     const auto die_roll = static_cast<int>((rng() % 6) + 1);
-    const auto success = die_roll >= threshold;
+    const auto threshold = 2 * country_spec(target).stability;
+    const auto success = (die_roll + card_ops) > threshold;
     if (success) {
-        next.set_influence(attacker, target, country_spec(target).stability + 1);
+        next.set_influence(attacker, target, next.influence_of(attacker, target) + influence_on_success);
         next.set_influence(defender, target, 0);
         if (attacker == Side::USSR) {
-            next.vp += vp_on_success;
+            next.vp += 2;
         } else {
-            next.vp -= vp_on_success;
+            next.vp -= 2;
         }
+    } else if (attacker == Side::USSR) {
+        next.vp -= 1;
+    } else {
+        next.vp += 1;
     }
-    next.milops[to_index(attacker)] = std::max(next.milops[to_index(attacker)], ops_for_milops);
     return WarResult{
         .success = success,
         .die_roll = die_roll,
@@ -663,10 +651,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 const auto target = resolve_event_country_choice(
                     next, action, 39, side, std::span<const CountryId>(pool), rng, policy_cb
                 );
-                const auto result = apply_war_card(next, side, target, 1, 3, rng);
-                if (result.success) {
-                    remove_all_influence(next, other_side(side), target);
-                }
+                apply_war_card(next, side, target, 3, 3, rng);
             }
             break;
         }
