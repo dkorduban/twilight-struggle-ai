@@ -615,7 +615,7 @@ TEST_CASE("War cards apply success effects without DEFCON or milops changes", "[
         pub.set_influence(other_side(spec.attacker_side), spec.target, 4);
 
         const auto action = build_war_event_action(spec);
-        const auto success_possible = (6 + spec.card_ops) > (2 * country_spec(spec.target).stability);
+        const auto success_possible = (6 + spec.card_ops) >= (2 * country_spec(spec.target).stability);
         bool found_success = false;
         for (uint64_t seed = 0; seed < 128; ++seed) {
             Pcg64Rng rng(seed);
@@ -649,7 +649,7 @@ TEST_CASE("War cards award opponent VP and leave board state unchanged on failur
         pub.set_influence(other_side(spec.attacker_side), spec.target, 4);
 
         const auto action = build_war_event_action(spec);
-        const auto failure_possible = (1 + spec.card_ops) <= (2 * country_spec(spec.target).stability);
+        const auto failure_possible = (1 + spec.card_ops) < (2 * country_spec(spec.target).stability);
         bool found_failure = false;
         for (uint64_t seed = 0; seed < 128; ++seed) {
             Pcg64Rng rng(seed);
