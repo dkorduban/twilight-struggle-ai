@@ -65,46 +65,56 @@ const AdjacencyMap& adjacency() {
 std::vector<CountryId> accessible_countries(
     Side side,
     const PublicState& pub,
-    ActionMode /*mode*/
+    ActionMode mode
 ) {
     const auto& graph = adjacency();
-    std::bitset<kCountrySlots> visited;
-    std::queue<CountryId> queue;
 
+    // Coup and Realignment: all map countries are valid targets.
+    // DEFCON restrictions and NATO filtering are applied later in
+    // filtered_accessible_countries() / legal_actions.cpp.
+    if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
+        std::vector<CountryId> out;
+        for (CountryId cid = 0; cid < kCountrySlots; ++cid) {
+            if (cid == kUsaAnchorId || cid == kUssrAnchorId) continue;
+            if (!has_country_spec(cid)) continue;
+            out.push_back(cid);
+        }
+        return out;
+    }
+
+    // Influence placement: 1-hop adjacency only.
+    // Rules: "A player may add Influence Markers in a country in which he
+    // currently has Influence Markers, OR in a country adjacent to a country
+    // in which he currently has Influence Markers."
+    std::bitset<kCountrySlots> visited;
+
+    // Countries where side already has influence, plus their 1-hop neighbors.
     for (CountryId cid = 0; cid < kCountrySlots; ++cid) {
         if (pub.influence_of(side, cid) > 0) {
             visited.set(cid);
-            queue.push(cid);
-        }
-    }
-
-    while (!queue.empty()) {
-        const auto current = queue.front();
-        queue.pop();
-        for (const auto neighbor : graph[current]) {
-            if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
-                continue;
-            }
-            if (!visited.test(neighbor)) {
-                visited.set(neighbor);
-                queue.push(neighbor);
+            for (const auto neighbor : graph[cid]) {
+                if (neighbor != kUsaAnchorId && neighbor != kUssrAnchorId) {
+                    visited.set(neighbor);
+                }
             }
         }
     }
 
-    for (const auto anchor : {kUsaAnchorId, kUssrAnchorId}) {
-        for (const auto neighbor : graph[anchor]) {
-            if (neighbor != kUsaAnchorId && neighbor != kUssrAnchorId) {
-                visited.set(neighbor);
-            }
+    // Own superpower anchor: neighbors of the side's own anchor are always
+    // accessible (e.g., USSR can always reach Finland/Poland/Afghanistan,
+    // US can always reach Canada/Cuba/Japan).
+    const CountryId own_anchor = (side == Side::USSR) ? kUssrAnchorId : kUsaAnchorId;
+    for (const auto neighbor : graph[own_anchor]) {
+        if (neighbor != kUsaAnchorId && neighbor != kUssrAnchorId) {
+            visited.set(neighbor);
         }
     }
 
     std::vector<CountryId> out;
     for (CountryId cid = 0; cid < kCountrySlots; ++cid) {
-        if ((cid == kUsaAnchorId || cid == kUssrAnchorId) || !visited.test(cid) || !has_country_spec(cid)) {
-            continue;
-        }
+        if (cid == kUsaAnchorId || cid == kUssrAnchorId) continue;
+        if (!visited.test(cid)) continue;
+        if (!has_country_spec(cid)) continue;
         out.push_back(cid);
     }
     return out;

@@ -22,6 +22,7 @@ add_executable(test_tscore
     test_decode_helpers.cpp
     test_observation.cpp
     test_public_state.cpp
+    test_adjacency.cpp
 )
 
 target_link_libraries(test_tscore
