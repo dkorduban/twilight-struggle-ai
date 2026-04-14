@@ -130,8 +130,16 @@ void BatchInputs::fill_slot(int idx, const PublicState& pub, const CardSet& hand
     filled = std::max(filled, idx + 1);
 }
 
+void BatchInputs::fill_slot(int idx, const Observation& obs) {
+    fill_slot(idx, obs.pub, obs.own_hand, obs.holds_china, obs.acting_side);
+}
+
 torch::Tensor extract_influence(const PublicState& pub) {
     return torch::cat({influence_array(pub, Side::USSR), influence_array(pub, Side::US)}).unsqueeze(0);
+}
+
+torch::Tensor extract_influence(const Observation& obs) {
+    return extract_influence(obs.pub);
 }
 
 torch::Tensor extract_cards(const PublicState& pub, const CardSet& hand) {
@@ -140,10 +148,18 @@ torch::Tensor extract_cards(const PublicState& pub, const CardSet& hand) {
     return tensor;
 }
 
+torch::Tensor extract_cards(const Observation& obs) {
+    return extract_cards(obs.pub, obs.own_hand);
+}
+
 torch::Tensor extract_scalars(const PublicState& pub, bool holds_china, Side side) {
     auto tensor = torch::zeros({1, kScalarDim}, torch::TensorOptions().dtype(torch::kFloat32));
     fill_scalars(tensor.data_ptr<float>(), pub, holds_china, side);
     return tensor;
+}
+
+torch::Tensor extract_scalars(const Observation& obs) {
+    return extract_scalars(obs.pub, obs.holds_china, obs.acting_side);
 }
 
 BatchOutputs forward_model_batched(torch::jit::script::Module& model, const BatchInputs& inputs) {
@@ -194,6 +210,10 @@ c10::impl::GenericDict forward_model(
 
     torch::NoGradGuard no_grad;
     return model.forward(inputs).toGenericDict();
+}
+
+c10::impl::GenericDict forward_model(torch::jit::script::Module& model, const Observation& obs) {
+    return forward_model(model, obs.pub, obs.own_hand, obs.holds_china, obs.acting_side);
 }
 
 }  // namespace ts::nn

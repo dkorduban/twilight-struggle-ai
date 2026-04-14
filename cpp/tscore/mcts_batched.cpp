@@ -224,16 +224,21 @@ void fill_card_mask(float* ptr, const CardSet& cards) {
     }
 }
 
+Observation pending_observation(const PendingDecision& decision) {
+    Observation obs;
+    obs.pub = decision.pub_snapshot;
+    obs.own_hand = decision.hand_snapshot;
+    obs.holds_china = decision.holds_china;
+    // PendingDecision snapshots do not retain opponent hand size; the batched
+    // read-only helpers below only consume the actor-visible fields.
+    obs.opp_hand_size = 0;
+    obs.acting_side = decision.side;
+    return obs;
+}
+
 // Write a single batch slot without touching any shared counters.
 // Each thread writes to its own disjoint slice of the batch buffer.
-void fill_batch_slot_no_count(
-    nn::BatchInputs& batch_inputs,
-    int idx,
-    const PublicState& pub,
-    const CardSet& hand,
-    bool holds_china,
-    Side side
-) {
+void fill_batch_slot_no_count(nn::BatchInputs& batch_inputs, int idx, const Observation& obs) {
     if (idx < 0 || idx >= batch_inputs.capacity) {
         throw std::out_of_range("batch slot index out of range");
     }
@@ -241,28 +246,29 @@ void fill_batch_slot_no_count(
     float* influence_ptr = batch_inputs.influence.data_ptr<float>() + (idx * 2 * kCountrySlots);
     for (int country_id = 0; country_id <= kMaxCountryId; ++country_id) {
         const auto country = static_cast<CountryId>(country_id);
-        influence_ptr[country_id] = static_cast<float>(pub.influence_of(Side::USSR, country));
-        influence_ptr[kCountrySlots + country_id] = static_cast<float>(pub.influence_of(Side::US, country));
+        influence_ptr[country_id] = static_cast<float>(obs.pub.influence_of(Side::USSR, country));
+        influence_ptr[kCountrySlots + country_id] =
+            static_cast<float>(obs.pub.influence_of(Side::US, country));
     }
 
     float* cards_ptr = batch_inputs.cards.data_ptr<float>() + (idx * 4 * kCardSlots);
-    fill_card_mask(cards_ptr, hand);
-    fill_card_mask(cards_ptr + kCardSlots, hand);
-    fill_card_mask(cards_ptr + (2 * kCardSlots), pub.discard);
-    fill_card_mask(cards_ptr + (3 * kCardSlots), pub.removed);
+    fill_card_mask(cards_ptr, obs.own_hand);
+    fill_card_mask(cards_ptr + kCardSlots, obs.own_hand);
+    fill_card_mask(cards_ptr + (2 * kCardSlots), obs.pub.discard);
+    fill_card_mask(cards_ptr + (3 * kCardSlots), obs.pub.removed);
 
     float* scalars_ptr = batch_inputs.scalars.data_ptr<float>() + (idx * kFeatureScalarDim);
-    scalars_ptr[0] = static_cast<float>(pub.vp) / 20.0f;
-    scalars_ptr[1] = static_cast<float>(pub.defcon - 1) / 4.0f;
-    scalars_ptr[2] = static_cast<float>(pub.milops[to_index(Side::USSR)]) / 6.0f;
-    scalars_ptr[3] = static_cast<float>(pub.milops[to_index(Side::US)]) / 6.0f;
-    scalars_ptr[4] = static_cast<float>(pub.space[to_index(Side::USSR)]) / 9.0f;
-    scalars_ptr[5] = static_cast<float>(pub.space[to_index(Side::US)]) / 9.0f;
-    scalars_ptr[6] = static_cast<float>(to_index(pub.china_held_by));
-    scalars_ptr[7] = holds_china ? 1.0f : 0.0f;
-    scalars_ptr[8] = static_cast<float>(pub.turn) / 10.0f;
-    scalars_ptr[9] = static_cast<float>(pub.ar) / 8.0f;
-    scalars_ptr[10] = static_cast<float>(to_index(side));
+    scalars_ptr[0] = static_cast<float>(obs.pub.vp) / 20.0f;
+    scalars_ptr[1] = static_cast<float>(obs.pub.defcon - 1) / 4.0f;
+    scalars_ptr[2] = static_cast<float>(obs.pub.milops[to_index(Side::USSR)]) / 6.0f;
+    scalars_ptr[3] = static_cast<float>(obs.pub.milops[to_index(Side::US)]) / 6.0f;
+    scalars_ptr[4] = static_cast<float>(obs.pub.space[to_index(Side::USSR)]) / 9.0f;
+    scalars_ptr[5] = static_cast<float>(obs.pub.space[to_index(Side::US)]) / 9.0f;
+    scalars_ptr[6] = static_cast<float>(to_index(obs.pub.china_held_by));
+    scalars_ptr[7] = obs.holds_china ? 1.0f : 0.0f;
+    scalars_ptr[8] = static_cast<float>(obs.pub.turn) / 10.0f;
+    scalars_ptr[9] = static_cast<float>(obs.pub.ar) / 8.0f;
+    scalars_ptr[10] = static_cast<float>(to_index(obs.acting_side));
 }
 
 void compact_batch_tensor_rows(torch::Tensor& tensor, int src_row, int dst_row, int count) {
@@ -312,17 +318,16 @@ bool nato_prerequisite_met_inline(const PublicState& pub) {
     return pub.warsaw_pact_played || pub.marshall_plan_played || pub.truman_doctrine_played;
 }
 
-DraftsResult collect_card_drafts_cached(const GameState& state) {
-    const auto side = state.pub.phasing;
-    const auto holds_china = holds_china_for(state, side);
-    const auto& pub = state.pub;
+DraftsResult collect_card_drafts_cached(const Observation& obs) {
+    const auto side = obs.acting_side;
+    const auto& pub = obs.pub;
     auto cache = AccessibleCache::build(side, pub);
 
     auto cards = collect_drafts_from_legal_cards(
-        state.hands[to_index(side)],
+        obs.own_hand,
         pub,
         side,
-        holds_china,
+        obs.holds_china,
         [&](CardDraft& card, CardId card_id) {
             const auto& spec = card_spec(card_id);
 
@@ -382,16 +387,15 @@ struct CompactLegalCardsResult {
     AccessibleCache cache;
 };
 
-CompactLegalCardsResult collect_compact_legal_cards(const GameState& state) {
-    const auto side = state.pub.phasing;
-    const auto holds_china = holds_china_for(state, side);
-    const auto& pub = state.pub;
+CompactLegalCardsResult collect_compact_legal_cards(const Observation& obs) {
+    const auto side = obs.acting_side;
+    const auto& pub = obs.pub;
     auto cache = AccessibleCache::build(side, pub);
 
     std::vector<LegalCardInfo> cards;
     cards.reserve(10);
 
-    for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
+    for (const auto card_id : legal_cards(obs.own_hand, pub, side, obs.holds_china)) {
         if (is_card_blocked_by_defcon(pub, side, card_id)) {
             continue;
         }
@@ -810,7 +814,8 @@ ExpansionResult expand_from_raw(
     g_expand_alloc += std::chrono::duration<double>(XClock::now() - xt0).count();
     auto xt1 = XClock::now();
 
-    auto [drafts, cache] = collect_card_drafts_cached(state);
+    const auto obs = make_observation(state, state.pub.phasing);
+    auto [drafts, cache] = collect_card_drafts_cached(obs);
 
     g_expand_drafts += std::chrono::duration<double>(XClock::now() - xt1).count();
     auto xt2 = XClock::now();
@@ -1233,7 +1238,7 @@ ExpansionResult expand_from_raw_fast(
     }
 
     // --- Compact legal card collection (no per-mode ActionEncoding vectors) ---
-    auto legal = collect_compact_legal_cards(state);
+    auto legal = collect_compact_legal_cards(make_observation(state, state.pub.phasing));
     const auto& cards = legal.cards;
     const auto& cache = legal.cache;
 
@@ -1500,19 +1505,18 @@ ExpansionResult expand_from_raw_fast(
 // Zero-allocation predicate: does this state have any legal action that would be
 // handled by the NN model?  Equivalent to `!collect_card_drafts(state).empty()`
 // but short-circuits on the first hit and allocates nothing.
-bool has_any_model_action_cached_exact(const GameState& state) {
-    const auto side = state.pub.phasing;
-    const auto holds_china = holds_china_for(state, side);
-    const auto& pub = state.pub;
+bool has_any_model_action_cached_exact(const Observation& obs) {
+    const auto side = obs.acting_side;
+    const auto& pub = obs.pub;
     auto cache = AccessibleCache::build(side, pub);
-    const auto& hand = state.hands[to_index(side)];
+    const auto& hand = obs.own_hand;
 
     for (int raw_card_id = 1; raw_card_id <= kMaxCardId; ++raw_card_id) {
         if (!hand.test(raw_card_id)) {
             continue;
         }
         const auto card_id = static_cast<CardId>(raw_card_id);
-        if (card_id == kChinaCardId && !holds_china) {
+        if (card_id == kChinaCardId && !obs.holds_china) {
             continue;
         }
         if (is_card_blocked_by_defcon(pub, side, card_id)) {
@@ -1573,15 +1577,16 @@ std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg6
         return ExpansionResult{.node = std::move(node), .leaf_value = terminal_value};
     }
 
-    if (has_any_model_action_cached_exact(state)) {
+    const auto obs = make_observation(state, state.pub.phasing);
+    if (has_any_model_action_cached_exact(obs)) {
         return std::nullopt;
     }
 
     if (auto fallback = choose_action(
             PolicyKind::MinimalHybrid,
-            state.pub,
-            state.hands[to_index(state.pub.phasing)],
-            holds_china_for(state, state.pub.phasing),
+            obs.pub,
+            obs.own_hand,
+            obs.holds_china,
             rng
         );
         fallback.has_value()) {
@@ -2100,15 +2105,16 @@ void move_to_followup_stage_after_extra(GameSlot& slot, Side side) {
 void queue_decision(GameSlot& slot, Side side, int ar, bool is_headline, const BatchedMctsConfig& config) {
     slot.root_state.pub.phasing = side;
     slot.root_state.pub.ar = ar;
+    const auto obs = make_observation(slot.root_state, side);
     slot.decision = PendingDecision{
         .turn = slot.root_state.pub.turn,
         .ar = ar,
         .move_number = slot.decisions_started + 1,
         .side = side,
-        .holds_china = holds_china_for(slot.root_state, side),
+        .holds_china = obs.holds_china,
         .is_headline = is_headline,
-        .pub_snapshot = slot.root_state.pub,
-        .hand_snapshot = slot.root_state.hands[to_index(side)],
+        .pub_snapshot = obs.pub,
+        .hand_snapshot = obs.own_hand,
     };
     slot.decisions_started += 1;
     reset_move_search(slot, config);
@@ -2955,11 +2961,10 @@ void collect_games_batched(
                         slot.pending.push_back(std::move(pend));
                         const int bi = thread_state.batch_base + thread_state.filled;
                         fill_batch_slot_no_count(
-                            batch_inputs, bi,
-                            slot.root_state.pub,
-                            slot.root_state.hands[to_index(slot.root_state.pub.phasing)],
-                            holds_china_for(slot.root_state, slot.root_state.pub.phasing),
-                            slot.root_state.pub.phasing);
+                            batch_inputs,
+                            bi,
+                            make_observation(slot.root_state, slot.root_state.pub.phasing)
+                        );
                         thread_state.entries.push_back(BatchEntry{
                             .slot = &slot,
                             .pending_index = slot.pending.size() - 1,
@@ -2985,11 +2990,10 @@ void collect_games_batched(
                         auto& pend = slot.pending.back();
                         const int bi = thread_state.batch_base + thread_state.filled;
                         fill_batch_slot_no_count(
-                            batch_inputs, bi,
-                            pend.sim_state.pub,
-                            pend.sim_state.hands[to_index(pend.sim_state.pub.phasing)],
-                            holds_china_for(pend.sim_state, pend.sim_state.pub.phasing),
-                            pend.sim_state.pub.phasing);
+                            batch_inputs,
+                            bi,
+                            make_observation(pend.sim_state, pend.sim_state.pub.phasing)
+                        );
                         thread_state.entries.push_back(BatchEntry{
                             .slot = &slot,
                             .pending_index = slot.pending.size() - 1,
@@ -3206,7 +3210,7 @@ void populate_rollout_features(
 }
 
 std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
-    const GameState& state,
+    const Observation& obs,
     const nn::BatchInputs& inputs,
     const nn::BatchOutputs& outputs,
     int64_t batch_index,
@@ -3217,10 +3221,9 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
 ) {
     (void)input_device;
 
-    const auto& pub = state.pub;
-    const auto side = pub.phasing;
-    const auto holds_china = holds_china_for(state, side);
-    const auto& hand = state.hands[to_index(side)];
+    const auto& pub = obs.pub;
+    const auto side = obs.acting_side;
+    const auto& hand = obs.own_hand;
 
     RolloutStep step;
     step.value = outputs.value.index({batch_index, 0}).item<float>();
@@ -3228,7 +3231,7 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
     step.game_index = game_index;
 
     auto heuristic_fallback = [&]() -> std::pair<ActionEncoding, RolloutStep> {
-        auto action = choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+        auto action = choose_action(PolicyKind::MinimalHybrid, pub, hand, obs.holds_china, rng)
             .value_or(ActionEncoding{});
         step.card_idx = -1;
         step.mode_idx = -1;
@@ -3242,7 +3245,7 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
     auto decoded = decode::choose_action_from_outputs_with_logprobs(
         pub,
         hand,
-        holds_china,
+        obs.holds_china,
         card_logits,
         mode_logits,
         country_logits_raw,
@@ -3269,15 +3272,14 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
 }
 
 ActionEncoding greedy_action_from_outputs(
-    const GameState& state,
+    const Observation& obs,
     const nn::BatchOutputs& outputs,
     int64_t batch_index,
     Pcg64Rng& rng,
     float temperature = 0.0f
 ) {
-    const auto& pub = state.pub;
-    const auto holds_china = holds_china_for(state, pub.phasing);
-    const auto& hand = state.hands[to_index(pub.phasing)];
+    const auto& pub = obs.pub;
+    const auto& hand = obs.own_hand;
 
     const auto card_logits = outputs.card_logits.index({batch_index});
     const auto mode_logits = outputs.mode_logits.index({batch_index});
@@ -3291,14 +3293,14 @@ ActionEncoding greedy_action_from_outputs(
         ? outputs.country_strategy_logits.index({batch_index}) : torch::Tensor{};
 
     auto heuristic_fallback = [&]() {
-        return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+        return choose_action(PolicyKind::MinimalHybrid, pub, hand, obs.holds_china, rng)
             .value_or(ActionEncoding{});
     };
 
     return decode::choose_action_from_outputs(
         pub,
         hand,
-        holds_china,
+        obs.holds_china,
         /*use_country_head=*/true,
         card_logits,
         mode_logits,
@@ -3500,24 +3502,12 @@ std::vector<GameResult> benchmark_games_batched(
             if (is_learned) {
                 // Queue for batched NN inference.
                 const auto batch_idx = batch_inputs.filled;
-                batch_inputs.fill_slot(
-                    batch_idx,
-                    slot.root_state.pub,
-                    slot.root_state.hands[to_index(decision_side)],
-                    slot.decision->holds_china,
-                    decision_side
-                );
+                batch_inputs.fill_slot(batch_idx, pending_observation(*slot.decision));
                 batch_entries.push_back(BatchEntry{&slot, true});
             } else if (greedy_opponent) {
                 // Opponent also uses NN (greedy argmax) — for MCTS-vs-greedy comparison.
                 const auto batch_idx = batch_inputs.filled;
-                batch_inputs.fill_slot(
-                    batch_idx,
-                    slot.root_state.pub,
-                    slot.root_state.hands[to_index(decision_side)],
-                    slot.decision->holds_china,
-                    decision_side
-                );
+                batch_inputs.fill_slot(batch_idx, pending_observation(*slot.decision));
                 batch_entries.push_back(BatchEntry{&slot, true});
             } else {
                 // Heuristic side: resolve with optional temperature.
@@ -3552,7 +3542,7 @@ std::vector<GameResult> benchmark_games_batched(
                     continue;
                 }
                 auto action = greedy_action_from_outputs(
-                    entry.slot->root_state,
+                    pending_observation(*entry.slot->decision),
                     outputs,
                     static_cast<int64_t>(batch_idx),
                     entry.slot->rng,
@@ -3664,23 +3654,11 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
 
             if (a_acts) {
                 const auto batch_idx = batch_a.filled;
-                batch_a.fill_slot(
-                    batch_idx,
-                    slot.root_state.pub,
-                    slot.root_state.hands[to_index(decision_side)],
-                    slot.decision->holds_china,
-                    decision_side
-                );
+                batch_a.fill_slot(batch_idx, pending_observation(*slot.decision));
                 entries_a.push_back(BatchEntry{&slot, true});
             } else {
                 const auto batch_idx = batch_b.filled;
-                batch_b.fill_slot(
-                    batch_idx,
-                    slot.root_state.pub,
-                    slot.root_state.hands[to_index(decision_side)],
-                    slot.decision->holds_china,
-                    decision_side
-                );
+                batch_b.fill_slot(batch_idx, pending_observation(*slot.decision));
                 entries_b.push_back(BatchEntry{&slot, false});
             }
         }
@@ -3691,7 +3669,7 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
             int batch_idx = 0;
             for (auto& entry : entries_a) {
                 auto action = greedy_action_from_outputs(
-                    entry.slot->root_state,
+                    pending_observation(*entry.slot->decision),
                     outputs,
                     static_cast<int64_t>(batch_idx),
                     entry.slot->rng,
@@ -3708,7 +3686,7 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
             int batch_idx = 0;
             for (auto& entry : entries_b) {
                 auto action = greedy_action_from_outputs(
-                    entry.slot->root_state,
+                    pending_observation(*entry.slot->decision),
                     outputs,
                     static_cast<int64_t>(batch_idx),
                     entry.slot->rng,
@@ -3822,22 +3800,10 @@ RolloutResult rollout_model_vs_model_batched(
                     : (decision_side == Side::US);
 
             if (a_acts) {
-                batch_a.fill_slot(
-                    batch_a.filled,
-                    slot.root_state.pub,
-                    slot.root_state.hands[to_index(decision_side)],
-                    slot.decision->holds_china,
-                    decision_side
-                );
+                batch_a.fill_slot(batch_a.filled, pending_observation(*slot.decision));
                 entries_a.push_back(BatchEntry{&slot, slot.game_index});
             } else {
-                batch_b.fill_slot(
-                    batch_b.filled,
-                    slot.root_state.pub,
-                    slot.root_state.hands[to_index(decision_side)],
-                    slot.decision->holds_china,
-                    decision_side
-                );
+                batch_b.fill_slot(batch_b.filled, pending_observation(*slot.decision));
                 entries_b.push_back(BatchEntry{&slot, slot.game_index});
             }
         }
@@ -3848,7 +3814,7 @@ RolloutResult rollout_model_vs_model_batched(
             for (int batch_idx = 0; batch_idx < static_cast<int>(entries_a.size()); ++batch_idx) {
                 auto& entry = entries_a[static_cast<size_t>(batch_idx)];
                 auto [action, step] = rollout_action_from_outputs(
-                    entry.slot->root_state,
+                    pending_observation(*entry.slot->decision),
                     batch_a,
                     outputs_a,
                     static_cast<int64_t>(batch_idx),
@@ -3924,7 +3890,7 @@ RolloutResult rollout_model_vs_model_batched(
             for (int batch_idx = 0; batch_idx < static_cast<int>(entries_b.size()); ++batch_idx) {
                 auto& entry = entries_b[static_cast<size_t>(batch_idx)];
                 auto action = greedy_action_from_outputs(
-                    entry.slot->root_state,
+                    pending_observation(*entry.slot->decision),
                     outputs_b,
                     static_cast<int64_t>(batch_idx),
                     entry.slot->rng,
@@ -4037,13 +4003,7 @@ RolloutResult rollout_games_batched(
             const auto decision_side = slot.decision->side;
             if (decision_side == learned_side) {
                 const auto batch_idx = batch_inputs.filled;
-                batch_inputs.fill_slot(
-                    batch_idx,
-                    slot.root_state.pub,
-                    slot.root_state.hands[to_index(decision_side)],
-                    slot.decision->holds_china,
-                    decision_side
-                );
+                batch_inputs.fill_slot(batch_idx, pending_observation(*slot.decision));
                 batch_slots.push_back(&slot);
             } else {
                 std::optional<ActionEncoding> heuristic_action;
@@ -4073,7 +4033,7 @@ RolloutResult rollout_games_batched(
             for (int batch_idx = 0; batch_idx < static_cast<int>(batch_slots.size()); ++batch_idx) {
                 auto* slot = batch_slots[static_cast<size_t>(batch_idx)];
                 auto [action, step] = rollout_action_from_outputs(
-                    slot->root_state,
+                    pending_observation(*slot->decision),
                     batch_inputs,
                     outputs,
                     static_cast<int64_t>(batch_idx),
@@ -4238,13 +4198,7 @@ RolloutResult rollout_self_play_batched(
             }
 
             const auto batch_idx = batch_inputs.filled;
-            batch_inputs.fill_slot(
-                batch_idx,
-                slot.root_state.pub,
-                slot.root_state.hands[to_index(slot.decision->side)],
-                slot.decision->holds_china,
-                slot.decision->side
-            );
+            batch_inputs.fill_slot(batch_idx, pending_observation(*slot.decision));
             batch_slots.push_back(&slot);
         }
 
@@ -4253,7 +4207,7 @@ RolloutResult rollout_self_play_batched(
             for (int batch_idx = 0; batch_idx < static_cast<int>(batch_slots.size()); ++batch_idx) {
                 auto* slot = batch_slots[static_cast<size_t>(batch_idx)];
                 auto [action, step] = rollout_action_from_outputs(
-                    slot->root_state,
+                    pending_observation(*slot->decision),
                     batch_inputs,
                     outputs,
                     static_cast<int64_t>(batch_idx),

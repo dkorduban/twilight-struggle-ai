@@ -21,6 +21,7 @@ struct BatchInputs {
 
     void allocate(int batch_capacity, torch::Device dev = torch::kCPU);
     void fill_slot(int idx, const PublicState& pub, const CardSet& hand, bool holds_china, Side side);
+    void fill_slot(int idx, const Observation& obs);
     void reset() { filled = 0; }
 };
 
@@ -36,8 +37,11 @@ struct BatchOutputs {
 };
 
 torch::Tensor extract_influence(const PublicState& pub);
+torch::Tensor extract_influence(const Observation& obs);
 torch::Tensor extract_cards(const PublicState& pub, const CardSet& hand);
+torch::Tensor extract_cards(const Observation& obs);
 torch::Tensor extract_scalars(const PublicState& pub, bool holds_china, Side side);
+torch::Tensor extract_scalars(const Observation& obs);
 BatchOutputs forward_model_batched(torch::jit::script::Module& model, const BatchInputs& inputs);
 
 c10::impl::GenericDict forward_model(
@@ -46,6 +50,11 @@ c10::impl::GenericDict forward_model(
     const CardSet& hand,
     bool holds_china,
     Side side
+);
+
+c10::impl::GenericDict forward_model(
+    torch::jit::script::Module& model,
+    const Observation& obs
 );
 
 }  // namespace ts::nn
