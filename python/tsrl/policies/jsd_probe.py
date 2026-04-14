@@ -62,7 +62,13 @@ def _vp_bucket(vp: int) -> str:
 
 def _hand_to_card_mask(hand_card_ids: list[int] | None) -> list[bool]:
     mask = [False] * CARD_SLOTS
-    for card_id in hand_card_ids or []:
+    if hand_card_ids is None:
+        values: list[int] = []
+    elif hasattr(hand_card_ids, "to_list"):
+        values = hand_card_ids.to_list()
+    else:
+        values = list(hand_card_ids)
+    for card_id in values:
         idx = int(card_id) - 1
         if 0 <= idx < CARD_SLOTS:
             mask[idx] = True
