@@ -25,8 +25,8 @@ int legacy_argmax_index(const torch::Tensor& tensor) {
 }
 
 bool legacy_is_defcon_lowering_card(CardId card_id) {
-    static constexpr std::array<int, 13> kDefconLoweringCards = {
-        4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
+    static constexpr std::array<int, 8> kDefconLoweringCards = {
+        4, 20, 48, 49, 50, 53, 83, 92,
     };
     return std::find(kDefconLoweringCards.begin(), kDefconLoweringCards.end(), static_cast<int>(card_id)) !=
         kDefconLoweringCards.end();
