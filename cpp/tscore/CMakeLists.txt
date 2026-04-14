@@ -7,6 +7,7 @@ add_library(tscore STATIC
     game_data.cpp
     game_loop.cpp
     game_state.cpp
+    hand_ops.cpp
     legal_actions.cpp
     policies.cpp
     public_state.cpp
