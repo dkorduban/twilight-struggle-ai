@@ -485,6 +485,7 @@ DraftsResult collect_card_drafts_cached(const GameState& state) {
         if (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) event_ok = false;
         if (pub.quagmire_active && side == Side::US && !spec.is_scoring) event_ok = false;
         if (card_id == 103 && pub.defcon != 2) event_ok = false;
+        if (card_id == 104 && !pub.john_paul_ii_played) event_ok = false;
         if (event_ok) {
             card.modes.push_back(ModeDraft{
                 .mode = ActionMode::Event,
@@ -554,6 +555,7 @@ CompactLegalCardsResult collect_compact_legal_cards(const GameState& state) {
         if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) event_ok = false;
         if (trapped) event_ok = false;
         if (card_id == 103 && pub.defcon != 2) event_ok = false;
+        if (card_id == 104 && !pub.john_paul_ii_played) event_ok = false;
         card.has_event = event_ok;
 
         if (card.has_influence || card.has_coup || card.has_realign || card.has_space || card.has_event) {
@@ -1686,6 +1688,9 @@ bool has_any_model_action_cached_exact(const GameState& state) {
             event_ok = false;
         }
         if (card_id == 103 && pub.defcon != 2) {
+            event_ok = false;
+        }
+        if (card_id == 104 && !pub.john_paul_ii_played) {
             event_ok = false;
         }
         if (event_ok) {
