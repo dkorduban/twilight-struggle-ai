@@ -8,6 +8,7 @@
 #include "hand_knowledge.hpp"
 #include "legal_actions.hpp"
 #include "rng.hpp"
+#include "scoring.hpp"
 #include "step.hpp"
 #include "types.hpp"
 
@@ -346,6 +347,18 @@ TEST_CASE("China Card is never a legal headline choice", "[legal_actions]") {
 
     REQUIRE(std::find(cards.begin(), cards.end(), kChinaCardId) == cards.end());
     REQUIRE(std::find(cards.begin(), cards.end(), kDeStalinizationId) != cards.end());
+}
+
+TEST_CASE("Formosan Resolution counts Taiwan as a battleground for USSR scoring too", "[scoring]") {
+    PublicState pub;
+    pub.influence[to_index(Side::USSR)][kTaiwanId] = 3;
+
+    const auto without_formosan = score_region(Region::Asia, pub);
+
+    pub.formosan_active = true;
+    const auto with_formosan = score_region(Region::Asia, pub);
+
+    REQUIRE(with_formosan.vp_delta > without_formosan.vp_delta);
 }
 
 TEST_CASE("Glasnost with SALT grants four free ops", "[step]") {
