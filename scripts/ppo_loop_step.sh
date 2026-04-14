@@ -40,6 +40,15 @@ PANEL_V14="data/checkpoints/scripted_for_elo/v132_sc_scripted.pt"
 
 FIXTURES_JSON="results/selected_fixtures.json"
 
+# --- STOP sentinel: if results/ppo_loop_stop exists, abort this run ---
+if [ -f "results/ppo_loop_stop" ]; then
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] STOP sentinel found (results/ppo_loop_stop) — aborting auto-launch of $NEXT" \
+    >> results/autonomous_decisions.log
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Remove results/ppo_loop_stop to resume auto-chaining" \
+    >> results/autonomous_decisions.log
+  exit 0
+fi
+
 # --- Singleton guard: abort if another train_ppo.py is already running ---
 # The lockfile (results/train_ppo.lock) is held exclusively by train_ppo.py
 # for its entire lifetime. flock -n returns non-zero if the lock is taken.

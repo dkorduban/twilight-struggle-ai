@@ -1,41 +1,38 @@
 {
-  "current_task": "Two parallel Codex architecture agents running. v159_sc+ running with new sc-lineage panel at T=1.0. v160_sc will be first with corrected temperature.",
+  "current_task": "Diagnosing sc-lineage Elo decline (v132_sc=2092 → v171_sc=1744). Opus analysis running.",
   "next_tasks": [
-    "Wait for Codex agents (arch Phase 1: decode_helpers.hpp, arch Phase 2: search_common.hpp) to complete and merge",
-    "Monitor v160_sc panel eval iter10 — expect ~0.30-0.50 WR with T=1.0 and sc-lineage panel",
-    "After Phase 1+2 done: Phase 3 = push Observation through read-only search interfaces",
-    "Phase 4: move hand-dependent event logic out of game_loop.cpp",
-    "GAP-005: Core ops placement legality (keep separate)",
-    "Python engine full removal: 51 callers",
-    "Task #46: Hash-based match cache identity"
+    "Apply Opus fix recommendations for sc-lineage decline",
+    "GAP-005: Core ops placement legality (separate from arch refactor)",
+    "Phase 2b DP decoder: AllocationHead replacement (see plan)",
+    "Wire match_cache.py into run_elo_tournament.py (--match-cache arg)"
   ],
   "blocked_on": null,
   "active_background": [
-    "v159_sc PPO training (sc-lineage panel but T=0.0 — still old temperature, last such run)",
-    "Codex agent: arch Phase 1 — decode_helpers.hpp (learned_policy.cpp ↔ mcts_batched.cpp)",
-    "Codex agent: arch Phase 2 — search_common.hpp (WS6 Phase 2, MCTS semantic helpers)"
+    "v172_sc PPO training: running (panel: v159_sc/v160_sc/v77_sc/v78_sc/v132_sc)",
+    "Opus analysis: sc-lineage decline root cause (results/analysis/opus_analysis_20260414_010800_sc_lineage_decline.md)"
   ],
   "completed_this_session": [
-    "Panel eval formula bug fixed",
-    "Fixture pool rebalanced to symmetric 8+8",
-    "LR increased 2e-5 → 5e-5 (KL 10x improvement)",
-    "ccache integrated in CMakeLists.txt",
-    "Panel upgraded from saturated old-engine to sc-lineage (v67_sc/v136_sc/v77_sc/v78_sc/v132_sc)",
-    "Panel eval temperature fixed: 0.0→1.0 (T=0.0 was inflating WR to 87%+ against all opponents)"
+    "WS6 Phase 1 (decode_helpers.hpp): merged Codex worktree, resolved conflicts, 22/22 tests",
+    "WS6 Phase 2 (search_common.hpp): rollout_value + evaluate_leaf_value_raw deduplicated",
+    "WS6 Phase 3 (DEFCON centralization): legal_cards() now filters DEFCON-blocked cards for ALL callers",
+    "WS6 Phase 4 (Observation boundary): Observation struct {pub, own_hand, holds_china, opp_hand_size, acting_side}; 24/24 tests pass (commit 4cb883f)",
+    "Task #46 (match_cache): python/tsrl/eval/match_cache.py with SHA-256 hash-based keys; 4/4 tests pass (commit 529f6b6)",
+    "JSD probe confirmed: 6/6 tests pass, probe_positions.parquet exists, wired into Snakefile.ppo (--probe-set --probe-every 10)",
+    "Identified sc-lineage Elo decline: v132_sc (2092) → v171_sc (1744), dispatched Opus analysis"
   ],
-  "panel_eval_issues": {
-    "old_panel_saturation": "v55/v54/v44/v45/v14 (old-engine) saturated at 0.878 WR",
-    "new_panel_saturation": "v67_sc/v136_sc/v77_sc/v78_sc/v132_sc (sc-lineage ELO 2017-2097) also 0.867 at T=0.0",
-    "root_cause": "T=0.0 greedy play: tiny logit differences compound over 100+ game steps, inflating WR to 85-90% regardless of opponent strength",
-    "fix": "T=1.0 in panel eval (matches rollout temperature). Expected WR ~30-50% for good discrimination. Effective v160_sc+"
-  },
   "architecture_refactor": {
-    "plan_source": "results/analysis/codex_analysis_20260413_clean_architecture_status.md",
-    "phase1_status": "DISPATCHED to Codex — decode_helpers.hpp extraction from learned_policy.cpp and mcts_batched.cpp",
-    "phase2_status": "DISPATCHED to Codex — search_common.hpp for MCTS semantic helpers (WS6 Phase 2)",
-    "phase3_status": "PENDING — Observation boundary through read-only search interfaces",
-    "phase4_status": "PENDING — move hand-dependent event logic out of game_loop.cpp"
+    "plan_source": "results/analysis/opus_analysis_20260413_ws6_arch_refactor_plan.md",
+    "phase1_status": "DONE (commit c45062f)",
+    "phase2_status": "DONE (commit c45062f)",
+    "phase3_status": "DONE (commit 01ef922)",
+    "phase4_status": "DONE (commit 4cb883f)"
   },
-  "last_updated": "2026-04-13T23:20:00+00:00",
-  "context": "Panel eval at T=0.0 is broken as a cross-run metric — model beats all opponents (old-engine OR sc-lineage ELO 2092) at 87%. Fixed to T=1.0. Architecture refactor started with two parallel Codex agents covering the two highest-value deduplication targets identified in the clean architecture analysis."
+  "sc_lineage_diagnosis": {
+    "pattern": "v132_sc=2092, then steady decline to v171_sc=1744 (-348 Elo over 40 runs)",
+    "suspicious": "v132_sc was sudden jump from v131_sc (1625→2092), suggesting checkpoint reset",
+    "hypothesis": "League opponent memorization, entropy collapse, or panel config issue",
+    "analysis_file": "results/analysis/opus_analysis_20260414_010800_sc_lineage_decline.md"
+  },
+  "last_updated": "2026-04-14T01:08:00+00:00",
+  "context": "WS6 all 4 phases + Task #46 done. JSD probe wired in. Key concern: sc-lineage declining steadily. v172_sc running at 1744 Elo vs peak of 2092 (v132_sc). Opus analysis running to diagnose. Next: apply fixes, then GAP-005 or Phase 2b DP decoder."
 }
