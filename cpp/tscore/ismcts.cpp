@@ -1326,7 +1326,27 @@ void advance_until_search_or_done(
     torch::jit::script::Module* opponent_model = nullptr,
     torch::Device device = torch::kCPU
 ) {
+    constexpr int kMaxAdvanceSteps = 50000;  // well above any legitimate 10-turn game
+    int guard_steps = 0;
     while (slot.active && !slot.game_done && !slot.decision.has_value()) {
+        if (++guard_steps > kMaxAdvanceSteps) {
+            // Infinite loop detected — force game to end as a draw.
+            // This is a fatal engine bug; log and terminate gracefully.
+            std::fprintf(stderr,
+                "[ISMCTS] advance_until_search_or_done: exceeded %d steps "
+                "(turn=%d ar=%d stage=%d) — forcing game end to avoid hang\n",
+                kMaxAdvanceSteps,
+                slot.game_state.pub.turn,
+                slot.game_state.pub.ar,
+                static_cast<int>(slot.stage));
+            mark_game_done(slot, GameResult{
+                .winner = std::nullopt,
+                .final_vp = slot.game_state.pub.vp,
+                .end_turn = slot.game_state.pub.turn,
+                .end_reason = "loop_guard",
+            });
+            break;
+        }
         switch (slot.stage) {
             case IsmctsGameStage::TurnSetup: {
                 slot.game_state.pub.turn = slot.turn;
