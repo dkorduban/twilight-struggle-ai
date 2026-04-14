@@ -3360,6 +3360,8 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
     const auto mode_logits = outputs.mode_logits.index({batch_index});
     const auto country_logits_raw = outputs.country_logits.defined()
         ? outputs.country_logits.index({batch_index}) : torch::Tensor{};
+    const auto marginal_logits_raw = outputs.marginal_logits.defined()
+        ? outputs.marginal_logits.index({batch_index}) : torch::Tensor{};
     const auto strategy_logits_raw = outputs.strategy_logits.defined()
         ? outputs.strategy_logits.index({batch_index}) : torch::Tensor{};
     const auto country_strategy_logits_raw = outputs.country_strategy_logits.defined()
@@ -3574,7 +3576,8 @@ ActionEncoding greedy_action_from_outputs(
             return static_cast<ActionMode>(torch::multinomial(probs, 1).item<int64_t>());
         },
         heuristic_fallback,
-        heuristic_fallback
+        heuristic_fallback,
+        marginal_logits_raw
     );
 }
 
