@@ -32,7 +32,7 @@ int vietnam_revolts_ops_bonus(const PublicState& pub, Side side, std::span<const
 
 namespace {
 
-constexpr std::array<int, 8> kSpaceOpsMinimum = {2, 2, 2, 2, 3, 3, 3, 4};
+constexpr std::array<int, 8> kSpaceOpsMinimum = {2, 2, 3, 3, 4, 4, 5, 5};
 constexpr std::array<CountryId, 12> kNatoWe = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};
 
 bool contains(std::span<const CountryId> values, CountryId value) {
