@@ -260,6 +260,7 @@ nn::BatchOutputs forward_model_batched_local(torch::jit::script::Module& model, 
         .country_logits = to_cpu_contiguous(get_tensor(outputs, "country_logits", false)),
         .strategy_logits = to_cpu_contiguous(get_tensor(outputs, "strategy_logits", false)),
         .country_strategy_logits = to_cpu_contiguous(get_tensor(outputs, "country_strategy_logits", false)),
+        .marginal_logits = to_cpu_contiguous(get_tensor(outputs, "marginal_logits", false)),
         .value = to_cpu_contiguous(get_tensor(outputs, "value")),
     };
 }
