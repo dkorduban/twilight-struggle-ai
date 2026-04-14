@@ -284,13 +284,12 @@ except Exception as e:
 PREV_TOTAL_ITERS="${PREV_TOTAL_ITERS:-0}"
 
 # --- Decide whether to reset optimizer ---
-# Reset when restarting from anchor (OVERRIDE used or checkpoint not from FINISHED's own league).
-# Keep Adam state when chaining (same-lineage run): preserves momentum → fewer warmup iters.
+# 2026-04-14: Opus analysis shows peak era v205-v209 reset Adam EVERY run (30 iters).
+# This warm-restart effect (fresh momentum + ent=0.01) was critical to reaching 1875.
+# reset_optimizer=true for ALL runs (chained and restarts).
 RESET_OPTIMIZER="true"
-# If checkpoint is from the FINISHED run's own dir (not an override from another lineage), keep state.
 if echo "$FINISHED_CHECKPOINT" | grep -q "ppo_${FINISHED}_league"; then
-  RESET_OPTIMIZER="false"
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Chained run: reset_optimizer=false (preserving Adam state from $FINISHED)" \
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Chained run: reset_optimizer=true (warm-restart per Opus analysis; peak era reset Adam every 30-iter run)" \
     >> results/autonomous_decisions.log
 else
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Restart/override: reset_optimizer=true (fresh Adam state)" \
