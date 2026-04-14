@@ -409,7 +409,16 @@ for fn in os.listdir(cache_dir) if os.path.isdir(cache_dir) else []:
         other = fn.replace(finished, '').strip('_').replace('__vs__', '').replace('.json', '')
         played.add(other)
 
-ppo_only = {n: v for n, v in ratings.items() if n != 'heuristic'}
+import re
+def is_6mode_sc(name):
+    # Only 6-mode _sc models (v205_sc+) are valid for top_elo comparison.
+    # Old non-_sc models (v14, v44, v55 etc.) and 5-mode _sc models were measured
+    # against a 5-mode pool and have inflated Elo (2000-2400) not comparable to
+    # 6-mode models (1700-2000 range on the corrected panel).
+    m = re.match(r'v(\d+)_sc$', name)
+    return bool(m and int(m.group(1)) >= 205)
+
+ppo_only = {n: v for n, v in ratings.items() if is_6mode_sc(n)}
 ranked = sorted(ppo_only.items(), key=lambda x: -x[1].get('elo', 0))
 top_elo = ranked[0][1].get('elo', 0) if ranked else 0
 
