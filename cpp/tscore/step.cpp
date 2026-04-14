@@ -97,7 +97,7 @@ WarResult apply_war_card(
     const auto defender = other_side(attacker);
     const auto die_roll = static_cast<int>((rng() % 6) + 1);
     const auto threshold = 2 * country_spec(target).stability;
-    const auto success = (die_roll + card_ops) > threshold;
+    const auto success = (die_roll + card_ops) >= threshold;
     if (success) {
         next.set_influence(attacker, target, next.influence_of(attacker, target) + influence_on_success);
         next.set_influence(defender, target, 0);
