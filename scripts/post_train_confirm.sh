@@ -143,11 +143,21 @@ except Exception:
     d = {}
 ratings = d.get("ratings", {})
 
-# Build candidate list: models with a scripted checkpoint on disk,
+import re
+def is_6mode_sc(name):
+    # Only 6-mode _sc models (v205_sc+) for meaningful diverse games.
+    # Old 5-mode _sc (v55_sc-v204_sc) and non-_sc models have inflated Elo
+    # from the 5-mode pool and don't provide useful Elo anchoring.
+    m = re.match(r"v(\d+)_sc$", name)
+    return bool(m and int(m.group(1)) >= 205)
+
+# Build candidate list: 6-mode _sc models with a scripted checkpoint on disk,
 # not in panel, not heuristic, not the new version.
 candidates = []
 for name, info in ratings.items():
     if name in panel or name == version or name == "heuristic":
+        continue
+    if not is_6mode_sc(name):
         continue
     pt = os.path.join(script_dir, f"{name}_scripted.pt")
     if not os.path.exists(pt):
