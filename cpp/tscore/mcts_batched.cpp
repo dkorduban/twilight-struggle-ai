@@ -215,6 +215,17 @@ private:
 
 constexpr int kFeatureScalarDim = 11;
 
+struct CommitPolicyTrace;
+
+PolicyCallbackFn make_commit_policy_callback(
+    torch::jit::script::Module& model,
+    torch::Device device,
+    GameSlot& slot,
+    const ActionEncoding& action,
+    const torch::Tensor& small_choice_logits,
+    CommitPolicyTrace* trace
+);
+
 void fill_card_mask(float* ptr, const CardSet& cards) {
     std::fill(ptr, ptr + kCardSlots, 0.0f);
     for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
@@ -2388,7 +2399,11 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
     }
 }
 
-void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
+void commit_best_action(
+    GameSlot& slot,
+    const BatchedMctsConfig& config,
+    torch::jit::script::Module& model
+) {
     if (!slot.move_done || !slot.decision.has_value()) {
         return;
     }
@@ -2497,7 +2512,20 @@ void commit_best_action(GameSlot& slot, const BatchedMctsConfig& config) {
 
     const auto vp_before = slot.root_state.pub.vp;
     const auto defcon_before = slot.root_state.pub.defcon;
-    auto [new_pub, over, winner] = apply_action_live(slot.root_state, action, decision.side, slot.rng);
+    PolicyCallbackFn policy_cb;
+    const PolicyCallbackFn* cb_ptr = nullptr;
+    if (action.mode == ActionMode::EventFirst) {
+        policy_cb = make_commit_policy_callback(
+            model,
+            config.device,
+            slot,
+            action,
+            torch::Tensor{},
+            /*trace=*/nullptr
+        );
+        cb_ptr = &policy_cb;
+    }
+    auto [new_pub, over, winner] = apply_action_live(slot.root_state, action, decision.side, slot.rng, cb_ptr);
     (void)new_pub;
     if (slot.record_history) {
         // Full-info MCTS: OK to access both hands (self-play only).
@@ -2924,7 +2952,7 @@ void collect_games_batched(
 
                 if (slot.move_done) {
                     const auto t0_commit = tid == 0 ? Clock::now() : Clock::time_point{};
-                    commit_best_action(slot, config);
+                    commit_best_action(slot, config, model);
                     if (tid == 0) {
                         t_commit += std::chrono::duration<double>(Clock::now() - t0_commit).count();
                     }
@@ -3325,6 +3353,203 @@ ActionEncoding greedy_action_from_outputs(
     );
 }
 
+struct CommitPolicyTrace {
+    int small_choice_target = -1;
+    int small_choice_n_options = 0;
+    float small_choice_logprob = 0.0f;
+    bool deferred_country_used = false;
+    torch::Tensor deferred_country_mask;
+    std::vector<int> deferred_country_targets;
+    float deferred_country_logprob = 0.0f;
+};
+
+std::vector<ActionEncoding> enumerate_deferred_event_first_actions(
+    const PublicState& pub,
+    CardId source_card,
+    Side side
+) {
+    CardSet hand;
+    hand.set(static_cast<int>(source_card));
+
+    std::vector<ActionEncoding> ops_actions;
+    for (const auto& candidate : enumerate_actions(hand, pub, side, /*holds_china=*/false)) {
+        if (
+            candidate.card_id == source_card &&
+            candidate.mode != ActionMode::EventFirst &&
+            candidate.mode != ActionMode::Event &&
+            candidate.mode != ActionMode::Space
+        ) {
+            ops_actions.push_back(candidate);
+        }
+    }
+    return ops_actions;
+}
+
+torch::Tensor build_country_mask_for_action(
+    const PublicState& pub,
+    Side side,
+    CardId card_id,
+    ActionMode mode
+) {
+    const auto bool_opts = torch::TensorOptions().dtype(torch::kBool);
+    auto mask = torch::zeros({kCountrySlots}, bool_opts);
+    for (const auto cid : accessible_countries_filtered(pub, side, card_id, mode)) {
+        mask.index_put_({static_cast<int64_t>(cid)}, true);
+    }
+    return mask;
+}
+
+float compute_country_logprob_for_action(
+    const PublicState& pub,
+    Side side,
+    const ActionEncoding& action,
+    const torch::Tensor& country_logits
+) {
+    if (
+        !country_logits.defined() ||
+        action.targets.empty() ||
+        action.mode == ActionMode::Event ||
+        action.mode == ActionMode::Space ||
+        action.mode == ActionMode::EventFirst
+    ) {
+        return 0.0f;
+    }
+
+    auto masked_probs = torch::zeros_like(country_logits);
+    for (const auto cid : accessible_countries_filtered(pub, side, action.card_id, action.mode)) {
+        const auto index = static_cast<int64_t>(cid);
+        masked_probs.index_put_({index}, decode::tensor_at(country_logits, index));
+    }
+
+    const auto normalized_probs = masked_probs / (masked_probs.sum() + 1e-10f);
+    const auto country_log_probs = torch::log(normalized_probs + 1e-10f);
+
+    float country_lp = 0.0f;
+    for (const auto target : action.targets) {
+        country_lp += country_log_probs.index({static_cast<int64_t>(target)}).item<float>();
+    }
+    return country_lp;
+}
+
+bool is_deferred_event_first_choice(const ActionEncoding& top_level_action, const EventDecision& decision) {
+    if (
+        top_level_action.mode != ActionMode::EventFirst ||
+        decision.kind != DecisionKind::SmallChoice ||
+        decision.source_card != top_level_action.card_id ||
+        decision.n_options <= 0
+    ) {
+        return false;
+    }
+    for (int option = 0; option < decision.n_options; ++option) {
+        if (decision.eligible_ids[option] != option) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<int> choose_deferred_event_first_index(
+    torch::jit::script::Module& model,
+    torch::Device device,
+    GameSlot& slot,
+    const PublicState& pub,
+    const EventDecision& decision,
+    CommitPolicyTrace* trace
+) {
+    auto ops_actions = enumerate_deferred_event_first_actions(pub, decision.source_card, decision.acting_side);
+    if (ops_actions.empty()) {
+        return std::nullopt;
+    }
+
+    auto obs = make_observation(slot.root_state, decision.acting_side);
+    obs.pub = pub;
+
+    nn::BatchInputs callback_inputs;
+    callback_inputs.allocate(1, device);
+    callback_inputs.fill_slot(0, obs);
+    const auto callback_outputs = nn::forward_model_batched(model, callback_inputs);
+    if (!callback_outputs.country_logits.defined() || callback_outputs.country_logits.size(0) <= 0) {
+        return std::nullopt;
+    }
+
+    const auto country_logits = callback_outputs.country_logits.index({0});
+    float best_score = -std::numeric_limits<float>::infinity();
+    std::optional<int> best_choice;
+    const ActionEncoding* best_action = nullptr;
+
+    for (int option = 0; option < decision.n_options; ++option) {
+        const auto action_index = decision.eligible_ids[option];
+        if (action_index < 0 || action_index >= static_cast<int>(ops_actions.size())) {
+            continue;
+        }
+        const auto& candidate = ops_actions[static_cast<size_t>(action_index)];
+        const auto score = compute_country_logprob_for_action(pub, decision.acting_side, candidate, country_logits);
+        if (!best_choice.has_value() || score > best_score) {
+            best_score = score;
+            best_choice = option;
+            best_action = &candidate;
+        }
+    }
+
+    if (!best_choice.has_value() || best_action == nullptr) {
+        return std::nullopt;
+    }
+
+    if (trace != nullptr) {
+        trace->deferred_country_used = true;
+        trace->deferred_country_mask =
+            build_country_mask_for_action(pub, decision.acting_side, best_action->card_id, best_action->mode);
+        trace->deferred_country_targets.clear();
+        trace->deferred_country_targets.reserve(best_action->targets.size());
+        for (const auto target : best_action->targets) {
+            trace->deferred_country_targets.push_back(static_cast<int>(target));
+        }
+        trace->deferred_country_logprob = best_score;
+    }
+
+    return best_choice;
+}
+
+PolicyCallbackFn make_commit_policy_callback(
+    torch::jit::script::Module& model,
+    torch::Device device,
+    GameSlot& slot,
+    const ActionEncoding& action,
+    const torch::Tensor& small_choice_logits,
+    CommitPolicyTrace* trace
+) {
+    return [&model, device, &slot, action, small_choice_logits, trace](
+        const PublicState& pub,
+        const EventDecision& decision
+    ) -> int {
+        if (decision.kind != DecisionKind::SmallChoice || decision.n_options <= 0) {
+            return 0;
+        }
+
+        if (is_deferred_event_first_choice(action, decision)) {
+            if (auto choice = choose_deferred_event_first_index(model, device, slot, pub, decision, trace);
+                choice.has_value()) {
+                return *choice;
+            }
+            return 0;
+        }
+
+        if (!small_choice_logits.defined() || decision.n_options <= 1) {
+            return 0;
+        }
+
+        auto masked = small_choice_logits.slice(/*dim=*/0, /*start=*/0, /*end=*/decision.n_options);
+        auto log_probs = torch::log_softmax(masked, /*dim=*/0);
+        const auto choice = static_cast<int>(masked.argmax(0).item<int64_t>());
+        if (trace != nullptr) {
+            trace->small_choice_target = choice;
+            trace->small_choice_n_options = decision.n_options;
+            trace->small_choice_logprob = log_probs[choice].item<float>();
+        }
+        return choice;
+    };
+}
+
 void commit_greedy_action(GameSlot& slot, const ActionEncoding& action, const PolicyCallbackFn* policy_cb = nullptr) {
     if (!slot.decision.has_value()) {
         return;
@@ -3541,14 +3766,34 @@ std::vector<GameResult> benchmark_games_batched(
                 if (!entry.needs_nn) {
                     continue;
                 }
+                const auto obs = pending_observation(*entry.slot->decision);
                 auto action = greedy_action_from_outputs(
-                    pending_observation(*entry.slot->decision),
+                    obs,
                     outputs,
                     static_cast<int64_t>(batch_idx),
                     entry.slot->rng,
                     temperature
                 );
-                commit_greedy_action(*entry.slot, action);
+                const auto small_choice_logits =
+                    outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
+                        ? outputs.small_choice_logits[batch_idx]
+                        : torch::Tensor{};
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                PolicyCallbackFn policy_cb;
+                const PolicyCallbackFn* cb_ptr = nullptr;
+                if (needs_callback) {
+                    policy_cb = make_commit_policy_callback(
+                        model,
+                        device,
+                        *entry.slot,
+                        action,
+                        small_choice_logits,
+                        /*trace=*/nullptr
+                    );
+                    cb_ptr = &policy_cb;
+                }
+                commit_greedy_action(*entry.slot, action, cb_ptr);
                 batch_idx += 1;
             }
         }
@@ -3668,14 +3913,34 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
             const auto outputs = nn::forward_model_batched(model_a, batch_a);
             int batch_idx = 0;
             for (auto& entry : entries_a) {
+                const auto obs = pending_observation(*entry.slot->decision);
                 auto action = greedy_action_from_outputs(
-                    pending_observation(*entry.slot->decision),
+                    obs,
                     outputs,
                     static_cast<int64_t>(batch_idx),
                     entry.slot->rng,
                     temperature
                 );
-                commit_greedy_action(*entry.slot, action);
+                const auto small_choice_logits =
+                    outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
+                        ? outputs.small_choice_logits[batch_idx]
+                        : torch::Tensor{};
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                PolicyCallbackFn policy_cb;
+                const PolicyCallbackFn* cb_ptr = nullptr;
+                if (needs_callback) {
+                    policy_cb = make_commit_policy_callback(
+                        model_a,
+                        device,
+                        *entry.slot,
+                        action,
+                        small_choice_logits,
+                        /*trace=*/nullptr
+                    );
+                    cb_ptr = &policy_cb;
+                }
+                commit_greedy_action(*entry.slot, action, cb_ptr);
                 batch_idx += 1;
             }
         }
@@ -3685,14 +3950,34 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
             const auto outputs = nn::forward_model_batched(model_b, batch_b);
             int batch_idx = 0;
             for (auto& entry : entries_b) {
+                const auto obs = pending_observation(*entry.slot->decision);
                 auto action = greedy_action_from_outputs(
-                    pending_observation(*entry.slot->decision),
+                    obs,
                     outputs,
                     static_cast<int64_t>(batch_idx),
                     entry.slot->rng,
                     temperature
                 );
-                commit_greedy_action(*entry.slot, action);
+                const auto small_choice_logits =
+                    outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
+                        ? outputs.small_choice_logits[batch_idx]
+                        : torch::Tensor{};
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                PolicyCallbackFn policy_cb;
+                const PolicyCallbackFn* cb_ptr = nullptr;
+                if (needs_callback) {
+                    policy_cb = make_commit_policy_callback(
+                        model_b,
+                        device,
+                        *entry.slot,
+                        action,
+                        small_choice_logits,
+                        /*trace=*/nullptr
+                    );
+                    cb_ptr = &policy_cb;
+                }
+                commit_greedy_action(*entry.slot, action, cb_ptr);
                 batch_idx += 1;
             }
         }
@@ -3813,8 +4098,9 @@ RolloutResult rollout_model_vs_model_batched(
             const auto outputs_a = nn::forward_model_batched(model_a, batch_a);
             for (int batch_idx = 0; batch_idx < static_cast<int>(entries_a.size()); ++batch_idx) {
                 auto& entry = entries_a[static_cast<size_t>(batch_idx)];
+                const auto obs = pending_observation(*entry.slot->decision);
                 auto [action, step] = rollout_action_from_outputs(
-                    pending_observation(*entry.slot->decision),
+                    obs,
                     batch_a,
                     outputs_a,
                     static_cast<int64_t>(batch_idx),
@@ -3846,39 +4132,51 @@ RolloutResult rollout_model_vs_model_batched(
                     }
                     steps_by_game[static_cast<size_t>(entry.game_index)].push_back(std::move(step));
                 }
-                // Set up SmallChoice callback so event decisions are policy-driven
-                // and captured for training (Phase 1 SmallChoiceHead).
+                const auto original_country_logprob =
+                    outputs_a.country_logits.defined() && outputs_a.country_logits.size(0) > batch_idx
+                        ? compute_country_logprob_for_action(
+                              obs.pub,
+                              obs.acting_side,
+                              action,
+                              outputs_a.country_logits.index({static_cast<int64_t>(batch_idx)})
+                          )
+                        : 0.0f;
+                CommitPolicyTrace trace;
+                const auto small_choice_logits =
+                    outputs_a.small_choice_logits.defined() && outputs_a.small_choice_logits.size(0) > batch_idx
+                        ? outputs_a.small_choice_logits[batch_idx]
+                        : torch::Tensor{};
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
-                PolicyCallbackFn small_choice_cb;
-                int sc_target = -1;
-                int sc_n_options = 0;
-                float sc_logprob = 0.0f;
-                if (outputs_a.small_choice_logits.defined() &&
-                    outputs_a.small_choice_logits.size(0) > batch_idx) {
-                    const auto logits_row = outputs_a.small_choice_logits[batch_idx];
-                    small_choice_cb = [logits_row, &sc_target, &sc_n_options, &sc_logprob](
-                        const PublicState& /*pub*/, const EventDecision& dec) -> int {
-                        if (dec.kind != DecisionKind::SmallChoice || dec.n_options <= 1) {
-                            return 0;
-                        }
-                        auto masked = logits_row.slice(/*dim=*/0, /*start=*/0, /*end=*/dec.n_options);
-                        auto log_probs = torch::log_softmax(masked, /*dim=*/0);
-                        int choice = static_cast<int>(masked.argmax(0).item<int64_t>());
-                        sc_target = choice;
-                        sc_n_options = dec.n_options;
-                        sc_logprob = log_probs[choice].item<float>();
-                        return choice;
-                    };
-                    cb_ptr = &small_choice_cb;
+                if (needs_callback) {
+                    policy_cb = make_commit_policy_callback(
+                        model_a,
+                        device,
+                        *entry.slot,
+                        action,
+                        small_choice_logits,
+                        &trace
+                    );
+                    cb_ptr = &policy_cb;
                 }
                 commit_greedy_action(*entry.slot, action, cb_ptr);
-                // Patch the last step with SmallChoice data if a decision was made.
-                if (sc_target >= 0) {
+                if (trace.small_choice_target >= 0 && step.card_idx >= 0) {
                     auto& game_steps = steps_by_game[static_cast<size_t>(entry.game_index)];
                     if (!game_steps.empty()) {
-                        game_steps.back().small_choice_target = sc_target;
-                        game_steps.back().small_choice_n_options = sc_n_options;
-                        game_steps.back().small_choice_logprob = sc_logprob;
+                        game_steps.back().small_choice_target = trace.small_choice_target;
+                        game_steps.back().small_choice_n_options = trace.small_choice_n_options;
+                        game_steps.back().small_choice_logprob = trace.small_choice_logprob;
+                    }
+                }
+                if (trace.deferred_country_used && step.card_idx >= 0) {
+                    auto& game_steps = steps_by_game[static_cast<size_t>(entry.game_index)];
+                    if (!game_steps.empty()) {
+                        game_steps.back().country_mask = trace.deferred_country_mask;
+                        game_steps.back().country_targets = trace.deferred_country_targets;
+                        game_steps.back().log_prob +=
+                            trace.deferred_country_logprob - original_country_logprob;
                     }
                 }
             }
@@ -3889,14 +4187,34 @@ RolloutResult rollout_model_vs_model_batched(
             const auto outputs_b = nn::forward_model_batched(model_b, batch_b);
             for (int batch_idx = 0; batch_idx < static_cast<int>(entries_b.size()); ++batch_idx) {
                 auto& entry = entries_b[static_cast<size_t>(batch_idx)];
+                const auto obs = pending_observation(*entry.slot->decision);
                 auto action = greedy_action_from_outputs(
-                    pending_observation(*entry.slot->decision),
+                    obs,
                     outputs_b,
                     static_cast<int64_t>(batch_idx),
                     entry.slot->rng,
                     temperature
                 );
-                commit_greedy_action(*entry.slot, action);
+                const auto small_choice_logits =
+                    outputs_b.small_choice_logits.defined() && outputs_b.small_choice_logits.size(0) > batch_idx
+                        ? outputs_b.small_choice_logits[batch_idx]
+                        : torch::Tensor{};
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                PolicyCallbackFn policy_cb;
+                const PolicyCallbackFn* cb_ptr = nullptr;
+                if (needs_callback) {
+                    policy_cb = make_commit_policy_callback(
+                        model_b,
+                        device,
+                        *entry.slot,
+                        action,
+                        small_choice_logits,
+                        /*trace=*/nullptr
+                    );
+                    cb_ptr = &policy_cb;
+                }
+                commit_greedy_action(*entry.slot, action, cb_ptr);
             }
         }
     }
@@ -4032,8 +4350,9 @@ RolloutResult rollout_games_batched(
             const auto outputs = nn::forward_model_batched(model, batch_inputs);
             for (int batch_idx = 0; batch_idx < static_cast<int>(batch_slots.size()); ++batch_idx) {
                 auto* slot = batch_slots[static_cast<size_t>(batch_idx)];
+                const auto obs = pending_observation(*slot->decision);
                 auto [action, step] = rollout_action_from_outputs(
-                    pending_observation(*slot->decision),
+                    obs,
                     batch_inputs,
                     outputs,
                     static_cast<int64_t>(batch_idx),
@@ -4065,39 +4384,51 @@ RolloutResult rollout_games_batched(
                     }
                     steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
                 }
-                // Create PolicyCallback from model's small_choice_logits if available.
-                // Captures the last small_choice decision for training targets.
+                const auto original_country_logprob =
+                    outputs.country_logits.defined() && outputs.country_logits.size(0) > batch_idx
+                        ? compute_country_logprob_for_action(
+                              obs.pub,
+                              obs.acting_side,
+                              action,
+                              outputs.country_logits.index({static_cast<int64_t>(batch_idx)})
+                          )
+                        : 0.0f;
+                CommitPolicyTrace trace;
+                const auto small_choice_logits =
+                    outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
+                        ? outputs.small_choice_logits[batch_idx]
+                        : torch::Tensor{};
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
-                PolicyCallbackFn small_choice_cb;
-                int sc_target = -1;
-                int sc_n_options = 0;
-                float sc_logprob = 0.0f;
-                if (outputs.small_choice_logits.defined() &&
-                    outputs.small_choice_logits.size(0) > batch_idx) {
-                    const auto logits_row = outputs.small_choice_logits[batch_idx];
-                    small_choice_cb = [logits_row, &sc_target, &sc_n_options, &sc_logprob](
-                        const PublicState& /*pub*/, const EventDecision& dec) -> int {
-                        if (dec.kind != DecisionKind::SmallChoice || dec.n_options <= 1) {
-                            return 0;
-                        }
-                        auto masked = logits_row.slice(/*dim=*/0, /*start=*/0, /*end=*/dec.n_options);
-                        auto log_probs = torch::log_softmax(masked, /*dim=*/0);
-                        int choice = static_cast<int>(masked.argmax(0).item<int64_t>());
-                        sc_target = choice;
-                        sc_n_options = dec.n_options;
-                        sc_logprob = log_probs[choice].item<float>();
-                        return choice;
-                    };
-                    cb_ptr = &small_choice_cb;
+                if (needs_callback) {
+                    policy_cb = make_commit_policy_callback(
+                        model,
+                        device,
+                        *slot,
+                        action,
+                        small_choice_logits,
+                        &trace
+                    );
+                    cb_ptr = &policy_cb;
                 }
                 commit_greedy_action(*slot, action, cb_ptr);
-                // Patch the last step with small_choice data if a decision was made.
-                if (sc_target >= 0 && step.card_idx >= 0) {
+                if (trace.small_choice_target >= 0 && step.card_idx >= 0) {
                     auto& game_steps = steps_by_game[static_cast<size_t>(slot->game_index)];
                     if (!game_steps.empty()) {
-                        game_steps.back().small_choice_target = sc_target;
-                        game_steps.back().small_choice_n_options = sc_n_options;
-                        game_steps.back().small_choice_logprob = sc_logprob;
+                        game_steps.back().small_choice_target = trace.small_choice_target;
+                        game_steps.back().small_choice_n_options = trace.small_choice_n_options;
+                        game_steps.back().small_choice_logprob = trace.small_choice_logprob;
+                    }
+                }
+                if (trace.deferred_country_used && step.card_idx >= 0) {
+                    auto& game_steps = steps_by_game[static_cast<size_t>(slot->game_index)];
+                    if (!game_steps.empty()) {
+                        game_steps.back().country_mask = trace.deferred_country_mask;
+                        game_steps.back().country_targets = trace.deferred_country_targets;
+                        game_steps.back().log_prob +=
+                            trace.deferred_country_logprob - original_country_logprob;
                     }
                 }
             }
@@ -4206,8 +4537,9 @@ RolloutResult rollout_self_play_batched(
             const auto outputs = nn::forward_model_batched(model, batch_inputs);
             for (int batch_idx = 0; batch_idx < static_cast<int>(batch_slots.size()); ++batch_idx) {
                 auto* slot = batch_slots[static_cast<size_t>(batch_idx)];
+                const auto obs = pending_observation(*slot->decision);
                 auto [action, step] = rollout_action_from_outputs(
-                    pending_observation(*slot->decision),
+                    obs,
                     batch_inputs,
                     outputs,
                     static_cast<int64_t>(batch_idx),
@@ -4239,39 +4571,51 @@ RolloutResult rollout_self_play_batched(
                     }
                     steps_by_game[static_cast<size_t>(slot->game_index)].push_back(std::move(step));
                 }
-                // Create PolicyCallback from model's small_choice_logits if available.
-                // Captures the last small_choice decision for training targets.
+                const auto original_country_logprob =
+                    outputs.country_logits.defined() && outputs.country_logits.size(0) > batch_idx
+                        ? compute_country_logprob_for_action(
+                              obs.pub,
+                              obs.acting_side,
+                              action,
+                              outputs.country_logits.index({static_cast<int64_t>(batch_idx)})
+                          )
+                        : 0.0f;
+                CommitPolicyTrace trace;
+                const auto small_choice_logits =
+                    outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
+                        ? outputs.small_choice_logits[batch_idx]
+                        : torch::Tensor{};
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
-                PolicyCallbackFn small_choice_cb;
-                int sc_target = -1;
-                int sc_n_options = 0;
-                float sc_logprob = 0.0f;
-                if (outputs.small_choice_logits.defined() &&
-                    outputs.small_choice_logits.size(0) > batch_idx) {
-                    const auto logits_row = outputs.small_choice_logits[batch_idx];
-                    small_choice_cb = [logits_row, &sc_target, &sc_n_options, &sc_logprob](
-                        const PublicState& /*pub*/, const EventDecision& dec) -> int {
-                        if (dec.kind != DecisionKind::SmallChoice || dec.n_options <= 1) {
-                            return 0;
-                        }
-                        auto masked = logits_row.slice(/*dim=*/0, /*start=*/0, /*end=*/dec.n_options);
-                        auto log_probs = torch::log_softmax(masked, /*dim=*/0);
-                        int choice = static_cast<int>(masked.argmax(0).item<int64_t>());
-                        sc_target = choice;
-                        sc_n_options = dec.n_options;
-                        sc_logprob = log_probs[choice].item<float>();
-                        return choice;
-                    };
-                    cb_ptr = &small_choice_cb;
+                if (needs_callback) {
+                    policy_cb = make_commit_policy_callback(
+                        model,
+                        device,
+                        *slot,
+                        action,
+                        small_choice_logits,
+                        &trace
+                    );
+                    cb_ptr = &policy_cb;
                 }
                 commit_greedy_action(*slot, action, cb_ptr);
-                // Patch the last step with small_choice data if a decision was made.
-                if (sc_target >= 0 && step.card_idx >= 0) {
+                if (trace.small_choice_target >= 0 && step.card_idx >= 0) {
                     auto& game_steps = steps_by_game[static_cast<size_t>(slot->game_index)];
                     if (!game_steps.empty()) {
-                        game_steps.back().small_choice_target = sc_target;
-                        game_steps.back().small_choice_n_options = sc_n_options;
-                        game_steps.back().small_choice_logprob = sc_logprob;
+                        game_steps.back().small_choice_target = trace.small_choice_target;
+                        game_steps.back().small_choice_n_options = trace.small_choice_n_options;
+                        game_steps.back().small_choice_logprob = trace.small_choice_logprob;
+                    }
+                }
+                if (trace.deferred_country_used && step.card_idx >= 0) {
+                    auto& game_steps = steps_by_game[static_cast<size_t>(slot->game_index)];
+                    if (!game_steps.empty()) {
+                        game_steps.back().country_mask = trace.deferred_country_mask;
+                        game_steps.back().country_targets = trace.deferred_country_targets;
+                        game_steps.back().log_prob +=
+                            trace.deferred_country_logprob - original_country_logprob;
                     }
                 }
             }

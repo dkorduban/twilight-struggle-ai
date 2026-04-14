@@ -406,7 +406,7 @@ inline auto choose_action_from_outputs(
         return heuristic_fallback();
     }
 
-    if (mode == ActionMode::Event || mode == ActionMode::Space) {
+    if (mode == ActionMode::Event || mode == ActionMode::Space || mode == ActionMode::EventFirst) {
         return Result{ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {}}};
     }
 
@@ -500,7 +500,7 @@ inline DecodeWithLogProbsResult choose_action_from_outputs_with_logprobs(
 
     result.should_populate_rollout_features = true;
 
-    if (mode == ActionMode::Event || mode == ActionMode::Space) {
+    if (mode == ActionMode::Event || mode == ActionMode::Space || mode == ActionMode::EventFirst) {
         result.action = ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {}};
         return result;
     }

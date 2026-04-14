@@ -662,12 +662,15 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
     };
 
     int idx = 0;
-    if (policy_cb != nullptr && ops_actions.size() > 1) {
+    if (policy_cb != nullptr) {
         EventDecision decision;
         decision.kind = DecisionKind::SmallChoice;
         decision.source_card = card_id;
         decision.acting_side = side;
         decision.n_options = static_cast<int>(ops_actions.size());
+        for (int option = 0; option < decision.n_options; ++option) {
+            decision.eligible_ids[option] = option;
+        }
         idx = std::clamp((*policy_cb)(gs.pub, decision), 0, static_cast<int>(ops_actions.size()) - 1);
     } else if (ops_actions.size() > 1 && !preferred_targets.empty()) {
         size_t best_idx = 0;
