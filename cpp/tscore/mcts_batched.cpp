@@ -300,11 +300,6 @@ struct AggregatedVisitCount {
     int visits = 0;
 };
 
-torch::Tensor tensor_at(const torch::Tensor& tensor, int64_t index) {
-    return decode::tensor_at(tensor, index);
-}
-
-
 void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng& rng) {
     const auto side = state.pub.phasing;
     auto& hand = state.hands[to_index(side)];
@@ -3334,21 +3329,6 @@ CardId sample_from_masked_logits(torch::Tensor masked, float temperature, Pcg64R
     return static_cast<CardId>(sampled_idx + 1);
 }
 
-std::pair<int64_t, float> sample_index_from_masked_logits(
-    const torch::Tensor& masked,
-    float temperature
-) {
-    auto scaled = masked / temperature;
-    auto probs = torch::softmax(scaled, 0);
-    const auto sampled_idx = torch::multinomial(probs, 1).item<int64_t>();
-    // Store log_prob under the UNSCALED distribution (T=1.0) so that the Python
-    // PPO update's recomputed log_prob matches (it uses raw logits, no temperature).
-    // Using the temperature-scaled log_prob here creates wrong importance ratios
-    // when T != 1.0, causing systematic bias toward higher entropy (v23 collapse).
-    const auto log_prob = torch::log_softmax(masked, 0).index({sampled_idx}).item<float>();
-    return {sampled_idx, log_prob};
-}
-
 void populate_rollout_features(
     RolloutStep& step,
     const nn::BatchInputs& inputs,
@@ -3377,13 +3357,6 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
     const auto& hand = state.hands[to_index(side)];
 
     RolloutStep step;
-    step.card_mask = torch::zeros({kMaxCardId}, torch::TensorOptions().dtype(torch::kBool));
-    // mode_mask size matches the model's actual mode_logits size so the Python
-    // training loop (mode_logits.masked_fill(~mode_masks)) sees compatible shapes.
-    // This handles both old 5-mode and new 6-mode scripted checkpoints.
-    const auto& tmp_mode_logits_for_size = outputs.mode_logits.index({batch_index});
-    step.mode_mask = torch::zeros({tmp_mode_logits_for_size.size(0)}, torch::TensorOptions().dtype(torch::kBool));
-    step.country_mask = torch::zeros({kCountrySlots}, torch::TensorOptions().dtype(torch::kBool));
     step.value = outputs.value.index({batch_index, 0}).item<float>();
     step.side_int = to_index(side);
     step.game_index = game_index;
@@ -3396,183 +3369,37 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
         return {action, std::move(step)};
     };
 
-    auto playable = legal_cards(hand, pub, side, holds_china);
-    if (playable.empty()) {
-        return heuristic_fallback();
-    }
-
     const auto card_logits = outputs.card_logits.index({batch_index});
     const auto mode_logits = outputs.mode_logits.index({batch_index});
     const auto country_logits_raw = outputs.country_logits.defined()
         ? outputs.country_logits.index({batch_index}) : torch::Tensor{};
-    const auto marginal_logits_raw = outputs.marginal_logits.defined()
-        ? outputs.marginal_logits.index({batch_index}) : torch::Tensor{};
-    const auto strategy_logits_raw = outputs.strategy_logits.defined()
-        ? outputs.strategy_logits.index({batch_index}) : torch::Tensor{};
-    const auto country_strategy_logits_raw = outputs.country_strategy_logits.defined()
-        ? outputs.country_strategy_logits.index({batch_index}) : torch::Tensor{};
+    auto decoded = decode::choose_action_from_outputs_with_logprobs(
+        pub,
+        hand,
+        holds_china,
+        card_logits,
+        mode_logits,
+        country_logits_raw,
+        temperature
+    );
 
-    auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
-    for (const auto card_id : playable) {
-        if (is_defcon_lowering_card(card_id)) {
-            const auto& ci = card_spec(card_id);
-            const bool is_opp = (ci.side != side && ci.side != Side::Neutral);
-            const bool is_neutral = (ci.side == Side::Neutral);
-            if (is_opp) {
-                if (pub.defcon <= 2) continue;
-                if (pub.defcon == 3 && pub.ar == 0) continue;
-            }
-            if (is_neutral && pub.ar == 0 && pub.defcon <= 3) continue;
-        }
-        const auto index = static_cast<int64_t>(card_id - 1);
-        step.card_mask.index_put_({index}, true);
-        masked_card.index_put_({index}, tensor_at(card_logits, index));
+    step.card_mask = decoded.trace.card_mask;
+    step.mode_mask = decoded.trace.mode_mask;
+    step.country_mask = decoded.trace.country_mask;
+    step.card_idx = decoded.trace.card_idx;
+    step.mode_idx = decoded.trace.mode_idx;
+    step.country_targets = std::move(decoded.trace.country_targets);
+
+    if (decoded.should_populate_rollout_features) {
+        populate_rollout_features(step, inputs, batch_index);
     }
-
-    if (!step.card_mask.any().item<bool>()) {
+    if (decoded.needs_fallback) {
         return heuristic_fallback();
     }
 
-    const auto [card_idx, log_prob_card] = sample_index_from_masked_logits(masked_card, temperature);
-    const auto sampled_card_id = static_cast<CardId>(card_idx + 1);
-    step.card_idx = static_cast<int>(card_idx);
-
-    auto modes = legal_modes(sampled_card_id, pub, side);
-    if (pub.defcon <= 2) {
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
-        if (is_defcon_lowering_card(sampled_card_id)) {
-            modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
-        }
-    }
-    if (modes.empty()) {
-        return heuristic_fallback();
-    }
-
-    auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
-    const auto n_mode_logits = mode_logits.size(0);
-    for (const auto mode : modes) {
-        const auto index = static_cast<int64_t>(static_cast<int>(mode));
-        if (index >= n_mode_logits) continue;  // mode unknown to this model version (e.g. 5-mode vs OpsFirst=5)
-        step.mode_mask.index_put_({index}, true);
-        masked_mode.index_put_({index}, tensor_at(mode_logits, index));
-    }
-
-    const auto [mode_idx, log_prob_mode] = sample_index_from_masked_logits(masked_mode, temperature);
-    const auto mode = static_cast<ActionMode>(mode_idx);
-    step.mode_idx = static_cast<int>(mode_idx);
-
-    if (pub.defcon <= 2 && is_defcon_lowering_card(sampled_card_id)) {
-        const auto& ci = card_spec(sampled_card_id);
-        const bool event_fires_for_any_mode = (ci.side != side && ci.side != Side::Neutral);
-        const bool event_fires_for_event_space =
-            (mode == ActionMode::Event) ||
-            (mode == ActionMode::Space && event_fires_for_any_mode);
-        if (event_fires_for_any_mode || event_fires_for_event_space) {
-            return heuristic_fallback();
-        }
-    }
-
-    populate_rollout_features(step, inputs, batch_index);
-
-    if (mode == ActionMode::Event || mode == ActionMode::Space) {
-        step.log_prob = log_prob_card + log_prob_mode;
-        return {
-            ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {}},
-            std::move(step),
-        };
-    }
-
-    const auto accessible = accessible_countries_filtered(pub, side, sampled_card_id, mode);
-    if (accessible.empty()) {
-        return heuristic_fallback();
-    }
-    for (const auto cid : accessible) {
-        step.country_mask.index_put_({static_cast<int64_t>(cid)}, true);
-    }
-
-    // country_logits_raw is the soft-mixture probability distribution from the model
-    // (mixing * softmax(strategy_logits) summed across strategies).
-    // Do NOT override with hard-argmax strategy — that causes log_prob mismatch with Python PPO.
-    auto source_probs = country_logits_raw.defined()
-        ? country_logits_raw
-        : torch::zeros({kCountrySlots}, torch::TensorOptions().dtype(torch::kFloat32));
-
-    // Mask inaccessible countries to 0 (probability space, not logit space).
-    auto masked_probs = torch::zeros_like(source_probs);
-    for (const auto cid : accessible) {
-        const auto index = static_cast<int64_t>(cid);
-        masked_probs.index_put_({index}, tensor_at(source_probs, index));
-    }
-    // Renormalize after masking.
-    const auto sum_probs = masked_probs.sum();
-    const auto normalized_probs = masked_probs / (sum_probs + 1e-10f);
-
-    // Temperature sampling: softmax(log(p) / T) ∝ p^(1/T).
-    const auto log_probs_base = torch::log(normalized_probs + 1e-10f);
-    const auto scaled_log = log_probs_base / temperature;
-    const auto country_probs = torch::softmax(scaled_log, 0);
-
-    // Log_prob for PPO stored at T=1.0 to match Python PPO's recomputation:
-    //   country_logits (mixed probs) → mask to 0 → normalize → log
-    const auto country_log_probs = log_probs_base;
-
-    ActionEncoding action{.card_id = sampled_card_id, .mode = mode, .targets = {}};
-    float log_prob_country = 0.0f;
-
-    if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
-        const auto target = static_cast<CountryId>(torch::multinomial(country_probs, 1).item<int64_t>());
-        action.targets.push_back(target);
-        step.country_targets.push_back(static_cast<int>(target));
-        log_prob_country = country_log_probs.index({static_cast<int64_t>(target)}).item<float>();
-    } else {
-        const auto ops = effective_ops(sampled_card_id, pub, side);
-        const auto accessible_indices = torch::tensor(
-            std::vector<int64_t>(accessible.begin(), accessible.end()),
-            torch::TensorOptions().dtype(torch::kInt64)
-        );
-        auto accessible_probs = country_probs.index({accessible_indices});
-        auto alloc = accessible_probs * static_cast<double>(ops);
-        auto floor_alloc = torch::floor(alloc).to(torch::kInt64);
-        auto remainder = ops - static_cast<int>(floor_alloc.sum().item<int64_t>());
-        if (remainder > 0) {
-            auto fractional = alloc - floor_alloc.to(torch::kFloat32);
-            std::vector<std::pair<float, CountryId>> order;
-            order.reserve(accessible.size());
-            for (size_t i = 0; i < accessible.size(); ++i) {
-                const auto index = static_cast<int64_t>(i);
-                order.emplace_back(-tensor_at(fractional, index).item<float>(), accessible[i]);
-            }
-            std::sort(order.begin(), order.end());
-            for (int i = 0; i < remainder && i < static_cast<int>(order.size()); ++i) {
-                const auto target = order[static_cast<size_t>(i)].second;
-                const auto pos = static_cast<long long>(
-                    std::find(accessible.begin(), accessible.end(), target) - accessible.begin()
-                );
-                const auto pos64 = static_cast<int64_t>(pos);
-                floor_alloc.index_put_(
-                    {pos64},
-                    tensor_at(floor_alloc, pos64).item<int64_t>() + 1
-                );
-            }
-        }
-
-        for (size_t i = 0; i < accessible.size(); ++i) {
-            const auto index = static_cast<int64_t>(i);
-            const auto count = tensor_at(floor_alloc, index).item<int64_t>();
-            for (int64_t j = 0; j < count; ++j) {
-                action.targets.push_back(accessible[i]);
-                step.country_targets.push_back(static_cast<int>(accessible[i]));
-                log_prob_country += country_log_probs.index({static_cast<int64_t>(accessible[i])}).item<float>();
-            }
-        }
-    }
-
-    if (action.targets.empty()) {
-        return heuristic_fallback();
-    }
-
-    step.log_prob = log_prob_card + log_prob_mode + log_prob_country;
-    return {action, std::move(step)};
+    step.log_prob =
+        decoded.log_probs.card_lp + decoded.log_probs.mode_lp + decoded.log_probs.country_lp;
+    return {std::move(decoded.action), std::move(step)};
 }
 
 ActionEncoding greedy_action_from_outputs(
