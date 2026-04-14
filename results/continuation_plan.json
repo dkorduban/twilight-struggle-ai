@@ -1,38 +1,50 @@
 {
-  "current_task": "Diagnosing sc-lineage Elo decline (v132_sc=2092 → v171_sc=1744). Opus analysis running.",
+  "current_task": "v173_sc training (from wrong checkpoint — wasted run). v174_sc will be the real recovery with all fixes applied.",
   "next_tasks": [
-    "Apply Opus fix recommendations for sc-lineage decline",
+    "Monitor v174_sc Elo — should recover toward 2092 if fixes are correct",
+    "If v174_sc panel WR stays below 60% after iter 15, investigate PFSP not selecting new fixtures",
     "GAP-005: Core ops placement legality (separate from arch refactor)",
     "Phase 2b DP decoder: AllocationHead replacement (see plan)",
     "Wire match_cache.py into run_elo_tournament.py (--match-cache arg)"
   ],
   "blocked_on": null,
   "active_background": [
-    "v172_sc PPO training: running (panel: v159_sc/v160_sc/v77_sc/v78_sc/v132_sc)",
-    "Opus analysis: sc-lineage decline root cause (results/analysis/opus_analysis_20260414_010800_sc_lineage_decline.md)"
+    "v173_sc PPO training: WASTED RUN (launched before fix, starts from v172_sc not v132_sc)",
+    "Opus analysis complete: results/analysis/opus_analysis_20260414_010800_sc_lineage_decline.md"
   ],
   "completed_this_session": [
-    "WS6 Phase 1 (decode_helpers.hpp): merged Codex worktree, resolved conflicts, 22/22 tests",
-    "WS6 Phase 2 (search_common.hpp): rollout_value + evaluate_leaf_value_raw deduplicated",
-    "WS6 Phase 3 (DEFCON centralization): legal_cards() now filters DEFCON-blocked cards for ALL callers",
-    "WS6 Phase 4 (Observation boundary): Observation struct {pub, own_hand, holds_china, opp_hand_size, acting_side}; 24/24 tests pass (commit 4cb883f)",
-    "Task #46 (match_cache): python/tsrl/eval/match_cache.py with SHA-256 hash-based keys; 4/4 tests pass (commit 529f6b6)",
-    "JSD probe confirmed: 6/6 tests pass, probe_positions.parquet exists, wired into Snakefile.ppo (--probe-set --probe-every 10)",
-    "Identified sc-lineage Elo decline: v132_sc (2092) → v171_sc (1744), dispatched Opus analysis"
+    "WS6 Phase 1-4 all done (commits c45062f, 01ef922, 4cb883f)",
+    "Task #46 match_cache done (commit 529f6b6)",
+    "JSD probe confirmed: 6/6 tests pass, wired into Snakefile.ppo",
+    "SC-LINEAGE CRISIS DIAGNOSED AND FIXED:",
+    "  ROOT CAUSE 1: Fixture saturation — all 8 fixtures beaten at 95-99% WR at T=1.0 → PFSP weights → 0 → model trains only vs heuristic (1767 Elo)",
+    "  ROOT CAUSE 2: Panel was weak sc-lineage models (v159/v160_sc at 1756) → no discrimination for best-checkpoint selection",
+    "  ROOT CAUSE 3: max_kl=0.3 too permissive → clip_frac 25% + KL 0.01 → destructive policy jumps",
+    "  FIX 1: Fixtures updated to strong diverse non-sc models: v55/v54/v44/v45/v48/v22/v57/v20/v21/v19 (all 2071-2118 Elo)",
+    "  FIX 2: Panel restored to v55/v54/v44/v45/v48 (all 2095-2118 Elo)",
+    "  FIX 3: max_kl reduced 0.3 → 0.03 in Snakefile.ppo",
+    "  FIX 4: WR table fixture entries reset to 0 in v173_sc → v174_sc starts fresh",
+    "  FIX 5: v174_sc checkpoint override → v132_sc/ppo_best.pt (2092 Elo reset point)",
+    "  FIX 6: STOP sentinel mechanism added to ppo_loop_step.sh (create results/ppo_loop_stop to pause)"
   ],
+  "sc_lineage_crisis": {
+    "peak": "v132_sc at 2092 Elo (was checkpoint reset from v77_sc, not earned)",
+    "trough": "v172_sc at 1726 Elo (below heuristic at 1767!)",
+    "root_causes": [
+      "Fixture saturation: 95-99% WR at T=1.0 → PFSP assigns near-zero weight to all fixtures",
+      "Panel miscalibration: sc-lineage panel gave 85-95% WR → no discrimination",
+      "max_kl=0.3 too permissive → destructive policy jumps",
+      "Model trained primarily vs heuristic (1767) → strength capped at ~1800"
+    ],
+    "fixes_applied": "commits b79df49 + f075828 + 1837da9",
+    "expected_recovery": "v174_sc should recover toward 2092 if PFSP correctly focuses on new strong fixtures"
+  },
   "architecture_refactor": {
-    "plan_source": "results/analysis/opus_analysis_20260413_ws6_arch_refactor_plan.md",
     "phase1_status": "DONE (commit c45062f)",
     "phase2_status": "DONE (commit c45062f)",
     "phase3_status": "DONE (commit 01ef922)",
     "phase4_status": "DONE (commit 4cb883f)"
   },
-  "sc_lineage_diagnosis": {
-    "pattern": "v132_sc=2092, then steady decline to v171_sc=1744 (-348 Elo over 40 runs)",
-    "suspicious": "v132_sc was sudden jump from v131_sc (1625→2092), suggesting checkpoint reset",
-    "hypothesis": "League opponent memorization, entropy collapse, or panel config issue",
-    "analysis_file": "results/analysis/opus_analysis_20260414_010800_sc_lineage_decline.md"
-  },
-  "last_updated": "2026-04-14T01:08:00+00:00",
-  "context": "WS6 all 4 phases + Task #46 done. JSD probe wired in. Key concern: sc-lineage declining steadily. v172_sc running at 1744 Elo vs peak of 2092 (v132_sc). Opus analysis running to diagnose. Next: apply fixes, then GAP-005 or Phase 2b DP decoder."
+  "last_updated": "2026-04-14T01:30:00+00:00",
+  "context": "Major PPO crisis diagnosed and fixed. SC-lineage fell below heuristic Elo (1726 vs 1767) due to fixture saturation + panel miscalibration + max_kl too high. Fixes applied: new strong diverse fixtures, panel restored, max_kl 0.3→0.03, WR table reset, v174_sc override to v132_sc. v173_sc is a wasted run (launched before fix). Monitor v174_sc for recovery to ~2092."
 }
