@@ -5,10 +5,9 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "PPO chain restarting: v232_sc pre-seeded from v217_sc(1837 Elo). Fixes: (1) pfsp_exp=0.5 CORRECTED (UCB constant, not WR power; 1.5 caused v230_sc=1742 regression), (2) ent_coef=0.003 fixed (matches peak era v205-v211), (3) _sc fixtures at 50% WR, (4) reset_opt=true for restart. Target: climb from 1837 toward v209_sc peak (1875).",
+  "current_task": "PPO chain v232_sc(1811)→v233_sc(running). Restart from v217_sc(1837) with corrected config: pfsp_exp=0.5(UCB-const) + ent_coef=0.003(fixed). v232_sc=1811 is first run (+69 vs v230_sc=1742). Target: climb chain to 1837+ in v233-v235, then toward v209_sc peak(1875).",
   "active_background": [
-    "v231_sc: running with WRONG pfsp_exp=1.5 (launched before revert). Will likely show poor Elo.",
-    "v232_sc: pre-seeded restart from v217_sc(1837) — CORRECT config: pfsp_exp=0.5 + ent=0.003"
+    "v233_sc: chaining from v232_sc(1811), reset_opt=false, pfsp_exp=0.5, ent=0.003"
   ],
   "gap_tracker": {
     "GAP-001": "DONE — China Card excluded from legal headline choices in legal_actions.cpp (ar==0 guard).",
@@ -86,7 +85,7 @@
   },
   "ppo_chain": {
     "best_6mode_all_time": "v209_sc at 1875 Elo (chain: v205=1849→v206=1846→v207=1859→v208=1858→v209=1875)",
-    "current_chain": "v229_sc(1783)→v230_sc(1742 REGRESSION)→v231_sc(running,wrong pfsp)→v232_sc(restart from v217_sc)",
+    "current_chain": "v229_sc(1783)→v230_sc(1742 REGRESSION)→v231_sc(1751)→v232_sc(1811)→v233_sc(running)",
     "restart_threshold": "1750 (catastrophic only)",
     "chain_plateau_diagnosis": "CORRECTED: pfsp_exp is UCB constant in 4*WR*(1-WR)+pfsp_exp*sqrt(ln(N)/n_i). Opus pfsp_exp=0.5 was correct (reduces hard-opponent exploration, keeps focus on ~50% WR _sc fixtures). Changing to 1.5 was WRONG — caused v230_sc=1742 regression. REVERTED to 0.5 (commit c310cb6). ent_coef=0.003 fix is likely correct (peak era ran at 0.003 past decay window).",
     "pfsp_fix": "REVERTED: pfsp_exp 1.5→0.5 (commit c310cb6). 1.5 was incorrect assumption about formula.",
@@ -95,9 +94,11 @@
     "5mode_danger": "v78-v203_sc are 5-mode. Do NOT use as restart anchors. v205_sc+ are 6-mode."
   },
   "next_tasks": [
-    "Monitor v230_sc Elo — first run with pfsp_exp=1.5 + v228_sc_scripted fixtures. Should climb above 1796.",
-    "If v230-v235 reach 1850+: continue chain toward v209_sc peak (1875).",
-    "If chain stalls at 1796-1820 despite pfsp fix: consider architecture improvements (Phase 2b DP decoder or GNN)."
+    "Monitor v233_sc Elo — second run with corrected config (pfsp_exp=0.5 + ent=0.003). Should climb above v232_sc(1811).",
+    "If v233-v236 reach 1837+ (v217_sc anchor level): chain is recovering well.",
+    "If v234-v237 reach 1875+: new all-time 6-mode peak, surpassing v209_sc.",
+    "Update fixture rolling window when newest _sc checkpoint passes 1837.",
+    "If chain stalls at 1800-1840 despite config fix: consider architecture improvements (GNN, regional features, DP decoder)."
   ],
   "next_tasks_after_current_wave": [
     "Merge ISMCTS loop guard when bg agent completes (copy ismcts.cpp from worktree to main, build, test)",
