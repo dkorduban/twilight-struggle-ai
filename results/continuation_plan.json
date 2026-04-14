@@ -97,12 +97,13 @@
     "5mode_danger": "v78-v203_sc are 5-mode. Do NOT use as restart anchors. v205_sc+ are 6-mode."
   },
   "next_tasks": [
-    "Monitor v267_sc and beyond \u2014 confirm chain holds above 1910 (new all-time peak is v266_sc=1910)",
-    "If v267_sc-v270_sc hold 1900+: chain is stable at new level",
-    "If chain drops below 1750: BC re-init from v266_sc games or mode_head perturbation",
-    "ISMCTS validation sweep \u2014 re-run now that scoring_card_held is fixed",
-    "Scoring card urgency fix: mask space-racing scoring cards when ARs remain (but engine already blocks ops=0 space, so this may be complete)",
-    "Fix influence allocation in play_traced_game_with_callback for ops-worth targets"
+    "Monitor v290_sc+ \u2014 Fix B (EventFirst NN ops) applied; expect improvement over v267_sc=1938 baseline",
+    "If v290_sc-v292_sc hold 1900+: chain healthy with Fix B; continue",
+    "If chain plateaus below v267_sc=1938 for 5+ runs: consider reward shaping (scoring region milestones, milops compliance)",
+    "Temperature T=0.3-0.5 in early self-play rollouts to break fixation patterns (next config change)",
+    "Phase 4 (deferred): move apply_influence_budget_impl + resolve_norad out of game_loop.cpp",
+    "Phase 5 (deferred): archive or rebase cpp/mcts_batched_fast/",
+    "ISMCTS validation sweep \u2014 re-run to confirm scoring_card_held + pooled cloning fixes"
   ],
   "next_tasks_after_current_wave": [
     "Architecture Task E: mcts_batched fast path (deferred \u2014 assess after chain stabilizes at 1850+)",
@@ -133,6 +134,15 @@
     "Renamed PANEL_V55/V54/V44/V45/V14 \u2192 PANEL_V209_SC/V217_SC/V232_SC/V228_SC/V227_SC",
     "Updated PFSP fixture pool to 6-mode-only: v262_sc-v267_sc era (dropped 5-mode v44/v45/v48/v54/v55)",
     "Confirmed: scoring cards cannot be spaced (ops=0 \u2192 Space mode not offered by engine \u2014 correct)",
-    "Chain recovery confirmed: v262(1880)\u2192v263(1896)\u2192v264(1894)\u2192v265(1875)\u2192v266(1910)\u2192v267(1938 PROV)"
+    "Chain recovery confirmed: v262(1880)\u2192v263(1896)\u2192v264(1894)\u2192v265(1875)\u2192v266(1910)\u2192v267(1938 PROV)",
+    "ISMCTS regression tests (fccb1b2): pooled cloning, AR advancement, loop guard",
+    "Phase 1 (4aad91c): decode_helpers.hpp dedup",
+    "Phase 2 (9fd4d17): search_common.hpp shared MCTS helpers",
+    "EventFirst log completeness P0+P1 (c2a922f): run_traced_game.py mode 5 targets",
+    "Phase 3 (0b6a640): Observation boundary in mcts_batched.cpp feature filling",
+    "Fix A (a6dc498): EventFirst deferred targets use NN preference in traced game",
+    "Fix B (f325922): EventFirst deferred ops use NN in rollout path (closes 26% training gap)",
+    "Phase 6 (65a7e1a): minimal_hybrid.py + collector.py migrated to tscore (no more tsrl.engine)",
+    "Chain restarted at v290_sc from v267_sc peak with Fix B applied"
   ]
 }
