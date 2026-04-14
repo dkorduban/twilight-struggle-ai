@@ -8,6 +8,24 @@
 namespace ts {
 namespace {
 
+int count_hand_excluding_china(const CardSet& hand) {
+    auto count = static_cast<int>(hand.count());
+    if (hand.test(kChinaCardId)) {
+        --count;
+    }
+    return count;
+}
+
+Era era_for_turn(int turn) {
+    if (turn >= 8) {
+        return Era::Late;
+    }
+    if (turn >= 4) {
+        return Era::Mid;
+    }
+    return Era::Early;
+}
+
 // Build the draw deck for all cards up to an era (including scoring cards),
 // excluding the China Card and anything already removed from the live game.
 std::vector<CardId> build_era_deck(Era era_max, const CardSet& removed) {
@@ -37,6 +55,28 @@ std::vector<CardId> build_era_deck(Era era_max, const CardSet& removed) {
 
 void shuffle_deck(InlineDeck& deck, Pcg64Rng& rng) {
     shuffle_with_numpy_rng(std::span<CardId>(deck.begin(), deck.end()), rng);
+}
+
+// Build the pool of cards that could be in the deck or opponent's hand:
+// all era-eligible cards not in own hand, discard, or removed.
+std::vector<CardId> build_hidden_pool(const Observation& obs) {
+    std::vector<CardId> hidden_pool;
+    const auto era_max = era_for_turn(obs.pub.turn);
+    const auto unavailable = obs.pub.discard | obs.pub.removed | obs.own_hand;
+    hidden_pool.reserve(all_card_ids().size());
+    for (const auto card_id : all_card_ids()) {
+        if (card_id == kChinaCardId) {
+            continue;
+        }
+        if (static_cast<int>(card_spec(card_id).era) > static_cast<int>(era_max)) {
+            continue;
+        }
+        if (unavailable.test(card_id)) {
+            continue;
+        }
+        hidden_pool.push_back(card_id);
+    }
+    return hidden_pool;
 }
 
 // Reshuffle exactly from the public discard pile back into the hidden deck.
@@ -117,6 +157,57 @@ GameState clone_game_state(const GameState& gs) {
     return gs;
 }
 
+Observation make_observation(const GameState& gs, Side acting_side) {
+    if (!is_player_side(acting_side)) {
+        throw std::invalid_argument("acting_side must be USSR or US");
+    }
+
+    Observation obs;
+    obs.pub = gs.pub;
+    obs.acting_side = acting_side;
+    obs.own_hand = gs.hands[to_index(acting_side)];
+    obs.holds_china = acting_side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
+    obs.opp_hand_size = count_hand_excluding_china(gs.hands[to_index(other_side(acting_side))]);
+    return obs;
+}
+
+GameState determinize(const Observation& obs, Pcg64Rng& rng) {
+    if (!is_player_side(obs.acting_side)) {
+        throw std::invalid_argument("acting_side must be USSR or US");
+    }
+    if (obs.opp_hand_size < 0) {
+        throw std::invalid_argument("opp_hand_size must be non-negative");
+    }
+
+    GameState partial;
+    partial.pub = obs.pub;
+    partial.hands[to_index(obs.acting_side)] = obs.own_hand;
+
+    // Build pool of unknown cards (could be in deck or opponent hand).
+    auto hidden_pool = build_hidden_pool(obs);
+    shuffle_with_numpy_rng(std::span<CardId>(hidden_pool.data(), hidden_pool.size()), rng);
+
+    // Deal opponent hand from shuffled pool; remainder becomes deck.
+    const auto opponent = other_side(obs.acting_side);
+    const int to_deal = std::min(obs.opp_hand_size, static_cast<int>(hidden_pool.size()));
+    for (int i = 0; i < to_deal; ++i) {
+        partial.hands[to_index(opponent)].set(hidden_pool[static_cast<size_t>(i)]);
+    }
+    partial.deck.assign(hidden_pool.begin() + to_deal, hidden_pool.end());
+
+    partial.ussr_holds_china = obs.pub.china_held_by == Side::USSR;
+    partial.us_holds_china = obs.pub.china_held_by == Side::US;
+    if (obs.acting_side == Side::USSR) {
+        partial.ussr_holds_china = obs.holds_china;
+    } else {
+        partial.us_holds_china = obs.holds_china;
+    }
+    partial.current_side = partial.pub.phasing;
+    partial.phase = partial.pub.ar == 0 ? GamePhase::Headline : GamePhase::ActionRound;
+
+    return partial;
+}
+
 void deal_cards(GameState& gs, Side side, Pcg64Rng& rng) {
     const auto target = hand_size_for_turn(gs.pub.turn);
     auto current = static_cast<int>(gs.hands[to_index(side)].count());
@@ -188,23 +279,6 @@ std::vector<CardId> hand_to_vector(const CardSet& hand) {
 
 int hand_count(const CardSet& hand) {
     return static_cast<int>(hand.count());
-}
-
-Observation make_observation(const GameState& gs, Side side) {
-    Observation obs;
-    obs.pub = gs.pub;
-    obs.own_hand = gs.hands[to_index(side)];
-    obs.side = side;
-    obs.opponent_hand_support.reset();
-    for (int raw = 1; raw <= kMaxCardId; ++raw) {
-        const auto card_id = static_cast<CardId>(raw);
-        if (!obs.own_hand.test(card_id) &&
-            !gs.pub.discard.test(card_id) &&
-            !gs.pub.removed.test(card_id)) {
-            obs.opponent_hand_support.set(card_id);
-        }
-    }
-    return obs;
 }
 
 }  // namespace ts

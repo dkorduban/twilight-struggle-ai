@@ -140,24 +140,6 @@ struct BatchEntry {
     size_t pending_index = 0;
 };
 
-int count_hand_excluding_china(const CardSet& hand) {
-    auto count = static_cast<int>(hand.count());
-    if (hand.test(kChinaCardId)) {
-        --count;
-    }
-    return count;
-}
-
-int observed_opponent_hand_size(const GameState& gs, Side acting_side) {
-    const auto obs = make_observation(gs, acting_side);
-    const auto hidden_cards = count_hand_excluding_china(obs.opponent_hand_support);
-    const auto deck_cards = gs.deck.size();
-    if (hidden_cards < deck_cards) {
-        throw std::invalid_argument("observation support smaller than hidden deck");
-    }
-    return hidden_cards - deck_cards;
-}
-
 bool action_less(const ActionEncoding& lhs, const ActionEncoding& rhs) {
     if (lhs.card_id != rhs.card_id) {
         return lhs.card_id < rhs.card_id;
@@ -1450,13 +1432,13 @@ void start_search(IsmctsGameSlot& slot, const IsmctsConfig& config) {
     }
 
     const auto acting_side = slot.decision->side;
-    const auto opp_hand_size = observed_opponent_hand_size(slot.game_state, acting_side);
+    const auto obs = make_observation(slot.game_state, acting_side);
 
     slot.dets.clear();
     slot.dets.reserve(static_cast<size_t>(config.n_determinizations));
     for (int i = 0; i < config.n_determinizations; ++i) {
         Pcg64Rng local_rng(slot.rng.next_u64());
-        auto determinized = sample_determinization(slot.game_state, acting_side, opp_hand_size, local_rng);
+        auto determinized = determinize(obs, local_rng);
         DeterminizationSlot det;
         det.root_state = std::move(determinized);
         det.rng = std::move(local_rng);
@@ -1583,44 +1565,14 @@ void queue_batch_item(
 GameState sample_determinization(
     const GameState& gs,
     Side acting_side,
-    int opp_hand_size,
+    [[maybe_unused]] int opp_hand_size,  // derived from oracle gs via make_observation
     Pcg64Rng& rng
 ) {
-    if (!is_player_side(acting_side)) {
-        throw std::invalid_argument("acting_side must be USSR or US");
-    }
-    if (opp_hand_size < 0) {
-        throw std::invalid_argument("opp_hand_size must be non-negative");
-    }
-
-    auto determinized = clone_game_state(gs);
-    const auto opponent = other_side(acting_side);
-    const auto obs = make_observation(gs, acting_side);
-    auto& opponent_hand = determinized.hands[to_index(opponent)];
-    auto hidden_pool = hand_to_vector(obs.opponent_hand_support);
-    opponent_hand.reset();
-    if (gs.pub.china_held_by == opponent) {
-        opponent_hand.set(kChinaCardId);
-    }
-    hidden_pool.erase(std::remove(hidden_pool.begin(), hidden_pool.end(), kChinaCardId), hidden_pool.end());
-    shuffle_with_numpy_rng(hidden_pool, rng);
-
-    const auto hidden_needed = opp_hand_size;
-    if (hidden_needed > static_cast<int>(hidden_pool.size())) {
-        throw std::invalid_argument("not enough hidden cards to fill opponent hand");
-    }
-
-    for (int i = 0; i < hidden_needed; ++i) {
-        opponent_hand.set(hidden_pool[static_cast<size_t>(i)]);
-    }
-    determinized.deck.assign(hidden_pool.begin() + hidden_needed, hidden_pool.end());
-    return determinized;
+    return determinize(make_observation(gs, acting_side), rng);
 }
 
 IsmctsResult ismcts_search(
-    const GameState& partial_state,
-    Side acting_side,
-    int opp_hand_size,
+    const Observation& obs,
     torch::jit::script::Module& model,
     const IsmctsConfig& config,
     Pcg64Rng& rng
@@ -1635,7 +1587,7 @@ IsmctsResult ismcts_search(
 
     for (int i = 0; i < config.n_determinizations; ++i) {
         Pcg64Rng local_rng(rng.next_u64());
-        auto determinized = sample_determinization(partial_state, acting_side, opp_hand_size, local_rng);
+        auto determinized = determinize(obs, local_rng);
         const auto result = mcts_search(determinized, model, config.mcts_config, local_rng);
         total_root_value += result.root_value;
 
@@ -1726,8 +1678,8 @@ std::vector<GameResult> play_ismcts_matchup(
             const PublicState& pub, const CardSet& hand, bool holds_china, Pcg64Rng& local_rng
         ) -> std::optional<ActionEncoding> {
             const auto acting = pub.phasing;
-            const auto opp_hand_size = observed_opponent_hand_size(gs, acting);
-            auto result = ismcts_search(gs, acting, opp_hand_size, model, config, local_rng);
+            const auto obs = make_observation(gs, acting);
+            auto result = ismcts_search(obs, model, config, local_rng);
             return result.best_action;
         };
 

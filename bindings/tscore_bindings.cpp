@@ -575,10 +575,9 @@ PYBIND11_MODULE(tscore, m) {
         .def_property_readonly("own_hand", [](const ts::Observation& obs) {
             return bitset_to_list(obs.own_hand);
         })
-        .def_property_readonly("opponent_hand_support", [](const ts::Observation& obs) {
-            return bitset_to_list(obs.opponent_hand_support);
-        })
-        .def_readonly("side", &ts::Observation::side);
+        .def_readonly("holds_china", &ts::Observation::holds_china)
+        .def_readonly("opp_hand_size", &ts::Observation::opp_hand_size)
+        .def_readonly("acting_side", &ts::Observation::acting_side);
 
     py::class_<ts::StepTrace>(m, "StepTrace")
         .def_readonly("turn", &ts::StepTrace::turn)

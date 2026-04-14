@@ -138,14 +138,14 @@ struct GameState {
     std::array<int, 2> setup_influence_remaining = {kUSSRSetupInfluence, kUSSetupInfluence};
 };
 
-// What the searching side is allowed to observe.
-// Pass this to search helpers instead of the full GameState to prevent
-// hidden-information leaks.
+// What one player can observe: public board + own hand + opponent hand size.
+// The opponent's actual hand is hidden. Used as the root input for ISMCTS.
 struct Observation {
     PublicState pub;
     CardSet own_hand;
-    CardSet opponent_hand_support;
-    Side side = Side::USSR;
+    bool holds_china = false;
+    int opp_hand_size = 0;
+    Side acting_side = Side::USSR;
 };
 
 // Turn-specific constants and reset helpers used by normal play plus parity
@@ -156,11 +156,12 @@ GameState reset_game(std::optional<uint32_t> seed = std::nullopt);
 GameState reset_game_from_rng(Pcg64Rng& rng);
 GameState reset_game_from_seed_words(std::array<uint64_t, 4> words);
 GameState clone_game_state(const GameState& gs);
+[[nodiscard]] Observation make_observation(const GameState& gs, Side acting_side);
+[[nodiscard]] GameState determinize(const Observation& obs, Pcg64Rng& rng);
 void deal_cards(GameState& gs, Side side, Pcg64Rng& rng);
 void advance_to_mid_war(GameState& gs, Pcg64Rng& rng);
 void advance_to_late_war(GameState& gs, Pcg64Rng& rng);
 std::vector<CardId> hand_to_vector(const CardSet& hand);
 int hand_count(const CardSet& hand);
-Observation make_observation(const GameState& gs, Side side);
 
 }  // namespace ts

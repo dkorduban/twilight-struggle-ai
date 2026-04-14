@@ -35,9 +35,7 @@ GameState sample_determinization(
 );
 
 IsmctsResult ismcts_search(
-    const GameState& partial_state,
-    Side acting_side,
-    int opp_hand_size,
+    const Observation& obs,
     torch::jit::script::Module& model,
     const IsmctsConfig& config,
     Pcg64Rng& rng
