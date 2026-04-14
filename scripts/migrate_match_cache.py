@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 sys.path.insert(0, "build-ninja/bindings")
-sys.path.insert(0, "build/bindings")
+# do NOT add build/bindings — it would shadow build-ninja (same bug as run_elo_tournament.py)
 
 from tsrl.checkpoint_db import save_match_cache  # noqa: E402
 
