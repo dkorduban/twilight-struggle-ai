@@ -50,7 +50,7 @@ import torch
 from torch.utils.data import Dataset
 
 _TEACHER_CARD_TARGET_SIZE = 111
-_TEACHER_MODE_TARGET_SIZE = 5
+_TEACHER_MODE_TARGET_SIZE = 6  # NUM_MODES = 6 (Influence/Coup/Realign/Space/Event/EventFirst)
 
 
 def _load_teacher_targets(teacher_targets_path: str) -> pl.DataFrame:
@@ -439,7 +439,10 @@ class TS_SelfPlayDataset(Dataset):
                         f"teacher_card_target row {row_idx} has len={len(card)}; "
                         f"expected {_TEACHER_CARD_TARGET_SIZE}"
                     )
-                if len(mode) != _TEACHER_MODE_TARGET_SIZE:
+                if len(mode) == _TEACHER_MODE_TARGET_SIZE - 1:
+                    # Backward-compat: old data had 5 modes; pad EventFirst column with 0.
+                    mode = list(mode) + [0.0]
+                elif len(mode) != _TEACHER_MODE_TARGET_SIZE:
                     raise ValueError(
                         f"teacher_mode_target row {row_idx} has len={len(mode)}; "
                         f"expected {_TEACHER_MODE_TARGET_SIZE}"

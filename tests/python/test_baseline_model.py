@@ -91,13 +91,13 @@ def test_model_card_head_111_outputs() -> None:
     assert out["card_logits"].shape[-1] == 111
 
 
-def test_model_mode_head_5_outputs() -> None:
-    """Mode head must produce exactly 5 logits."""
+def test_model_mode_head_6_outputs() -> None:
+    """Mode head must produce exactly 6 logits (Influence/Coup/Realign/Space/Event/EventFirst)."""
     model = TSBaselineModel()
     influence, cards, scalars = _make_batch(batch=1)
     with torch.no_grad():
         out = model(influence, cards, scalars)
-    assert out["mode_logits"].shape[-1] == 5
+    assert out["mode_logits"].shape[-1] == NUM_MODES
 
 
 def test_model_value_is_scalar_per_sample() -> None:
@@ -126,11 +126,13 @@ def test_model_gradient_flows() -> None:
     ops_prob = country_ops_target / country_ops_target.sum(dim=1, keepdim=True)
     log_probs = torch.log_softmax(out["country_logits"], dim=1)
     country_loss_test = -(ops_prob * log_probs).sum(dim=1).mean()
+    small_choice_target = torch.zeros(BATCH_SIZE, dtype=torch.long)
     loss = (
         torch.nn.functional.cross_entropy(out["card_logits"], card_target)
         + torch.nn.functional.cross_entropy(out["mode_logits"], mode_target)
         + country_loss_test
         + torch.nn.functional.mse_loss(out["value"], value_target)
+        + torch.nn.functional.cross_entropy(out["small_choice_logits"], small_choice_target)
     )
     loss.backward()
 
@@ -199,7 +201,7 @@ def test_dataset_loads(tiny_selfplay_dir) -> None:
 
     assert sample["influence"].shape == (172,), sample["influence"].shape
     assert sample["cards"].shape == (448,), sample["cards"].shape
-    assert sample["scalars"].shape == (11,), sample["scalars"].shape
+    assert sample["scalars"].shape == (SCALAR_DIM,), sample["scalars"].shape
     assert sample["card_target"].dtype == torch.long
     assert sample["mode_target"].dtype == torch.long
     assert sample["country_ops_target"].shape == (86,)
@@ -265,7 +267,7 @@ def test_dataset_loads_teacher_targets(tmp_path, tiny_selfplay_dir) -> None:
     sample_with_teacher = ds[0]
     assert sample_with_teacher["has_teacher_target"].item() is True
     assert sample_with_teacher["teacher_card_target"].shape == (111,)
-    assert sample_with_teacher["teacher_mode_target"].shape == (5,)
+    assert sample_with_teacher["teacher_mode_target"].shape == (NUM_MODES,)
     assert sample_with_teacher["teacher_value_target"].shape == (1,)
     assert sample_with_teacher["teacher_card_target"][0].item() == 1.0
     assert sample_with_teacher["teacher_mode_target"][1].item() == 1.0
