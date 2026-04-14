@@ -331,7 +331,10 @@ TEST_CASE("Missile Envy free ops keeps the event card as the country-select cont
     REQUIRE(gs.hands[to_index(Side::USSR)].test(kArabIsraeliWarId));
 }
 
-TEST_CASE("Opponent-card ops can resolve before the event when the player chooses ops first", "[game_loop]") {
+TEST_CASE("Opponent-card ops resolve before event with Influence mode (ops-first default)", "[game_loop]") {
+    // Duck and Cover (card 4, US) played by USSR for Influence: ops-first is the default.
+    // At DEFCON 2, Duck and Cover drops DEFCON to 1 → game over (US wins).
+    // With ops-first: France gains +1 influence BEFORE the event fires.
     constexpr CardId kDuckAndCoverId = 4;
     constexpr CountryId kFranceId = 7;
 
@@ -340,18 +343,14 @@ TEST_CASE("Opponent-card ops can resolve before the event when the player choose
     gs.pub.defcon = 2;
 
     int ordering_calls = 0;
-    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
-        REQUIRE(decision.kind == DecisionKind::SmallChoice);
-        REQUIRE(decision.source_card == kDuckAndCoverId);
-        REQUIRE(decision.n_options == 2);
-        REQUIRE(decision.acting_side == Side::USSR);
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision&) {
         ++ordering_calls;
-        return 1;  // Ops first
+        return 0;
     };
 
     const ActionEncoding action{
         .card_id = kDuckAndCoverId,
-        .mode = ActionMode::Influence,
+        .mode = ActionMode::Influence,  // ops first — no callback needed
         .targets = {kFranceId},
     };
 
@@ -360,10 +359,42 @@ TEST_CASE("Opponent-card ops can resolve before the event when the player choose
 
     REQUIRE(over);
     REQUIRE(winner == Side::US);
-    REQUIRE(ordering_calls == 1);
-    REQUIRE(next.influence_of(Side::USSR, kFranceId) == 1);
+    REQUIRE(ordering_calls == 0);  // ordering is encoded in the action, no callback
+    REQUIRE(next.influence_of(Side::USSR, kFranceId) == 1);  // ops placed before event
     REQUIRE(next.defcon == 1);
     REQUIRE(next.discard.test(kDuckAndCoverId));
+}
+
+TEST_CASE("Opponent-card event fires before ops with EventFirst mode", "[game_loop]") {
+    // Same setup, but EventFirst: event fires before influence ops.
+    // Duck and Cover drops DEFCON 2→1 → game ends immediately, ops never execute.
+    constexpr CardId kDuckAndCoverId = 4;
+    constexpr CountryId kFranceId = 7;
+
+    GameState gs;
+    gs.pub = PublicState{};
+    gs.pub.defcon = 2;
+
+    int ordering_calls = 0;
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision&) {
+        ++ordering_calls;
+        return 0;
+    };
+
+    const ActionEncoding action{
+        .card_id = kDuckAndCoverId,
+        .mode = ActionMode::EventFirst,  // event fires first — no callback needed
+        .targets = {kFranceId},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action_live(gs, action, Side::USSR, rng, &policy_cb);
+
+    REQUIRE(over);
+    REQUIRE(winner == Side::US);
+    REQUIRE(ordering_calls == 0);  // ordering encoded in action
+    REQUIRE(next.influence_of(Side::USSR, kFranceId) == 0);  // ops never ran (game ended first)
+    REQUIRE(next.defcon == 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -423,10 +454,10 @@ TEST_CASE("enumerate_actions Influence respects 2-ops enemy-control surcharge", 
 }
 
 // ---------------------------------------------------------------------------
-// OpsFirst mode: legal when playing an opponent's card and Influence is legal.
+// EventFirst mode: legal when playing an opponent's card and Influence is legal.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("legal_modes includes OpsFirst for opponent cards when Influence is legal", "[legal_actions][ops_first]") {
+TEST_CASE("legal_modes includes EventFirst for opponent cards when Influence is legal", "[legal_actions][event_first]") {
     // USSR has influence in Poland (reachable countries exist) and plays a US card.
     // Card 2 = Europe Scoring (US, scoring card — no ops, so Influence not legal from it).
     // Use card 11 (Korean War, USSR, 2 ops) — opponent for US side.
@@ -439,13 +470,13 @@ TEST_CASE("legal_modes includes OpsFirst for opponent cards when Influence is le
     const auto modes = legal_modes(kNatoCard, pub, Side::USSR);
 
     const bool has_influence = std::find(modes.begin(), modes.end(), ActionMode::Influence) != modes.end();
-    const bool has_ops_first = std::find(modes.begin(), modes.end(), ActionMode::OpsFirst) != modes.end();
+    const bool has_event_first = std::find(modes.begin(), modes.end(), ActionMode::EventFirst) != modes.end();
     REQUIRE(has_influence);
-    REQUIRE(has_ops_first);
+    REQUIRE(has_event_first);
 }
 
-TEST_CASE("legal_modes excludes OpsFirst for own cards", "[legal_actions][ops_first]") {
-    // Card 8 (Fidel) is a USSR card — OpsFirst should NOT appear when USSR plays it.
+TEST_CASE("legal_modes excludes EventFirst for own cards", "[legal_actions][event_first]") {
+    // Card 8 (Fidel) is a USSR card — EventFirst should NOT appear when USSR plays it.
     constexpr CardId kFidalCard = static_cast<CardId>(8);  // Fidel, USSR
 
     PublicState pub;
@@ -453,12 +484,12 @@ TEST_CASE("legal_modes excludes OpsFirst for own cards", "[legal_actions][ops_fi
 
     const auto modes = legal_modes(kFidalCard, pub, Side::USSR);
 
-    const bool has_ops_first = std::find(modes.begin(), modes.end(), ActionMode::OpsFirst) != modes.end();
-    REQUIRE_FALSE(has_ops_first);
+    const bool has_event_first = std::find(modes.begin(), modes.end(), ActionMode::EventFirst) != modes.end();
+    REQUIRE_FALSE(has_event_first);
 }
 
-TEST_CASE("OpsFirst targets match Influence accessible countries", "[legal_actions][ops_first]") {
-    // enumerate_actions for an opponent card should produce OpsFirst actions
+TEST_CASE("EventFirst targets match Influence accessible countries", "[legal_actions][event_first]") {
+    // enumerate_actions for an opponent card should produce EventFirst actions
     // with the same accessible countries as Influence actions.
     constexpr CardId kNatoCard = static_cast<CardId>(21);  // NATO, US card
 
@@ -470,13 +501,13 @@ TEST_CASE("OpsFirst targets match Influence accessible countries", "[legal_actio
 
     const auto actions = enumerate_actions(hand, pub, Side::USSR, false);
 
-    std::set<std::vector<CountryId>> influence_targets, ops_first_targets;
+    std::set<std::vector<CountryId>> influence_targets, event_first_targets;
     for (const auto& a : actions) {
         if (a.card_id != kNatoCard) continue;
         if (a.mode == ActionMode::Influence) influence_targets.insert(a.targets);
-        if (a.mode == ActionMode::OpsFirst) ops_first_targets.insert(a.targets);
+        if (a.mode == ActionMode::EventFirst) event_first_targets.insert(a.targets);
     }
 
     REQUIRE_FALSE(influence_targets.empty());
-    REQUIRE(influence_targets == ops_first_targets);  // same target sets, different ordering
+    REQUIRE(influence_targets == event_first_targets);  // same target sets, different ordering
 }

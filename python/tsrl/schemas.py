@@ -26,12 +26,12 @@ class Side(IntEnum):
 
 class ActionMode(IntEnum):
     """How a card is being used at a decision point."""
-    INFLUENCE = 0   # play card for ops → place influence (event fires first if opponent's card)
-    COUP      = 1   # play card for ops → attempt coup
-    REALIGN   = 2   # play card for ops → attempt realignment(s)
-    SPACE     = 3   # play card for space race attempt
-    EVENT     = 4   # play card for its event effect
-    OPS_FIRST = 5   # play opponent's card for influence, ops execute BEFORE the event fires
+    INFLUENCE   = 0   # play card for ops → place influence (ops first; event fires after if opponent's card)
+    COUP        = 1   # play card for ops → attempt coup
+    REALIGN     = 2   # play card for ops → attempt realignment(s)
+    SPACE       = 3   # play card for space race attempt
+    EVENT       = 4   # play card for its event effect
+    EVENT_FIRST = 5   # play opponent's card for influence, but fire event BEFORE ops execute
 
 
 class Era(IntEnum):

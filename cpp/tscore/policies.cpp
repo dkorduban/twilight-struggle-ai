@@ -501,8 +501,8 @@ double score_action(const DecisionContext& context, const ActionEncoding& action
     double score = 0.0;
 
     switch (action.mode) {
-        case ActionMode::OpsFirst:
-            // OpsFirst is influence with ops-before-event ordering; score same as Influence.
+        case ActionMode::EventFirst:
+            // EventFirst is influence with event-before-ops ordering; score same as Influence.
             [[fallthrough]];
         case ActionMode::Influence:
             score += context.params.influence_mode_bonus;

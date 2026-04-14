@@ -60,8 +60,8 @@ bool nato_protected(CountryId country_id, const PublicState& pub) {
 }
 
 std::vector<CountryId> filtered_accessible_countries(Side side, const PublicState& pub, ActionMode mode) {
-    // OpsFirst is influence placement with ops-before-event ordering; use Influence accessibility.
-    const auto effective_mode = (mode == ActionMode::OpsFirst) ? ActionMode::Influence : mode;
+    // EventFirst is influence placement with event-before-ops ordering; use Influence accessibility.
+    const auto effective_mode = (mode == ActionMode::EventFirst) ? ActionMode::Influence : mode;
     auto base = accessible_countries(side, pub, effective_mode);
     if (effective_mode == ActionMode::Influence) {
         if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
@@ -215,10 +215,10 @@ std::vector<ActionMode> legal_modes(CardId card_id, const PublicState& pub, Side
     if (spec.ops > 0) {
         if (!accessible_inf.empty()) {
             modes.push_back(ActionMode::Influence);
-            // OpsFirst: influence placement with ops executing before the opponent's event.
+            // EventFirst: fire the opponent's event first, then place influence ops after.
             // Only legal when the card strictly belongs to the opponent (not neutral).
             if (spec.side == other_side(side)) {
-                modes.push_back(ActionMode::OpsFirst);
+                modes.push_back(ActionMode::EventFirst);
             }
         }
         if (pub.defcon > 1 && !accessible_coup.empty()) {
@@ -274,7 +274,7 @@ std::vector<CountryId> legal_countries(CardId, ActionMode mode, const PublicStat
     if (mode == ActionMode::Space || mode == ActionMode::Event) {
         return {};
     }
-    // OpsFirst uses Influence accessibility (handled inside filtered_accessible_countries).
+    // EventFirst uses Influence accessibility (handled inside filtered_accessible_countries).
     return filtered_accessible_countries(side, pub, mode);
 }
 
