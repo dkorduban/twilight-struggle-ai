@@ -174,6 +174,7 @@ BatchOutputs forward_model_batched(torch::jit::script::Module& model, const Batc
         .country_logits = to_cpu(get_tensor(outputs, "country_logits", false)),
         .strategy_logits = to_cpu(get_tensor(outputs, "strategy_logits", false)),
         .country_strategy_logits = to_cpu(get_tensor(outputs, "country_strategy_logits", false)),
+        .marginal_logits = to_cpu(get_tensor(outputs, "marginal_logits", false)),
         .value = to_cpu(get_tensor(outputs, "value")),
         .small_choice_logits = to_cpu(get_tensor(outputs, "small_choice_logits", false)),
     };
