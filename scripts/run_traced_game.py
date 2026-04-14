@@ -61,6 +61,7 @@ def _mode_str(mode: object) -> str:
         _MODE_REALIGN: "Realignment",
         _MODE_SPACE: "Space Race",
         _MODE_EVENT: "Event",
+        5: "EventFirst (event then influence)",
     }.get(_mode_value(mode), str(mode))
 
 
@@ -278,6 +279,7 @@ def extract_features(
     cards = hand_mask + opponent_support_mask + discard_mask + removed_mask
 
     scalars = [
+        # [0-10] base scalars — always present
         state["vp"] / 20.0,
         (state["defcon"] - 1) / 4.0,
         state["milops"][0] / 6.0,
@@ -289,6 +291,31 @@ def extract_features(
         state["turn"] / 10.0,
         state["ar"] / 8.0,
         float(side_int),
+        # [11-21] trap/constraint effect booleans (matches C++ fill_scalars order)
+        float(state.get("bear_trap_active", False)),
+        float(state.get("quagmire_active", False)),
+        float(state.get("cuban_missile_crisis_active", False)),
+        float(state.get("iran_hostage_crisis_active", False)),
+        float(state.get("norad_active", False)),
+        float(state.get("shuttle_diplomacy_active", False)),
+        float(state.get("salt_active", False)),
+        float(state.get("flower_power_active", False)),
+        float(state.get("flower_power_cancelled", False)),
+        float(state.get("vietnam_revolts_active", False)),
+        float(state.get("north_sea_oil_extra_ar", False)),
+        # [22-27] board-modifying effects
+        float(state.get("glasnost_free_ops", 0)) / 4.0,
+        float(state.get("nato_active", False)),
+        float(state.get("de_gaulle_active", False)),
+        float(state.get("nuclear_subs_active", False)),
+        float(state.get("formosan_active", False)),
+        float(state.get("awacs_active", False)),
+        # [28-29] chernobyl placeholder (always 0 for now)
+        0.0,
+        0.0,
+        # [30-31] ops modifiers (USSR, US)
+        float(state.get("ops_modifier", (0, 0))[0]) / 3.0,
+        float(state.get("ops_modifier", (0, 0))[1]) / 3.0,
     ]
     return (
         torch.tensor([influence], dtype=torch.float32),
@@ -461,18 +488,38 @@ def _make_model_callback(model_path: Path, temperature: float = 0.0, seed: int =
         if not legal_hand:
             return None
 
-        if temperature > 0.0:
-            # Sampled card selection
-            legal_logits = torch.tensor([float(card_logits[cid - 1].item()) for cid in legal_hand])
-            probs = torch.softmax(legal_logits / temperature, dim=0)
-            idx = int(torch.multinomial(probs, 1, generator=rng).item())
-            best_card_id = legal_hand[idx]
-            # Sampled mode
-            mode_probs = torch.softmax(mode_logits / temperature, dim=0)
-            best_mode = int(torch.multinomial(mode_probs, 1, generator=rng).item())
-        else:
-            best_card_id = max(legal_hand, key=lambda cid: (float(card_logits[cid - 1].item()), -cid))
-            best_mode = int(mode_logits.argmax().item())
+        # Build pub object for legal mode queries
+        side = tscore.Side.USSR if side_int == 0 else tscore.Side.US
+
+        # Detect scoring cards in hand — must be played as Event (ops=0, is_scoring=True).
+        # Force scoring cards when remaining ARs ≤ number of scoring cards in hand.
+        # This prevents scoring_card_held instant loss.
+        ar = state_dict.get("ar", 0)
+        turn = state_dict.get("turn", 1)
+        max_ar = 6 if turn <= 3 else 7  # last AR index for this era
+        remaining_ars = max(0, max_ar - ar + 1)  # ARs from current through end of turn
+        scoring_in_hand = [cid for cid in legal_hand if cards.get(cid) and cards[cid].is_scoring]
+        if scoring_in_hand and remaining_ars <= len(scoring_in_hand):
+            # Must start playing scoring cards now to avoid holding one at end of turn
+            card_logits = card_logits.clone()
+            for cid in scoring_in_hand:
+                card_logits[cid - 1] = 999.0
+
+        best_card_id = max(legal_hand, key=lambda cid: (float(card_logits[cid - 1].item()), -cid))
+
+        # Get legal modes for chosen card
+        try:
+            legal_mode_enums = tscore.legal_modes(best_card_id, state_dict, side)
+            legal_mode_ints = {int(m) for m in legal_mode_enums}
+        except Exception:
+            legal_mode_ints = set(range(5))  # fallback
+
+        if not legal_mode_ints:
+            return None
+
+        # Pick highest-scoring legal mode
+        mode_scores = [(float(mode_logits[i].item()), i) for i in legal_mode_ints if i < len(mode_logits)]
+        best_mode = max(mode_scores, default=(0, _MODE_EVENT))[1]
 
         if best_mode == _MODE_INFLUENCE:
             card_spec = cards.get(best_card_id)
