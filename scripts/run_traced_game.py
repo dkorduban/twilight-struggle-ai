@@ -30,6 +30,7 @@ _MODE_COUP = 1
 _MODE_REALIGN = 2
 _MODE_SPACE = 3
 _MODE_EVENT = 4
+_MODE_EVENT_FIRST = 5
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +62,7 @@ def _mode_str(mode: object) -> str:
         _MODE_REALIGN: "Realignment",
         _MODE_SPACE: "Space Race",
         _MODE_EVENT: "Event",
-        5: "EventFirst (event then influence)",
+        _MODE_EVENT_FIRST: "EventFirst (event then influence)",
     }.get(_mode_value(mode), str(mode))
 
 
@@ -216,6 +217,13 @@ def _rich_detail(
             lines.append(f"    DEFCON degrades to {post['defcon']}")
         elif post["defcon"] > pre["defcon"]:
             lines.append(f"    DEFCON improves to {post['defcon']}")
+    elif mode == _MODE_EVENT_FIRST:
+        lines.append(f"  EventFirst ({card_spec.ops if card_spec else '?'} Ops influence placed after event):")
+        diff = _influence_diff_lines(pre, post, countries)
+        if diff:
+            lines.extend(diff)
+        else:
+            lines.append("    (no influence changes)")
 
     if mode != _MODE_COUP:
         for trace_side in (tscore.Side.USSR, tscore.Side.US):
@@ -512,7 +520,7 @@ def _make_model_callback(model_path: Path, temperature: float = 0.0, seed: int =
             legal_mode_enums = tscore.legal_modes(best_card_id, state_dict, side)
             legal_mode_ints = {int(m) for m in legal_mode_enums}
         except Exception:
-            legal_mode_ints = set(range(5))  # fallback
+            legal_mode_ints = set(range(_MODE_EVENT_FIRST + 1))  # fallback
 
         if not legal_mode_ints:
             return None
@@ -525,6 +533,11 @@ def _make_model_callback(model_path: Path, temperature: float = 0.0, seed: int =
             card_spec = cards.get(best_card_id)
             ops = card_spec.ops if card_spec else 1
             targets = _allocate_influence_targets(country_logits, ops)
+        elif best_mode == _MODE_EVENT_FIRST:
+            # play_traced_game_with_callback only asks Python for the top-level
+            # ActionEncoding. EventFirst deferred ops are resolved later inside
+            # C++ execute_deferred_ops(), which does not re-enter this callback.
+            targets = []
         elif best_mode in (_MODE_COUP, _MODE_REALIGN):
             country_ids = _candidate_country_ids(country_logits)
             best_target = max(
@@ -632,18 +645,31 @@ def _format_hand(hand: tuple[int, ...], cards: dict) -> str:
     return ", ".join(named)
 
 
-def _format_target_summary(action, countries: dict) -> str:
-    if not action.targets:
-        return ""
-
+def _positive_influence_target_counts(pre: dict, post: dict, side: tscore.Side) -> dict[int, int]:
+    key = "ussr_influence" if side == tscore.Side.USSR else "us_influence"
     counts: dict[int, int] = {}
-    for cid in action.targets:
-        counts[cid] = counts.get(cid, 0) + 1
+    for cid in range(_COUNTRY_COUNT):
+        delta = post[key][cid] - pre[key][cid]
+        if delta > 0:
+            counts[cid] = delta
+    return counts
+
+
+def _format_target_summary(action, countries: dict, side: tscore.Side, pre: dict, post: dict) -> str:
+    counts: dict[int, int] = {}
+    if action.targets:
+        for cid in action.targets:
+            counts[cid] = counts.get(cid, 0) + 1
+    elif _mode_value(action.mode) == _MODE_EVENT_FIRST:
+        counts = _positive_influence_target_counts(pre, post, side)
+    if not counts:
+        return ""
 
     ordered = sorted(counts.items(), key=lambda item: (_country_name(item[0], countries), item[0]))
     parts = []
+    mode = _mode_value(action.mode)
     for cid, count in ordered:
-        suffix = f"(+{count})" if _mode_value(action.mode) == _MODE_INFLUENCE else ""
+        suffix = f"(+{count})" if mode in (_MODE_INFLUENCE, _MODE_EVENT_FIRST) else ""
         parts.append(f"{_country_name(cid, countries)}{suffix}")
     return " -> " + ", ".join(parts)
 
@@ -660,7 +686,8 @@ def print_game_log(
         pub = step.pub_snapshot
         action = step.action
         ussr_hand, us_hand = display_hands[idx]
-        target_summary = _format_target_summary(action, countries)
+        post = _post_snapshot_for_step(steps, idx, result)
+        target_summary = _format_target_summary(action, countries, step.side, pub, post)
 
         print(
             f"=== Turn {pub['turn']} AR {pub['ar']} | {_side_str(step.side)} | "
