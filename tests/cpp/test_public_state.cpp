@@ -361,6 +361,16 @@ TEST_CASE("Formosan Resolution counts Taiwan as a battleground for USSR scoring 
     REQUIRE(with_formosan.vp_delta > without_formosan.vp_delta);
 }
 
+TEST_CASE("Solidarity event is illegal before John Paul II is played", "[legal_actions]") {
+    const auto modes_before = legal_modes(104, PublicState{}, Side::US);
+    REQUIRE(std::find(modes_before.begin(), modes_before.end(), ActionMode::Event) == modes_before.end());
+
+    PublicState pub;
+    pub.john_paul_ii_played = true;
+    const auto modes_after = legal_modes(104, pub, Side::US);
+    REQUIRE(std::find(modes_after.begin(), modes_after.end(), ActionMode::Event) != modes_after.end());
+}
+
 TEST_CASE("Glasnost with SALT grants four free ops", "[step]") {
     PublicState pub;
     pub.salt_active = true;
