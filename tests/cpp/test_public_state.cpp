@@ -484,6 +484,48 @@ TEST_CASE("Missile Envy free ops keeps the event card as the country-select cont
     REQUIRE(gs.hands[to_index(Side::USSR)].test(kArabIsraeliWarId));
 }
 
+TEST_CASE("Terrorism routes discard choices through the policy callback", "[game_loop]") {
+    constexpr CardId kDuckAndCoverId = 4;
+    constexpr CardId kSocialistGovernmentsId = 7;
+    constexpr CardId kArabIsraeliWarId = 13;
+
+    GameState gs;
+    gs.pub = PublicState{};
+    gs.pub.iran_hostage_crisis_active = true;
+    gs.hands[to_index(Side::US)].set(kDuckAndCoverId);
+    gs.hands[to_index(Side::US)].set(kSocialistGovernmentsId);
+    gs.hands[to_index(Side::US)].set(kArabIsraeliWarId);
+
+    std::vector<CardId> chosen_cards;
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+        REQUIRE(decision.kind == DecisionKind::CardSelect);
+        REQUIRE(decision.source_card == static_cast<CardId>(95));
+        REQUIRE(decision.acting_side == Side::USSR);
+        REQUIRE((decision.n_options == 3 || decision.n_options == 2));
+        const auto choice = decision.n_options - 1;
+        chosen_cards.push_back(static_cast<CardId>(decision.eligible_ids[choice]));
+        return choice;
+    };
+
+    const ActionEncoding action{
+        .card_id = 95,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action_live(gs, action, Side::USSR, rng, &policy_cb);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(chosen_cards == std::vector<CardId>{kArabIsraeliWarId, kSocialistGovernmentsId});
+    REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kArabIsraeliWarId));
+    REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kSocialistGovernmentsId));
+    REQUIRE(gs.hands[to_index(Side::US)].test(kDuckAndCoverId));
+    REQUIRE(next.discard.test(kArabIsraeliWarId));
+    REQUIRE(next.discard.test(kSocialistGovernmentsId));
+}
+
 TEST_CASE("Opponent-card ops resolve before event with Influence mode (ops-first default)", "[game_loop]") {
     // Duck and Cover (card 4, US) played by USSR for Influence: ops-first is the default.
     // At DEFCON 2, Duck and Cover drops DEFCON to 1 → game over (US wins).

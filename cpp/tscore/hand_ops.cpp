@@ -390,10 +390,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     candidates.push_back(candidate);
                 }
             }
-            shuffle_with_numpy_rng(candidates, rng);
-            candidates.resize(std::min(discard_count, static_cast<int>(candidates.size())));
-            for (const auto chosen : candidates) {
+            const auto selections = std::min(discard_count, static_cast<int>(candidates.size()));
+            for (int i = 0; i < selections; ++i) {
+                const auto chosen =
+                    (policy_cb != nullptr && candidates.size() > 1)
+                    ? choose_card(pub, 95, side, candidates, rng, policy_cb)
+                    : candidates.front();
                 discard_from_hand(gs, opponent, chosen, pub);
+                candidates.erase(std::remove(candidates.begin(), candidates.end(), chosen), candidates.end());
             }
             break;
         }
