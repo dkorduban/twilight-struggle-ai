@@ -3477,7 +3477,7 @@ std::optional<int> argmax_eligible_logit_index(
         if (eligible_id < 0 || eligible_id >= n_logits) {
             continue;
         }
-        const auto score = decode::tensor_at(logits, eligible_id);
+        const auto score = decode::tensor_at(logits, eligible_id).item<float>();
         if (!best_choice.has_value() || score > best_score) {
             best_score = score;
             best_choice = option;
