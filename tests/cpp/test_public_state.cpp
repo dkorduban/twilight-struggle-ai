@@ -334,12 +334,15 @@ TEST_CASE("Glasnost free ops routes influence targets through the policy callbac
 
     PublicState pub;
     pub.glasnost_free_ops = 2;
+    pub.defcon = 3;
 
     std::array<int, kCountrySlots> expected_counts = {};
     int country_select_calls = 0;
+    int small_choice_calls = 0;
     PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
         if (decision.kind == DecisionKind::SmallChoice) {
-            return 0;  // Influence
+            ++small_choice_calls;
+            return 0;
         }
         if (decision.kind == DecisionKind::CountrySelect) {
             REQUIRE(decision.source_card == kGlasnostId);
@@ -357,6 +360,9 @@ TEST_CASE("Glasnost free ops routes influence targets through the policy callbac
 
     REQUIRE(pub.glasnost_free_ops == 0);
     REQUIRE(country_select_calls == 2);
+    REQUIRE(small_choice_calls == 0);
+    REQUIRE(pub.defcon == 3);
+    REQUIRE(pub.milops[to_index(Side::USSR)] == 0);
     for (CountryId cid = 0; cid < kCountrySlots; ++cid) {
         REQUIRE(pub.influence_of(Side::USSR, cid) == expected_counts[cid]);
     }
