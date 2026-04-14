@@ -17,11 +17,7 @@ namespace tscore {
 //
 // Card notes:
 //   4   Duck and Cover (US): lowers DEFCON
-//   11  Korean War (USSR): coup in Korea
-//   13  Arab-Israeli War (USSR): coup in Israel
 //   20  Olympic Games (Neutral): DEFCON drops on boycott
-//   24  Indo-Pakistani War (USSR): coup
-//   39  Brush War (USSR): free coup in non-BG
 //   48  Summit (Neutral): can lower DEFCON
 //   49  How I Learned to Stop Worrying (USSR): sets DEFCON directly
 //   50  Junta (Neutral): free coup in Central/South America
@@ -30,9 +26,8 @@ namespace tscore {
 //   68  Grain Sales to Soviets (US): calls apply_ops_randomly -> can coup BG
 //   83  Che (USSR): free coup in Latin America / Africa
 //   92  Soviets Shoot Down KAL 007 (US): lowers DEFCON by 1, -2 VP
-//   105 Iran-Iraq War (USSR): war / coup
-constexpr std::array<int, 15> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 52, 53, 68, 83, 92, 105,
+constexpr std::array<int, 10> kDefconLoweringCards = {
+    4, 20, 48, 49, 50, 52, 53, 68, 83, 92,
 };
 
 // Returns true if card_id is in kDefconLoweringCards.
