@@ -301,7 +301,7 @@ class TestMaskShapes:
 
     def test_mode_mask_shape(self):
         mask = torch.ones(NUM_MODES, dtype=torch.bool)
-        assert mask.shape == (5,)
+        assert mask.shape == (NUM_MODES,)
 
     def test_country_mask_shape(self):
         mask = torch.ones(NUM_COUNTRIES, dtype=torch.bool)
@@ -315,7 +315,7 @@ class TestMaskShapes:
     def test_batch_mode_mask_shape(self):
         B = 8
         mask = torch.ones(B, NUM_MODES, dtype=torch.bool)
-        assert mask.shape == (8, 5)
+        assert mask.shape == (8, NUM_MODES)
 
     def test_batch_country_mask_shape(self):
         B = 8

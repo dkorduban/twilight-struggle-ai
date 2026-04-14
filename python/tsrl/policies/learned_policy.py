@@ -45,6 +45,7 @@ def _extract_features(
     ).unsqueeze(0)
     scalars = torch.tensor(
         [
+            # Core game state [0-10]
             pub.vp / 20.0,
             (pub.defcon - 1) / 4.0,
             pub.milops[Side.USSR] / 6.0,
@@ -56,6 +57,30 @@ def _extract_features(
             pub.turn / 10.0,
             pub.ar / 8.0,
             float(int(side)),
+            # Active effect booleans [11-27]
+            float(pub.bear_trap_active),
+            float(pub.quagmire_active),
+            float(pub.cuban_missile_crisis_active),
+            float(pub.iran_hostage_crisis_active),
+            float(pub.norad_active),
+            float(pub.shuttle_diplomacy_active),
+            float(pub.salt_active),
+            float(pub.flower_power_active),
+            float(pub.flower_power_cancelled),
+            float(pub.vietnam_revolts_active),
+            float(pub.north_sea_oil_extra_ar),
+            float(pub.glasnost_extra_ar),
+            float(pub.nato_active),
+            float(pub.de_gaulle_active),
+            float(pub.nuclear_subs_active),
+            float(pub.formosan_active),
+            float(pub.awacs_active),
+            # Chernobyl [28-29]
+            float(pub.chernobyl_blocked_region is not None),
+            float(int(pub.chernobyl_blocked_region)) / 6.0 if pub.chernobyl_blocked_region is not None else 0.0,
+            # Ops modifiers [30-31]
+            pub.ops_modifier[Side.USSR] / 3.0,
+            pub.ops_modifier[Side.US] / 3.0,
         ],
         dtype=torch.float32,
     ).unsqueeze(0)
