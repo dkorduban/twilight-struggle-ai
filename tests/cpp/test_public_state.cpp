@@ -576,3 +576,117 @@ TEST_CASE("EventFirst actions defer country targets", "[legal_actions][event_fir
 
     REQUIRE(event_first_count == 1);
 }
+
+namespace {
+
+struct WarCardCase {
+    CardId card_id;
+    Side acting_side;
+    Side attacker_side;
+    CountryId target;
+    bool uses_explicit_target = false;
+    int influence_on_success = 0;
+};
+
+constexpr std::array<WarCardCase, 5> kWarCardCases = {{
+    {11, Side::USSR, Side::USSR, static_cast<CountryId>(25), false, 2},
+    {13, Side::USSR, Side::USSR, static_cast<CountryId>(30), false, 2},
+    {24, Side::USSR, Side::USSR, static_cast<CountryId>(24), true, 2},
+    {39, Side::USSR, Side::USSR, static_cast<CountryId>(57), true, 3},
+    {105, Side::US, Side::US, static_cast<CountryId>(29), true, 2},
+}};
+
+ActionEncoding build_war_event_action(const WarCardCase& spec) {
+    return ActionEncoding{
+        .card_id = spec.card_id,
+        .mode = ActionMode::Event,
+        .targets = spec.uses_explicit_target ? ActionTargets{spec.target} : ActionTargets{},
+    };
+}
+
+}  // namespace
+
+TEST_CASE("War cards apply success effects without DEFCON or milops changes", "[step]") {
+    for (const auto& spec : kWarCardCases) {
+        PublicState pub;
+        pub.defcon = 2;
+        pub.set_influence(spec.attacker_side, spec.target, 1);
+        pub.set_influence(other_side(spec.attacker_side), spec.target, 4);
+
+        const auto action = build_war_event_action(spec);
+        bool found_success = false;
+        for (uint64_t seed = 0; seed < 128; ++seed) {
+            Pcg64Rng rng(seed);
+            const auto [next, over, winner] = apply_action(pub, action, spec.acting_side, rng);
+            const auto expected_vp = spec.attacker_side == Side::USSR ? 2 : -2;
+            if (next.vp != expected_vp) {
+                continue;
+            }
+
+            REQUIRE_FALSE(over);
+            REQUIRE_FALSE(winner.has_value());
+            REQUIRE(next.defcon == pub.defcon);
+            REQUIRE(next.milops[to_index(Side::USSR)] == pub.milops[to_index(Side::USSR)]);
+            REQUIRE(next.milops[to_index(Side::US)] == pub.milops[to_index(Side::US)]);
+            REQUIRE(next.influence_of(spec.attacker_side, spec.target) == 1 + spec.influence_on_success);
+            REQUIRE(next.influence_of(other_side(spec.attacker_side), spec.target) == 0);
+            found_success = true;
+            break;
+        }
+
+        INFO("card_id=" << static_cast<int>(spec.card_id));
+        REQUIRE(found_success);
+    }
+}
+
+TEST_CASE("War cards award opponent VP and leave board state unchanged on failure", "[step]") {
+    for (const auto& spec : kWarCardCases) {
+        PublicState pub;
+        pub.defcon = 2;
+        pub.set_influence(spec.attacker_side, spec.target, 1);
+        pub.set_influence(other_side(spec.attacker_side), spec.target, 4);
+
+        const auto action = build_war_event_action(spec);
+        bool found_failure = false;
+        for (uint64_t seed = 0; seed < 128; ++seed) {
+            Pcg64Rng rng(seed);
+            const auto [next, over, winner] = apply_action(pub, action, spec.acting_side, rng);
+            const auto expected_vp = spec.attacker_side == Side::USSR ? -1 : 1;
+            if (next.vp != expected_vp) {
+                continue;
+            }
+
+            REQUIRE_FALSE(over);
+            REQUIRE_FALSE(winner.has_value());
+            REQUIRE(next.defcon == pub.defcon);
+            REQUIRE(next.milops[to_index(Side::USSR)] == pub.milops[to_index(Side::USSR)]);
+            REQUIRE(next.milops[to_index(Side::US)] == pub.milops[to_index(Side::US)]);
+            REQUIRE(next.influence_of(spec.attacker_side, spec.target) == pub.influence_of(spec.attacker_side, spec.target));
+            REQUIRE(next.influence_of(other_side(spec.attacker_side), spec.target) ==
+                pub.influence_of(other_side(spec.attacker_side), spec.target));
+            found_failure = true;
+            break;
+        }
+
+        INFO("card_id=" << static_cast<int>(spec.card_id));
+        REQUIRE(found_failure);
+    }
+}
+
+TEST_CASE("War cards remain legal at DEFCON 2", "[legal_actions]") {
+    PublicState pub;
+    pub.defcon = 2;
+
+    CardSet hand;
+    for (const auto& spec : kWarCardCases) {
+        hand.set(spec.card_id);
+    }
+
+    for (const auto side : {Side::USSR, Side::US}) {
+        const auto cards = legal_cards(hand, pub, side, false);
+        for (const auto& spec : kWarCardCases) {
+            INFO("side=" << static_cast<int>(side) << " card_id=" << static_cast<int>(spec.card_id));
+            REQUIRE(std::find(cards.begin(), cards.end(), spec.card_id) != cards.end());
+        }
+    }
+}
