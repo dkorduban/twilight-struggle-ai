@@ -225,10 +225,10 @@ TEST_CASE("Space mode enforces the current track ops minimum", "[legal_actions]"
     const auto level_two_modes = legal_modes(kTwoOpsCard, pub, Side::US);
     REQUIRE(std::find(level_two_modes.begin(), level_two_modes.end(), ActionMode::Space) == level_two_modes.end());
 
-    pub.space[to_index(Side::US)] = 5;
+    pub.space[to_index(Side::US)] = 6;
 
-    const auto level_five_modes = legal_modes(kFourOpsCard, pub, Side::US);
-    REQUIRE(std::find(level_five_modes.begin(), level_five_modes.end(), ActionMode::Space) == level_five_modes.end());
+    const auto level_six_modes = legal_modes(kFourOpsCard, pub, Side::US);
+    REQUIRE(std::find(level_six_modes.begin(), level_six_modes.end(), ActionMode::Space) == level_six_modes.end());
 }
 
 TEST_CASE("Cuban Missile Crisis keeps coup mode legal", "[legal_actions]") {
