@@ -270,6 +270,54 @@ void apply_ops_randomly_impl(
     }
 }
 
+std::vector<CountryId> filtered_influence_targets(const PublicState& pub, Side side) {
+    auto accessible = accessible_countries(side, pub, ActionMode::Influence);
+    if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
+        accessible.erase(
+            std::remove_if(
+                accessible.begin(),
+                accessible.end(),
+                [&](CountryId cid) { return country_spec(cid).region == *pub.chernobyl_blocked_region; }
+            ),
+            accessible.end()
+        );
+    }
+    return accessible;
+}
+
+void apply_influence_budget_impl(
+    PublicState& pub,
+    Side side,
+    int ops_budget,
+    CardId context_card_id,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
+) {
+    const auto opponent = other_side(side);
+    while (ops_budget > 0) {
+        auto accessible = filtered_influence_targets(pub, side);
+        accessible.erase(
+            std::remove_if(
+                accessible.begin(),
+                accessible.end(),
+                [&](CountryId cid) { return (controls_country(opponent, cid, pub) ? 2 : 1) > ops_budget; }
+            ),
+            accessible.end()
+        );
+        if (accessible.empty()) {
+            return;
+        }
+
+        const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb);
+        const auto cost = controls_country(opponent, target, pub) ? 2 : 1;
+        if (cost > ops_budget) {
+            return;
+        }
+        pub.set_influence(side, target, pub.influence_of(side, target) + 1);
+        ops_budget -= cost;
+    }
+}
+
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar(
     GameState& gs,
     Side side,
@@ -1370,14 +1418,9 @@ void resolve_glasnost_free_ops_live(
     if (pub.glasnost_free_ops <= 0) {
         return;
     }
-    static bool warned_placeholder = false;
-    if (!warned_placeholder) {
-        warned_placeholder = true;
-        std::fprintf(stderr, "[Glasnost] resolving SALT bonus with random ops placeholder\n");
-    }
     const auto ops = pub.glasnost_free_ops;
     pub.glasnost_free_ops = 0;
-    apply_ops_randomly_impl(pub, Side::USSR, ops, static_cast<CardId>(93), rng, policy_cb);
+    apply_influence_budget_impl(pub, Side::USSR, ops, static_cast<CardId>(93), rng, policy_cb);
 }
 
 std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
