@@ -326,6 +326,7 @@ DraftsResult collect_card_drafts(const GameState& state) {
         if (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) event_ok = false;
         if (pub.quagmire_active && side == Side::US && !spec.is_scoring) event_ok = false;
         if (card_id == 103 && pub.defcon != 2) event_ok = false;
+        if (card_id == 104 && !pub.john_paul_ii_played) event_ok = false;
         if (event_ok) {
             card.modes.push_back(ModeDraft{
                 .mode = ActionMode::Event,
