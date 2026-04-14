@@ -228,10 +228,6 @@ int apply_free_coup(
     return net;
 }
 
-std::vector<CountryId> sample_up_to(std::span<const CountryId> pool, int count, Pcg64Rng& rng) {
-    return sample_without_replacement(pool, static_cast<size_t>(std::max(count, 0)), rng);
-}
-
 void advance_space_track(PublicState& pub, Side side, int steps) {
     static constexpr std::array<std::pair<int, int>, 9> kSpaceVp = {{
         {0, 0}, {2, 0}, {0, 0}, {2, 0}, {0, 0}, {3, 1}, {0, 0}, {4, 2}, {2, 0},
@@ -359,8 +355,16 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 4, rng)) {
+            for (int i = 0; i < 4; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid =
+                    (policy_cb != nullptr && pool.size() > 1)
+                    ? choose_country(next, static_cast<CardId>(14), Side::USSR, pool, rng, policy_cb)
+                    : pool.front();
                 add_influence(next, Side::USSR, cid, 1);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
         }
@@ -1211,8 +1215,16 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (const auto cid : sample_up_to(pool, 3, rng)) {
+            for (int i = 0; i < 3; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid =
+                    (policy_cb != nullptr && pool.size() > 1)
+                    ? choose_country(next, static_cast<CardId>(102), Side::USSR, pool, rng, policy_cb)
+                    : pool.front();
                 add_influence(next, Side::US, cid, -1);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
         }

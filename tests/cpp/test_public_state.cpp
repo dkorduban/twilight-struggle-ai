@@ -526,6 +526,77 @@ TEST_CASE("Terrorism routes discard choices through the policy callback", "[game
     REQUIRE(next.discard.test(kSocialistGovernmentsId));
 }
 
+TEST_CASE("Card 14 routes repeated country picks through the policy callback", "[step]") {
+    PublicState pub;
+
+    std::vector<CountryId> chosen_countries;
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+        REQUIRE(decision.kind == DecisionKind::CountrySelect);
+        REQUIRE(decision.source_card == static_cast<CardId>(14));
+        REQUIRE(decision.acting_side == Side::USSR);
+        REQUIRE(decision.n_options >= 4);
+        const auto choice = decision.n_options - 1;
+        chosen_countries.push_back(static_cast<CountryId>(decision.eligible_ids[choice]));
+        return choice;
+    };
+
+    const ActionEncoding action{
+        .card_id = 14,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action(pub, action, Side::USSR, rng, &policy_cb);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(chosen_countries == std::vector<CountryId>{83, 19, 13, 12});
+    for (const auto cid : chosen_countries) {
+        REQUIRE(next.influence_of(Side::USSR, cid) == 1);
+    }
+    REQUIRE(next.influence_of(Side::USSR, 3) == 0);
+    REQUIRE(next.influence_of(Side::USSR, 5) == 0);
+    REQUIRE(next.influence_of(Side::USSR, 9) == 0);
+}
+
+TEST_CASE("Pershing II routes repeated country removals through the policy callback", "[step]") {
+    PublicState pub;
+    for (const auto cid : std::array<CountryId, 12>{1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18}) {
+        pub.set_influence(Side::US, cid, 1);
+    }
+
+    std::vector<CountryId> chosen_countries;
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+        REQUIRE(decision.kind == DecisionKind::CountrySelect);
+        REQUIRE(decision.source_card == static_cast<CardId>(102));
+        REQUIRE(decision.acting_side == Side::USSR);
+        REQUIRE(decision.n_options >= 3);
+        const auto choice = decision.n_options - 1;
+        chosen_countries.push_back(static_cast<CountryId>(decision.eligible_ids[choice]));
+        return choice;
+    };
+
+    const ActionEncoding action{
+        .card_id = 102,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action(pub, action, Side::USSR, rng, &policy_cb);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(next.vp == 1);
+    REQUIRE(chosen_countries == std::vector<CountryId>{18, 17, 16});
+    for (const auto cid : chosen_countries) {
+        REQUIRE(next.influence_of(Side::US, cid) == 0);
+    }
+    REQUIRE(next.influence_of(Side::US, 15) == 1);
+    REQUIRE(next.influence_of(Side::US, 14) == 1);
+}
+
 TEST_CASE("Opponent-card ops resolve before event with Influence mode (ops-first default)", "[game_loop]") {
     // Duck and Cover (card 4, US) played by USSR for Influence: ops-first is the default.
     // At DEFCON 2, Duck and Cover drops DEFCON to 1 → game over (US wins).
