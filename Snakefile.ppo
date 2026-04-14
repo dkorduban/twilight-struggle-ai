@@ -132,7 +132,7 @@ def _dynamic_ppo_train_args():
         "--ent-coef 0.01",
         "--ent-coef-final 0.003",
         f"--global-ent-decay-start {prev_total_iters}",
-        f"--global-ent-decay-end {prev_total_iters + 30}",
+        f"--global-ent-decay-end {prev_total_iters + 300}",  # 2026-04-14: slow from 30→300 (Opus: fast decay kills exploration)
         "--max-kl 0.03",  # Reduced from 0.3: Opus analysis showed clip_frac 25% + KL 0.01 → unstable updates
         "--reset-optimizer",
         f"--league {shlex.quote(cfg['out_dir'])}",
@@ -143,7 +143,7 @@ def _dynamic_ppo_train_args():
         f"--league-fixtures {_shell_join(_split_cli_items(cfg.get('league_fixtures', '')))}",
         "--league-recency-tau 50",
         "--league-fixture-fadeout 999",
-        "--pfsp-exponent 1.5",
+        "--pfsp-exponent 0.5",  # 2026-04-14: reduced from 1.5 (Opus: PFSP down-weights strong opponents → specialization)
         "--eval-every 10",
         f"--eval-panel {_shell_join(_split_cli_items(eval_panel))}",
         f"--probe-set {shlex.quote(cfg['probe_set'])}",

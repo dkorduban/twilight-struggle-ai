@@ -41,7 +41,7 @@ std::optional<GameResult> finish_turn(GameState& gs, int turn);
 constexpr int kMidWarTurn = 4;
 constexpr int kLateWarTurn = 8;
 constexpr int kMaxTurns = 10;
-constexpr int kSpaceShuttleArs = 8;
+// kSpaceShuttleArs is in search_common.hpp
 constexpr int kVirtualLossWeight = 1;
 constexpr int kMaxCardLogits = 112;
 constexpr int kMaxModeLogits = 8;
@@ -186,7 +186,16 @@ void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng&
         // A pair completes when next_side wraps back to root_phasing.
         if (root_ar > 0 && next_side == root_phasing) {
             state.pub.ar += 1;
-            const int max_ar = ars_for_turn(state.pub.turn);
+            int max_ar = ars_for_turn(state.pub.turn);
+            // Space Shuttle: either player at level 8 gets an extra AR.
+            if (state.pub.space[to_index(root_phasing)] >= kSpaceShuttleArs ||
+                state.pub.space[to_index(other_side(root_phasing))] >= kSpaceShuttleArs) {
+                max_ar = std::max(max_ar, kSpaceShuttleArs);
+            }
+            // North Sea Oil: US gets an extra AR this turn.
+            if (state.pub.north_sea_oil_extra_ar) {
+                max_ar += 1;
+            }
             if (state.pub.ar > max_ar) {
                 auto result = finish_turn(state, state.pub.turn);
                 if (result.has_value()) {
@@ -279,39 +288,8 @@ struct DraftsResult {
     AccessibleCache cache;
 };
 
-int count_scoring_cards(const CardSet& hand) {
-    int scoring_cards = 0;
-    for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
-        if (hand.test(card_id) && card_spec(static_cast<CardId>(card_id)).is_scoring) {
-            ++scoring_cards;
-        }
-    }
-    return scoring_cards;
-}
-
-int remaining_action_decisions_for_side(const GameState& state, Side side) {
-    int max_ar = ars_for_turn(state.pub.turn);
-    if (state.pub.space[to_index(side)] >= kSpaceShuttleArs) {
-        max_ar = std::max(max_ar, kSpaceShuttleArs);
-    }
-    if (side == Side::US && state.pub.north_sea_oil_extra_ar) {
-        max_ar += 1;
-    }
-    return std::max(1, max_ar - state.pub.ar + 1);
-}
-
-double scoring_card_prior_multiplier(const GameState& state, Side side, int scoring_cards) {
-    if (state.pub.ar <= 0 || scoring_cards <= 0) {
-        return 1.0;
-    }
-    const int remaining_decisions = remaining_action_decisions_for_side(state, side);
-    const int slack = remaining_decisions - scoring_cards;
-    if (slack <= 0) {
-        return 1.0;
-    }
-    const int urgency_steps = std::max(1, 4 - std::min(slack, 3));
-    return std::pow(10.0, static_cast<double>(urgency_steps));
-}
+// count_scoring_cards, remaining_action_decisions_for_side, scoring_card_prior_multiplier
+// are now in search_common.hpp.
 
 DraftsResult collect_card_drafts(const GameState& state) {
     const auto side = state.pub.phasing;
