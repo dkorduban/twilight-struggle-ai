@@ -34,14 +34,14 @@ for _bindings_dir in (_REPO / "build-ninja" / "bindings", _REPO / "build" / "bin
         sys.path.insert(0, str(_bindings_dir))
         break
 
-# Weak baseline (BC model, earlier generation)
-MODEL_BC = str(_REPO / "data/checkpoints/v99_nash_c_95ep_s42/baseline_best_scripted.pt")
-# Strong PPO v2 best (highest Elo in PPO v2 self-play run)
-MODEL_PPO_V2_BEST = str(_REPO / "data/checkpoints/ppo_v2_selfplay/ppo_best_scripted.pt")
-# PPO v1 best
-MODEL_PPO_V1_BEST = str(_REPO / "data/checkpoints/ppo_v1_from_v106/ppo_best_scripted.pt")
-# PPO v2 early (weak: iteration 20)
-MODEL_PPO_V2_EARLY = str(_REPO / "data/checkpoints/ppo_v2_selfplay/ppo_iter0020_scripted.pt")
+# Weak baseline (BC model, broad 384-dim, 32-scalar compatible)
+MODEL_BC = str(_REPO / "data/checkpoints/scripted_for_elo/bc_wide384_scripted.pt")
+# Strong PPO current best (v205 sc league, 32-scalar compatible)
+MODEL_PPO_V2_BEST = str(_REPO / "data/checkpoints/ppo_v205_sc_league/ppo_best_scripted.pt")
+# PPO v2 iter10 — used as "PPO v1" analogue (earlier in same run lineage)
+MODEL_PPO_V1_BEST = str(_REPO / "data/checkpoints/ppo_v205_sc_league/v205_sc.iter0010_scripted.pt")
+# PPO early (iteration 10 of current run — weaker than ppo_best)
+MODEL_PPO_V2_EARLY = str(_REPO / "data/checkpoints/ppo_v205_sc_league/v205_sc.iter0010_scripted.pt")
 
 _BC_EXISTS = os.path.exists(MODEL_BC)
 _PPO_V2_BEST_EXISTS = os.path.exists(MODEL_PPO_V2_BEST)

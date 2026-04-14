@@ -21,9 +21,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BINARY = REPO_ROOT / "build-ninja" / "cpp" / "tools" / "ts_collect_mcts_games_jsonl"
-# Use v99 model — smallest available scripted model, doesn't need to be strong.
+# Use v66_sc model — 32-scalar compatible scripted model, doesn't need to be strong.
 MODEL_PATH = (
-    REPO_ROOT / "data" / "checkpoints" / "v99_cf_1x95_s7" / "baseline_best_scripted.pt"
+    REPO_ROOT / "data" / "checkpoints" / "scripted_for_elo" / "v66_sc_scripted.pt"
 )
 SCRIPT = REPO_ROOT / "scripts" / "collect_mcts_targets.py"
 

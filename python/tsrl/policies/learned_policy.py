@@ -187,6 +187,9 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
             "strategy_mixer.bias",
         )
     )
+    # Detect expected scalar dimension from checkpoint weights (old=11, new=32)
+    _scalar_w = state_dict.get("scalar_encoder.weight")
+    _ckpt_scalar_dim: int = int(_scalar_w.shape[1]) if _scalar_w is not None else 32
     model.eval()
     try:
         model = torch.compile(model, dynamic=True)
@@ -207,6 +210,9 @@ def make_learned_policy(checkpoint_path: str, side: Side, *, use_country_head: b
             return None
 
         influence, cards, scalars = _extract_features(pub, hand_set, holds_china, side)
+        # Truncate scalars for old checkpoints that expected fewer scalar features
+        if _ckpt_scalar_dim < scalars.shape[1]:
+            scalars = scalars[:, :_ckpt_scalar_dim]
         with torch.no_grad():
             outputs = model(influence, cards, scalars)
             card_logits = outputs["card_logits"][0]
@@ -347,6 +353,8 @@ def make_model_candidate_fn(
             "strategy_mixer.bias",
         )
     )
+    _scalar_w = state_dict.get("scalar_encoder.weight")
+    _ckpt_scalar_dim: int = int(_scalar_w.shape[1]) if _scalar_w is not None else 32
     model.eval()
     try:
         model = torch.compile(model, dynamic=True)
@@ -370,6 +378,8 @@ def make_model_candidate_fn(
             return []
 
         influence, cards, scalars = _extract_features(pub, hand, holds_china, side)
+        if _ckpt_scalar_dim < scalars.shape[1]:
+            scalars = scalars[:, :_ckpt_scalar_dim]
         with torch.no_grad():
             outputs = model(influence, cards, scalars)
             card_logits = outputs["card_logits"][0]
@@ -509,6 +519,8 @@ def make_value_function(checkpoint_path: str) -> Callable[[GameState], float]:
     hidden_dim = ckpt_args.get("hidden_dim", 256)
     model = TSBaselineModel(hidden_dim=hidden_dim)
     model.load_state_dict(state_dict, strict=False)
+    _scalar_w = state_dict.get("scalar_encoder.weight")
+    _ckpt_scalar_dim: int = int(_scalar_w.shape[1]) if _scalar_w is not None else 32
     model.eval()
     try:
         model = torch.compile(model, dynamic=True)
@@ -527,6 +539,8 @@ def make_value_function(checkpoint_path: str) -> Callable[[GameState], float]:
         hand = gs.hands[side]
 
         influence, cards, scalars = _extract_features(pub, hand, holds_china, side)
+        if _ckpt_scalar_dim < scalars.shape[1]:
+            scalars = scalars[:, :_ckpt_scalar_dim]
         with torch.no_grad():
             outputs = model(influence, cards, scalars)
             value = outputs["value"][0, 0].item()  # scalar from [-1, +1]

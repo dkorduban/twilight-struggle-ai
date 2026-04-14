@@ -44,7 +44,8 @@ _MODEL_REGISTRY = {
 }
 
 
-def load_model(checkpoint_path: Path) -> torch.nn.Module:
+def load_model(checkpoint_path: Path) -> tuple[torch.nn.Module, int]:
+    """Load model from checkpoint. Returns (model, scalar_dim) for export tracing."""
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     ckpt_args = checkpoint.get("args", {})
@@ -59,20 +60,29 @@ def load_model(checkpoint_path: Path) -> torch.nn.Module:
     if "num_strategies" in init_params:
         kwargs["num_strategies"] = num_strategies
     model = cls(**kwargs)
-    model.load_state_dict(state_dict, strict=False)
+    # Detect actual scalar_dim from checkpoint weights BEFORE loading
+    scalar_w = state_dict.get("scalar_encoder.weight")
+    ckpt_scalar_dim: int = int(scalar_w.shape[1]) if scalar_w is not None else SCALAR_DIM
+    # Filter state_dict to only keys with matching shapes (skip size-mismatched heads)
+    model_sd = model.state_dict()
+    filtered_sd = {
+        k: v for k, v in state_dict.items()
+        if k in model_sd and v.shape == model_sd[k].shape
+    }
+    model.load_state_dict(filtered_sd, strict=False)
     model.eval()
-    return model
+    return model, ckpt_scalar_dim
 
 
 def export_checkpoint(checkpoint_path: Path, output_path: Path) -> None:
-    model = load_model(checkpoint_path)
+    model, ckpt_scalar_dim = load_model(checkpoint_path)
     try:
         scripted = torch.jit.script(model)
     except Exception:
         example_inputs = (
             torch.zeros((1, 172), dtype=torch.float32),
             torch.zeros((1, 448), dtype=torch.float32),
-            torch.zeros((1, SCALAR_DIM), dtype=torch.float32),
+            torch.zeros((1, ckpt_scalar_dim), dtype=torch.float32),
         )
         scripted = torch.jit.trace(model, example_inputs, strict=False)
     output_path.parent.mkdir(parents=True, exist_ok=True)
