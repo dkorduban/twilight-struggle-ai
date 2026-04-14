@@ -30,6 +30,7 @@ struct BatchOutputs {
     torch::Tensor country_logits;
     torch::Tensor strategy_logits;
     torch::Tensor country_strategy_logits;
+    torch::Tensor marginal_logits;
     torch::Tensor value;
     torch::Tensor small_choice_logits;  // (B, 8) or undefined for old models
 };
