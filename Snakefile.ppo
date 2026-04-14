@@ -83,6 +83,7 @@ _DYNAMIC_TRAIN_DEFAULTS = {
     "elo_log": "results/logs/ppo/ppo_dynamic.log",
     "probe_set": "data/probe_positions.parquet",
     "skip_smoke_test": False,
+    "reset_optimizer": True,  # default: reset Adam state; set False for chained runs
 }
 
 
@@ -134,7 +135,7 @@ def _dynamic_ppo_train_args():
         f"--global-ent-decay-start {prev_total_iters}",
         f"--global-ent-decay-end {prev_total_iters + 300}",  # 2026-04-14: slow from 30→300 (Opus: fast decay kills exploration)
         "--max-kl 0.03",  # Reduced from 0.3: Opus analysis showed clip_frac 25% + KL 0.01 → unstable updates
-        "--reset-optimizer",
+        *(["--reset-optimizer"] if cfg.get("reset_optimizer", True) else []),
         f"--league {shlex.quote(cfg['out_dir'])}",
         "--league-save-every 10",
         "--league-mix-k 6",

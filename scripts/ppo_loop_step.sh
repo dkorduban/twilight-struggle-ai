@@ -283,10 +283,24 @@ except Exception as e:
 " 2>/dev/null)
 PREV_TOTAL_ITERS="${PREV_TOTAL_ITERS:-0}"
 
+# --- Decide whether to reset optimizer ---
+# Reset when restarting from anchor (OVERRIDE used or checkpoint not from FINISHED's own league).
+# Keep Adam state when chaining (same-lineage run): preserves momentum → fewer warmup iters.
+RESET_OPTIMIZER="true"
+# If checkpoint is from the FINISHED run's own dir (not an override from another lineage), keep state.
+if echo "$FINISHED_CHECKPOINT" | grep -q "ppo_${FINISHED}_league"; then
+  RESET_OPTIMIZER="false"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Chained run: reset_optimizer=false (preserving Adam state from $FINISHED)" \
+    >> results/autonomous_decisions.log
+else
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Restart/override: reset_optimizer=true (fresh Adam state)" \
+    >> results/autonomous_decisions.log
+fi
+
 # --- Launch next PPO run ---
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from $(basename $(dirname $FINISHED_CHECKPOINT)) $(basename $FINISHED_CHECKPOINT)" \
   >> results/autonomous_decisions.log
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=0.5, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.01->0.003 heuristic=0.15 n_iters=30 global_decay=[${PREV_TOTAL_ITERS},$((PREV_TOTAL_ITERS+300))]" \
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=0.5, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.01->0.003 heuristic=0.15 n_iters=30 global_decay=[${PREV_TOTAL_ITERS},$((PREV_TOTAL_ITERS+300))] reset_opt=$RESET_OPTIMIZER" \
   >> results/autonomous_decisions.log
 
 mkdir -p "$NEXT_DIR" results/logs/ppo
@@ -308,6 +322,7 @@ panel_v44: "$PANEL_V44"
 panel_v45: "$PANEL_V45"
 panel_v14: "$PANEL_V14"
 skip_smoke_test: true
+reset_optimizer: $RESET_OPTIMIZER
 YAML
 
 nohup nice -n 10 uv run snakemake \
