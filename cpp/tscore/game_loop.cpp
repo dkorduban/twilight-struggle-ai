@@ -322,6 +322,45 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_a
     return std::tuple{pub, over, winner};
 }
 
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_cuban_missile_crisis_cancel(
+    GameState& gs,
+    Side side,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr
+) {
+    if (!gs.pub.cuban_missile_crisis_active) {
+        return std::nullopt;
+    }
+
+    std::vector<CardId> eligible;
+    for (int raw = 1; raw <= kMaxCardId; ++raw) {
+        const auto candidate = static_cast<CardId>(raw);
+        if (
+            gs.hands[to_index(side)].test(candidate) &&
+            candidate != kChinaCardId &&
+            !card_spec(candidate).is_scoring &&
+            effective_ops(candidate, gs.pub, side) >= 2
+        ) {
+            eligible.push_back(candidate);
+        }
+    }
+    if (eligible.empty()) {
+        return std::nullopt;
+    }
+
+    if (choose_option(gs.pub, static_cast<CardId>(43), side, 2, rng, policy_cb) == 0) {
+        return std::nullopt;
+    }
+
+    auto pub = gs.pub;
+    const auto chosen = choose_card(pub, static_cast<CardId>(43), side, eligible, rng, policy_cb);
+    discard_from_hand(gs, side, chosen, pub);
+    pub.cuban_missile_crisis_active = false;
+    gs.pub = pub;
+    const auto [over, winner] = check_vp_win(pub);
+    return std::tuple{pub, over, winner};
+}
+
 std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     GameState& gs,
     CardId card_id,
@@ -1027,6 +1066,19 @@ std::optional<GameResult> run_action_rounds(
             gs.pub.phasing = side;
             const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
             auto& hand = gs.hands[to_index(side)];
+            if (auto cmc_result = resolve_cuban_missile_crisis_cancel(gs, side, rng); cmc_result.has_value()) {
+                auto& [new_pub, over, winner] = *cmc_result;
+                (void)new_pub;
+                if (over) {
+                    return GameResult{
+                        .winner = winner,
+                        .final_vp = gs.pub.vp,
+                        .end_turn = gs.pub.turn,
+                        .end_reason = end_reason(gs.pub, winner),
+                    };
+                }
+                continue;
+            }
             if (auto trap_result = resolve_trap_ar(gs, side, rng); trap_result.has_value()) {
                 auto& [new_pub, over, winner] = *trap_result;
                 (void)new_pub;
@@ -1127,6 +1179,19 @@ std::optional<GameResult> run_extra_action_round(
     gs.pub.phasing = side;
     const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
     auto& hand = gs.hands[to_index(side)];
+    if (auto cmc_result = resolve_cuban_missile_crisis_cancel(gs, side, rng); cmc_result.has_value()) {
+        auto& [new_pub, over, winner] = *cmc_result;
+        (void)new_pub;
+        if (over) {
+            return GameResult{
+                .winner = winner,
+                .final_vp = gs.pub.vp,
+                .end_turn = gs.pub.turn,
+                .end_reason = end_reason(gs.pub, winner),
+            };
+        }
+        return std::nullopt;
+    }
     if (hand.none()) {
         return std::nullopt;
     }
@@ -1332,6 +1397,15 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_a
     const PolicyCallbackFn* policy_cb
 ) {
     return resolve_trap_ar(gs, side, rng, policy_cb);
+}
+
+std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_cuban_missile_crisis_cancel_live(
+    GameState& gs,
+    Side side,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
+) {
+    return resolve_cuban_missile_crisis_cancel(gs, side, rng, policy_cb);
 }
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad_live(
