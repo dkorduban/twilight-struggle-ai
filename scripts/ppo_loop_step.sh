@@ -26,17 +26,17 @@ NEXT_LOG="results/logs/ppo/ppo_${NEXT}.log"
 # The JSON fixture_paths field lists scripted .pt paths + __heuristic__.
 FINISHED_SCRIPTED="data/checkpoints/scripted_for_elo/${FINISHED}_scripted.pt"
 # Panel eval and candidate tournament: same 5-opponent pool.
-# Upgraded 2026-04-14: sc-lineage panel saturated at 0.913-0.953 WR at v160_sc iter 20.
-# Model is genuinely much stronger than v67_sc/v136_sc (ELO 2017/2022). Updated panel:
-# - Replaced v67_sc (2017) and v136_sc (2022) with v159_sc and v160_sc (the two
-#   strongest recent sc-lineage checkpoints) so WR drops to ~30-50% for discrimination.
-# - Kept v77_sc, v78_sc, v132_sc (ELO 2092-2097) for lower-bound calibration.
-# v159_sc=? | v160_sc=? | v77_sc=2092 | v78_sc=2097 | v132_sc=2092
-PANEL_V55="data/checkpoints/scripted_for_elo/v159_sc_scripted.pt"
-PANEL_V54="data/checkpoints/scripted_for_elo/v160_sc_scripted.pt"
-PANEL_V44="data/checkpoints/scripted_for_elo/v77_sc_scripted.pt"
-PANEL_V45="data/checkpoints/scripted_for_elo/v78_sc_scripted.pt"
-PANEL_V14="data/checkpoints/scripted_for_elo/v132_sc_scripted.pt"
+# Restored 2026-04-14: reverted from sc-lineage panel (v159/v160_sc at 1756-1757 Elo —
+# WEAKER than declining sc-lineage models, causing Elo measurement bias).
+# Root cause of decline identified: fixture pool had declining sc-lineage models
+# (v138/v140/v142_sc 1944-1979) → PFSP focused training on weak opponents →
+# model specialised → lost generalization. Fixed by restoring strong non-sc panel.
+# v55=2118 | v54=2102 | v44=2101 | v45=2096 | v48=2095
+PANEL_V55="data/checkpoints/scripted_for_elo/v55_scripted.pt"
+PANEL_V54="data/checkpoints/scripted_for_elo/v54_scripted.pt"
+PANEL_V44="data/checkpoints/scripted_for_elo/v44_scripted.pt"
+PANEL_V45="data/checkpoints/scripted_for_elo/v45_scripted.pt"
+PANEL_V14="data/checkpoints/scripted_for_elo/v48_scripted.pt"
 
 FIXTURES_JSON="results/selected_fixtures.json"
 
