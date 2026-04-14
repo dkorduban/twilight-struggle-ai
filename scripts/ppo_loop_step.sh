@@ -30,11 +30,11 @@ FINISHED_SCRIPTED="data/checkpoints/scripted_for_elo/${FINISHED}_scripted.pt"
 # 5-mode at 94-97% WR → new models got fake Elo 2000-2400 → maybe_override never triggered.
 # NEW 6-mode panel gives real discrimination:
 # v209_sc=1875(peak) | v217_sc=1837(anchor) | v232_sc=1811 | v228_sc=1796 | v227_sc=1791
-PANEL_V55="data/checkpoints/scripted_for_elo/v209_sc_scripted.pt"
-PANEL_V54="data/checkpoints/scripted_for_elo/v217_sc_scripted.pt"
-PANEL_V44="data/checkpoints/scripted_for_elo/v232_sc_scripted.pt"
-PANEL_V45="data/checkpoints/scripted_for_elo/v228_sc_scripted.pt"
-PANEL_V14="data/checkpoints/scripted_for_elo/v227_sc_scripted.pt"
+PANEL_V209_SC="data/checkpoints/scripted_for_elo/v209_sc_scripted.pt"
+PANEL_V217_SC="data/checkpoints/scripted_for_elo/v217_sc_scripted.pt"
+PANEL_V232_SC="data/checkpoints/scripted_for_elo/v232_sc_scripted.pt"
+PANEL_V228_SC="data/checkpoints/scripted_for_elo/v228_sc_scripted.pt"
+PANEL_V227_SC="data/checkpoints/scripted_for_elo/v227_sc_scripted.pt"
 
 FIXTURES_JSON="results/selected_fixtures.json"
 
@@ -108,11 +108,11 @@ if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
   nohup nice -n 10 uv run python scripts/ppo_confirm_best.py \
     --run-dir "$FINISHED_DIR" \
     --fixtures \
-      "v209_sc:${PANEL_V55}" \
-      "v217_sc:${PANEL_V54}" \
-      "v232_sc:${PANEL_V44}" \
-      "v228_sc:${PANEL_V45}" \
-      "v227_sc:${PANEL_V14}" \
+      "v209_sc:${PANEL_V209_SC}" \
+      "v217_sc:${PANEL_V217_SC}" \
+      "v232_sc:${PANEL_V232_SC}" \
+      "v228_sc:${PANEL_V228_SC}" \
+      "v227_sc:${PANEL_V227_SC}" \
     --n-top 8 \
     --n-games 150 \
     --anchor v209_sc --anchor-elo 1875 \
@@ -313,11 +313,11 @@ upgo_flag: "$UPGO_FLAG"
 ussr_fixtures: "$USSR_FIXTURES __heuristic__"
 us_fixtures: "$US_FIXTURES __heuristic__"
 league_fixtures: "$LEAGUE_FIXTURES __heuristic__"
-panel_v55: "$PANEL_V55"
-panel_v54: "$PANEL_V54"
-panel_v44: "$PANEL_V44"
-panel_v45: "$PANEL_V45"
-panel_v14: "$PANEL_V14"
+panel_v209_sc: "$PANEL_V209_SC"
+panel_v217_sc: "$PANEL_V217_SC"
+panel_v232_sc: "$PANEL_V232_SC"
+panel_v228_sc: "$PANEL_V228_SC"
+panel_v227_sc: "$PANEL_V227_SC"
 skip_smoke_test: true
 reset_optimizer: $RESET_OPTIMIZER
 YAML

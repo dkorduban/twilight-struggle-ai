@@ -64,11 +64,11 @@ if [ -f "${RUN_DIR}/panel_eval_history.json" ]; then
   # 6-mode _sc panel (switched 2026-04-14): replaces old 5-mode v55/v54/v44/v45/v14.
   # Old 5-mode panel gave fake Elo (6-mode crushes 5-mode at 94-97% WR).
   # v209_sc=1875(peak) | v217_sc=1837 | v232_sc=1811 | v228_sc=1796 | v227_sc=1791
-  PANEL_V55="${SCRIPT_DIR}/v209_sc_scripted.pt"
-  PANEL_V54="${SCRIPT_DIR}/v217_sc_scripted.pt"
-  PANEL_V44="${SCRIPT_DIR}/v232_sc_scripted.pt"
-  PANEL_V45="${SCRIPT_DIR}/v228_sc_scripted.pt"
-  PANEL_V14="${SCRIPT_DIR}/v227_sc_scripted.pt"
+  PANEL_V209_SC="${SCRIPT_DIR}/v209_sc_scripted.pt"
+  PANEL_V217_SC="${SCRIPT_DIR}/v217_sc_scripted.pt"
+  PANEL_V232_SC="${SCRIPT_DIR}/v232_sc_scripted.pt"
+  PANEL_V228_SC="${SCRIPT_DIR}/v228_sc_scripted.pt"
+  PANEL_V227_SC="${SCRIPT_DIR}/v227_sc_scripted.pt"
   if [ "$DRY_RUN" = "1" ]; then
     echo "Step 1: Would run ppo_confirm_best.py vs v209_sc, v217_sc, v232_sc, v228_sc, v227_sc (150 games each)"
   else
@@ -76,11 +76,11 @@ if [ -f "${RUN_DIR}/panel_eval_history.json" ]; then
     uv run python scripts/ppo_confirm_best.py \
       --run-dir "$RUN_DIR" \
       --fixtures \
-        "v209_sc:${PANEL_V55}" \
-        "v217_sc:${PANEL_V54}" \
-        "v232_sc:${PANEL_V44}" \
-        "v228_sc:${PANEL_V45}" \
-        "v227_sc:${PANEL_V14}" \
+        "v209_sc:${PANEL_V209_SC}" \
+        "v217_sc:${PANEL_V217_SC}" \
+        "v232_sc:${PANEL_V232_SC}" \
+        "v228_sc:${PANEL_V228_SC}" \
+        "v227_sc:${PANEL_V227_SC}" \
       --n-top 8 \
       --n-games 150 \
       --anchor v209_sc --anchor-elo 1875 \
