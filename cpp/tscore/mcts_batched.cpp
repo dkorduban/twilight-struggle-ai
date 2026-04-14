@@ -3410,11 +3410,9 @@ bool is_deferred_event_first_choice(const ActionEncoding& top_level_action, cons
 }
 
 std::optional<int> choose_deferred_event_first_index(
-    torch::jit::script::Module& model,
-    torch::Device device,
-    GameSlot& slot,
     const PublicState& pub,
     const EventDecision& decision,
+    const torch::Tensor& country_logits,
     CommitPolicyTrace* trace
 ) {
     auto ops_actions = enumerate_deferred_event_first_actions(pub, decision.source_card, decision.acting_side);
@@ -3422,18 +3420,10 @@ std::optional<int> choose_deferred_event_first_index(
         return std::nullopt;
     }
 
-    auto obs = make_observation(slot.root_state, decision.acting_side);
-    obs.pub = pub;
-
-    nn::BatchInputs callback_inputs;
-    callback_inputs.allocate(1, device);
-    callback_inputs.fill_slot(0, obs);
-    const auto callback_outputs = nn::forward_model_batched(model, callback_inputs);
-    if (!callback_outputs.country_logits.defined() || callback_outputs.country_logits.size(0) <= 0) {
+    if (!country_logits.defined() || country_logits.size(0) <= 0) {
         return std::nullopt;
     }
 
-    const auto country_logits = callback_outputs.country_logits.index({0});
     float best_score = -std::numeric_limits<float>::infinity();
     std::optional<int> best_choice;
     const ActionEncoding* best_action = nullptr;
@@ -3471,6 +3461,31 @@ std::optional<int> choose_deferred_event_first_index(
     return best_choice;
 }
 
+std::optional<int> argmax_eligible_logit_index(
+    const EventDecision& decision,
+    const torch::Tensor& logits
+) {
+    if (!logits.defined() || logits.dim() != 1 || logits.size(0) <= 0 || decision.n_options <= 0) {
+        return std::nullopt;
+    }
+
+    const auto n_logits = static_cast<int>(logits.size(0));
+    float best_score = -std::numeric_limits<float>::infinity();
+    std::optional<int> best_choice;
+    for (int option = 0; option < decision.n_options; ++option) {
+        const auto eligible_id = decision.eligible_ids[option];
+        if (eligible_id < 0 || eligible_id >= n_logits) {
+            continue;
+        }
+        const auto score = decode::tensor_at(logits, eligible_id);
+        if (!best_choice.has_value() || score > best_score) {
+            best_score = score;
+            best_choice = option;
+        }
+    }
+    return best_choice;
+}
+
 PolicyCallbackFn make_commit_policy_callback(
     torch::jit::script::Module& model,
     torch::Device device,
@@ -3483,31 +3498,97 @@ PolicyCallbackFn make_commit_policy_callback(
         const PublicState& pub,
         const EventDecision& decision
     ) -> int {
-        if (decision.kind != DecisionKind::SmallChoice || decision.n_options <= 0) {
+        if (decision.n_options <= 0) {
             return 0;
         }
 
-        if (is_deferred_event_first_choice(action, decision)) {
-            if (auto choice = choose_deferred_event_first_index(model, device, slot, pub, decision, trace);
+        std::optional<nn::BatchOutputs> callback_outputs;
+        auto ensure_callback_outputs = [&]() -> const nn::BatchOutputs* {
+            if (!callback_outputs.has_value()) {
+                auto obs = make_observation(slot.root_state, decision.acting_side);
+                obs.pub = pub;
+
+                nn::BatchInputs callback_inputs;
+                callback_inputs.allocate(1, device);
+                callback_inputs.fill_slot(0, obs);
+                callback_outputs = nn::forward_model_batched(model, callback_inputs);
+            }
+            return &*callback_outputs;
+        };
+
+        if (decision.kind == DecisionKind::SmallChoice) {
+            if (is_deferred_event_first_choice(action, decision)) {
+                const auto* outputs = ensure_callback_outputs();
+                if (outputs != nullptr &&
+                    outputs->country_logits.defined() &&
+                    outputs->country_logits.size(0) > 0) {
+                    if (auto choice = choose_deferred_event_first_index(
+                            pub,
+                            decision,
+                            outputs->country_logits.index({0}),
+                            trace
+                        );
+                        choice.has_value()) {
+                        return *choice;
+                    }
+                }
+                return 0;
+            }
+
+            if (!small_choice_logits.defined() || decision.n_options <= 1) {
+                return 0;
+            }
+
+            auto masked = small_choice_logits.slice(/*dim=*/0, /*start=*/0, /*end=*/decision.n_options);
+            auto log_probs = torch::log_softmax(masked, /*dim=*/0);
+            const auto choice = static_cast<int>(masked.argmax(0).item<int64_t>());
+            if (trace != nullptr) {
+                trace->small_choice_target = choice;
+                trace->small_choice_n_options = decision.n_options;
+                trace->small_choice_logprob = log_probs[choice].item<float>();
+            }
+            return choice;
+        }
+
+        if (decision.n_options <= 1) {
+            return 0;
+        }
+
+        if (decision.kind == DecisionKind::CountrySelect) {
+            const auto* outputs = ensure_callback_outputs();
+            if (outputs == nullptr ||
+                !outputs->country_logits.defined() ||
+                outputs->country_logits.size(0) <= 0) {
+                return 0;
+            }
+            if (auto choice = argmax_eligible_logit_index(
+                    decision,
+                    outputs->country_logits.index({0})
+                );
                 choice.has_value()) {
-                return *choice;
+                return std::clamp(*choice, 0, decision.n_options - 1);
             }
             return 0;
         }
 
-        if (!small_choice_logits.defined() || decision.n_options <= 1) {
+        if (decision.kind == DecisionKind::CardSelect) {
+            const auto* outputs = ensure_callback_outputs();
+            if (outputs == nullptr ||
+                !outputs->card_logits.defined() ||
+                outputs->card_logits.size(0) <= 0) {
+                return 0;
+            }
+            if (auto choice = argmax_eligible_logit_index(
+                    decision,
+                    outputs->card_logits.index({0})
+                );
+                choice.has_value()) {
+                return std::clamp(*choice, 0, decision.n_options - 1);
+            }
             return 0;
         }
 
-        auto masked = small_choice_logits.slice(/*dim=*/0, /*start=*/0, /*end=*/decision.n_options);
-        auto log_probs = torch::log_softmax(masked, /*dim=*/0);
-        const auto choice = static_cast<int>(masked.argmax(0).item<int64_t>());
-        if (trace != nullptr) {
-            trace->small_choice_target = choice;
-            trace->small_choice_n_options = decision.n_options;
-            trace->small_choice_logprob = log_probs[choice].item<float>();
-        }
-        return choice;
+        return 0;
     };
 }
 
