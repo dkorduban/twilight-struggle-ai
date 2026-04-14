@@ -19,15 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 
-from tsrl.engine.adjacency import load_adjacency
-from tsrl.engine.game_state import _ars_for_turn
-from tsrl.engine.legal_actions import (
-    accessible_countries,
-    effective_ops,
-    enumerate_actions,
-    legal_cards,
-    legal_modes,
-)
+from tsrl._tscore import get_tscore
 from tsrl.etl.game_data import CardSpec, CountrySpec, load_cards, load_countries
 from tsrl.schemas import ActionEncoding, ActionMode, PublicState, Region, Side
 
@@ -227,6 +219,73 @@ class DecisionContext:
 
 
 DEFAULT_MINIMAL_HYBRID_PARAMS = MinimalHybridParams()
+
+
+def load_adjacency() -> dict[int, frozenset[int]]:
+    tscore = get_tscore()
+    return {
+        int(country_id): frozenset(int(neighbor) for neighbor in neighbors)
+        for country_id, neighbors in tscore.load_adjacency().items()
+    }
+
+
+def _ars_for_turn(turn: int) -> int:
+    return int(get_tscore().ars_for_turn(turn))
+
+
+def accessible_countries(
+    side: Side,
+    pub: PublicState,
+    adj: dict[int, frozenset[int]] | None = None,
+    *,
+    mode: ActionMode = ActionMode.INFLUENCE,
+) -> frozenset[int]:
+    del adj
+    return frozenset(
+        int(country_id)
+        for country_id in get_tscore().accessible_countries(side, pub, mode)
+    )
+
+
+def effective_ops(card_id: int, pub: PublicState, side: Side) -> int:
+    return int(get_tscore().effective_ops(card_id, pub, side))
+
+
+def enumerate_actions(
+    hand: frozenset[int],
+    pub: PublicState,
+    side: Side,
+    *,
+    holds_china: bool = False,
+) -> list[object]:
+    return list(get_tscore().enumerate_actions(hand, pub, side, holds_china, 84))
+
+
+def legal_cards(
+    hand: frozenset[int],
+    pub: PublicState,
+    side: Side,
+    *,
+    holds_china: bool = False,
+) -> frozenset[int]:
+    return frozenset(
+        int(card_id)
+        for card_id in get_tscore().legal_cards(hand, pub, side, holds_china)
+    )
+
+
+def legal_modes(
+    card_id: int,
+    pub: PublicState,
+    side: Side,
+    *,
+    adj: dict[int, frozenset[int]] | None = None,
+) -> frozenset[ActionMode]:
+    del adj
+    return frozenset(
+        ActionMode(int(mode))
+        for mode in get_tscore().legal_modes(card_id, pub, side)
+    )
 
 
 def choose_minimal_hybrid(

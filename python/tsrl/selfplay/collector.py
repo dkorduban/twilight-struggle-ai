@@ -31,9 +31,11 @@ it as a training target without filling it from a proper smoother pass.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
 
-from tsrl.engine.game_loop import GameResult
-from tsrl.engine.mcts import SelfPlayStep, collect_self_play_game
+from tsrl._tscore import get_tscore
 from tsrl.etl.dataset import (
     MAX_CARD_ID,
     MAX_COUNTRY_ID,
@@ -51,22 +53,54 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _GAME_RESULT_STR: dict[int | None, str] = {
-    Side.USSR: "ussr_win",
-    Side.US: "us_win",
+    int(Side.USSR): "ussr_win",
+    int(Side.US): "us_win",
+    int(Side.NEUTRAL): "draw",
     None: "draw",
 }
 
 _WINNER_SIDE_INT: dict[int | None, int] = {
-    Side.USSR: 1,
-    Side.US: -1,
+    int(Side.USSR): 1,
+    int(Side.US): -1,
+    int(Side.NEUTRAL): 0,
     None: 0,
 }
 
 
-def _encode_result(result: GameResult) -> tuple[str, int]:
+@dataclass(frozen=True)
+class _CollectedStep:
+    pub_snapshot: PublicState | Mapping[str, Any]
+    side: Side
+    hand: frozenset[int]
+    holds_china: bool
+    action: Any
+    game_result: Any
+
+
+def _encode_result(result: Any) -> tuple[str, int]:
     """Return (game_result_str, winner_side_int)."""
-    winner = result.winner  # Side enum or None
+    winner = None if result.winner is None else int(result.winner)
     return _GAME_RESULT_STR[winner], _WINNER_SIDE_INT[winner]
+
+
+def _public_value(pub: PublicState | Mapping[str, Any], key: str) -> Any:
+    if isinstance(pub, Mapping):
+        return pub[key]
+    return getattr(pub, key)
+
+
+def _public_card_set(pub: PublicState | Mapping[str, Any], key: str) -> frozenset[int]:
+    return frozenset(int(card_id) for card_id in _public_value(pub, key))
+
+
+def _public_influence_array(
+    pub: PublicState | Mapping[str, Any],
+    side: Side,
+) -> list[int]:
+    if isinstance(pub, Mapping):
+        key = "ussr_influence" if side == Side.USSR else "us_influence"
+        return [int(value) for value in _public_value(pub, key)]
+    return _influence_array(pub, side)
 
 
 # ---------------------------------------------------------------------------
@@ -75,12 +109,12 @@ def _encode_result(result: GameResult) -> tuple[str, int]:
 
 
 def _step_to_row(
-    step: SelfPlayStep,
+    step: _CollectedStep,
     game_id: str,
     step_idx: int,
 ) -> dict:
     """Convert one SelfPlayStep to a flat row dict."""
-    pub: PublicState = step.pub_snapshot
+    pub = step.pub_snapshot
     side: Side = step.side
     opp: Side = Side.US if side == Side.USSR else Side.USSR
 
@@ -98,8 +132,8 @@ def _step_to_row(
             cq[cid] = 0  # LabelQuality.EXACT
 
     # Influence arrays.
-    ussr_inf = _influence_array(pub, Side.USSR)
-    us_inf = _influence_array(pub, Side.US)
+    ussr_inf = _public_influence_array(pub, Side.USSR)
+    us_inf = _public_influence_array(pub, Side.US)
 
     # Action fields.
     targets_str = ",".join(str(t) for t in step.action.targets)
@@ -108,14 +142,16 @@ def _step_to_row(
     actor_known_in = actor_hand_mask
     # known_not_in: everything not in hand and not possibly drawn is excluded;
     # use discard + removed as hard exclusions.
-    actor_known_not_in = _card_mask(pub.discard | pub.removed)
+    discard = _public_card_set(pub, "discard")
+    removed = _public_card_set(pub, "removed")
+    actor_known_not_in = _card_mask(discard | removed)
     # possible_hidden: since we have full info, possible == actual hand.
     actor_possible = actor_hand_mask
 
     # Opponent hand: unknown from actor's perspective (no inference done here).
     # Use zeros for known_in; known_not_in = actor's hand + discard + removed.
     opp_known_in_mask = [0] * _CARD_MASK_LEN
-    opp_known_not_in_mask = _card_mask(step.hand | pub.discard | pub.removed)
+    opp_known_not_in_mask = _card_mask(step.hand | discard | removed)
     opp_possible_mask = [0] * _CARD_MASK_LEN  # not computed
 
     # Hand size (excluding China Card, id=6).
@@ -124,15 +160,18 @@ def _step_to_row(
 
     # Opponent hand size: not tracked in SelfPlayStep; use 0 as sentinel.
     opp_hand_size = 0
-    opp_holds_china = not step.holds_china if pub.china_held_by != Side.NEUTRAL else False
+    china_held_by = int(_public_value(pub, "china_held_by"))
+    opp_holds_china = (
+        not step.holds_china if china_held_by != int(Side.NEUTRAL) else False
+    )
 
     return {
         # --- Identity ---
         "game_id": game_id,
         "step_idx": step_idx,
         # --- Decision context ---
-        "turn": pub.turn,
-        "ar": pub.ar,
+        "turn": int(_public_value(pub, "turn")),
+        "ar": int(_public_value(pub, "ar")),
         "phasing": int(side),
         # action_kind is not set for self-play rows (use -1 sentinel).
         "action_kind": -1,
@@ -144,20 +183,20 @@ def _step_to_row(
         "action_mode": int(step.action.mode),
         "action_targets": targets_str,
         # --- Global state ---
-        "vp": pub.vp,
-        "defcon": pub.defcon,
-        "milops_ussr": pub.milops[Side.USSR],
-        "milops_us": pub.milops[Side.US],
-        "space_ussr": pub.space[Side.USSR],
-        "space_us": pub.space[Side.US],
-        "china_held_by": int(pub.china_held_by),
-        "china_playable": pub.china_playable,
+        "vp": int(_public_value(pub, "vp")),
+        "defcon": int(_public_value(pub, "defcon")),
+        "milops_ussr": int(_public_value(pub, "milops")[int(Side.USSR)]),
+        "milops_us": int(_public_value(pub, "milops")[int(Side.US)]),
+        "space_ussr": int(_public_value(pub, "space")[int(Side.USSR)]),
+        "space_us": int(_public_value(pub, "space")[int(Side.US)]),
+        "china_held_by": china_held_by,
+        "china_playable": bool(_public_value(pub, "china_playable")),
         # --- Influence ---
         "ussr_influence": ussr_inf,
         "us_influence": us_inf,
         # --- Card set masks ---
-        "discard_mask": _card_mask(pub.discard),
-        "removed_mask": _card_mask(pub.removed),
+        "discard_mask": _card_mask(discard),
+        "removed_mask": _card_mask(removed),
         # --- Actor hand knowledge ---
         "actor_known_in": actor_known_in,
         "actor_known_not_in": actor_known_not_in,
@@ -238,21 +277,38 @@ def collect_games(
     Returns:
         List of row dicts, one per decision point across all games.
     """
+    del n_sim, use_uct
+
     all_rows: list[dict] = []
+    tscore = get_tscore()
 
     for game_idx in range(n_games):
         game_seed = base_seed + game_idx
         game_id = f"selfplay_{base_seed}_{game_idx:04d}"
 
         try:
-            steps, result = collect_self_play_game(
-                n_sim=n_sim,
-                use_uct=use_uct,
+            traced = tscore.play_traced_game(
+                tscore.PolicyKind.MinimalHybrid,
+                tscore.PolicyKind.MinimalHybrid,
                 seed=game_seed,
             )
         except Exception as exc:
             log.warning("game %s failed: %s", game_id, exc)
             continue
+
+        result = traced.result
+        steps = [
+            _CollectedStep(
+                pub_snapshot=step.pub_snapshot,
+                side=Side(int(step.side)),
+                hand=frozenset(int(card_id) for card_id in step.hand_snapshot),
+                holds_china=bool(step.holds_china),
+                action=step.action,
+                game_result=result,
+            )
+            for step in traced.steps
+            if int(step.action.card_id) > 0
+        ]
 
         for step_idx, step in enumerate(steps):
             try:
@@ -261,7 +317,8 @@ def collect_games(
             except Exception as exc:
                 log.warning("game %s step %d row build failed: %s", game_id, step_idx, exc)
 
+        game_result_str, _winner_side = _encode_result(result)
         log.info("game %-30s  steps=%d  result=%s  vp=%d",
-                 game_id, len(steps), _GAME_RESULT_STR[result.winner], result.final_vp)
+                 game_id, len(steps), game_result_str, result.final_vp)
 
     return all_rows
