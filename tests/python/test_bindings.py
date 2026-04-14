@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import importlib
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
-MODEL_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "data"
-    / "checkpoints"
-    / "v99_nash_c_95ep_s42"
-    / "baseline_best_scripted.pt"
-)
+_REPO = Path(__file__).resolve().parents[2]
+for _bindings_dir in (_REPO / "build-ninja" / "bindings", _REPO / "build" / "bindings"):
+    if _bindings_dir.exists() and str(_bindings_dir) not in sys.path:
+        sys.path.insert(0, str(_bindings_dir))
+        break
+
+# Use v66_sc — 32-scalar compatible scripted model, doesn't need to be strong.
+MODEL_PATH = _REPO / "data" / "checkpoints" / "scripted_for_elo" / "v66_sc_scripted.pt"
 
 
 @pytest.fixture(scope="module")

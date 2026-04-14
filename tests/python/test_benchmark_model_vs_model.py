@@ -10,20 +10,25 @@ from __future__ import annotations
 
 import importlib
 import os
+import sys
 from pathlib import Path
 
 import pytest
+
+_REPO = Path(__file__).resolve().parents[2]
+for _bindings_dir in (_REPO / "build-ninja" / "bindings", _REPO / "build" / "bindings"):
+    if _bindings_dir.exists() and str(_bindings_dir) not in sys.path:
+        sys.path.insert(0, str(_bindings_dir))
+        break
 
 # ---------------------------------------------------------------------------
 # Model paths
 # ---------------------------------------------------------------------------
 
-_REPO = Path(__file__).resolve().parents[2]
-
 # Fast BC checkpoint — used as "same model" for symmetry / determinism tests
-MODEL_A = str(_REPO / "data/checkpoints/v99_nash_c_95ep_s42/baseline_best_scripted.pt")
-# Different model — PPO v1 checkpoint
-MODEL_B = str(_REPO / "data/checkpoints/ppo_v1_from_v106/ppo_iter0080_scripted.pt")
+MODEL_A = str(_REPO / "data/checkpoints/scripted_for_elo/bc_wide384_scripted.pt")
+# Different model — PPO current best (32-scalar compatible)
+MODEL_B = str(_REPO / "data/checkpoints/ppo_v205_sc_league/ppo_best_scripted.pt")
 
 _SINGLE_MODEL_EXISTS = os.path.exists(MODEL_A)
 _MODELS_EXIST = _SINGLE_MODEL_EXISTS and os.path.exists(MODEL_B)
