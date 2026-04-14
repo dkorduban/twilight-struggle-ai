@@ -35,6 +35,9 @@
 namespace ts {
 namespace {
 
+// Forward declaration — defined later in this file.
+std::optional<GameResult> finish_turn(GameState& gs, int turn);
+
 constexpr int kMidWarTurn = 4;
 constexpr int kLateWarTurn = 8;
 constexpr int kMaxTurns = 10;
@@ -160,7 +163,8 @@ bool aggregated_edge_better(const MctsEdge& lhs, const MctsEdge& rhs) {
     return action_less(lhs.action, rhs.action);
 }
 
-void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng& rng) {
+void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng& rng,
+                       Side root_phasing, int root_ar) {
     const auto side = state.pub.phasing;
     auto& hand = state.hands[to_index(side)];
     if (hand.test(action.card_id)) {
@@ -172,9 +176,27 @@ void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng&
     sync_china_flags(state);
     state.game_over = over;
     state.winner = winner;
-    state.current_side = over ? side : other_side(side);
+
     if (!over) {
-        state.pub.phasing = other_side(side);
+        const auto next_side = other_side(side);
+        state.pub.phasing = next_side;
+        state.current_side = next_side;
+
+        // Advance AR when a full pair completes (not headline: root_ar > 0).
+        // A pair completes when next_side wraps back to root_phasing.
+        if (root_ar > 0 && next_side == root_phasing) {
+            state.pub.ar += 1;
+            const int max_ar = ars_for_turn(state.pub.turn);
+            if (state.pub.ar > max_ar) {
+                auto result = finish_turn(state, state.pub.turn);
+                if (result.has_value()) {
+                    state.game_over = true;
+                    state.winner = result->winner;
+                }
+            }
+        }
+    } else {
+        state.current_side = side;
     }
 }
 
@@ -257,11 +279,44 @@ struct DraftsResult {
     AccessibleCache cache;
 };
 
+// Returns true if the given hand contains a scoring card.
+bool hand_has_scoring_card(const CardSet& hand) {
+    for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
+        if (hand.test(card_id) && card_spec(static_cast<CardId>(card_id)).is_scoring) {
+            return true;
+        }
+    }
+    return false;
+}
+
 DraftsResult collect_card_drafts(const GameState& state) {
     const auto side = state.pub.phasing;
     const auto holds_china = holds_china_for(state, side);
     const auto& pub = state.pub;
     auto cache = AccessibleCache::build(side, pub);
+
+    // Force scoring card play whenever the player holds one during action rounds.
+    // Holding a scoring card at cleanup = instant loss; playing it immediately
+    // is always correct since delay only risks the game. This matches MinimalHybrid.
+    const bool must_play_scoring = pub.ar > 0
+        && hand_has_scoring_card(state.hands[to_index(side)]);
+    if (must_play_scoring) {
+        // Return only the scoring card(s) as Event actions.
+        std::vector<CardDraft> cards;
+        for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
+            if (!card_spec(card_id).is_scoring) continue;
+            CardDraft card{.card_id = card_id, .modes = {}};
+            card.modes.push_back(ModeDraft{
+                .mode = ActionMode::Event,
+                .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Event, .targets = {}}},
+            });
+            cards.push_back(std::move(card));
+        }
+        if (!cards.empty()) {
+            return DraftsResult{.drafts = std::move(cards), .cache = std::move(cache)};
+        }
+        // Fallthrough: no scoring cards are actually legal (shouldn't happen); run normal drafts.
+    }
 
     std::vector<CardDraft> cards;
     cards.reserve(10);
@@ -301,6 +356,13 @@ DraftsResult collect_card_drafts(const GameState& state) {
                     .mode = ActionMode::Influence,
                     .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Influence, .targets = {}}},
                 });
+                // EventFirst: opponent card only — event fires before ops.
+                if (spec.side == other_side(side)) {
+                    card.modes.push_back(ModeDraft{
+                        .mode = ActionMode::EventFirst,
+                        .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::EventFirst, .targets = {}}},
+                    });
+                }
             }
 
             try_add_mode(ActionMode::Coup, cache.coup);
@@ -669,7 +731,8 @@ SelectionResult select_to_leaf(DeterminizationSlot& det, const MctsConfig& confi
         auto& edge = node->edges[static_cast<size_t>(edge_index)];
         edge.virtual_loss += kVirtualLossWeight;
         pend.path.emplace_back(node, edge_index);
-        apply_tree_action(pend.sim_state, node->applied_actions[static_cast<size_t>(edge_index)], det.rng);
+        apply_tree_action(pend.sim_state, node->applied_actions[static_cast<size_t>(edge_index)], det.rng,
+                         det.root_state.pub.phasing, det.root_state.pub.ar);
         if (node->children[static_cast<size_t>(edge_index)] == nullptr) {
             if (auto immediate = expand_without_model(pend.sim_state, det.rng); immediate.has_value()) {
                 node->children[static_cast<size_t>(edge_index)] = std::move(immediate->node);
