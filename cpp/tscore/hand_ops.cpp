@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <span>
 #include <vector>
 
 #include "dice.hpp"
@@ -611,7 +612,8 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
     CardId card_id,
     Side side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb
+    const PolicyCallbackFn* policy_cb,
+    std::span<const CountryId> preferred_targets
 ) {
     CardSet hand;
     hand.set(static_cast<int>(card_id));
@@ -632,6 +634,33 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
         return {gs.pub, false, std::nullopt};
     }
 
+    const auto score_match = [](std::span<const CountryId> candidate_targets, std::span<const CountryId> targets) {
+        std::array<int, kCountrySlots> candidate_counts = {};
+        std::array<int, kCountrySlots> target_counts = {};
+        for (const auto cid : candidate_targets) {
+            ++candidate_counts[static_cast<size_t>(cid)];
+        }
+        for (const auto cid : targets) {
+            ++target_counts[static_cast<size_t>(cid)];
+        }
+
+        int overlap = 0;
+        bool exact_multiset = candidate_targets.size() == targets.size();
+        for (size_t idx = 0; idx < candidate_counts.size(); ++idx) {
+            overlap += std::min(candidate_counts[idx], target_counts[idx]);
+            if (candidate_counts[idx] != target_counts[idx]) {
+                exact_multiset = false;
+            }
+        }
+
+        return std::tuple{
+            exact_multiset,
+            overlap,
+            candidate_targets.size() == targets.size(),
+            !candidate_targets.empty() && !targets.empty() && candidate_targets.front() == targets.front()
+        };
+    };
+
     int idx = 0;
     if (policy_cb != nullptr && ops_actions.size() > 1) {
         EventDecision decision;
@@ -640,6 +669,17 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
         decision.acting_side = side;
         decision.n_options = static_cast<int>(ops_actions.size());
         idx = std::clamp((*policy_cb)(gs.pub, decision), 0, static_cast<int>(ops_actions.size()) - 1);
+    } else if (ops_actions.size() > 1 && !preferred_targets.empty()) {
+        size_t best_idx = 0;
+        auto best_score = score_match(ops_actions.front().targets, preferred_targets);
+        for (size_t candidate_idx = 1; candidate_idx < ops_actions.size(); ++candidate_idx) {
+            const auto candidate_score = score_match(ops_actions[candidate_idx].targets, preferred_targets);
+            if (candidate_score > best_score) {
+                best_idx = candidate_idx;
+                best_score = candidate_score;
+            }
+        }
+        idx = static_cast<int>(best_idx);
     }
 
     auto [ops_pub, ops_over, ops_winner] =
@@ -758,7 +798,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
                 if (event_over) {
                     return {event_pub, true, event_winner};
                 }
-                return execute_deferred_ops(gs, action.card_id, side, rng, policy_cb);
+                return execute_deferred_ops(gs, action.card_id, side, rng, policy_cb, action.targets);
             }
 
             auto [ops_pub, ops_over, ops_winner] = apply_action(gs.pub, action, side, rng, policy_cb);

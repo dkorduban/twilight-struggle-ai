@@ -778,9 +778,10 @@ TEST_CASE("legal_modes excludes EventFirst for own cards", "[legal_actions][even
 
 TEST_CASE("EventFirst actions defer country targets", "[legal_actions][event_first]") {
     constexpr CardId kNatoCard = static_cast<CardId>(21);  // NATO, US card
+    constexpr CountryId kPolandId = static_cast<CountryId>(12);
 
     PublicState pub;
-    pub.set_influence(Side::USSR, static_cast<CountryId>(12), 1);  // Poland
+    pub.set_influence(Side::USSR, kPolandId, 1);  // Poland
 
     CardSet hand;
     hand.set(static_cast<int>(kNatoCard));
@@ -799,6 +800,22 @@ TEST_CASE("EventFirst actions defer country targets", "[legal_actions][event_fir
     }
 
     REQUIRE(event_first_count == 1);
+
+    GameState gs;
+    gs.pub = pub;
+    const ActionEncoding action{
+        .card_id = kNatoCard,
+        .mode = ActionMode::EventFirst,
+        .targets = {kPolandId, kPolandId, kPolandId, kPolandId},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action_live(gs, action, Side::USSR, rng);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(next.nato_active);
+    REQUIRE(next.influence_of(Side::USSR, kPolandId) == 5);
 }
 
 namespace {

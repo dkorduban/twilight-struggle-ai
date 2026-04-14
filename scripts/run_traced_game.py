@@ -3,6 +3,7 @@
 
 Usage:
     PYTHONPATH=build-ninja/bindings uv run python scripts/run_traced_game.py [--model PATH] [--seed N] [--heuristic]
+    PYTHONPATH=build-ninja/bindings uv run python scripts/run_traced_game.py [MODEL_PATH [MODEL_PATH]] [--seed N] [--max-turns N]
 """
 from __future__ import annotations
 
@@ -470,6 +471,12 @@ def _allocate_influence_targets(country_scores: torch.Tensor | None, ops: int) -
     return targets
 
 
+def _decode_influence_targets(card_id: int, country_scores: torch.Tensor | None, cards: dict) -> list[int]:
+    card_spec = cards.get(card_id)
+    ops = card_spec.ops if card_spec else 1
+    return _allocate_influence_targets(country_scores, ops)
+
+
 def _make_model_callback(model_path: Path, temperature: float = 0.0, seed: int = 0):
     model = _load_model(model_path)
     cards = load_cards()
@@ -529,15 +536,8 @@ def _make_model_callback(model_path: Path, temperature: float = 0.0, seed: int =
         mode_scores = [(float(mode_logits[i].item()), i) for i in legal_mode_ints if i < len(mode_logits)]
         best_mode = max(mode_scores, default=(0, _MODE_EVENT))[1]
 
-        if best_mode == _MODE_INFLUENCE:
-            card_spec = cards.get(best_card_id)
-            ops = card_spec.ops if card_spec else 1
-            targets = _allocate_influence_targets(country_logits, ops)
-        elif best_mode == _MODE_EVENT_FIRST:
-            # play_traced_game_with_callback only asks Python for the top-level
-            # ActionEncoding. EventFirst deferred ops are resolved later inside
-            # C++ execute_deferred_ops(), which does not re-enter this callback.
-            targets = []
+        if best_mode in (_MODE_INFLUENCE, _MODE_EVENT_FIRST):
+            targets = _decode_influence_targets(best_card_id, country_logits, cards)
         elif best_mode in (_MODE_COUP, _MODE_REALIGN):
             country_ids = _candidate_country_ids(country_logits)
             best_target = max(
@@ -722,12 +722,24 @@ def print_game_log(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run one traced self-play game.")
     parser.add_argument(
+        "model_paths",
+        nargs="*",
+        type=Path,
+        help="Optional positional model path compatibility shim; repeated paths must match.",
+    )
+    parser.add_argument(
         "--model",
         type=Path,
         default=_DEFAULT_MODEL,
         help=f"Path to scripted model (default: {_DEFAULT_MODEL})",
     )
     parser.add_argument("--seed", type=int, default=42, help="RNG seed (default: 42)")
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=None,
+        help="Limit printed output to steps with turn <= N; the full game still runs.",
+    )
     parser.add_argument(
         "--heuristic",
         action="store_true",
@@ -739,7 +751,17 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    steps, result, policy_note = collect_traced_game(args.model, args.seed, args.heuristic, args.temperature)
+    model_path = args.model
+    if args.model_paths:
+        if args.model != _DEFAULT_MODEL:
+            parser.error("pass either positional model path(s) or --model, not both")
+        model_path = args.model_paths[0]
+        if any(path != model_path for path in args.model_paths[1:]):
+            parser.error("run_traced_game.py uses one shared model path; positional model arguments must match")
+
+    steps, result, policy_note = collect_traced_game(model_path, args.seed, args.heuristic, args.temperature)
+    if args.max_turns is not None:
+        steps = [step for step in steps if step.pub_snapshot["turn"] <= args.max_turns]
     print(f"[run_traced_game] {policy_note}", file=sys.stderr)
 
     cards = load_cards()
