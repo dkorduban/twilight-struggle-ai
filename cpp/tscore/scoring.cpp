@@ -30,8 +30,7 @@ constexpr std::array<RegionVp, 6> kRegionVp = {{
 }};
 
 bool is_scoring_battleground(CountryId country_id, const PublicState& pub) {
-    return country_spec(country_id).is_battleground ||
-        (country_id == kTaiwanId && pub.formosan_active && controls_country(Side::US, kTaiwanId, pub));
+    return country_spec(country_id).is_battleground || (country_id == kTaiwanId && pub.formosan_active);
 }
 
 struct RegionCounts {
