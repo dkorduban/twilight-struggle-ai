@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <set>
 #include <catch2/catch_test_macros.hpp>
 
 #include "public_state.hpp"
@@ -419,4 +420,63 @@ TEST_CASE("enumerate_actions Influence respects 2-ops enemy-control surcharge", 
     REQUIRE(found_eg_eg);                   // 2 placements in non-controlled — valid
     REQUIRE_FALSE(found_invalid_poland_eg);    // would cost 3 ops — invalid
     REQUIRE_FALSE(found_invalid_poland_poland); // would cost 4 ops — invalid
+}
+
+// ---------------------------------------------------------------------------
+// OpsFirst mode: legal when playing an opponent's card and Influence is legal.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("legal_modes includes OpsFirst for opponent cards when Influence is legal", "[legal_actions][ops_first]") {
+    // USSR has influence in Poland (reachable countries exist) and plays a US card.
+    // Card 2 = Europe Scoring (US, scoring card — no ops, so Influence not legal from it).
+    // Use card 11 (Korean War, USSR, 2 ops) — opponent for US side.
+    // Use card 28 (NATO, US, 4 ops) — opponent for USSR side.
+    constexpr CardId kNatoCard = static_cast<CardId>(21);  // NATO is card 21 (US)
+
+    PublicState pub;
+    pub.set_influence(Side::USSR, static_cast<CountryId>(12), 1);  // Poland
+
+    const auto modes = legal_modes(kNatoCard, pub, Side::USSR);
+
+    const bool has_influence = std::find(modes.begin(), modes.end(), ActionMode::Influence) != modes.end();
+    const bool has_ops_first = std::find(modes.begin(), modes.end(), ActionMode::OpsFirst) != modes.end();
+    REQUIRE(has_influence);
+    REQUIRE(has_ops_first);
+}
+
+TEST_CASE("legal_modes excludes OpsFirst for own cards", "[legal_actions][ops_first]") {
+    // Card 8 (Fidel) is a USSR card — OpsFirst should NOT appear when USSR plays it.
+    constexpr CardId kFidalCard = static_cast<CardId>(8);  // Fidel, USSR
+
+    PublicState pub;
+    pub.set_influence(Side::USSR, static_cast<CountryId>(36), 1);  // Cuba (USSR anchor neighbor)
+
+    const auto modes = legal_modes(kFidalCard, pub, Side::USSR);
+
+    const bool has_ops_first = std::find(modes.begin(), modes.end(), ActionMode::OpsFirst) != modes.end();
+    REQUIRE_FALSE(has_ops_first);
+}
+
+TEST_CASE("OpsFirst targets match Influence accessible countries", "[legal_actions][ops_first]") {
+    // enumerate_actions for an opponent card should produce OpsFirst actions
+    // with the same accessible countries as Influence actions.
+    constexpr CardId kNatoCard = static_cast<CardId>(21);  // NATO, US card
+
+    PublicState pub;
+    pub.set_influence(Side::USSR, static_cast<CountryId>(12), 1);  // Poland
+
+    CardSet hand;
+    hand.set(static_cast<int>(kNatoCard));
+
+    const auto actions = enumerate_actions(hand, pub, Side::USSR, false);
+
+    std::set<std::vector<CountryId>> influence_targets, ops_first_targets;
+    for (const auto& a : actions) {
+        if (a.card_id != kNatoCard) continue;
+        if (a.mode == ActionMode::Influence) influence_targets.insert(a.targets);
+        if (a.mode == ActionMode::OpsFirst) ops_first_targets.insert(a.targets);
+    }
+
+    REQUIRE_FALSE(influence_targets.empty());
+    REQUIRE(influence_targets == ops_first_targets);  // same target sets, different ordering
 }

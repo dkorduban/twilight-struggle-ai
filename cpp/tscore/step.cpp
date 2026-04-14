@@ -1281,6 +1281,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
     auto next = pub;
 
     switch (action.mode) {
+        case ActionMode::OpsFirst:
+            // OpsFirst is Influence with ops-before-event ordering; ordering is
+            // consumed by apply_action_with_hands before this point.
+            [[fallthrough]];
         case ActionMode::Influence:
             for (const auto target : action.targets) {
                 next.set_influence(side, target, next.influence_of(side, target) + 1);

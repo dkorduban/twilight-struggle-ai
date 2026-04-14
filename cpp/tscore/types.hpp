@@ -26,6 +26,11 @@ enum class ActionMode : uint8_t {
     Realign = 2,
     Space = 3,
     Event = 4,
+    // OpsFirst: play an opponent's card for Influence placement, executing
+    // the influence ops BEFORE the opponent's event fires.  Semantically
+    // identical to Influence for country selection; the ordering flag is
+    // consumed by apply_action_with_hands in game_loop.cpp.
+    OpsFirst = 5,
 };
 
 enum class Era : uint8_t {

@@ -759,8 +759,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     if (action.mode != ActionMode::Event && action.mode != ActionMode::Space) {
         const auto owner = card_spec(action.card_id).side;
         if (owner == other_side(side)) {
-            const auto ordering = choose_option(gs.pub, action.card_id, side, 2, rng, policy_cb);
-            const bool event_first = ordering == 0;
+            // OpsFirst mode: policy explicitly requested ops before event — no random choice needed.
+            // Other ops modes (Influence/Coup/Realign): fall back to policy callback or random.
+            const bool event_first = (action.mode == ActionMode::OpsFirst)
+                ? false
+                : (choose_option(gs.pub, action.card_id, side, 2, rng, policy_cb) == 0);
 
             if (event_first) {
                 auto [event_pub, event_over, event_winner] = fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
