@@ -3337,7 +3337,11 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
 
     RolloutStep step;
     step.card_mask = torch::zeros({kMaxCardId}, torch::TensorOptions().dtype(torch::kBool));
-    step.mode_mask = torch::zeros({5}, torch::TensorOptions().dtype(torch::kBool));
+    // mode_mask size matches the model's actual mode_logits size so the Python
+    // training loop (mode_logits.masked_fill(~mode_masks)) sees compatible shapes.
+    // This handles both old 5-mode and new 6-mode scripted checkpoints.
+    const auto& tmp_mode_logits_for_size = outputs.mode_logits.index({batch_index});
+    step.mode_mask = torch::zeros({tmp_mode_logits_for_size.size(0)}, torch::TensorOptions().dtype(torch::kBool));
     step.country_mask = torch::zeros({kCountrySlots}, torch::TensorOptions().dtype(torch::kBool));
     step.value = outputs.value.index({batch_index, 0}).item<float>();
     step.side_int = to_index(side);
@@ -3404,8 +3408,10 @@ std::pair<ActionEncoding, RolloutStep> rollout_action_from_outputs(
     }
 
     auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+    const auto n_mode_logits = mode_logits.size(0);
     for (const auto mode : modes) {
         const auto index = static_cast<int64_t>(static_cast<int>(mode));
+        if (index >= n_mode_logits) continue;  // mode unknown to this model version (e.g. 5-mode vs OpsFirst=5)
         step.mode_mask.index_put_({index}, true);
         masked_mode.index_put_({index}, tensor_at(mode_logits, index));
     }
@@ -3543,6 +3549,8 @@ ActionEncoding greedy_action_from_outputs(
     const auto mode_logits = outputs.mode_logits.index({batch_index});
     const auto country_logits_raw = outputs.country_logits.defined()
         ? outputs.country_logits.index({batch_index}) : torch::Tensor{};
+    const auto marginal_logits_raw = outputs.marginal_logits.defined()
+        ? outputs.marginal_logits.index({batch_index}) : torch::Tensor{};
     const auto strategy_logits_raw = outputs.strategy_logits.defined()
         ? outputs.strategy_logits.index({batch_index}) : torch::Tensor{};
     const auto country_strategy_logits_raw = outputs.country_strategy_logits.defined()

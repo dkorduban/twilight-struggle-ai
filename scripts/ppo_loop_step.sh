@@ -242,7 +242,12 @@ fi
 #   After 1 run: 200→140, after 3: 200→69 (significant re-explore).
 # Strip self-play iter_* entries (keys don't match across runs).
 mkdir -p "$NEXT_DIR"
-if [ -f "${FINISHED_DIR}/wr_table.json" ]; then
+# Skip WR table copy if target already exists (e.g. pre-seeded from a different source
+# when restarting the lineage from a non-consecutive checkpoint).
+if [ -f "${NEXT_DIR}/wr_table.json" ]; then
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WR table already exists for $NEXT — skipping copy from $FINISHED (pre-seeded)" \
+    >> results/autonomous_decisions.log
+elif [ -f "${FINISHED_DIR}/wr_table.json" ]; then
   python3 -c "
 import json, math
 with open('${FINISHED_DIR}/wr_table.json') as f:
@@ -302,6 +307,7 @@ panel_v54: "$PANEL_V54"
 panel_v44: "$PANEL_V44"
 panel_v45: "$PANEL_V45"
 panel_v14: "$PANEL_V14"
+skip_smoke_test: true
 YAML
 
 nohup nice -n 10 uv run snakemake \

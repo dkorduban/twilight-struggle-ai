@@ -1091,8 +1091,10 @@ ActionEncoding greedy_action_from_model(
     }
 
     auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+    const auto n_mode_logits_ismcts = mode_logits.size(0);
     for (const auto m : modes) {
         const auto idx = static_cast<int64_t>(static_cast<int>(m));
+        if (idx >= n_mode_logits_ismcts) continue;  // mode unknown to this model version
         masked_mode.index_put_({idx}, mode_logits.index({idx}));
     }
     // DEFCON safety: forbid coup/event for DEFCON-lowering cards at DEFCON<=2.

@@ -298,10 +298,16 @@ inline auto choose_action_from_outputs(
         return no_action();
     }
 
+    // mode_logits.size(0) may be smaller than the number of legal modes when an
+    // old checkpoint (e.g. 5-mode) is used with a newer engine that emits
+    // OpsFirst (mode=5).  Skip out-of-bounds indices so the old model can still
+    // play by choosing among its known modes.
+    const auto n_mode_logits = mode_logits.size(0);
     auto build_masked_mode = [&]() {
         auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
         for (const auto mode : modes) {
             const auto index = static_cast<int64_t>(static_cast<int>(mode));
+            if (index >= n_mode_logits) continue;  // mode unknown to this model version
             masked_mode.index_put_({index}, tensor_at(mode_logits, index));
         }
         return masked_mode;
