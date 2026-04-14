@@ -191,7 +191,12 @@ std::vector<CardId> legal_cards(const CardSet& hand, const PublicState& pub, Sid
         std::remove_if(
             cards.begin(),
             cards.end(),
-            [&](CardId card_id) { return card_id == kChinaCardId && !holds_china; }
+            [&](CardId card_id) {
+                if (card_id == kChinaCardId) {
+                    return pub.ar == 0 || !holds_china;
+                }
+                return false;
+            }
         ),
         cards.end()
     );
