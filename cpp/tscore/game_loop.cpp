@@ -749,6 +749,48 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
     return {new_pub, over, winner};
 }
 
+/// Execute the ops portion of an opponent-card play after its event has resolved.
+/// Called by the EventFirst branch of apply_action_with_hands.
+static std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
+    GameState& gs,
+    CardId card_id,
+    Side side,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb
+) {
+    CardSet hand;
+    hand.set(static_cast<int>(card_id));
+    const auto all_actions = enumerate_actions(hand, gs.pub, side, false);
+
+    std::vector<ActionEncoding> ops_actions;
+    for (const auto& a : all_actions) {
+        if (
+            a.card_id == card_id &&
+            a.mode != ActionMode::EventFirst &&
+            a.mode != ActionMode::Event &&
+            a.mode != ActionMode::Space
+        ) {
+            ops_actions.push_back(a);
+        }
+    }
+    if (ops_actions.empty()) {
+        return {gs.pub, false, std::nullopt};
+    }
+
+    int idx = 0;
+    if (policy_cb && ops_actions.size() > 1) {
+        EventDecision dec;
+        dec.kind = DecisionKind::SmallChoice;
+        dec.source_card = card_id;
+        dec.acting_side = side;
+        dec.n_options = static_cast<int>(ops_actions.size());
+        idx = std::clamp((*policy_cb)(gs.pub, dec), 0, static_cast<int>(ops_actions.size()) - 1);
+    }
+    auto [ops_pub, ops_over, ops_winner] = apply_action(gs.pub, ops_actions[static_cast<size_t>(idx)], side, rng, policy_cb);
+    gs.pub = ops_pub;
+    return {ops_pub, ops_over, ops_winner};
+}
+
 std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     GameState& gs,
     const ActionEncoding& action,
@@ -759,16 +801,13 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     if (action.mode != ActionMode::Event && action.mode != ActionMode::Space) {
         const auto owner = card_spec(action.card_id).side;
         if (owner == other_side(side)) {
-            // EventFirst mode: policy explicitly requested the opponent's event fires before ops.
-            // Plain Influence/Coup/Realign with an opponent card default to ops-first (event after).
-            const bool event_first = (action.mode == ActionMode::EventFirst);
-
-            if (event_first) {
+            if (action.mode == ActionMode::EventFirst) {
                 auto [event_pub, event_over, event_winner] = fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
                 gs.pub = event_pub;
                 if (event_over) {
                     return {event_pub, true, event_winner};
                 }
+                return execute_deferred_ops(gs, action.card_id, side, rng, policy_cb);
             }
 
             auto [ops_pub, ops_over, ops_winner] = apply_action(gs.pub, action, side, rng, policy_cb);
@@ -777,12 +816,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
                 return {ops_pub, true, ops_winner};
             }
 
-            if (!event_first) {
-                auto [event_pub, event_over, event_winner] = fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
-                gs.pub = event_pub;
-                if (event_over) {
-                    return {event_pub, true, event_winner};
-                }
+            auto [event_pub, event_over, event_winner] = fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
+            gs.pub = event_pub;
+            if (event_over) {
+                return {event_pub, true, event_winner};
             }
 
             return {gs.pub, false, std::nullopt};

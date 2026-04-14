@@ -60,10 +60,12 @@ bool nato_protected(CountryId country_id, const PublicState& pub) {
 }
 
 std::vector<CountryId> filtered_accessible_countries(Side side, const PublicState& pub, ActionMode mode) {
-    // EventFirst is influence placement with event-before-ops ordering; use Influence accessibility.
-    const auto effective_mode = (mode == ActionMode::EventFirst) ? ActionMode::Influence : mode;
-    auto base = accessible_countries(side, pub, effective_mode);
-    if (effective_mode == ActionMode::Influence) {
+    if (mode == ActionMode::EventFirst) {
+        return {};
+    }
+
+    auto base = accessible_countries(side, pub, mode);
+    if (mode == ActionMode::Influence) {
         if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
             base.erase(
                 std::remove_if(
@@ -271,10 +273,9 @@ std::vector<ActionMode> legal_modes(CardId card_id, const PublicState& pub, Side
 }
 
 std::vector<CountryId> legal_countries(CardId, ActionMode mode, const PublicState& pub, Side side) {
-    if (mode == ActionMode::Space || mode == ActionMode::Event) {
+    if (mode == ActionMode::Space || mode == ActionMode::Event || mode == ActionMode::EventFirst) {
         return {};
     }
-    // EventFirst uses Influence accessibility (handled inside filtered_accessible_countries).
     return filtered_accessible_countries(side, pub, mode);
 }
 
@@ -294,6 +295,15 @@ std::vector<ActionEncoding> enumerate_actions(
 
         for (const auto mode : modes) {
             if (mode == ActionMode::Space || mode == ActionMode::Event) {
+                actions.push_back(ActionEncoding{
+                    .card_id = card_id,
+                    .mode = mode,
+                    .targets = {},
+                });
+                continue;
+            }
+
+            if (mode == ActionMode::EventFirst) {
                 actions.push_back(ActionEncoding{
                     .card_id = card_id,
                     .mode = mode,
@@ -411,7 +421,7 @@ std::optional<ActionEncoding> sample_action(
             continue;
         }
         const auto mode = modes[rng.choice_index(modes.size())];
-        if (mode == ActionMode::Space || mode == ActionMode::Event) {
+        if (mode == ActionMode::Space || mode == ActionMode::Event || mode == ActionMode::EventFirst) {
             return ActionEncoding{
                 .card_id = card_id,
                 .mode = mode,

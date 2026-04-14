@@ -383,8 +383,8 @@ TEST_CASE("Opponent-card event fires before ops with EventFirst mode", "[game_lo
 
     const ActionEncoding action{
         .card_id = kDuckAndCoverId,
-        .mode = ActionMode::EventFirst,  // event fires first — no callback needed
-        .targets = {kFranceId},
+        .mode = ActionMode::EventFirst,
+        .targets = {},
     };
 
     Pcg64Rng rng(0);
@@ -392,7 +392,7 @@ TEST_CASE("Opponent-card event fires before ops with EventFirst mode", "[game_lo
 
     REQUIRE(over);
     REQUIRE(winner == Side::US);
-    REQUIRE(ordering_calls == 0);  // ordering encoded in action
+    REQUIRE(ordering_calls == 0);  // event ended the game before deferred ops selection
     REQUIRE(next.influence_of(Side::USSR, kFranceId) == 0);  // ops never ran (game ended first)
     REQUIRE(next.defcon == 1);
 }
@@ -488,9 +488,7 @@ TEST_CASE("legal_modes excludes EventFirst for own cards", "[legal_actions][even
     REQUIRE_FALSE(has_event_first);
 }
 
-TEST_CASE("EventFirst targets match Influence accessible countries", "[legal_actions][event_first]") {
-    // enumerate_actions for an opponent card should produce EventFirst actions
-    // with the same accessible countries as Influence actions.
+TEST_CASE("EventFirst actions defer country targets", "[legal_actions][event_first]") {
     constexpr CardId kNatoCard = static_cast<CardId>(21);  // NATO, US card
 
     PublicState pub;
@@ -501,13 +499,16 @@ TEST_CASE("EventFirst targets match Influence accessible countries", "[legal_act
 
     const auto actions = enumerate_actions(hand, pub, Side::USSR, false);
 
-    std::set<std::vector<CountryId>> influence_targets, event_first_targets;
+    REQUIRE(legal_countries(kNatoCard, ActionMode::EventFirst, pub, Side::USSR).empty());
+
+    int event_first_count = 0;
     for (const auto& a : actions) {
         if (a.card_id != kNatoCard) continue;
-        if (a.mode == ActionMode::Influence) influence_targets.insert(a.targets);
-        if (a.mode == ActionMode::EventFirst) event_first_targets.insert(a.targets);
+        if (a.mode == ActionMode::EventFirst) {
+            REQUIRE(a.targets.empty());
+            ++event_first_count;
+        }
     }
 
-    REQUIRE_FALSE(influence_targets.empty());
-    REQUIRE(influence_targets == event_first_targets);  // same target sets, different ordering
+    REQUIRE(event_first_count == 1);
 }
