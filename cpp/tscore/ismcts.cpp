@@ -2154,7 +2154,8 @@ std::vector<GameResult> play_ismcts_matchup_pooled(
                         apply_root_dirichlet_noise(*det.root, config.mcts_config, det.rng);
                     } else {
                         PendingExpansion pend;
-                        pend.sim_state = clone_game_state(det.root_state);
+                        pend.sim_state.game_state = clone_game_state(det.root_state.game_state);
+                        pend.sim_state.in_extra_round = det.root_state.in_extra_round;
                         pend.is_root_expansion = true;
                         det.pending.push_back(std::move(pend));
                         queue_batch_item(batch_inputs, batch_entries, slot, det);
@@ -2338,7 +2339,8 @@ std::vector<GameResult> play_ismcts_vs_model_pooled(
                         apply_root_dirichlet_noise(*det.root, config.mcts_config, det.rng);
                     } else {
                         PendingExpansion pend;
-                        pend.sim_state = clone_game_state(det.root_state);
+                        pend.sim_state.game_state = clone_game_state(det.root_state.game_state);
+                        pend.sim_state.in_extra_round = det.root_state.in_extra_round;
                         pend.is_root_expansion = true;
                         det.pending.push_back(std::move(pend));
                         queue_batch_item(batch_inputs, batch_entries, slot, det);
