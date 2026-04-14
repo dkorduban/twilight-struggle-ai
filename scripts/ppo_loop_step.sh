@@ -284,7 +284,7 @@ except Exception as e:
 PREV_TOTAL_ITERS="${PREV_TOTAL_ITERS:-0}"
 
 # --- Launch next PPO run ---
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from ${FINISHED} $(basename $FINISHED_CHECKPOINT)" \
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from $(basename $(dirname $FINISHED_CHECKPOINT)) $(basename $FINISHED_CHECKPOINT)" \
   >> results/autonomous_decisions.log
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=0.5, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.01->0.003 heuristic=0.15 n_iters=30 global_decay=[${PREV_TOTAL_ITERS},$((PREV_TOTAL_ITERS+300))]" \
   >> results/autonomous_decisions.log
@@ -518,11 +518,11 @@ PYEOF
       >> results/autonomous_decisions.log
   fi
 
-  # Auto-restart: if finished Elo < 1837 (v217_sc baseline), schedule restart from v217_sc for N+2.
-  # This fires after each run: if the just-finished model is below baseline, the next-next run
-  # will restart from the best 6-mode anchor instead of continuing from a weak checkpoint.
+  # Auto-restart: if finished Elo < 1750 (catastrophic collapse threshold), schedule restart from
+  # v217_sc for N+2. Use 1750 not 1837 — 1837 is the peak but 30-iter warm-up normally lands
+  # ~1800-1810 before accumulating further. Restarting at 1837 prevents chain accumulation.
   RESTART_ANCHOR=\"data/checkpoints/ppo_v217_sc_league/ppo_best.pt\"
-  RESTART_THRESHOLD=1837
+  RESTART_THRESHOLD=1750
   bash scripts/maybe_override_restart.sh '$FINISHED' '$NEXT' \"\$RESTART_ANCHOR\" \"\$RESTART_THRESHOLD\" \
     >> \"$ELO_LOG\" 2>&1 || true
 " >> "$ELO_LOG" 2>&1 &
