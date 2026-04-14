@@ -5,9 +5,10 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "PPO chain v232_sc(1811)→v233_sc(running). Restart from v217_sc(1837) with corrected config: pfsp_exp=0.5(UCB-const) + ent_coef=0.003(fixed). v232_sc=1811 is first run (+69 vs v230_sc=1742). Target: climb chain to 1837+ in v233-v235, then toward v209_sc peak(1875).",
+  "current_task": "v262_sc RUNNING — restart from v217_sc(1837), first run measured by CORRECTED 6-mode panel. v260_sc=2015(FAKE, 5-mode panel), v261_sc=2413(FAKE). True v261_sc Elo ~1720-1730 (42% WR vs v227_sc). Panel fix committed c756f33. ISMCTS bugs fixed (commits 49c0724, 53892b8): EventFirst in draft + apply_tree_action AR advancement.",
   "active_background": [
-    "v233_sc: chaining from v232_sc(1811), reset_opt=false, pfsp_exp=0.5, ent=0.003"
+    "v262_sc: RUNNING — restart from v217_sc(1837), ent=0.01→0.003(decay/300), reset_opt=true, NEW 6-mode panel",
+    "v263_sc: override pre-seeded (checkpoint_override_v263_sc.txt → v217_sc restart)"
   ],
   "gap_tracker": {
     "GAP-001": "DONE — China Card excluded from legal headline choices in legal_actions.cpp (ar==0 guard).",
@@ -85,20 +86,21 @@
   },
   "ppo_chain": {
     "best_6mode_all_time": "v209_sc at 1875 Elo (chain: v205=1849→v206=1846→v207=1859→v208=1858→v209=1875)",
-    "current_chain": "v229_sc(1783)→v230_sc(1742 REGRESSION)→v231_sc(1751)→v232_sc(1811)→v233_sc(running)",
-    "restart_threshold": "1750 (catastrophic only)",
-    "chain_plateau_diagnosis": "CORRECTED: pfsp_exp is UCB constant in 4*WR*(1-WR)+pfsp_exp*sqrt(ln(N)/n_i). Opus pfsp_exp=0.5 was correct (reduces hard-opponent exploration, keeps focus on ~50% WR _sc fixtures). Changing to 1.5 was WRONG — caused v230_sc=1742 regression. REVERTED to 0.5 (commit c310cb6). ent_coef=0.003 fix is likely correct (peak era ran at 0.003 past decay window).",
+    "current_chain": "...→v258_sc(1745)→v259_sc(1705 regression)→v260_sc(2015 FAKE)→v261_sc(2413 FAKE)→v262_sc(RUNNING, first correctly-measured)",
+    "restart_threshold": "1750 on 6-mode panel (now correctly calibrated; was broken with 5-mode panel giving fake 2000+)",
+    "panel_fix": "CRITICAL: 2026-04-14 commit c756f33. Old 5-mode panel (v55/v54/v44/v45/v48) gave fake Elo 2000-2413 for all 6-mode models (6-mode crushes 5-mode at 94-97%). New panel: v209_sc(1875)/v217_sc(1837)/v232_sc(1811)/v228_sc(1796)/v227_sc(1791). Anchor: v14@2015→v209_sc@1875.",
+    "ent_coef_fix": "commit 773d4ea: ent=0.003(flat)→0.01→0.003(decay/300). Peak era v205-v209 used ent=0.01 per run start. Flat 0.003 was misdiagnosis from 755f130.",
     "pfsp_fix": "REVERTED: pfsp_exp 1.5→0.5 (commit c310cb6). 1.5 was incorrect assumption about formula.",
-    "fixture_rolling_window": "_sc fixtures: v217_sc(1837)/v221_sc/v228_sc(1796). Updated from v225_sc→v228_sc.",
-    "optimizer_fix": "reset_optimizer=false for chained runs (commit c80cc24). v229_sc+ preserve Adam state.",
+    "optimizer_fix": "2026-04-14: REVERTED to reset_optimizer=true for ALL runs (commit 1975feb). Opus: peak era reset Adam every 30-iter run.",
+    "ismcts_fix": "commits 49c0724+53892b8: EventFirst added to collect_card_drafts() + apply_tree_action() now advances through real AR/cleanup mechanics. 48/48 tests pass.",
     "5mode_danger": "v78-v203_sc are 5-mode. Do NOT use as restart anchors. v205_sc+ are 6-mode."
   },
   "next_tasks": [
-    "Monitor v233_sc Elo — second run with corrected config (pfsp_exp=0.5 + ent=0.003). Should climb above v232_sc(1811).",
-    "If v233-v236 reach 1837+ (v217_sc anchor level): chain is recovering well.",
-    "If v234-v237 reach 1875+: new all-time 6-mode peak, surpassing v209_sc.",
-    "Update fixture rolling window when newest _sc checkpoint passes 1837.",
-    "If chain stalls at 1800-1840 despite config fix: consider architecture improvements (GNN, regional features, DP decoder)."
+    "Monitor v262_sc Elo — first run on CORRECTED 6-mode panel. Expected 1820-1850 (restart from v217_sc=1837). If <1750: chain still stuck despite ent+reset fix.",
+    "If v262_sc >= 1837: chain recovering — continue v263+ from v262_sc baseline.",
+    "If v262_sc < 1750: consider BC re-init from v209_sc games or mode_head perturbation.",
+    "If v262-v265 reach 1875+: new all-time 6-mode peak, surpassing v209_sc.",
+    "Update fixture rolling window when newest _sc checkpoint passes 1837."
   ],
   "next_tasks_after_current_wave": [
     "Architecture Task E: mcts_batched fast path (deferred — assess after chain stabilizes at 1850+)",
@@ -106,30 +108,23 @@
     "WS10: ISMCTS validation sweep",
     "Architecture improvements if chain stalls at 1800-1840: GNN, regional features, DP decoder"
   ],
-  "last_updated": "2026-04-14T13:20:00+00:00",
+  "last_updated": "2026-04-14T17:45:00+00:00",
   "completed_this_session": [
     "CRITICAL: Discovered pfsp_exp formula (UCB constant, not WR power). Opus recommendation (0.5) was correct.",
     "Reverted pfsp_exp 1.5→0.5 (commit c310cb6). v230_sc=1742 was caused by wrong 1.5 change.",
-    "Fixed ent_coef 0.01→0.003 to match peak era (commit 755f130).",
+    "CRITICAL REVERT: ent_coef 0.003(flat)→0.01→0.003(decay/300) (commit 773d4ea). Opus analysis: flat 0.003 was root cause of chain plateau at 1740-1820 for 25+ runs. Peak era started EACH run at ent=0.01. v259_sc is first run using correct ent.",
+    "Opus plateau analysis commissioned: results/analysis/opus_analysis_20260414_132200_chain_plateau_diagnosis.md",
     "v232_sc restart from v217_sc(1837): Elo=1811 (first run, Adam warmup). Chain recovering.",
     "Rolled fixture window: v221_sc(1740)→v232_sc(1811) for better PFSP signal (commit 118011f).",
+    "CRITICAL: Fixed eval panel measurement (commit c756f33): 5-mode panel → 6-mode _sc panel. Old panel gave fake Elo 2000-2413 for 6-mode models. maybe_override never triggered. Now fixed.",
+    "ISMCTS both bugs fixed (commits 49c0724+53892b8): EventFirst in draft space + apply_tree_action AR/cleanup advancement. 48/48 tests pass.",
+    "v262_sc override: restart from v217_sc (checkpoint_override_v262_sc.txt). v263_sc override pre-seeded.",
     "Fixed ISMCTS apply_tree_action: Space Shuttle + North Sea Oil in max_ar",
     "Fixed PPO config: PFSP 1.5→0.5, entropy decay 30→300 iters",
     "Auto-restart wired: maybe_override_restart.sh called from ppo_loop_step.sh",
-    "v222_sc restart from v217_sc (1837 Elo, 6-mode verified)",
-    "search_common.hpp scoring card helpers committed",
-    "48/48 C++ tests passing, 28+ Python tests passing",
-    "Diagnosed 5-mode/6-mode checkpoint mismatch; memory saved",
     "WS6 Phases 1-4 all complete (decode_helpers, search_common, DEFCON centralization, Observation wrapper)",
     "JSD probe fully implemented (jsd_probe.py + probe set + train_ppo.py integration)",
-    "ISMCTS infinite loop diagnosed (61-min hang on v210_sc); bg agent adding loop guard",
-    "PPO restart threshold lowered 1837→1750 (allows chain accumulation)",
-    "v226_sc launched from v225_sc (chain accumulating, not restarting from v217_sc)",
-    "ISMCTS loop guard: kMaxAdvanceSteps=50000 applied directly in main (bg agent worktree diverged). 48/48 C++ tests pass.",
-    "PPO chain fixes: reset_optimizer=false for chained runs (commit c80cc24)",
-    "_sc fixtures v217_sc/v221_sc/v225_sc added (Elo 1794-1837 range, 42-50% WR)",
-    "Rolling fixture window: v225_sc→v228_sc_scripted (commit 074198b)",
-    "pfsp_exp restored 1.5 (was 0.5 from Opus era; root cause of chain plateau at ~1796 vs peak 1875). Commit 074198b.",
-    "Chain plateau diagnosis: pfsp_exp=0.5 + wrong fixtures were the two root causes."
+    "ISMCTS loop guard: kMaxAdvanceSteps=50000 added. 48/48 C++ tests pass.",
+    "PPO chain fixes: reset_optimizer=false for chained runs (commit c80cc24)"
   ]
 }
