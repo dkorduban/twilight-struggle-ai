@@ -279,14 +279,38 @@ struct DraftsResult {
     AccessibleCache cache;
 };
 
-// Returns true if the given hand contains a scoring card.
-bool hand_has_scoring_card(const CardSet& hand) {
+int count_scoring_cards(const CardSet& hand) {
+    int scoring_cards = 0;
     for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
         if (hand.test(card_id) && card_spec(static_cast<CardId>(card_id)).is_scoring) {
-            return true;
+            ++scoring_cards;
         }
     }
-    return false;
+    return scoring_cards;
+}
+
+int remaining_action_decisions_for_side(const GameState& state, Side side) {
+    int max_ar = ars_for_turn(state.pub.turn);
+    if (state.pub.space[to_index(side)] >= kSpaceShuttleArs) {
+        max_ar = std::max(max_ar, kSpaceShuttleArs);
+    }
+    if (side == Side::US && state.pub.north_sea_oil_extra_ar) {
+        max_ar += 1;
+    }
+    return std::max(1, max_ar - state.pub.ar + 1);
+}
+
+double scoring_card_prior_multiplier(const GameState& state, Side side, int scoring_cards) {
+    if (state.pub.ar <= 0 || scoring_cards <= 0) {
+        return 1.0;
+    }
+    const int remaining_decisions = remaining_action_decisions_for_side(state, side);
+    const int slack = remaining_decisions - scoring_cards;
+    if (slack <= 0) {
+        return 1.0;
+    }
+    const int urgency_steps = std::max(1, 4 - std::min(slack, 3));
+    return std::pow(10.0, static_cast<double>(urgency_steps));
 }
 
 DraftsResult collect_card_drafts(const GameState& state) {
@@ -295,11 +319,12 @@ DraftsResult collect_card_drafts(const GameState& state) {
     const auto& pub = state.pub;
     auto cache = AccessibleCache::build(side, pub);
 
-    // Force scoring card play whenever the player holds one during action rounds.
-    // Holding a scoring card at cleanup = instant loss; playing it immediately
-    // is always correct since delay only risks the game. This matches MinimalHybrid.
-    const bool must_play_scoring = pub.ar > 0
-        && hand_has_scoring_card(state.hands[to_index(side)]);
+    const int scoring_cards = count_scoring_cards(state.hands[to_index(side)]);
+    const int remaining_decisions = remaining_action_decisions_for_side(state, side);
+    // Only force scoring when every remaining decision slot must be spent on
+    // a scoring card to avoid the cleanup loss. This preserves any genuine
+    // setup ARs instead of forcing immediate play as soon as a scoring card is held.
+    const bool must_play_scoring = pub.ar > 0 && scoring_cards >= remaining_decisions;
     if (must_play_scoring) {
         // Return only the scoring card(s) as Event actions.
         std::vector<CardDraft> cards;
@@ -517,6 +542,9 @@ ExpansionResult expand_from_raw(
     node->applied_actions.reserve(64);
 
     auto [drafts, cache] = collect_card_drafts(state);
+    const int scoring_cards = count_scoring_cards(state.hands[to_index(state.pub.phasing)]);
+    const double scoring_prior_boost =
+        scoring_card_prior_multiplier(state, state.pub.phasing, scoring_cards);
     // --- Copy this item's logits to stack arrays ---
     float card_logits_arr[kMaxCardLogits];
     float mode_logits_arr[kMaxModeLogits];
@@ -581,7 +609,10 @@ ExpansionResult expand_from_raw(
         softmax_inplace(masked_mode, n_mode);
 
         const int cidx = static_cast<int>(card.card_id) - 1;
-        const double card_prob = (cidx >= 0 && cidx < n_card) ? static_cast<double>(masked_card[cidx]) : 0.0;
+        double card_prob = (cidx >= 0 && cidx < n_card) ? static_cast<double>(masked_card[cidx]) : 0.0;
+        if (card_spec(card.card_id).is_scoring) {
+            card_prob *= scoring_prior_boost;
+        }
 
         for (const auto& mode : card.modes) {
             const int midx = static_cast<int>(mode.mode);
