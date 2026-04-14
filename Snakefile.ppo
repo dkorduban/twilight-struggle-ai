@@ -132,7 +132,7 @@ def _dynamic_ppo_train_args():
         "--ent-coef-final 0.003",
         f"--global-ent-decay-start {prev_total_iters}",
         f"--global-ent-decay-end {prev_total_iters + 30}",
-        "--max-kl 0.3",
+        "--max-kl 0.03",  # Reduced from 0.3: Opus analysis showed clip_frac 25% + KL 0.01 → unstable updates
         "--reset-optimizer",
         f"--league {shlex.quote(cfg['out_dir'])}",
         "--league-save-every 10",
