@@ -30,6 +30,7 @@
 #include "nn_features.hpp"
 #include "policies.hpp"
 #include "policy_callback.hpp"
+#include "rule_queries.hpp"
 #include "scoring.hpp"
 #include "search_common.hpp"
 #include "step.hpp"
@@ -325,10 +326,6 @@ void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng&
     }
 }
 
-bool nato_prerequisite_met_inline(const PublicState& pub) {
-    return pub.warsaw_pact_played || pub.marshall_plan_played || pub.truman_doctrine_played;
-}
-
 DraftsResult collect_card_drafts_cached(const Observation& obs) {
     const auto side = obs.acting_side;
     const auto& pub = obs.pub;
@@ -353,23 +350,13 @@ DraftsResult collect_card_drafts_cached(const Observation& obs) {
                 append_country_target_mode_draft(card, card_id, ActionMode::Realign, cache.realign);
 
                 if (cache.can_space && spec.ops >= cache.space_ops_min) {
-                    const bool blocked =
-                        (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
-                        (pub.quagmire_active && side == Side::US && !spec.is_scoring);
-                    if (!blocked) {
+                    if (!is_trap_blocked(pub, side, card_id)) {
                         append_single_edge_mode_draft(card, card_id, ActionMode::Space);
                     }
                 }
             }
 
-            bool event_ok = true;
-            if (card_id == 21 && !nato_prerequisite_met_inline(pub)) event_ok = false;
-            if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) event_ok = false;
-            if (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) event_ok = false;
-            if (pub.quagmire_active && side == Side::US && !spec.is_scoring) event_ok = false;
-            if (card_id == 103 && pub.defcon != 2) event_ok = false;
-            if (card_id == 104 && !pub.john_paul_ii_played) event_ok = false;
-            if (event_ok) {
+            if (is_event_play_allowed(pub, side, card_id)) {
                 append_single_edge_mode_draft(card, card_id, ActionMode::Event);
             }
         }
@@ -413,8 +400,7 @@ CompactLegalCardsResult collect_compact_legal_cards(const Observation& obs) {
 
         const auto& spec = card_spec(card_id);
         const int ops = effective_ops(card_id, pub, side);
-        const bool trapped = (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
-            (pub.quagmire_active && side == Side::US && !spec.is_scoring);
+        const bool trapped = is_trap_blocked(pub, side, card_id);
 
         LegalCardInfo card{
             .card_id = card_id,
@@ -426,13 +412,7 @@ CompactLegalCardsResult collect_compact_legal_cards(const Observation& obs) {
             .has_event = false,
         };
 
-        bool event_ok = true;
-        if (card_id == 21 && !nato_prerequisite_met_inline(pub)) event_ok = false;
-        if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) event_ok = false;
-        if (trapped) event_ok = false;
-        if (card_id == 103 && pub.defcon != 2) event_ok = false;
-        if (card_id == 104 && !pub.john_paul_ii_played) event_ok = false;
-        card.has_event = event_ok;
+        card.has_event = is_event_play_allowed(pub, side, card_id);
 
         if (card.has_influence || card.has_coup || card.has_realign || card.has_space || card.has_event) {
             cards.push_back(card);
@@ -1545,31 +1525,12 @@ bool has_any_model_action_cached_exact(const Observation& obs) {
             if (!cache.realign.empty()) {
                 return true;
             }
-            const bool trapped = (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
-                (pub.quagmire_active && side == Side::US && !spec.is_scoring);
-            if (cache.can_space && spec.ops >= cache.space_ops_min && !trapped) {
+            if (cache.can_space && spec.ops >= cache.space_ops_min && !is_trap_blocked(pub, side, card_id)) {
                 return true;
             }
         }
 
-        bool event_ok = true;
-        if (card_id == 21 && !nato_prerequisite_met_inline(pub)) {
-            event_ok = false;
-        }
-        if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) {
-            event_ok = false;
-        }
-        if ((pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
-            (pub.quagmire_active && side == Side::US && !spec.is_scoring)) {
-            event_ok = false;
-        }
-        if (card_id == 103 && pub.defcon != 2) {
-            event_ok = false;
-        }
-        if (card_id == 104 && !pub.john_paul_ii_played) {
-            event_ok = false;
-        }
-        if (event_ok) {
+        if (is_event_play_allowed(pub, side, card_id)) {
             return true;
         }
     }
@@ -1989,7 +1950,7 @@ std::string end_reason(const PublicState& pub, std::optional<Side> winner, int c
     if (pub.defcon <= 1) {
         return "defcon1";
     }
-    if (card_id == 103) {
+    if (card_id == kWargamesCardId) {
         return "wargames";
     }
     if (winner.has_value()) {

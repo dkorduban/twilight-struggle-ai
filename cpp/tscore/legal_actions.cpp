@@ -6,6 +6,7 @@
 
 #include "card_properties.hpp"
 #include "game_data.hpp"
+#include "rule_queries.hpp"
 #include "scoring.hpp"
 
 namespace ts {
@@ -39,10 +40,6 @@ bool contains(std::span<const CountryId> values, CountryId value) {
     return std::find(values.begin(), values.end(), value) != values.end();
 }
 
-bool nato_prerequisite_met(const PublicState& pub) {
-    return pub.warsaw_pact_played || pub.marshall_plan_played || pub.truman_doctrine_played;
-}
-
 bool nato_protected(CountryId country_id, const PublicState& pub) {
     if (!pub.nato_active) {
         return false;
@@ -66,16 +63,14 @@ std::vector<CountryId> filtered_accessible_countries(Side side, const PublicStat
 
     auto base = accessible_countries(side, pub, mode);
     if (mode == ActionMode::Influence) {
-        if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
-            base.erase(
-                std::remove_if(
-                    base.begin(),
-                    base.end(),
-                    [&](CountryId cid) { return country_spec(cid).region == *pub.chernobyl_blocked_region; }
-                ),
-                base.end()
-            );
-        }
+        base.erase(
+            std::remove_if(
+                base.begin(),
+                base.end(),
+                [&](CountryId cid) { return is_chernobyl_blocked(pub, side, cid); }
+            ),
+            base.end()
+        );
         return base;
     }
 
@@ -249,24 +244,19 @@ std::vector<ActionMode> legal_modes(CardId card_id, const PublicState& pub, Side
 
     modes.push_back(ActionMode::Event);
 
-    if (card_id == 21 && !nato_prerequisite_met(pub)) {
+    if (card_id == kNatoCardId && !nato_prerequisite_met(pub)) {
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
     }
 
-    const auto is_scoring = spec.is_scoring;
-    if (pub.bear_trap_active && side == Side::USSR && !is_scoring) {
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Space), modes.end());
-    }
-    if (pub.quagmire_active && side == Side::US && !is_scoring) {
+    if (is_trap_blocked(pub, side, card_id)) {
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Space), modes.end());
     }
 
-    if (card_id == 103 && pub.defcon != 2) {
+    if (card_id == kWargamesCardId && !is_wargames_event_legal(pub)) {
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
     }
-    if (card_id == 104 && !pub.john_paul_ii_played) {
+    if (card_id == kSolidarityCardId && !is_solidarity_event_legal(pub)) {
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
     }
 

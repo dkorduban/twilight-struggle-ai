@@ -23,6 +23,7 @@
 #include "game_data.hpp"
 #include "legal_actions.hpp"
 #include "rng.hpp"
+#include "rule_queries.hpp"
 #include "scoring.hpp"
 #include "search_common.hpp"
 
@@ -42,7 +43,7 @@ inline int argmax_index(const torch::Tensor& tensor) {
     CardId card_id,
     ActionMode mode
 ) {
-    if (pub.defcon > 2 || !ts::is_defcon_lowering_card(card_id)) {
+    if (!is_card_defcon_blocked(pub, card_id)) {
         return false;
     }
 
@@ -381,9 +382,8 @@ inline auto choose_action_from_outputs(
         mode = static_cast<ActionMode>(std::forward<SelectModeFn>(select_mode)(masked_mode));
     }
 
-    const bool is_defcon_lowering_event = pub.defcon <= 2 &&
-        mode == ActionMode::Event &&
-        is_defcon_lowering_card(sampled_card_id);
+    const bool is_defcon_lowering_event =
+        mode == ActionMode::Event && is_card_defcon_blocked(pub, sampled_card_id);
     if (is_defcon_lowering_event) {
         erase_mode(modes, ActionMode::Event);
         if (modes.empty()) {
@@ -478,7 +478,7 @@ inline DecodeWithLogProbsResult choose_action_from_outputs_with_logprobs(
     auto modes = legal_modes(sampled_card_id, pub, side);
     if (pub.defcon <= 2) {
         erase_mode(modes, ActionMode::Coup);
-        if (is_defcon_lowering_card(sampled_card_id)) {
+        if (is_card_defcon_blocked(pub, sampled_card_id)) {
             erase_mode(modes, ActionMode::Event);
         }
     }

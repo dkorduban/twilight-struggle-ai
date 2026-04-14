@@ -34,13 +34,10 @@ constexpr double kDefcon3NonBgSafeCoupBonus = 5.0;
 constexpr double kDefcon2NonBgSafeCoupBonus = 12.0;
 constexpr int kMaxInfluenceTargets = 86;
 
-// Heuristic scoring uses a 3-way split. The canonical MCTS set is in card_properties.hpp.
-// kDefconLoweringCards here = "certainly lowers DEFCON" (used for heavy penalty).
-// kDefconProbLoweringCards = "probabilistically lowers DEFCON".
-// kDefconRandomCoupCards   = "calls apply_ops_randomly which may coup a BG".
-constexpr std::array<CardId, 5> kDefconLoweringCards = {4, 52, 53, 68, 92};
-constexpr std::array<CardId, 1> kDefconProbLoweringCards = {20};
-constexpr std::array<CardId, 3> kDefconRandomCoupCards = {52, 68, 83};
+// Heuristic scoring still uses partial penalty buckets for a few risky cards.
+// The full DEFCON-lowering rule check comes from is_defcon_lowering_card().
+constexpr std::array<CardId, 1> kHeuristicProbDefconPenaltyCards = {20};
+constexpr std::array<CardId, 3> kHeuristicRandomCoupPenaltyCards = {52, 68, 83};
 constexpr double kDefconLoweringDefcon3Penalty = 20.0;
 constexpr double kDefconProbDefcon3Penalty = 50.0;
 constexpr double kDefconRandomCoupDefcon3Penalty = 100.0;
@@ -63,6 +60,14 @@ constexpr std::array<std::string_view, 5> kMidWarEntry = {
 template <typename T, size_t N>
 bool contains(const std::array<T, N>& values, const T& value) {
     return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+bool is_heuristic_prob_defcon_penalty_card(CardId card_id) {
+    return contains(kHeuristicProbDefconPenaltyCards, card_id);
+}
+
+bool is_heuristic_random_coup_penalty_card(CardId card_id) {
+    return contains(kHeuristicRandomCoupPenaltyCards, card_id);
 }
 
 bool is_asia_or_sea(CountryId country_id) {
@@ -203,8 +208,8 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
         // Space Race with opponent's card: the opponent's event fires automatically.
         // At DEFCON 2, a dangerous event drops DEFCON to 1 = instant loss.
         if (pub.defcon <= 2 && card.side != side && card.side != Side::Neutral) {
-            if (contains(kDefconLoweringCards, action.card_id) ||
-                contains(kDefconRandomCoupCards, action.card_id)) {
+            if (is_defcon_lowering_card(action.card_id) ||
+                is_heuristic_random_coup_penalty_card(action.card_id)) {
                 return -kDefcon2BattlegroundSuicidePenalty;
             }
         }
@@ -228,7 +233,7 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
     }
 
     if (action.mode == ActionMode::Event) {
-        if (contains(kDefconLoweringCards, action.card_id)) {
+        if (is_defcon_lowering_card(action.card_id)) {
             if (pub.defcon <= 2) {
                 return -kDefcon2BattlegroundSuicidePenalty;
             }
@@ -242,7 +247,7 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
                 return pub.defcon >= 5 ? 200.0 : 100.0;
             }
         }
-        if (contains(kDefconProbLoweringCards, action.card_id)) {
+        if (is_heuristic_prob_defcon_penalty_card(action.card_id)) {
             if (pub.defcon <= 2) {
                 return -kDefcon2BattlegroundSuicidePenalty;
             }
@@ -250,7 +255,7 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
                 return -kDefconProbDefcon3Penalty;
             }
         }
-        if (contains(kDefconRandomCoupCards, action.card_id)) {
+        if (is_heuristic_random_coup_penalty_card(action.card_id)) {
             if (pub.defcon <= 2) {
                 return -kDefcon2BattlegroundSuicidePenalty;
             }
@@ -269,14 +274,14 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
     if (
         card.side != side &&
         card.side != Side::Neutral &&
-        (contains(kDefconLoweringCards, action.card_id) ||
-         contains(kDefconProbLoweringCards, action.card_id) ||
-         contains(kDefconRandomCoupCards, action.card_id))
+        (is_defcon_lowering_card(action.card_id) ||
+         is_heuristic_prob_defcon_penalty_card(action.card_id) ||
+         is_heuristic_random_coup_penalty_card(action.card_id))
     ) {
         if (pub.defcon <= 2) {
             return -kDefcon2BattlegroundSuicidePenalty;
         }
-        if (contains(kDefconLoweringCards, action.card_id)) {
+        if (is_defcon_lowering_card(action.card_id)) {
             if (pub.defcon == 3) {
                 return -200.0;
             }
@@ -284,10 +289,10 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
                 return -150.0;
             }
         }
-        if (contains(kDefconProbLoweringCards, action.card_id) && pub.defcon == 3) {
+        if (is_heuristic_prob_defcon_penalty_card(action.card_id) && pub.defcon == 3) {
             return -kDefconProbDefcon3Penalty;
         }
-        if (contains(kDefconRandomCoupCards, action.card_id)) {
+        if (is_heuristic_random_coup_penalty_card(action.card_id)) {
             if (pub.defcon == 3) {
                 return -kDefconRandomCoupDefcon3OpsPenalty;
             }
@@ -306,7 +311,7 @@ double card_bias(const DecisionContext& context, const ActionEncoding& action) {
     if (action.mode == ActionMode::Event) {
         score += card.side == side || card.side == Side::Neutral ? 1.0 : -3.0;
         if (card.side != side && card.side != Side::Neutral) {
-            if (contains(kDefconLoweringCards, action.card_id)) {
+            if (is_defcon_lowering_card(action.card_id)) {
                 if (pub.defcon >= 5) {
                     score += 150.0;
                 } else if (pub.defcon == 4) {
@@ -315,7 +320,7 @@ double card_bias(const DecisionContext& context, const ActionEncoding& action) {
                     score += 40.0;
                 }
             }
-            if (contains(kDefconRandomCoupCards, action.card_id)) {
+            if (is_heuristic_random_coup_penalty_card(action.card_id)) {
                 if (pub.defcon >= 5) {
                     score += 80.0;
                 } else if (pub.defcon == 4) {
@@ -349,9 +354,9 @@ double card_bias(const DecisionContext& context, const ActionEncoding& action) {
     }
 
     if (pub.defcon == 3 && card.side != side && card.side != Side::Neutral) {
-        if (contains(kDefconLoweringCards, action.card_id)) {
+        if (is_defcon_lowering_card(action.card_id)) {
             score += 50.0;
-        } else if (contains(kDefconRandomCoupCards, action.card_id)) {
+        } else if (is_heuristic_random_coup_penalty_card(action.card_id)) {
             score += 30.0;
         }
     }

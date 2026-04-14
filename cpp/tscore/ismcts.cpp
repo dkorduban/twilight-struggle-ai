@@ -28,6 +28,7 @@
 #include "human_openings.hpp"
 #include "nn_features.hpp"
 #include "policies.hpp"
+#include "rule_queries.hpp"
 #include "search_common.hpp"
 #include "scoring.hpp"
 #include "step.hpp"
@@ -910,7 +911,7 @@ std::string end_reason(const PublicState& pub, std::optional<Side> winner, int c
     if (pub.defcon <= 1) {
         return "defcon1";
     }
-    if (card_id == 103) {
+    if (card_id == kWargamesCardId) {
         return "wargames";
     }
     if (winner.has_value()) {
@@ -1278,7 +1279,7 @@ ActionEncoding greedy_action_from_model(
     // DEFCON safety: forbid coup/event for DEFCON-lowering cards at DEFCON<=2.
     if (pub.defcon <= 2) {
         for (auto mode_val : {ActionMode::Coup, ActionMode::Event}) {
-            if (is_defcon_lowering_card(card_id)) {
+            if (is_card_defcon_blocked(pub, card_id)) {
                 const auto idx = static_cast<int64_t>(static_cast<int>(mode_val));
                 masked_mode.index_put_({idx}, -std::numeric_limits<float>::infinity());
             }

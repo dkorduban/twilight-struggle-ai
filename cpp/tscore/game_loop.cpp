@@ -10,6 +10,7 @@
 #include "human_openings.hpp"
 
 #include "game_data.hpp"
+#include "rule_queries.hpp"
 #include "scoring.hpp"
 #include "step.hpp"
 
@@ -84,16 +85,14 @@ std::optional<ActionEncoding> choose_action_with_config(
 
 std::vector<CountryId> filtered_influence_targets(const PublicState& pub, Side side) {
     auto accessible = accessible_countries(side, pub, ActionMode::Influence);
-    if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
-        accessible.erase(
-            std::remove_if(
-                accessible.begin(),
-                accessible.end(),
-                [&](CountryId cid) { return country_spec(cid).region == *pub.chernobyl_blocked_region; }
-            ),
-            accessible.end()
-        );
-    }
+    accessible.erase(
+        std::remove_if(
+            accessible.begin(),
+            accessible.end(),
+            [&](CountryId cid) { return is_chernobyl_blocked(pub, side, cid); }
+        ),
+        accessible.end()
+    );
     return accessible;
 }
 
@@ -154,7 +153,7 @@ std::string end_reason(const PublicState& pub, std::optional<Side> winner, int c
     if (pub.defcon <= 1) {
         return "defcon1";
     }
-    if (card_id == 103) {
+    if (card_id == kWargamesCardId) {
         return "wargames";
     }
     if (winner.has_value()) {
