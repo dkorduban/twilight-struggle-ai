@@ -130,10 +130,10 @@ def _dynamic_ppo_train_args():
         "--games-per-iter 200",
         "--lr 5e-5",
         "--clip-eps 0.12",
-        "--ent-coef 0.01",
+        "--ent-coef 0.003",  # 2026-04-14 fix: peak era (v205-v211, 1875 Elo) ran at ent_coef=0.003 (decay was already past); current chain was at 0.01 (3× too high, preventing commitment)
         "--ent-coef-final 0.003",
         f"--global-ent-decay-start {prev_total_iters}",
-        f"--global-ent-decay-end {prev_total_iters + 300}",  # 2026-04-14: slow from 30→300 (Opus: fast decay kills exploration)
+        f"--global-ent-decay-end {prev_total_iters + 1}",  # decay already past: start=end+1 ensures ent_coef=ent_coef_final=0.003 immediately
         "--max-kl 0.03",  # Reduced from 0.3: Opus analysis showed clip_frac 25% + KL 0.01 → unstable updates
         *(["--reset-optimizer"] if cfg.get("reset_optimizer", True) else []),
         f"--league {shlex.quote(cfg['out_dir'])}",

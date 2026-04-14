@@ -300,7 +300,7 @@ fi
 # --- Launch next PPO run ---
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] LAUNCH: $NEXT from $(basename $(dirname $FINISHED_CHECKPOINT)) $(basename $FINISHED_CHECKPOINT)" \
   >> results/autonomous_decisions.log
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=1.5, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.01->0.003 heuristic=0.15 n_iters=30 global_decay=[${PREV_TOTAL_ITERS},$((PREV_TOTAL_ITERS+300))] reset_opt=$RESET_OPTIMIZER" \
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Config: k=6, pfsp_exp=1.5, fixtures=$FIXTURE_COUNT, fadeout=999, tau=50, ent=0.003(fixed) heuristic=0.15 n_iters=30 reset_opt=$RESET_OPTIMIZER" \
   >> results/autonomous_decisions.log
 
 mkdir -p "$NEXT_DIR" results/logs/ppo
