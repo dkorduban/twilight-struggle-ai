@@ -74,12 +74,15 @@ struct AggregatedEdgeState {
 
 struct PendingExpansion {
     std::vector<std::pair<MctsNode*, int>> path;
-    GameState sim_state;
+    struct TreeState {
+        GameState game_state;
+        bool in_extra_round = false;
+    } sim_state;
     bool is_root_expansion = false;
 };
 
 struct DeterminizationSlot {
-    GameState root_state;
+    PendingExpansion::TreeState root_state;
     std::unique_ptr<MctsNode> root;
     std::vector<PendingExpansion> pending;
     int sims_completed = 0;
@@ -163,50 +166,277 @@ bool aggregated_edge_better(const MctsEdge& lhs, const MctsEdge& rhs) {
     return action_less(lhs.action, rhs.action);
 }
 
-void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng& rng,
-                       Side root_phasing, int root_ar) {
-    const auto side = state.pub.phasing;
-    auto& hand = state.hands[to_index(side)];
+using TreeState = PendingExpansion::TreeState;
+
+void mark_tree_game_done(TreeState& state, std::optional<Side> winner, Side side) {
+    state.game_state.game_over = true;
+    state.game_state.winner = winner;
+    state.game_state.current_side = side;
+    state.in_extra_round = false;
+}
+
+void advance_tree_action_pair(Side& current_side, int& current_ar) {
+    if (current_side == Side::USSR) {
+        current_side = Side::US;
+    } else {
+        current_side = Side::USSR;
+        current_ar += 1;
+    }
+}
+
+void start_tree_next_turn(TreeState& state, Pcg64Rng& rng) {
+    auto& game = state.game_state;
+    state.in_extra_round = false;
+    game.phase = GamePhase::Headline;
+    game.current_side = Side::USSR;
+    game.headline_card = {0, 0};
+    game.ar_index = 1;
+    game.ars_taken = {0, 0};
+
+    game.pub.turn += 1;
+    if (game.pub.turn == kMidWarTurn) {
+        advance_to_mid_war(game, rng);
+    } else if (game.pub.turn == kLateWarTurn) {
+        advance_to_late_war(game, rng);
+    }
+    deal_cards(game, Side::USSR, rng);
+    deal_cards(game, Side::US, rng);
+    game.pub.ar = 0;
+    game.pub.phasing = Side::USSR;
+}
+
+void advance_tree_post_round_to_decision_or_done(TreeState& state, Pcg64Rng& rng);
+
+void advance_tree_action_round_to_decision_or_done(TreeState& state, Side current_side, int current_ar, Pcg64Rng& rng) {
+    auto& game = state.game_state;
+    state.in_extra_round = false;
+    game.phase = GamePhase::ActionRound;
+
+    while (!game.game_over) {
+        if (current_ar > kSpaceShuttleArs) {
+            advance_tree_post_round_to_decision_or_done(state, rng);
+            return;
+        }
+
+        if (current_ar > ars_for_turn(game.pub.turn) &&
+            game.pub.space[to_index(current_side)] < kSpaceShuttleArs) {
+            advance_tree_action_pair(current_side, current_ar);
+            continue;
+        }
+
+        game.pub.ar = current_ar;
+        game.pub.phasing = current_side;
+        game.current_side = current_side;
+
+        if (auto cmc_result = resolve_cuban_missile_crisis_cancel_live(game, current_side, rng);
+            cmc_result.has_value()) {
+            auto& [new_pub, over, winner] = *cmc_result;
+            (void)new_pub;
+            sync_china_flags(game);
+            if (over) {
+                mark_tree_game_done(state, winner, current_side);
+                return;
+            }
+            advance_tree_action_pair(current_side, current_ar);
+            continue;
+        }
+
+        if (auto trap_result = resolve_trap_ar_live(game, current_side, rng); trap_result.has_value()) {
+            auto& [new_pub, over, winner] = *trap_result;
+            (void)new_pub;
+            sync_china_flags(game);
+            if (over) {
+                mark_tree_game_done(state, winner, current_side);
+                return;
+            }
+            advance_tree_action_pair(current_side, current_ar);
+            continue;
+        }
+
+        const auto holds_china = holds_china_for(game, current_side);
+        if (!has_legal_action(game.hands[to_index(current_side)], game.pub, current_side, holds_china)) {
+            advance_tree_action_pair(current_side, current_ar);
+            continue;
+        }
+
+        return;
+    }
+}
+
+void advance_tree_extra_round_to_decision_or_done(TreeState& state, Pcg64Rng& rng) {
+    auto& game = state.game_state;
+    state.in_extra_round = true;
+    game.phase = GamePhase::ActionRound;
+    game.current_side = Side::US;
+    game.pub.ar = std::max(game.pub.ar, ars_for_turn(game.pub.turn)) + 1;
+    game.pub.phasing = Side::US;
+
+    if (auto cmc_result = resolve_cuban_missile_crisis_cancel_live(game, Side::US, rng); cmc_result.has_value()) {
+        auto& [new_pub, over, winner] = *cmc_result;
+        (void)new_pub;
+        sync_china_flags(game);
+        if (over) {
+            mark_tree_game_done(state, winner, Side::US);
+            return;
+        }
+    } else if (game.hands[to_index(Side::US)].none()) {
+        // No extra-round decision; fall through to cleanup.
+    } else if (auto trap_result = resolve_trap_ar_live(game, Side::US, rng); trap_result.has_value()) {
+        auto& [new_pub, over, winner] = *trap_result;
+        (void)new_pub;
+        sync_china_flags(game);
+        if (over) {
+            mark_tree_game_done(state, winner, Side::US);
+            return;
+        }
+    } else {
+        const auto holds_china = holds_china_for(game, Side::US);
+        if (has_legal_action(game.hands[to_index(Side::US)], game.pub, Side::US, holds_china)) {
+            return;
+        }
+    }
+
+    state.in_extra_round = false;
+    if (game.pub.glasnost_free_ops > 0) {
+        resolve_glasnost_free_ops_live(game.pub, rng);
+    }
+    if (auto result = finish_turn(game, game.pub.turn); result.has_value()) {
+        mark_tree_game_done(state, result->winner, Side::US);
+        return;
+    }
+    start_tree_next_turn(state, rng);
+}
+
+void advance_tree_post_round_to_decision_or_done(TreeState& state, Pcg64Rng& rng) {
+    auto& game = state.game_state;
+    state.in_extra_round = false;
+    if (game.pub.north_sea_oil_extra_ar) {
+        game.pub.north_sea_oil_extra_ar = false;
+        advance_tree_extra_round_to_decision_or_done(state, rng);
+        return;
+    }
+    if (game.pub.glasnost_free_ops > 0) {
+        resolve_glasnost_free_ops_live(game.pub, rng);
+    }
+    if (auto result = finish_turn(game, game.pub.turn); result.has_value()) {
+        mark_tree_game_done(state, result->winner, game.current_side);
+        return;
+    }
+    start_tree_next_turn(state, rng);
+}
+
+void resolve_tree_headlines_and_advance(TreeState& state, Pcg64Rng& rng) {
+    auto& game = state.game_state;
+    std::vector<std::pair<Side, CardId>> ordered;
+    for (const auto side : {Side::USSR, Side::US}) {
+        const auto card_id = game.headline_card[to_index(side)];
+        if (card_id != 0) {
+            ordered.emplace_back(side, card_id);
+        }
+    }
+
+    if (game.headline_card[to_index(Side::US)] == 108 && game.headline_card[to_index(Side::USSR)] != 0) {
+        game.pub.discard.set(game.headline_card[to_index(Side::USSR)]);
+        ordered.erase(
+            std::remove_if(
+                ordered.begin(),
+                ordered.end(),
+                [](const auto& pending) { return pending.first == Side::USSR; }
+            ),
+            ordered.end()
+        );
+    }
+
+    std::sort(ordered.begin(), ordered.end(), [](const auto& lhs, const auto& rhs) {
+        const auto lhs_ops = card_spec(lhs.second).ops;
+        const auto rhs_ops = card_spec(rhs.second).ops;
+        if (lhs_ops != rhs_ops) {
+            return lhs_ops > rhs_ops;
+        }
+        return static_cast<int>(lhs.first) > static_cast<int>(rhs.first);
+    });
+
+    for (const auto& [side, card_id] : ordered) {
+        game.pub.phasing = side;
+        game.pub.ar = 0;
+        const ActionEncoding headline{
+            .card_id = card_id,
+            .mode = ActionMode::Event,
+            .targets = {},
+        };
+        auto [new_pub, over, winner] = apply_action_live(game, headline, side, rng);
+        (void)new_pub;
+        sync_china_flags(game);
+        if (over) {
+            mark_tree_game_done(state, winner, side);
+            return;
+        }
+    }
+
+    game.headline_card = {0, 0};
+    advance_tree_action_round_to_decision_or_done(state, Side::USSR, 1, rng);
+}
+
+void apply_tree_action(TreeState& state, const ActionEncoding& action, Pcg64Rng& rng) {
+    auto& game = state.game_state;
+    const auto side = game.pub.phasing;
+    auto& hand = game.hands[to_index(side)];
     if (hand.test(action.card_id)) {
         hand.reset(action.card_id);
     }
 
-    auto [new_pub, over, winner] = apply_action_live(state, action, side, rng);
+    if (game.phase == GamePhase::Headline) {
+        game.headline_card[to_index(side)] = action.card_id;
+        state.in_extra_round = false;
+        if (game.headline_card[to_index(other_side(side))] == 0) {
+            game.pub.ar = 0;
+            game.pub.phasing = other_side(side);
+            game.current_side = other_side(side);
+            return;
+        }
+        resolve_tree_headlines_and_advance(state, rng);
+        return;
+    }
+
+    const bool was_extra_round = state.in_extra_round;
+    auto [new_pub, over, winner] = apply_action_live(game, action, side, rng);
     (void)new_pub;
-    sync_china_flags(state);
-    state.game_over = over;
-    state.winner = winner;
+    sync_china_flags(game);
+    game.game_over = over;
+    game.winner = winner;
 
-    if (!over) {
-        const auto next_side = other_side(side);
-        state.pub.phasing = next_side;
-        state.current_side = next_side;
+    if (over) {
+        game.current_side = side;
+        state.in_extra_round = false;
+        return;
+    }
 
-        // Advance AR when a full pair completes (not headline: root_ar > 0).
-        // A pair completes when next_side wraps back to root_phasing.
-        if (root_ar > 0 && next_side == root_phasing) {
-            state.pub.ar += 1;
-            int max_ar = ars_for_turn(state.pub.turn);
-            // Space Shuttle: either player at level 8 gets an extra AR.
-            if (state.pub.space[to_index(root_phasing)] >= kSpaceShuttleArs ||
-                state.pub.space[to_index(other_side(root_phasing))] >= kSpaceShuttleArs) {
-                max_ar = std::max(max_ar, kSpaceShuttleArs);
-            }
-            // North Sea Oil: US gets an extra AR this turn.
-            if (state.pub.north_sea_oil_extra_ar) {
-                max_ar += 1;
-            }
-            if (state.pub.ar > max_ar) {
-                auto result = finish_turn(state, state.pub.turn);
-                if (result.has_value()) {
-                    state.game_over = true;
-                    state.winner = result->winner;
-                }
+    if (side == Side::USSR && game.pub.norad_active && game.pub.defcon == 2) {
+        if (auto norad = resolve_norad_live(game, rng); norad.has_value()) {
+            auto& [norad_pub, norad_over, norad_winner] = *norad;
+            (void)norad_pub;
+            sync_china_flags(game);
+            if (norad_over) {
+                mark_tree_game_done(state, norad_winner, side);
+                return;
             }
         }
-    } else {
-        state.current_side = side;
     }
+
+    if (was_extra_round) {
+        state.in_extra_round = false;
+        if (side == Side::US && game.pub.glasnost_free_ops > 0) {
+            resolve_glasnost_free_ops_live(game.pub, rng);
+        }
+        if (auto result = finish_turn(game, game.pub.turn); result.has_value()) {
+            mark_tree_game_done(state, result->winner, side);
+            return;
+        }
+        start_tree_next_turn(state, rng);
+        return;
+    }
+
+    advance_tree_action_round_to_decision_or_done(state, other_side(side), game.pub.ar, rng);
 }
 
 
@@ -279,10 +509,6 @@ struct AccessibleCache {
     }
 };
 
-bool nato_prerequisite_met_inline(const PublicState& pub) {
-    return pub.warsaw_pact_played || pub.marshall_plan_played || pub.truman_doctrine_played;
-}
-
 struct DraftsResult {
     std::vector<CardDraft> drafts;
     AccessibleCache cache;
@@ -291,14 +517,32 @@ struct DraftsResult {
 // count_scoring_cards, remaining_action_decisions_for_side, scoring_card_prior_multiplier
 // are now in search_common.hpp.
 
-DraftsResult collect_card_drafts(const GameState& state) {
-    const auto side = state.pub.phasing;
-    const auto holds_china = holds_china_for(state, side);
-    const auto& pub = state.pub;
+DraftsResult collect_card_drafts(const TreeState& state) {
+    const auto& game = state.game_state;
+    const auto side = game.pub.phasing;
+    const auto holds_china = holds_china_for(game, side);
+    const auto& pub = game.pub;
     auto cache = AccessibleCache::build(side, pub);
 
-    const int scoring_cards = count_scoring_cards(state.hands[to_index(side)]);
-    const int remaining_decisions = remaining_action_decisions_for_side(state, side);
+    if (game.phase == GamePhase::Headline) {
+        std::vector<CardDraft> cards;
+        for (const auto card_id : legal_cards(game.hands[to_index(side)], pub, side, holds_china)) {
+            const auto modes = legal_modes(card_id, pub, side);
+            if (std::find(modes.begin(), modes.end(), ActionMode::Event) == modes.end()) {
+                continue;
+            }
+            CardDraft card{.card_id = card_id, .modes = {}};
+            card.modes.push_back(ModeDraft{
+                .mode = ActionMode::Event,
+                .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Event, .targets = {}}},
+            });
+            cards.push_back(std::move(card));
+        }
+        return DraftsResult{.drafts = std::move(cards), .cache = std::move(cache)};
+    }
+
+    const int scoring_cards = count_scoring_cards(game.hands[to_index(side)]);
+    const int remaining_decisions = remaining_action_decisions_for_side(game, side);
     // Only force scoring when every remaining decision slot must be spent on
     // a scoring card to avoid the cleanup loss. This preserves any genuine
     // setup ARs instead of forcing immediate play as soon as a scoring card is held.
@@ -306,7 +550,7 @@ DraftsResult collect_card_drafts(const GameState& state) {
     if (must_play_scoring) {
         // Return only the scoring card(s) as Event actions.
         std::vector<CardDraft> cards;
-        for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
+        for (const auto card_id : legal_cards(game.hands[to_index(side)], pub, side, holds_china)) {
             if (!card_spec(card_id).is_scoring) continue;
             CardDraft card{.card_id = card_id, .modes = {}};
             card.modes.push_back(ModeDraft{
@@ -324,18 +568,21 @@ DraftsResult collect_card_drafts(const GameState& state) {
     std::vector<CardDraft> cards;
     cards.reserve(10);
 
-    for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
+    for (const auto card_id : legal_cards(game.hands[to_index(side)], pub, side, holds_china)) {
         if (is_card_blocked_by_defcon(pub, side, card_id)) {
             continue;
         }
 
         const auto& spec = card_spec(card_id);
+        const auto legal = legal_modes(card_id, pub, side);
+        const auto has_mode = [&](ActionMode mode) {
+            return std::find(legal.begin(), legal.end(), mode) != legal.end();
+        };
         CardDraft card{.card_id = card_id, .modes = {}};
 
-        // Inline legal_modes logic using cached accessibility
         auto try_add_mode = [&](ActionMode mode, const std::vector<CountryId>& countries) {
+            if (!has_mode(mode)) return;
             if (countries.empty()) return;
-            if (mode == ActionMode::Coup && pub.defcon <= 2) return;
 
             ModeDraft mode_draft{.mode = mode, .edges = {}};
             mode_draft.edges.reserve(countries.size());
@@ -353,14 +600,12 @@ DraftsResult collect_card_drafts(const GameState& state) {
         };
 
         if (spec.ops > 0) {
-            // Influence — no per-country targets in tree, just one edge
-            if (!cache.influence.empty()) {
+            if (has_mode(ActionMode::Influence) && !cache.influence.empty()) {
                 card.modes.push_back(ModeDraft{
                     .mode = ActionMode::Influence,
                     .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Influence, .targets = {}}},
                 });
-                // EventFirst: opponent card only — event fires before ops.
-                if (spec.side == other_side(side)) {
+                if (has_mode(ActionMode::EventFirst)) {
                     card.modes.push_back(ModeDraft{
                         .mode = ActionMode::EventFirst,
                         .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::EventFirst, .targets = {}}},
@@ -371,28 +616,15 @@ DraftsResult collect_card_drafts(const GameState& state) {
             try_add_mode(ActionMode::Coup, cache.coup);
             try_add_mode(ActionMode::Realign, cache.realign);
 
-            // Space
-            if (cache.can_space && spec.ops >= cache.space_ops_min) {
-                bool blocked = (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
-                               (pub.quagmire_active && side == Side::US && !spec.is_scoring);
-                if (!blocked) {
-                    card.modes.push_back(ModeDraft{
-                        .mode = ActionMode::Space,
-                        .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Space, .targets = {}}},
-                    });
-                }
+            if (has_mode(ActionMode::Space) && cache.can_space && spec.ops >= cache.space_ops_min) {
+                card.modes.push_back(ModeDraft{
+                    .mode = ActionMode::Space,
+                    .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Space, .targets = {}}},
+                });
             }
         }
 
-        // Event
-        bool event_ok = true;
-        if (card_id == 21 && !nato_prerequisite_met_inline(pub)) event_ok = false;
-        if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) event_ok = false;
-        if (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) event_ok = false;
-        if (pub.quagmire_active && side == Side::US && !spec.is_scoring) event_ok = false;
-        if (card_id == 103 && pub.defcon != 2) event_ok = false;
-        if (card_id == 104 && !pub.john_paul_ii_played) event_ok = false;
-        if (event_ok) {
+        if (has_mode(ActionMode::Event)) {
             card.modes.push_back(ModeDraft{
                 .mode = ActionMode::Event,
                 .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Event, .targets = {}}},
@@ -407,13 +639,13 @@ DraftsResult collect_card_drafts(const GameState& state) {
     return DraftsResult{.drafts = std::move(cards), .cache = std::move(cache)};
 }
 
-std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg64Rng& rng) {
+std::optional<ExpansionResult> expand_without_model(const TreeState& state, Pcg64Rng& rng) {
     auto node = std::make_unique<MctsNode>();
-    node->side_to_move = state.pub.phasing;
+    node->side_to_move = state.game_state.pub.phasing;
 
-    if (state.game_over) {
+    if (state.game_state.game_over) {
         node->is_terminal = true;
-        const auto terminal_value = winner_value(state.winner);
+        const auto terminal_value = winner_value(state.game_state.winner);
         node->terminal_value = terminal_value;
         return ExpansionResult{.node = std::move(node), .leaf_value = terminal_value};
     }
@@ -425,9 +657,9 @@ std::optional<ExpansionResult> expand_without_model(const GameState& state, Pcg6
 
     if (auto fallback = choose_action(
             PolicyKind::MinimalHybrid,
-            state.pub,
-            state.hands[to_index(state.pub.phasing)],
-            holds_china_for(state, state.pub.phasing),
+            state.game_state.pub,
+            state.game_state.hands[to_index(state.game_state.pub.phasing)],
+            holds_china_for(state.game_state, state.game_state.pub.phasing),
             rng
         );
         fallback.has_value()) {
@@ -507,22 +739,22 @@ struct RawBatchOutputs {
 };
 
 ExpansionResult expand_from_raw(
-    const GameState& state,
+    const TreeState& state,
     const RawBatchOutputs& raw,
     int batch_index,
     const MctsConfig& config,
     Pcg64Rng& rng
 ) {
     auto node = std::make_unique<MctsNode>();
-    node->side_to_move = state.pub.phasing;
+    node->side_to_move = state.game_state.pub.phasing;
     node->edges.reserve(64);
     node->children.reserve(64);
     node->applied_actions.reserve(64);
 
     auto [drafts, cache] = collect_card_drafts(state);
-    const int scoring_cards = count_scoring_cards(state.hands[to_index(state.pub.phasing)]);
+    const int scoring_cards = count_scoring_cards(state.game_state.hands[to_index(state.game_state.pub.phasing)]);
     const double scoring_prior_boost =
-        scoring_card_prior_multiplier(state, state.pub.phasing, scoring_cards);
+        scoring_card_prior_multiplier(state.game_state, state.game_state.pub.phasing, scoring_cards);
     // --- Copy this item's logits to stack arrays ---
     float card_logits_arr[kMaxCardLogits];
     float mode_logits_arr[kMaxModeLogits];
@@ -632,7 +864,7 @@ ExpansionResult expand_from_raw(
                 node->children.emplace_back(nullptr);
                 // Resolve influence allocation using cached accessible countries
                 if (edge.mode == ActionMode::Influence && country_logits_ptr != nullptr && !cache.influence.empty()) {
-                    const auto ops = effective_ops(edge.card_id, state.pub, state.pub.phasing);
+                    const auto ops = effective_ops(edge.card_id, state.game_state.pub, state.game_state.pub.phasing);
                     float masked[kMaxCountryLogits];
                     std::fill(masked, masked + n_country, -std::numeric_limits<float>::infinity());
                     for (const auto cid : cache.influence) {
@@ -678,9 +910,9 @@ ExpansionResult expand_from_raw(
     if (node->edges.empty()) {
         if (auto fallback = choose_action(
                 PolicyKind::MinimalHybrid,
-                state.pub,
-                state.hands[to_index(state.pub.phasing)],
-                holds_china_for(state, state.pub.phasing),
+                state.game_state.pub,
+                state.game_state.hands[to_index(state.game_state.pub.phasing)],
+                holds_china_for(state.game_state, state.game_state.pub.phasing),
                 rng
             );
             fallback.has_value()) {
@@ -689,7 +921,7 @@ ExpansionResult expand_from_raw(
             node->applied_actions.push_back(*fallback);
             return ExpansionResult{
                 .node = std::move(node),
-                .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config, rng),
+                .leaf_value = evaluate_leaf_value_raw(state.game_state, raw.value, raw.value_stride, batch_index, config, rng),
             };
         }
 
@@ -710,7 +942,7 @@ ExpansionResult expand_from_raw(
 
     return ExpansionResult{
         .node = std::move(node),
-        .leaf_value = evaluate_leaf_value_raw(state, raw.value, raw.value_stride, batch_index, config, rng),
+        .leaf_value = evaluate_leaf_value_raw(state.game_state, raw.value, raw.value_stride, batch_index, config, rng),
     };
 }
 
@@ -728,7 +960,8 @@ void backpropagate_path(std::vector<std::pair<MctsNode*, int>>& path, double lea
 
 SelectionResult select_to_leaf(DeterminizationSlot& det, const MctsConfig& config) {
     PendingExpansion pend;
-    pend.sim_state = clone_game_state(det.root_state);
+    pend.sim_state.game_state = clone_game_state(det.root_state.game_state);
+    pend.sim_state.in_extra_round = det.root_state.in_extra_round;
 
     MctsNode* node = det.root.get();
     while (node != nullptr && !node->is_terminal && !node->edges.empty()) {
@@ -740,8 +973,7 @@ SelectionResult select_to_leaf(DeterminizationSlot& det, const MctsConfig& confi
         auto& edge = node->edges[static_cast<size_t>(edge_index)];
         edge.virtual_loss += kVirtualLossWeight;
         pend.path.emplace_back(node, edge_index);
-        apply_tree_action(pend.sim_state, node->applied_actions[static_cast<size_t>(edge_index)], det.rng,
-                         det.root_state.pub.phasing, det.root_state.pub.ar);
+        apply_tree_action(pend.sim_state, node->applied_actions[static_cast<size_t>(edge_index)], det.rng);
         if (node->children[static_cast<size_t>(edge_index)] == nullptr) {
             if (auto immediate = expand_without_model(pend.sim_state, det.rng); immediate.has_value()) {
                 node->children[static_cast<size_t>(edge_index)] = std::move(immediate->node);
@@ -1571,7 +1803,15 @@ void start_search(IsmctsGameSlot& slot, const IsmctsConfig& config) {
         Pcg64Rng local_rng(slot.rng.next_u64());
         auto determinized = determinize(obs, local_rng);
         DeterminizationSlot det;
-        det.root_state = std::move(determinized);
+        det.root_state.game_state = std::move(determinized);
+        det.root_state.in_extra_round = slot.stage == IsmctsGameStage::ExtraActionRoundUS ||
+                                        slot.stage == IsmctsGameStage::ExtraActionRoundUSSR;
+        for (const auto side : {Side::USSR, Side::US}) {
+            if (slot.pending_headlines[to_index(side)].has_value()) {
+                det.root_state.game_state.headline_card[to_index(side)] =
+                    slot.pending_headlines[to_index(side)]->action.card_id;
+            }
+        }
         det.rng = std::move(local_rng);
         slot.dets.push_back(std::move(det));
     }
@@ -1679,10 +1919,10 @@ void queue_batch_item(
     const auto batch_index = batch_inputs.filled;
     batch_inputs.fill_slot(
         batch_index,
-        state.pub,
-        state.hands[to_index(state.pub.phasing)],
-        holds_china_for(state, state.pub.phasing),
-        state.pub.phasing
+        state.game_state.pub,
+        state.game_state.hands[to_index(state.game_state.pub.phasing)],
+        holds_china_for(state.game_state, state.game_state.pub.phasing),
+        state.game_state.pub.phasing
     );
     batch_entries.push_back(BatchEntry{
         .game = &game_slot,
