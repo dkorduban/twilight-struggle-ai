@@ -189,6 +189,48 @@ TEST_CASE("Vietnam Revolts enumerates SEA-only influence actions with one extra 
     REQUIRE(found);
 }
 
+TEST_CASE("Vietnam Revolts extra influence op cannot be spent outside Southeast Asia", "[legal_actions]") {
+    constexpr CountryId kVietnamId = 80;
+    constexpr CountryId kPolandId = 12;
+    constexpr CardId kSocialistGovernmentsId = 7;
+
+    PublicState pub;
+    pub.vietnam_revolts_active = true;
+    pub.set_influence(Side::USSR, kVietnamId, 1);
+    pub.set_influence(Side::USSR, kPolandId, 1);
+
+    CardSet hand;
+    hand.set(kSocialistGovernmentsId);
+
+    const auto actions = enumerate_actions(hand, pub, Side::USSR, false);
+    const auto leaked_bonus = std::any_of(actions.begin(), actions.end(), [](const ActionEncoding& action) {
+        return action.card_id == kSocialistGovernmentsId &&
+            action.mode == ActionMode::Influence &&
+            action.targets.size() == static_cast<size_t>(card_spec(kSocialistGovernmentsId).ops + 1) &&
+            std::any_of(action.targets.begin(), action.targets.end(), [](CountryId cid) {
+                return country_spec(cid).region != Region::SoutheastAsia;
+            });
+    });
+
+    REQUIRE_FALSE(leaked_bonus);
+}
+
+TEST_CASE("Space mode enforces the current track ops minimum", "[legal_actions]") {
+    constexpr CardId kTwoOpsCard = 13;
+    constexpr CardId kFourOpsCard = 23;
+
+    PublicState pub;
+    pub.space[to_index(Side::US)] = 2;
+
+    const auto level_two_modes = legal_modes(kTwoOpsCard, pub, Side::US);
+    REQUIRE(std::find(level_two_modes.begin(), level_two_modes.end(), ActionMode::Space) == level_two_modes.end());
+
+    pub.space[to_index(Side::US)] = 5;
+
+    const auto level_five_modes = legal_modes(kFourOpsCard, pub, Side::US);
+    REQUIRE(std::find(level_five_modes.begin(), level_five_modes.end(), ActionMode::Space) == level_five_modes.end());
+}
+
 TEST_CASE("Cuban Missile Crisis keeps coup mode legal", "[legal_actions]") {
     constexpr CountryId kAngolaId = 67;
 
