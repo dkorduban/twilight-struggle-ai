@@ -1330,6 +1330,24 @@ void advance_until_search_or_done(
                 slot.game_state.phase = GamePhase::ActionRound;
                 slot.game_state.pub.ar = slot.current_ar;
                 slot.game_state.pub.phasing = side;
+                if (
+                    auto cmc_result = resolve_cuban_missile_crisis_cancel_live(slot.game_state, side, slot.rng);
+                    cmc_result.has_value()
+                ) {
+                    auto& [new_pub, over, winner] = *cmc_result;
+                    (void)new_pub;
+                    if (over) {
+                        mark_game_done(slot, GameResult{
+                            .winner = winner,
+                            .final_vp = slot.game_state.pub.vp,
+                            .end_turn = slot.game_state.pub.turn,
+                            .end_reason = end_reason(slot.game_state.pub, winner),
+                        });
+                        break;
+                    }
+                    advance_after_action_pair(slot);
+                    break;
+                }
                 if (auto trap_result = resolve_trap_ar_live(slot.game_state, side, slot.rng); trap_result.has_value()) {
                     auto& [new_pub, over, winner] = *trap_result;
                     (void)new_pub;
@@ -1364,6 +1382,24 @@ void advance_until_search_or_done(
                 slot.game_state.pub.ar = std::max(slot.game_state.pub.ar, ars_for_turn(slot.game_state.pub.turn)) + 1;
                 slot.game_state.pub.phasing = side;
                 auto& hand = slot.game_state.hands[to_index(side)];
+                if (
+                    auto cmc_result = resolve_cuban_missile_crisis_cancel_live(slot.game_state, side, slot.rng);
+                    cmc_result.has_value()
+                ) {
+                    auto& [new_pub, over, winner] = *cmc_result;
+                    (void)new_pub;
+                    if (over) {
+                        mark_game_done(slot, GameResult{
+                            .winner = winner,
+                            .final_vp = slot.game_state.pub.vp,
+                            .end_turn = slot.game_state.pub.turn,
+                            .end_reason = end_reason(slot.game_state.pub, winner),
+                        });
+                        break;
+                    }
+                    move_to_followup_stage_after_extra(slot, side);
+                    break;
+                }
                 if (hand.none()) {
                     move_to_followup_stage_after_extra(slot, side);
                     break;
