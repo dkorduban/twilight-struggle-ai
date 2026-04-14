@@ -52,7 +52,7 @@ def find_binary() -> Path:
     candidates = [
         Path("build-ninja/cpp/tools/ts_collect_mcts_games_jsonl"),
         Path("build/cpp/tools/ts_collect_mcts_games_jsonl"),
-        Path("cpp/mcts_batched_fast/build/ts_collect_mcts_games_jsonl"),
+        Path("archive/mcts_batched_fast/build/ts_collect_mcts_games_jsonl"),
     ]
     for c in candidates:
         if c.exists():
