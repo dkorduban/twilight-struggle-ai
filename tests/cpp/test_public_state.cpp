@@ -397,6 +397,28 @@ TEST_CASE("Opponent-card event fires before ops with EventFirst mode", "[game_lo
     REQUIRE(next.defcon == 1);
 }
 
+TEST_CASE("Opponent-card space play never fires the opponent event", "[game_loop]") {
+    constexpr CardId kDuckAndCoverId = 4;
+
+    GameState gs;
+    gs.pub = PublicState{};
+    gs.pub.defcon = 2;
+
+    const ActionEncoding action{
+        .card_id = kDuckAndCoverId,
+        .mode = ActionMode::Space,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action_live(gs, action, Side::USSR, rng);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(next.defcon == 2);
+    REQUIRE(next.discard.test(kDuckAndCoverId));
+}
+
 // ---------------------------------------------------------------------------
 // GAP-005b: 2-ops enemy-control surcharge in enumerate_actions (Influence mode)
 //
