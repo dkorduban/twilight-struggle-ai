@@ -600,7 +600,7 @@ ActionEncoding build_war_event_action(const WarCardCase& spec) {
     return ActionEncoding{
         .card_id = spec.card_id,
         .mode = ActionMode::Event,
-        .targets = spec.uses_explicit_target ? ActionTargets{spec.target} : ActionTargets{},
+        .targets = spec.uses_explicit_target ? std::vector<CountryId>{spec.target} : std::vector<CountryId>{},
     };
 }
 
