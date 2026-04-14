@@ -25,18 +25,16 @@ NEXT_LOG="results/logs/ppo/ppo_${NEXT}.log"
 # To regenerate: uv run python scripts/select_league_fixtures.py
 # The JSON fixture_paths field lists scripted .pt paths + __heuristic__.
 FINISHED_SCRIPTED="data/checkpoints/scripted_for_elo/${FINISHED}_scripted.pt"
-# Panel eval and candidate tournament: same 5-opponent pool.
-# Restored 2026-04-14: reverted from sc-lineage panel (v159/v160_sc at 1756-1757 Elo —
-# WEAKER than declining sc-lineage models, causing Elo measurement bias).
-# Root cause of decline identified: fixture pool had declining sc-lineage models
-# (v138/v140/v142_sc 1944-1979) → PFSP focused training on weak opponents →
-# model specialised → lost generalization. Fixed by restoring strong non-sc panel.
-# v55=2118 | v54=2102 | v44=2101 | v45=2096 | v48=2095
-PANEL_V55="data/checkpoints/scripted_for_elo/v55_scripted.pt"
-PANEL_V54="data/checkpoints/scripted_for_elo/v54_scripted.pt"
-PANEL_V44="data/checkpoints/scripted_for_elo/v44_scripted.pt"
-PANEL_V45="data/checkpoints/scripted_for_elo/v45_scripted.pt"
-PANEL_V14="data/checkpoints/scripted_for_elo/v48_scripted.pt"
+# Panel eval and candidate tournament: 6-mode _sc panel (switched 2026-04-14).
+# OLD 5-mode panel (v55/v54/v44/v45/v48) caused fake Elo inflation: 6-mode models crush
+# 5-mode at 94-97% WR → new models got fake Elo 2000-2400 → maybe_override never triggered.
+# NEW 6-mode panel gives real discrimination:
+# v209_sc=1875(peak) | v217_sc=1837(anchor) | v232_sc=1811 | v228_sc=1796 | v227_sc=1791
+PANEL_V55="data/checkpoints/scripted_for_elo/v209_sc_scripted.pt"
+PANEL_V54="data/checkpoints/scripted_for_elo/v217_sc_scripted.pt"
+PANEL_V44="data/checkpoints/scripted_for_elo/v232_sc_scripted.pt"
+PANEL_V45="data/checkpoints/scripted_for_elo/v228_sc_scripted.pt"
+PANEL_V14="data/checkpoints/scripted_for_elo/v227_sc_scripted.pt"
 
 FIXTURES_JSON="results/selected_fixtures.json"
 
@@ -110,14 +108,14 @@ if [ -f "${FINISHED_DIR}/panel_eval_history.json" ]; then
   nohup nice -n 10 uv run python scripts/ppo_confirm_best.py \
     --run-dir "$FINISHED_DIR" \
     --fixtures \
-      "v55:${PANEL_V55}" \
-      "v54:${PANEL_V54}" \
-      "v44:${PANEL_V44}" \
-      "v45:${PANEL_V45}" \
-      "v14:${PANEL_V14}" \
+      "v209_sc:${PANEL_V55}" \
+      "v217_sc:${PANEL_V54}" \
+      "v232_sc:${PANEL_V44}" \
+      "v228_sc:${PANEL_V45}" \
+      "v227_sc:${PANEL_V14}" \
     --n-top 8 \
     --n-games 150 \
-    --anchor v14 --anchor-elo 2015 \
+    --anchor v209_sc --anchor-elo 1875 \
     --script-dir data/checkpoints/scripted_for_elo \
     >> "$CONFIRM_LOG" 2>&1 &
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Candidate tournament launched in background (PID $!) for $FINISHED" \
@@ -448,7 +446,7 @@ print(f'EXTEND: {finished}({elo_finished:.0f}) is promising, playing vs {len(ext
 cmd = (
     f'nice -n 19 uv run python scripts/run_elo_tournament.py'
     f' --models {models_arg}'
-    f' --games 200 --anchor v14 --anchor-elo 2015'
+    f' --games 200 --anchor v209_sc --anchor-elo 1875'
     f' --schedule round_robin'
     f' --mode incremental --new-model {finished}'
     f' --resume-from {ladder_path}'
