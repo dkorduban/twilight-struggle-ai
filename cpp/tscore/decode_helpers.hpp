@@ -23,6 +23,7 @@
 #include "game_data.hpp"
 #include "legal_actions.hpp"
 #include "rng.hpp"
+#include "scoring.hpp"
 
 namespace ts::decode {
 
@@ -180,12 +181,20 @@ inline ActionEncoding build_action_from_marginal_logits(
     }
 
     const auto budget = effective_ops(card_id, pub, side);
+    const auto opponent = other_side(side);
     const auto accessible_set = std::set<CountryId>(accessible.begin(), accessible.end());
     std::vector<std::vector<float>> scores(static_cast<size_t>(country_count), std::vector<float>(static_cast<size_t>(marginal_steps), 0.0f));
     std::vector<bool> legal(static_cast<size_t>(country_count), false);
     const auto capped_budget = std::min(budget, marginal_steps);
     std::vector<int> cap(static_cast<size_t>(country_count), capped_budget);
-    std::vector<int> cost(static_cast<size_t>(country_count), 1);  // TODO: model enemy-control doubling via per-country cost.
+    // Cost 2 for opponent-controlled countries (TS 2-ops-per-influence surcharge).
+    std::vector<int> cost(static_cast<size_t>(country_count), 1);
+    for (int country = 0; country < country_count; ++country) {
+        const auto cid = static_cast<CountryId>(country);
+        if (has_country_spec(cid) && controls_country(opponent, cid, pub)) {
+            cost[static_cast<size_t>(country)] = 2;
+        }
+    }
 
     for (int country = 0; country < country_count; ++country) {
         for (int step = 0; step < marginal_steps; ++step) {

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 
 #include "public_state.hpp"
@@ -362,4 +363,60 @@ TEST_CASE("Opponent-card ops can resolve before the event when the player choose
     REQUIRE(next.influence_of(Side::USSR, kFranceId) == 1);
     REQUIRE(next.defcon == 1);
     REQUIRE(next.discard.test(kDuckAndCoverId));
+}
+
+// ---------------------------------------------------------------------------
+// GAP-005b: 2-ops enemy-control surcharge in enumerate_actions (Influence mode)
+//
+// When placing influence in an opponent-controlled country, each influence
+// point costs 2 ops instead of 1.
+//
+// Setup: USSR has 1 influence in East Germany (id=4).
+//        US has 3 influence in Poland (id=12, stability=3) — US controls Poland.
+//        Card 20 (Olympic Games, Neutral, 2 ops) played for Influence.
+//
+// With 2 ops:
+//   {EastGermany, EastGermany} — costs 1+1=2 ✓  (2 placements in non-controlled)
+//   {Poland}                   — costs 2   ✓  (1 placement in US-controlled)
+//   {Poland, EastGermany}      — costs 2+1=3 ✗ (must NOT appear)
+//   {Poland, Poland}           — costs 2+2=4 ✗ (must NOT appear)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("enumerate_actions Influence respects 2-ops enemy-control surcharge", "[legal_actions][gap005b]") {
+    // East Germany = 4, Poland = 12, card 20 (Olympic Games, 2 ops, Neutral)
+    constexpr CountryId kEastGermany = static_cast<CountryId>(4);
+    constexpr CountryId kPoland = static_cast<CountryId>(12);
+    constexpr CardId kOlympicGames = static_cast<CardId>(20);
+
+    PublicState pub;
+    pub.set_influence(Side::USSR, kEastGermany, 1);  // USSR can reach Poland (1-hop)
+    pub.set_influence(Side::US, kPoland, 3);          // US controls Poland (stability 3, USSR 0)
+
+    CardSet hand;
+    hand.set(static_cast<int>(kOlympicGames));
+
+    const auto actions = enumerate_actions(hand, pub, Side::USSR, false);
+
+    // Filter to Influence actions for card 20.
+    bool found_poland_only = false;
+    bool found_eg_eg = false;
+    bool found_invalid_poland_eg = false;
+    bool found_invalid_poland_poland = false;
+
+    for (const auto& action : actions) {
+        if (action.card_id != kOlympicGames || action.mode != ActionMode::Influence) continue;
+        const auto& t = action.targets;
+        auto count = [&](CountryId cid) {
+            return static_cast<int>(std::count(t.begin(), t.end(), cid));
+        };
+        if (t.size() == 1 && t[0] == kPoland) found_poland_only = true;
+        if (t.size() == 2 && count(kEastGermany) == 2) found_eg_eg = true;
+        if (count(kPoland) == 1 && count(kEastGermany) == 1) found_invalid_poland_eg = true;
+        if (count(kPoland) == 2) found_invalid_poland_poland = true;
+    }
+
+    REQUIRE(found_poland_only);             // 1 influence in US-controlled costs 2 ops — valid
+    REQUIRE(found_eg_eg);                   // 2 placements in non-controlled — valid
+    REQUIRE_FALSE(found_invalid_poland_eg);    // would cost 3 ops — invalid
+    REQUIRE_FALSE(found_invalid_poland_poland); // would cost 4 ops — invalid
 }

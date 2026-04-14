@@ -108,6 +108,31 @@ void enumerate_multisets(
     }
 }
 
+// Budget-aware influence target enumeration: places influence points costing
+// sum(costs[i]) = remaining_budget total ops. Enemy-controlled countries cost 2
+// ops per influence point instead of 1. Elements may repeat (multiset).
+template <typename T>
+void enumerate_influence_budget(
+    std::span<const T> pool,
+    std::span<const int> costs,
+    int remaining_budget,
+    int start_index,
+    std::vector<T>& current,
+    std::vector<std::vector<T>>& out
+) {
+    if (remaining_budget == 0) {
+        out.push_back(current);
+        return;
+    }
+    for (int i = start_index; i < static_cast<int>(pool.size()); ++i) {
+        const int c = costs[static_cast<size_t>(i)];
+        if (c > remaining_budget) continue;
+        current.push_back(pool[static_cast<size_t>(i)]);
+        enumerate_influence_budget(pool, costs, remaining_budget - c, i, current, out);
+        current.pop_back();
+    }
+}
+
 bool has_eligible_opponent_card(const CardSet& hand, Side side) {
     const auto opponent = other_side(side);
     for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
@@ -286,12 +311,21 @@ std::vector<ActionEncoding> enumerate_actions(
             }
 
             const auto ops = effective_ops(card_id, pub, side);
+            const auto opponent = other_side(side);
             if (static_cast<int>(accessible.size()) > max_influence_targets) {
                 accessible.resize(max_influence_targets);
             }
+
+            // Per-country op costs: 2 for opponent-controlled, 1 otherwise.
+            std::vector<int> inf_costs;
+            inf_costs.reserve(accessible.size());
+            for (const auto cid : accessible) {
+                inf_costs.push_back(controls_country(opponent, cid, pub) ? 2 : 1);
+            }
+
             std::vector<std::vector<CountryId>> combos;
             std::vector<CountryId> current;
-            enumerate_multisets<CountryId>(accessible, ops, 0, current, combos);
+            enumerate_influence_budget<CountryId>(accessible, inf_costs, ops, 0, current, combos);
             for (auto& combo : combos) {
                 actions.push_back(ActionEncoding{
                     .card_id = card_id,
@@ -302,15 +336,17 @@ std::vector<ActionEncoding> enumerate_actions(
 
             if (pub.vietnam_revolts_active && side == Side::USSR) {
                 std::vector<CountryId> sea_accessible;
-                for (const auto cid : accessible) {
-                    if (country_spec(cid).region == Region::SoutheastAsia) {
-                        sea_accessible.push_back(cid);
+                std::vector<int> sea_costs;
+                for (size_t idx = 0; idx < accessible.size(); ++idx) {
+                    if (country_spec(accessible[idx]).region == Region::SoutheastAsia) {
+                        sea_accessible.push_back(accessible[idx]);
+                        sea_costs.push_back(inf_costs[idx]);
                     }
                 }
                 if (!sea_accessible.empty()) {
                     combos.clear();
                     current.clear();
-                    enumerate_multisets<CountryId>(sea_accessible, ops + 1, 0, current, combos);
+                    enumerate_influence_budget<CountryId>(sea_accessible, sea_costs, ops + 1, 0, current, combos);
                     for (auto& combo : combos) {
                         actions.push_back(ActionEncoding{
                             .card_id = card_id,
@@ -323,15 +359,17 @@ std::vector<ActionEncoding> enumerate_actions(
 
             if (card_id == kChinaCardId) {
                 std::vector<CountryId> asia_accessible;
-                for (const auto cid : accessible) {
-                    if (country_spec(cid).region == Region::Asia) {
-                        asia_accessible.push_back(cid);
+                std::vector<int> asia_costs;
+                for (size_t idx = 0; idx < accessible.size(); ++idx) {
+                    if (country_spec(accessible[idx]).region == Region::Asia) {
+                        asia_accessible.push_back(accessible[idx]);
+                        asia_costs.push_back(inf_costs[idx]);
                     }
                 }
                 if (!asia_accessible.empty()) {
                     combos.clear();
                     current.clear();
-                    enumerate_multisets<CountryId>(asia_accessible, ops + 1, 0, current, combos);
+                    enumerate_influence_budget<CountryId>(asia_accessible, asia_costs, ops + 1, 0, current, combos);
                     for (auto& combo : combos) {
                         actions.push_back(ActionEncoding{
                             .card_id = card_id,
