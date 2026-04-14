@@ -8,14 +8,18 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <span>
+#include <utility>
 #include <vector>
 
 #include "card_properties.hpp"
 #include "game_data.hpp"
 #include "game_loop.hpp"
 #include "game_state.hpp"
+#include "legal_actions.hpp"
 #include "mcts.hpp"
 #include "policies.hpp"
+#include "scoring.hpp"
 
 namespace ts {
 namespace {
@@ -24,6 +28,182 @@ inline constexpr double kVirtualLossPenalty = 1.0;
 
 // AR count at which the Space Shuttle gives an extra action round.
 inline constexpr int kSpaceShuttleArs = 8;
+
+struct ModeDraft {
+    ActionMode mode = ActionMode::Influence;
+    std::vector<ActionEncoding> edges;
+};
+
+struct CardDraft {
+    CardId card_id = 0;
+    std::vector<ModeDraft> modes;
+};
+
+struct AccessibleCache {
+    std::vector<CountryId> influence;
+    std::vector<CountryId> coup;
+    std::vector<CountryId> realign;
+    bool can_space = false;
+    int space_ops_min = 2;
+
+    [[nodiscard]] static AccessibleCache build(Side side, const PublicState& pub) {
+        AccessibleCache cache;
+
+        auto base_inf = accessible_countries(side, pub, ActionMode::Influence);
+        auto base_coup = accessible_countries(side, pub, ActionMode::Coup);
+
+        if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
+            const auto blocked = *pub.chernobyl_blocked_region;
+            base_inf.erase(
+                std::remove_if(
+                    base_inf.begin(),
+                    base_inf.end(),
+                    [blocked](CountryId cid) { return country_spec(cid).region == blocked; }
+                ),
+                base_inf.end()
+            );
+        }
+        cache.influence = std::move(base_inf);
+
+        auto filter_military = [&](std::vector<CountryId>& countries) {
+            countries.erase(
+                std::remove_if(
+                    countries.begin(),
+                    countries.end(),
+                    [&](CountryId cid) {
+                        if (cid == kUsaAnchorId || cid == kUssrAnchorId) {
+                            return true;
+                        }
+                        constexpr std::array<int, 7> kDefconRegionThreshold = {4, 3, 2, 1, 1, 1, 3};
+                        const auto threshold =
+                            kDefconRegionThreshold[static_cast<size_t>(country_spec(cid).region)];
+                        if (pub.defcon <= threshold) {
+                            return true;
+                        }
+                        if (side == Side::USSR) {
+                            if (pub.nato_active) {
+                                constexpr std::array<CountryId, 12> kNatoWe = {
+                                    1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18
+                                };
+                                const bool in_nato =
+                                    std::find(kNatoWe.begin(), kNatoWe.end(), cid) != kNatoWe.end();
+                                if (in_nato) {
+                                    const bool exempted =
+                                        (cid == 7 && pub.de_gaulle_active) ||
+                                        (cid == 18 && pub.willy_brandt_active);
+                                    if (!exempted && controls_country(Side::US, cid, pub)) {
+                                        return true;
+                                    }
+                                }
+                            }
+                            if (pub.us_japan_pact_active && cid == 22) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+                ),
+                countries.end()
+            );
+        };
+
+        filter_military(base_coup);
+        cache.coup = std::move(base_coup);
+        cache.realign = cache.coup;
+
+        const auto level = pub.space[to_index(side)];
+        const auto opp_level = pub.space[to_index(other_side(side))];
+        const auto max_space = (level >= 2 && opp_level < 2) ? 2 : 1;
+        cache.can_space = (level < 8 && pub.space_attempts[to_index(side)] < max_space);
+        constexpr std::array<int, 8> kSpaceOpsMin = {2, 2, 2, 2, 3, 3, 3, 4};
+        cache.space_ops_min = kSpaceOpsMin[static_cast<size_t>(std::min(level, 7))];
+
+        return cache;
+    }
+};
+
+struct DraftsResult {
+    std::vector<CardDraft> drafts;
+    AccessibleCache cache;
+};
+
+inline void append_single_edge_mode_draft(CardDraft& card, CardId card_id, ActionMode mode) {
+    card.modes.push_back(ModeDraft{
+        .mode = mode,
+        .edges = {ActionEncoding{.card_id = card_id, .mode = mode, .targets = {}}},
+    });
+}
+
+inline void append_country_target_mode_draft(
+    CardDraft& card,
+    CardId card_id,
+    ActionMode mode,
+    std::span<const CountryId> countries
+) {
+    if (countries.empty()) {
+        return;
+    }
+
+    ModeDraft mode_draft{.mode = mode, .edges = {}};
+    mode_draft.edges.reserve(countries.size());
+    for (const auto country : countries) {
+        if (!has_country_spec(country)) {
+            continue;
+        }
+        mode_draft.edges.push_back(ActionEncoding{
+            .card_id = card_id,
+            .mode = mode,
+            .targets = {country},
+        });
+    }
+    if (!mode_draft.edges.empty()) {
+        card.modes.push_back(std::move(mode_draft));
+    }
+}
+
+template<typename Predicate>
+[[nodiscard]] inline std::vector<CardDraft> collect_event_only_card_drafts(
+    const CardSet& hand,
+    const PublicState& pub,
+    Side side,
+    bool holds_china,
+    Predicate&& predicate
+) {
+    std::vector<CardDraft> cards;
+    for (const auto card_id : legal_cards(hand, pub, side, holds_china)) {
+        if (!predicate(card_id)) {
+            continue;
+        }
+        CardDraft card{.card_id = card_id, .modes = {}};
+        append_single_edge_mode_draft(card, card_id, ActionMode::Event);
+        cards.push_back(std::move(card));
+    }
+    return cards;
+}
+
+template<typename BuildFn>
+[[nodiscard]] inline std::vector<CardDraft> collect_drafts_from_legal_cards(
+    const CardSet& hand,
+    const PublicState& pub,
+    Side side,
+    bool holds_china,
+    BuildFn&& build_card
+) {
+    std::vector<CardDraft> cards;
+    cards.reserve(10);
+    for (const auto card_id : legal_cards(hand, pub, side, holds_china)) {
+        if (is_card_blocked_by_defcon(pub, side, card_id)) {
+            continue;
+        }
+
+        CardDraft card{.card_id = card_id, .modes = {}};
+        build_card(card, card_id);
+        if (!card.modes.empty()) {
+            cards.push_back(std::move(card));
+        }
+    }
+    return cards;
+}
 
 // Count how many scoring cards the side holds.
 [[nodiscard]] inline int count_scoring_cards(const CardSet& hand) {
@@ -46,6 +226,15 @@ inline constexpr int kSpaceShuttleArs = 8;
         max_ar += 1;
     }
     return std::max(1, max_ar - state.pub.ar + 1);
+}
+
+[[nodiscard]] inline bool must_play_scoring_card(const GameState& state, Side side) {
+    if (state.pub.ar <= 0) {
+        return false;
+    }
+    const int scoring_cards = count_scoring_cards(state.hands[to_index(side)]);
+    const int remaining_decisions = remaining_action_decisions_for_side(state, side);
+    return scoring_cards >= remaining_decisions;
 }
 
 // Progressive prior boost for scoring cards as their deadline approaches.

@@ -21,7 +21,6 @@
 #include "nn_features.hpp"
 #include "policies.hpp"
 #include "search_common.hpp"
-#include "search_common.hpp"
 
 namespace ts {
 namespace {
@@ -41,16 +40,6 @@ inline int extract_float_array(const torch::Tensor& tensor, float* out, int max_
     std::memcpy(out, src, static_cast<size_t>(copy_n) * sizeof(float));
     return copy_n;
 }
-
-struct ModeDraft {
-    ActionMode mode = ActionMode::Influence;
-    std::vector<ActionEncoding> edges;
-};
-
-struct CardDraft {
-    CardId card_id = 0;
-    std::vector<ModeDraft> modes;
-};
 
 struct ExpansionResult {
     std::unique_ptr<MctsNode> node;
@@ -269,75 +258,43 @@ std::vector<CardDraft> collect_card_drafts(const GameState& state) {
 
     // Capacity-based scoring card forcing: if the number of held scoring cards
     // equals or exceeds remaining decision windows, play only scoring cards.
-    const int scoring_cards = count_scoring_cards(state.hands[to_index(side)]);
-    const int remaining_decisions = remaining_action_decisions_for_side(state, side);
-    const bool must_play_scoring = pub.ar > 0 && scoring_cards >= remaining_decisions;
-    if (must_play_scoring) {
-        std::vector<CardDraft> cards;
-        for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
-            if (!card_spec(card_id).is_scoring) continue;
-            CardDraft card{.card_id = card_id, .modes = {}};
-            card.modes.push_back(ModeDraft{
-                .mode = ActionMode::Event,
-                .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Event, .targets = {}}},
-            });
-            cards.push_back(std::move(card));
-        }
+    if (must_play_scoring_card(state, side)) {
+        auto cards = collect_event_only_card_drafts(
+            state.hands[to_index(side)],
+            pub,
+            side,
+            holds_china,
+            [](CardId card_id) { return card_spec(card_id).is_scoring; }
+        );
         if (!cards.empty()) {
             return cards;
         }
         // Fallthrough: scoring card not legally playable; run normal drafts.
     }
 
-    std::vector<CardDraft> cards;
+    return collect_drafts_from_legal_cards(
+        state.hands[to_index(side)],
+        pub,
+        side,
+        holds_china,
+        [&](CardDraft& card, CardId card_id) {
+            for (const auto mode : legal_modes(card_id, pub, side)) {
+                if (mode == ActionMode::Coup && pub.defcon <= 2) {
+                    continue;
+                }
+                if (mode == ActionMode::Event && pub.defcon <= 2 && is_defcon_lowering_card(card_id)) {
+                    continue;
+                }
 
-    for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
-        if (is_card_blocked_by_defcon(pub, side, card_id)) {
-            continue;
-        }
-
-        CardDraft card{.card_id = card_id, .modes = {}};
-        for (const auto mode : legal_modes(card_id, pub, side)) {
-            if (mode == ActionMode::Coup && pub.defcon <= 2) {
-                continue;
-            }
-            if (mode == ActionMode::Event && pub.defcon <= 2 && is_defcon_lowering_card(card_id)) {
-                continue;
-            }
-
-            ModeDraft mode_draft{.mode = mode, .edges = {}};
-            if (mode == ActionMode::Event || mode == ActionMode::Space || mode == ActionMode::Influence) {
-                mode_draft.edges.push_back(ActionEncoding{
-                    .card_id = card_id,
-                    .mode = mode,
-                    .targets = {},
-                });
-            } else {
-                auto countries = legal_countries(card_id, mode, pub, side);
-                countries.erase(
-                    std::remove_if(countries.begin(), countries.end(), [](CountryId cid) { return !has_country_spec(cid); }),
-                    countries.end()
-                );
-                for (const auto country : countries) {
-                    mode_draft.edges.push_back(ActionEncoding{
-                        .card_id = card_id,
-                        .mode = mode,
-                        .targets = {country},
-                    });
+                if (mode == ActionMode::Event || mode == ActionMode::Space || mode == ActionMode::Influence) {
+                    append_single_edge_mode_draft(card, card_id, mode);
+                } else {
+                    const auto countries = legal_countries(card_id, mode, pub, side);
+                    append_country_target_mode_draft(card, card_id, mode, countries);
                 }
             }
-
-            if (!mode_draft.edges.empty()) {
-                card.modes.push_back(std::move(mode_draft));
-            }
         }
-
-        if (!card.modes.empty()) {
-            cards.push_back(std::move(card));
-        }
-    }
-
-    return cards;
+    );
 }
 
 ExpansionResult expand(

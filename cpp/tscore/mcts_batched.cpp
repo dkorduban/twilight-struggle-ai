@@ -46,16 +46,6 @@ constexpr int kMaxModeLogits = 8;
 constexpr int kMaxCountryLogits = 86;
 constexpr int kMaxStrategies = 8;
 
-struct ModeDraft {
-    ActionMode mode = ActionMode::Influence;
-    std::vector<ActionEncoding> edges;
-};
-
-struct CardDraft {
-    CardId card_id = 0;
-    std::vector<ModeDraft> modes;
-};
-
 // ---------------------------------------------------------------------------
 // Compact tree storage (FastNode / FastEdge)
 // FastEdge avoids per-edge ActionEncoding heap allocation by storing influence
@@ -318,98 +308,9 @@ void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng&
     }
 }
 
-// Precomputed accessible countries for all three action modes — avoids repeated BFS.
-struct AccessibleCache {
-    std::vector<CountryId> influence;
-    std::vector<CountryId> coup;
-    std::vector<CountryId> realign;
-    bool can_space = false;
-    int space_ops_min = 2;
-
-    static AccessibleCache build(Side side, const PublicState& pub) {
-        AccessibleCache cache;
-
-        // Compute BFS-based accessibility ONCE
-        auto base_inf = accessible_countries(side, pub, ActionMode::Influence);
-        auto base_coup = accessible_countries(side, pub, ActionMode::Coup);
-
-        // Sanitize: remove invalid country IDs (anchors, spec-less entries) from both lists.
-        // This mirrors the fast-replica fix and ensures expand_from_raw_fast can iterate
-        // cache.coup/cache.realign directly without per-edge has_country_spec guards.
-        auto filter_valid = [](std::vector<CountryId>& countries) {
-            countries.erase(
-                std::remove_if(countries.begin(), countries.end(),
-                    [](CountryId cid) {
-                        return cid == 0 || cid == kUsaAnchorId ||
-                               cid == kUssrAnchorId || !has_country_spec(cid);
-                    }),
-                countries.end()
-            );
-        };
-        filter_valid(base_inf);
-        filter_valid(base_coup);
-
-        // Filter influence for Chernobyl
-        if (side == Side::USSR && pub.chernobyl_blocked_region.has_value()) {
-            const auto blocked = *pub.chernobyl_blocked_region;
-            base_inf.erase(
-                std::remove_if(base_inf.begin(), base_inf.end(),
-                    [blocked](CountryId cid) { return country_spec(cid).region == blocked; }),
-                base_inf.end()
-            );
-        }
-        cache.influence = std::move(base_inf);
-
-        // Filter coup/realign for DEFCON, NATO, Japan pact
-        auto filter_military = [&](std::vector<CountryId>& countries) {
-            countries.erase(
-                std::remove_if(countries.begin(), countries.end(),
-                    [&](CountryId cid) {
-                        if (cid == kUsaAnchorId || cid == kUssrAnchorId) return true;
-                        constexpr std::array<int, 7> kDefconRegionThreshold = {4, 3, 2, 1, 1, 1, 3};
-                        const auto threshold = kDefconRegionThreshold[static_cast<size_t>(country_spec(cid).region)];
-                        if (pub.defcon <= threshold) return true;
-                        if (side == Side::USSR) {
-                            if (pub.nato_active) {
-                                constexpr std::array<CountryId, 12> kNatoWe = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};
-                                bool in_nato = std::find(kNatoWe.begin(), kNatoWe.end(), cid) != kNatoWe.end();
-                                if (in_nato) {
-                                    bool exempted = (cid == 7 && pub.de_gaulle_active) || (cid == 18 && pub.willy_brandt_active);
-                                    if (!exempted && controls_country(Side::US, cid, pub)) return true;
-                                }
-                            }
-                            if (pub.us_japan_pact_active && cid == 22) return true;
-                        }
-                        return false;
-                    }),
-                countries.end()
-            );
-        };
-        filter_military(base_coup);
-        cache.coup = std::move(base_coup);
-        // Realign uses same base accessibility as coup
-        cache.realign = cache.coup;  // copy — realign has same restrictions
-
-        // Space eligibility
-        const auto level = pub.space[to_index(side)];
-        const auto opp_level = pub.space[to_index(other_side(side))];
-        const auto max_space = (level >= 2 && opp_level < 2) ? 2 : 1;
-        cache.can_space = (level < 8 && pub.space_attempts[to_index(side)] < max_space);
-        constexpr std::array<int, 8> kSpaceOpsMin = {2, 2, 2, 2, 3, 3, 3, 4};
-        cache.space_ops_min = kSpaceOpsMin[static_cast<size_t>(std::min(level, 7))];
-
-        return cache;
-    }
-};
-
 bool nato_prerequisite_met_inline(const PublicState& pub) {
     return pub.warsaw_pact_played || pub.marshall_plan_played || pub.truman_doctrine_played;
 }
-
-struct DraftsResult {
-    std::vector<CardDraft> drafts;
-    AccessibleCache cache;
-};
 
 DraftsResult collect_card_drafts_cached(const GameState& state) {
     const auto side = state.pub.phasing;
@@ -417,81 +318,46 @@ DraftsResult collect_card_drafts_cached(const GameState& state) {
     const auto& pub = state.pub;
     auto cache = AccessibleCache::build(side, pub);
 
-    std::vector<CardDraft> cards;
-    cards.reserve(10);
+    auto cards = collect_drafts_from_legal_cards(
+        state.hands[to_index(side)],
+        pub,
+        side,
+        holds_china,
+        [&](CardDraft& card, CardId card_id) {
+            const auto& spec = card_spec(card_id);
 
-    for (const auto card_id : legal_cards(state.hands[to_index(side)], pub, side, holds_china)) {
-        if (is_card_blocked_by_defcon(pub, side, card_id)) {
-            continue;
-        }
+            if (spec.ops > 0) {
+                if (!cache.influence.empty()) {
+                    append_single_edge_mode_draft(card, card_id, ActionMode::Influence);
+                }
 
-        const auto& spec = card_spec(card_id);
-        CardDraft card{.card_id = card_id, .modes = {}};
+                if (pub.defcon > 2) {
+                    append_country_target_mode_draft(card, card_id, ActionMode::Coup, cache.coup);
+                }
+                append_country_target_mode_draft(card, card_id, ActionMode::Realign, cache.realign);
 
-        // Inline legal_modes logic using cached accessibility
-        auto try_add_mode = [&](ActionMode mode, const std::vector<CountryId>& countries) {
-            if (countries.empty()) return;
-            if (mode == ActionMode::Coup && pub.defcon <= 2) return;
-
-            ModeDraft mode_draft{.mode = mode, .edges = {}};
-            mode_draft.edges.reserve(countries.size());
-            for (const auto country : countries) {
-                if (!has_country_spec(country)) continue;
-                mode_draft.edges.push_back(ActionEncoding{
-                    .card_id = card_id,
-                    .mode = mode,
-                    .targets = {country},
-                });
-            }
-            if (!mode_draft.edges.empty()) {
-                card.modes.push_back(std::move(mode_draft));
-            }
-        };
-
-        if (spec.ops > 0) {
-            // Influence — no per-country targets in tree, just one edge
-            if (!cache.influence.empty()) {
-                card.modes.push_back(ModeDraft{
-                    .mode = ActionMode::Influence,
-                    .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Influence, .targets = {}}},
-                });
-            }
-
-            try_add_mode(ActionMode::Coup, cache.coup);
-            try_add_mode(ActionMode::Realign, cache.realign);
-
-            // Space
-            if (cache.can_space && spec.ops >= cache.space_ops_min) {
-                bool blocked = (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
-                               (pub.quagmire_active && side == Side::US && !spec.is_scoring);
-                if (!blocked) {
-                    card.modes.push_back(ModeDraft{
-                        .mode = ActionMode::Space,
-                        .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Space, .targets = {}}},
-                    });
+                if (cache.can_space && spec.ops >= cache.space_ops_min) {
+                    const bool blocked =
+                        (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) ||
+                        (pub.quagmire_active && side == Side::US && !spec.is_scoring);
+                    if (!blocked) {
+                        append_single_edge_mode_draft(card, card_id, ActionMode::Space);
+                    }
                 }
             }
-        }
 
-        // Event
-        bool event_ok = true;
-        if (card_id == 21 && !nato_prerequisite_met_inline(pub)) event_ok = false;
-        if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) event_ok = false;
-        if (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) event_ok = false;
-        if (pub.quagmire_active && side == Side::US && !spec.is_scoring) event_ok = false;
-        if (card_id == 103 && pub.defcon != 2) event_ok = false;
-        if (card_id == 104 && !pub.john_paul_ii_played) event_ok = false;
-        if (event_ok) {
-            card.modes.push_back(ModeDraft{
-                .mode = ActionMode::Event,
-                .edges = {ActionEncoding{.card_id = card_id, .mode = ActionMode::Event, .targets = {}}},
-            });
+            bool event_ok = true;
+            if (card_id == 21 && !nato_prerequisite_met_inline(pub)) event_ok = false;
+            if (pub.defcon <= 2 && is_defcon_lowering_card(card_id)) event_ok = false;
+            if (pub.bear_trap_active && side == Side::USSR && !spec.is_scoring) event_ok = false;
+            if (pub.quagmire_active && side == Side::US && !spec.is_scoring) event_ok = false;
+            if (card_id == 103 && pub.defcon != 2) event_ok = false;
+            if (card_id == 104 && !pub.john_paul_ii_played) event_ok = false;
+            if (event_ok) {
+                append_single_edge_mode_draft(card, card_id, ActionMode::Event);
+            }
         }
-
-        if (!card.modes.empty()) {
-            cards.push_back(std::move(card));
-        }
-    }
+    );
 
     return DraftsResult{.drafts = std::move(cards), .cache = std::move(cache)};
 }
