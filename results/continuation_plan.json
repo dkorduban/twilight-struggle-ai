@@ -101,14 +101,18 @@
     "If chain stalls at 1800-1840 despite config fix: consider architecture improvements (GNN, regional features, DP decoder)."
   ],
   "next_tasks_after_current_wave": [
-    "Merge ISMCTS loop guard when bg agent completes (copy ismcts.cpp from worktree to main, build, test)",
-    "Monitor chain: track if v228-v230 exceed v217_sc (1837) Elo baseline",
-    "Architecture Task E: mcts_batched fast path (deferred — assess after chain stabilizes)",
+    "Architecture Task E: mcts_batched fast path (deferred — assess after chain stabilizes at 1850+)",
     "Star Wars card 103 complex choice (low priority, DEFCON check works)",
-    "WS10: ISMCTS validation sweep (after loop guard merged)"
+    "WS10: ISMCTS validation sweep",
+    "Architecture improvements if chain stalls at 1800-1840: GNN, regional features, DP decoder"
   ],
-  "last_updated": "2026-04-14T12:45:00+00:00",
+  "last_updated": "2026-04-14T13:20:00+00:00",
   "completed_this_session": [
+    "CRITICAL: Discovered pfsp_exp formula (UCB constant, not WR power). Opus recommendation (0.5) was correct.",
+    "Reverted pfsp_exp 1.5→0.5 (commit c310cb6). v230_sc=1742 was caused by wrong 1.5 change.",
+    "Fixed ent_coef 0.01→0.003 to match peak era (commit 755f130).",
+    "v232_sc restart from v217_sc(1837): Elo=1811 (first run, Adam warmup). Chain recovering.",
+    "Rolled fixture window: v221_sc(1740)→v232_sc(1811) for better PFSP signal (commit 118011f).",
     "Fixed ISMCTS apply_tree_action: Space Shuttle + North Sea Oil in max_ar",
     "Fixed PPO config: PFSP 1.5→0.5, entropy decay 30→300 iters",
     "Auto-restart wired: maybe_override_restart.sh called from ppo_loop_step.sh",
