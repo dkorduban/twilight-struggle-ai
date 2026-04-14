@@ -4,6 +4,7 @@
 
 #include <algorithm>
 
+#include "card_properties.hpp"
 #include "game_data.hpp"
 #include "scoring.hpp"
 
@@ -130,13 +131,46 @@ int effective_ops(CardId card_id, const PublicState& pub, Side side) {
     return std::max(1, card_spec(card_id).ops + pub.ops_modifier[to_index(side)]);
 }
 
-std::vector<CardId> legal_cards(const CardSet& hand, const PublicState&, Side, bool holds_china) {
+bool is_defcon_lowering_card(CardId card_id) {
+    return tscore::is_defcon_lowering(static_cast<int>(card_id));
+}
+
+bool is_card_blocked_by_defcon(const PublicState& pub, Side side, CardId card_id) {
+    if (!is_defcon_lowering_card(card_id)) {
+        return false;
+    }
+    const auto& card_info = card_spec(card_id);
+    const bool is_opponent_card = (card_info.side != side && card_info.side != Side::Neutral);
+    const bool is_neutral_card = (card_info.side == Side::Neutral);
+    if (is_opponent_card) {
+        if (pub.defcon <= 2) {
+            return true;
+        }
+        if (pub.defcon == 3 && pub.ar == 0) {
+            return true;
+        }
+    }
+    if (is_neutral_card && pub.ar == 0 && pub.defcon <= 3) {
+        return true;
+    }
+    return false;
+}
+
+std::vector<CardId> legal_cards(const CardSet& hand, const PublicState& pub, Side side, bool holds_china) {
     auto cards = hand_to_vector(hand);
     cards.erase(
         std::remove_if(
             cards.begin(),
             cards.end(),
             [&](CardId card_id) { return card_id == kChinaCardId && !holds_china; }
+        ),
+        cards.end()
+    );
+    cards.erase(
+        std::remove_if(
+            cards.begin(),
+            cards.end(),
+            [&](CardId card_id) { return is_card_blocked_by_defcon(pub, side, card_id); }
         ),
         cards.end()
     );

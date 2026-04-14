@@ -396,7 +396,11 @@ TEST_CASE("decode helper matches legacy greedy decode on fixed positions", "[dec
         REQUIRE(helper.mode != ActionMode::Event);
     }
 
-    SECTION("all masked cards fall back to heuristic") {
+    SECTION("all masked cards return null action when legal_cards filters at source") {
+        // Phase 3: legal_cards() now filters DEFCON-blocked cards upfront.
+        // USSR at DEFCON 2 with only card 4 (Duck and Cover, US-side) in hand:
+        // is_card_blocked_by_defcon returns true → legal_cards() returns empty
+        // → both legacy and helper return ActionEncoding{} (card_id=0, no action).
         const auto state = reset_game(19);
         auto pub = state.pub;
         pub.phasing = Side::USSR;
@@ -417,7 +421,7 @@ TEST_CASE("decode helper matches legacy greedy decode on fixed positions", "[dec
             pub, hand, false, false, card_logits, mode_logits, torch::Tensor{}, torch::Tensor{}, torch::Tensor{}, helper_rng);
 
         REQUIRE(helper == legacy);
-        REQUIRE(helper.card_id != 0);
+        REQUIRE(helper.card_id == 0);  // no legal cards → null action
     }
 
     SECTION("random target fallback stays identical without country head") {

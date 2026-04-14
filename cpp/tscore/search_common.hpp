@@ -21,31 +21,6 @@ namespace {
 
 inline constexpr double kVirtualLossPenalty = 1.0;
 
-[[nodiscard]] inline bool is_defcon_lowering_card(CardId card_id) {
-    return tscore::is_defcon_lowering(static_cast<int>(card_id));
-}
-
-[[nodiscard]] inline bool is_card_blocked_by_defcon(const PublicState& pub, Side side, CardId card_id) {
-    if (!is_defcon_lowering_card(card_id)) {
-        return false;
-    }
-
-    const auto& card_info = card_spec(card_id);
-    const bool is_opponent_card = (card_info.side != side && card_info.side != Side::Neutral);
-    const bool is_neutral_card = (card_info.side == Side::Neutral);
-    if (is_opponent_card) {
-        if (pub.defcon <= 2) {
-            return true;
-        }
-        if (pub.defcon == 3 && pub.ar == 0) {
-            return true;
-        }
-    }
-    if (is_neutral_card && pub.ar == 0 && pub.defcon <= 3) {
-        return true;
-    }
-    return false;
-}
 
 [[nodiscard]] inline double winner_value(std::optional<Side> winner) {
     if (winner == Side::USSR) {

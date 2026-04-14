@@ -24,10 +24,6 @@
 
 namespace ts::decode {
 
-inline constexpr std::array<int, 13> kDefconLoweringCards = {
-    4, 11, 13, 20, 24, 39, 48, 49, 50, 53, 83, 92, 105,
-};
-
 inline torch::Tensor tensor_at(const torch::Tensor& tensor, int64_t index) {
     return tensor.index({index});
 }
@@ -36,40 +32,13 @@ inline int argmax_index(const torch::Tensor& tensor) {
     return tensor.argmax(/*dim=*/0).item<int>();
 }
 
-[[nodiscard]] inline bool is_defcon_lowering_card(CardId card_id) {
-    return std::find(kDefconLoweringCards.begin(), kDefconLoweringCards.end(), static_cast<int>(card_id)) !=
-        kDefconLoweringCards.end();
-}
-
-[[nodiscard]] inline bool is_card_blocked_by_defcon(const PublicState& pub, Side side, CardId card_id) {
-    if (!is_defcon_lowering_card(card_id)) {
-        return false;
-    }
-
-    const auto& card_info = card_spec(card_id);
-    const bool is_opponent_card = (card_info.side != side && card_info.side != Side::Neutral);
-    const bool is_neutral_card = (card_info.side == Side::Neutral);
-    if (is_opponent_card) {
-        if (pub.defcon <= 2) {
-            return true;
-        }
-        if (pub.defcon == 3 && pub.ar == 0) {
-            return true;
-        }
-    }
-    if (is_neutral_card && pub.ar == 0 && pub.defcon <= 3) {
-        return true;
-    }
-    return false;
-}
-
 [[nodiscard]] inline bool requires_defcon_fallback(
     const PublicState& pub,
     Side side,
     CardId card_id,
     ActionMode mode
 ) {
-    if (pub.defcon > 2 || !is_defcon_lowering_card(card_id)) {
+    if (pub.defcon > 2 || !ts::is_defcon_lowering_card(card_id)) {
         return false;
     }
 
