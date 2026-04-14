@@ -517,6 +517,14 @@ PYEOF
     echo \"[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] *** 3 CONSECUTIVE PLATEAUS — consider arch experiment ***\" \
       >> results/autonomous_decisions.log
   fi
+
+  # Auto-restart: if finished Elo < 1837 (v217_sc baseline), schedule restart from v217_sc for N+2.
+  # This fires after each run: if the just-finished model is below baseline, the next-next run
+  # will restart from the best 6-mode anchor instead of continuing from a weak checkpoint.
+  RESTART_ANCHOR=\"data/checkpoints/ppo_v217_sc_league/ppo_best.pt\"
+  RESTART_THRESHOLD=1837
+  bash scripts/maybe_override_restart.sh '$FINISHED' '$NEXT' \"\$RESTART_ANCHOR\" \"\$RESTART_THRESHOLD\" \
+    >> \"$ELO_LOG\" 2>&1 || true
 " >> "$ELO_LOG" 2>&1 &
 
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ELO update for $FINISHED launched in background (PID $!)" \
