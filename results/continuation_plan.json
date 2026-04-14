@@ -5,10 +5,10 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "PPO chain v229_sc running (8.6min/run, ~30 iters). Key fixes applied: (1) pfsp_exp restored 0.5→1.5 (peak era config, 2× PFSP signal on _sc opponents), (2) reset_optimizer=false for chained runs, (3) _sc fixtures v228_sc_scripted added. Target: match v209_sc peak at 1875 Elo (current chain: v228_sc=1796, best 6-mode: v209_sc=1875).",
+  "current_task": "PPO chain restarting: v232_sc pre-seeded from v217_sc(1837 Elo). Fixes: (1) pfsp_exp=0.5 CORRECTED (UCB constant, not WR power; 1.5 caused v230_sc=1742 regression), (2) ent_coef=0.003 fixed (matches peak era v205-v211), (3) _sc fixtures at 50% WR, (4) reset_opt=true for restart. Target: climb from 1837 toward v209_sc peak (1875).",
   "active_background": [
-    "PPO v229_sc_league: running from v228_sc (reset_opt=false, pfsp_exp=0.5 — last run before pfsp fix)",
-    "v230_sc onwards: pfsp_exp=1.5 restored, v228_sc_scripted in fixture pool"
+    "v231_sc: running with WRONG pfsp_exp=1.5 (launched before revert). Will likely show poor Elo.",
+    "v232_sc: pre-seeded restart from v217_sc(1837) — CORRECT config: pfsp_exp=0.5 + ent=0.003"
   ],
   "gap_tracker": {
     "GAP-001": "DONE — China Card excluded from legal headline choices in legal_actions.cpp (ar==0 guard).",
@@ -86,10 +86,10 @@
   },
   "ppo_chain": {
     "best_6mode_all_time": "v209_sc at 1875 Elo (chain: v205=1849→v206=1846→v207=1859→v208=1858→v209=1875)",
-    "current_chain": "v225_sc(1794)→v226_sc(1783)→v227_sc(1791)→v228_sc(1796)→v229_sc(running)",
+    "current_chain": "v229_sc(1783)→v230_sc(1742 REGRESSION)→v231_sc(running,wrong pfsp)→v232_sc(restart from v217_sc)",
     "restart_threshold": "1750 (catastrophic only)",
-    "chain_plateau_diagnosis": "pfsp_exp was 0.5 (Opus reduced for strong-opponent era). With _sc fixtures at 50% WR, pfsp_exp=1.5 gives 2× more training signal. Restored to 1.5 for v230_sc+.",
-    "pfsp_fix": "pfsp_exp 0.5→1.5 committed 074198b. Takes effect v230_sc.",
+    "chain_plateau_diagnosis": "CORRECTED: pfsp_exp is UCB constant in 4*WR*(1-WR)+pfsp_exp*sqrt(ln(N)/n_i). Opus pfsp_exp=0.5 was correct (reduces hard-opponent exploration, keeps focus on ~50% WR _sc fixtures). Changing to 1.5 was WRONG — caused v230_sc=1742 regression. REVERTED to 0.5 (commit c310cb6). ent_coef=0.003 fix is likely correct (peak era ran at 0.003 past decay window).",
+    "pfsp_fix": "REVERTED: pfsp_exp 1.5→0.5 (commit c310cb6). 1.5 was incorrect assumption about formula.",
     "fixture_rolling_window": "_sc fixtures: v217_sc(1837)/v221_sc/v228_sc(1796). Updated from v225_sc→v228_sc.",
     "optimizer_fix": "reset_optimizer=false for chained runs (commit c80cc24). v229_sc+ preserve Adam state.",
     "5mode_danger": "v78-v203_sc are 5-mode. Do NOT use as restart anchors. v205_sc+ are 6-mode."
