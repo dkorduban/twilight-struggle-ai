@@ -585,15 +585,16 @@ struct WarCardCase {
     Side attacker_side;
     CountryId target;
     bool uses_explicit_target = false;
+    int card_ops = 0;
     int influence_on_success = 0;
 };
 
 constexpr std::array<WarCardCase, 5> kWarCardCases = {{
-    {11, Side::USSR, Side::USSR, static_cast<CountryId>(25), false, 2},
-    {13, Side::USSR, Side::USSR, static_cast<CountryId>(30), false, 2},
-    {24, Side::USSR, Side::USSR, static_cast<CountryId>(24), true, 2},
-    {39, Side::USSR, Side::USSR, static_cast<CountryId>(57), true, 3},
-    {105, Side::US, Side::US, static_cast<CountryId>(29), true, 2},
+    {11, Side::USSR, Side::USSR, static_cast<CountryId>(25), false, 2, 2},
+    {13, Side::USSR, Side::USSR, static_cast<CountryId>(30), false, 2, 2},
+    {24, Side::USSR, Side::USSR, static_cast<CountryId>(24), true, 2, 2},
+    {39, Side::USSR, Side::USSR, static_cast<CountryId>(28), true, 3, 3},
+    {105, Side::US, Side::US, static_cast<CountryId>(29), true, 2, 2},
 }};
 
 ActionEncoding build_war_event_action(const WarCardCase& spec) {
@@ -614,6 +615,7 @@ TEST_CASE("War cards apply success effects without DEFCON or milops changes", "[
         pub.set_influence(other_side(spec.attacker_side), spec.target, 4);
 
         const auto action = build_war_event_action(spec);
+        const auto success_possible = (6 + spec.card_ops) > (2 * country_spec(spec.target).stability);
         bool found_success = false;
         for (uint64_t seed = 0; seed < 128; ++seed) {
             Pcg64Rng rng(seed);
@@ -634,8 +636,8 @@ TEST_CASE("War cards apply success effects without DEFCON or milops changes", "[
             break;
         }
 
-        INFO("card_id=" << static_cast<int>(spec.card_id));
-        REQUIRE(found_success);
+        INFO("card_id=" << static_cast<int>(spec.card_id) << " success_possible=" << success_possible);
+        REQUIRE(found_success == success_possible);
     }
 }
 
@@ -647,6 +649,7 @@ TEST_CASE("War cards award opponent VP and leave board state unchanged on failur
         pub.set_influence(other_side(spec.attacker_side), spec.target, 4);
 
         const auto action = build_war_event_action(spec);
+        const auto failure_possible = (1 + spec.card_ops) <= (2 * country_spec(spec.target).stability);
         bool found_failure = false;
         for (uint64_t seed = 0; seed < 128; ++seed) {
             Pcg64Rng rng(seed);
@@ -668,8 +671,8 @@ TEST_CASE("War cards award opponent VP and leave board state unchanged on failur
             break;
         }
 
-        INFO("card_id=" << static_cast<int>(spec.card_id));
-        REQUIRE(found_failure);
+        INFO("card_id=" << static_cast<int>(spec.card_id) << " failure_possible=" << failure_possible);
+        REQUIRE(found_failure == failure_possible);
     }
 }
 
