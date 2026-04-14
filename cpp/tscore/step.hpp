@@ -46,8 +46,8 @@ WarResult apply_war_card(
     PublicState& next,
     Side attacker,
     CountryId target,
-    int vp_on_success,
-    int ops_for_milops,
+    int card_ops,
+    int influence_on_success,
     Pcg64Rng& rng
 );
 
