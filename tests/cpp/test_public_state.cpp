@@ -266,6 +266,38 @@ TEST_CASE("Cuban Missile Crisis battleground coup loses immediately", "[step]") 
     REQUIRE(next.defcon == 1);
 }
 
+TEST_CASE("Cuban Missile Crisis can be cancelled by discarding a 2-op card", "[game_loop]") {
+    constexpr CardId kArabIsraeliWarId = 13;
+
+    GameState gs;
+    gs.pub = PublicState{};
+    gs.pub.cuban_missile_crisis_active = true;
+    gs.hands[to_index(Side::US)].set(kArabIsraeliWarId);
+
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+        if (decision.kind == DecisionKind::SmallChoice) {
+            REQUIRE(decision.source_card == static_cast<CardId>(43));
+            REQUIRE(decision.n_options == 2);
+            return 1;  // Cancel CMC.
+        }
+        if (decision.kind == DecisionKind::CardSelect) {
+            REQUIRE(decision.source_card == static_cast<CardId>(43));
+            REQUIRE(decision.n_options == 1);
+            REQUIRE(decision.eligible_ids[0] == static_cast<int>(kArabIsraeliWarId));
+            return 0;
+        }
+        return 0;
+    };
+
+    Pcg64Rng rng(0);
+    const auto result = resolve_cuban_missile_crisis_cancel_live(gs, Side::US, rng, &policy_cb);
+
+    REQUIRE(result.has_value());
+    REQUIRE_FALSE(gs.pub.cuban_missile_crisis_active);
+    REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kArabIsraeliWarId));
+    REQUIRE(gs.pub.discard.test(kArabIsraeliWarId));
+}
+
 TEST_CASE("Glasnost with SALT grants four free ops", "[step]") {
     PublicState pub;
     pub.salt_active = true;
