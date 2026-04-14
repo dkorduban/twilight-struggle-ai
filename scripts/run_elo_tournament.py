@@ -38,7 +38,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 sys.path.insert(0, "build-ninja/bindings")
-sys.path.insert(0, "build/bindings")
+# NOTE: do NOT add "build/bindings" here — it would shadow build-ninja and silently use stale binary
+# (bug found 2026-04-14: inserting build/ at index 0 after build-ninja caused wrong binary to win)
 
 import tscore  # noqa: E402
 
