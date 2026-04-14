@@ -332,6 +332,22 @@ TEST_CASE("Extra action rounds resolve Cuban Missile Crisis cancellation before 
     REQUIRE(cancelled);
 }
 
+TEST_CASE("China Card is never a legal headline choice", "[legal_actions]") {
+    constexpr CardId kDeStalinizationId = 28;
+
+    CardSet hand;
+    hand.set(kChinaCardId);
+    hand.set(kDeStalinizationId);
+
+    PublicState pub;
+    pub.ar = 0;
+
+    const auto cards = legal_cards(hand, pub, Side::USSR, /*holds_china=*/true);
+
+    REQUIRE(std::find(cards.begin(), cards.end(), kChinaCardId) == cards.end());
+    REQUIRE(std::find(cards.begin(), cards.end(), kDeStalinizationId) != cards.end());
+}
+
 TEST_CASE("Glasnost with SALT grants four free ops", "[step]") {
     PublicState pub;
     pub.salt_active = true;
