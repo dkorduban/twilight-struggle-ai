@@ -2829,11 +2829,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--save-rollout-parquet", type=str, default=None,
                    help="If set, save each iteration's rollout steps as Parquet to this directory "
                         "(for BC bootstrapping from PPO data). One file per iteration.")
-    p.add_argument("--probe-set", type=str, default=None,
+    p.add_argument("--jsd-probe-path", "--probe-set", dest="jsd_probe_path",
+                   type=str, default="data/probe_positions.parquet",
                    help="Path to probe_positions.parquet for JSD evaluation")
-    p.add_argument("--probe-every", type=int, default=10,
-                   help="Compute JSD probe every N iterations (0=disabled)")
-    p.add_argument("--probe-bc-checkpoint", type=str, default=None,
+    p.add_argument("--jsd-probe-interval", "--probe-every", dest="jsd_probe_interval",
+                   type=int, default=10,
+                   help="Compute JSD probe every K iterations (0=disabled)")
+    p.add_argument("--jsd-probe-bc-checkpoint", "--probe-bc-checkpoint",
+                   dest="jsd_probe_bc_checkpoint", type=str,
+                   default="data/checkpoints/bc_wide384/scripted.pt",
                    help="BC baseline checkpoint for JSD comparison")
     p.add_argument("--rollout-temp", type=float, default=1.0,
                    help="Softmax temperature for C++ batched rollouts (>1.0 = more exploration). "
@@ -2980,13 +2984,19 @@ def main() -> None:
 
     probe_eval = None
     probe_bc_model = None
-    if args.probe_set and args.probe_every > 0 and Path(args.probe_set).exists():
-        from tsrl.policies.jsd_probe import ProbeEvaluator
+    rolling_ckpt_keep = 1
+    if args.jsd_probe_interval > 0:
+        probe_path = Path(args.jsd_probe_path)
+        if probe_path.exists():
+            from tsrl.policies.jsd_probe import ProbeEvaluator, load_probe_model
 
-        probe_eval = ProbeEvaluator(args.probe_set, device=device)
-        if args.probe_bc_checkpoint and Path(args.probe_bc_checkpoint).exists():
-            probe_bc_model, _, _ = load_model(args.probe_bc_checkpoint, device=device)
-            probe_bc_model.eval()
+            probe_eval = ProbeEvaluator(probe_path, device=device)
+            rolling_ckpt_keep = max(1, args.jsd_probe_interval)
+            probe_bc_path = Path(args.jsd_probe_bc_checkpoint)
+            if probe_bc_path.exists():
+                probe_bc_model = load_probe_model(probe_bc_path, device=device)
+        else:
+            print(f"  [jsd] probe set missing at {probe_path}; skipping JSD probe.", flush=True)
 
     # Keep a copy of BC checkpoint args for saving
     ckpt_meta = dict(ckpt_args)
@@ -3027,14 +3037,21 @@ def main() -> None:
 
     games_per_side = args.games_per_iter // len(sides)
 
-    # Track the last rolling checkpoint path so we can delete it after the next
-    # successful save.  Milestone checkpoints (eval_every multiples and the
-    # final iteration) are never deleted.
-    last_rolling_iteration: int | None = None
-    last_rolling_ckpt: str | None = None  # path to previous iteration's checkpoint
+    # Keep enough rolling checkpoints on disk to compare against iteration-K
+    # when the JSD probe is enabled. Milestone checkpoints are never deleted.
 
     def _is_milestone(it: int) -> bool:
         return it % args.eval_every == 0 or it == args.n_iterations
+
+    def _find_rolling_checkpoint(it: int) -> str | None:
+        candidates = (
+            _flat_checkpoint_path(args.out_dir, args.version, it),
+            _legacy_checkpoint_path(args.out_dir, it),
+        )
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+        return None
 
     # Async panel eval state (non-blocking: runs in background Process)
     import multiprocessing as _mp
@@ -3236,38 +3253,50 @@ def main() -> None:
         )
 
         probe_metrics: dict[str, float] = {}
-        if probe_eval is not None and iteration % args.probe_every == 0:
+        if probe_eval is not None and iteration % args.jsd_probe_interval == 0:
             try:
                 with torch.no_grad():
-                    if last_rolling_ckpt and Path(last_rolling_ckpt).exists():
-                        prev_model, _, _ = load_model(last_rolling_ckpt, device=device)
+                    prev_iter = iteration - args.jsd_probe_interval
+                    prev_ckpt = _find_rolling_checkpoint(prev_iter) if prev_iter >= args.start_iteration else None
+                    if prev_ckpt is not None:
+                        from tsrl.policies.jsd_probe import load_probe_model
+
+                        prev_model = load_probe_model(prev_ckpt, device=device)
                         prev_model.eval()
                         m = probe_eval.compare(model, prev_model)
                         probe_metrics.update({
-                            "probe/card_jsd_vs_prev": m.card_jsd,
-                            "probe/mode_jsd_vs_prev": m.mode_jsd,
-                            "probe/country_jsd_vs_prev": m.country_jsd,
-                            "probe/value_mae_vs_prev": m.value_mae,
-                            "probe/top1_card_agree_vs_prev": m.top1_card_agree,
-                            "probe/card_jsd_early_vs_prev": m.card_jsd_early,
-                            "probe/card_jsd_mid_vs_prev": m.card_jsd_mid,
-                            "probe/card_jsd_late_vs_prev": m.card_jsd_late,
+                            "jsd/card_vs_prev": m.card_jsd,
+                            "jsd/mode_vs_prev": m.mode_jsd,
+                            "jsd/country_vs_prev": m.country_jsd,
+                            "jsd/value_mae_vs_prev": m.value_mae,
+                            "jsd/top1_card_agreement_vs_prev": m.top1_card_agree,
+                            "jsd/top1_mode_agreement_vs_prev": m.top1_mode_agree,
+                            "jsd/card_early_vs_prev": m.card_jsd_early,
+                            "jsd/card_mid_vs_prev": m.card_jsd_mid,
+                            "jsd/card_late_vs_prev": m.card_jsd_late,
                         })
                         print(
-                            f"  [probe] iter={iteration} card_jsd={m.card_jsd:.4f} "
-                            f"top1={m.top1_card_agree:.3f} val_mae={m.value_mae:.4f}",
+                            f"  [jsd] iter={iteration} prev_iter={prev_iter} "
+                            f"card_jsd={m.card_jsd:.4f} top1={m.top1_card_agree:.3f} "
+                            f"val_mae={m.value_mae:.4f}",
                             flush=True,
                         )
                         del prev_model
                     if probe_bc_model is not None:
                         m_bc = probe_eval.compare(model, probe_bc_model)
                         probe_metrics.update({
-                            "probe/card_jsd_vs_bc": m_bc.card_jsd,
-                            "probe/mode_jsd_vs_bc": m_bc.mode_jsd,
-                            "probe/value_mae_vs_bc": m_bc.value_mae,
+                            "jsd/card_vs_bc": m_bc.card_jsd,
+                            "jsd/mode_vs_bc": m_bc.mode_jsd,
+                            "jsd/country_vs_bc": m_bc.country_jsd,
+                            "jsd/value_mae_vs_bc": m_bc.value_mae,
+                            "jsd/top1_card_agreement_vs_bc": m_bc.top1_card_agree,
+                            "jsd/top1_mode_agreement_vs_bc": m_bc.top1_mode_agree,
+                            "jsd/card_early_vs_bc": m_bc.card_jsd_early,
+                            "jsd/card_mid_vs_bc": m_bc.card_jsd_mid,
+                            "jsd/card_late_vs_bc": m_bc.card_jsd_late,
                         })
             except Exception as _probe_err:
-                print(f"  [probe] error (non-fatal): {_probe_err}", flush=True)
+                print(f"  [jsd] error (non-fatal): {_probe_err}", flush=True)
 
         # ── Rolling checkpoint (every iteration) ─────────────────────────────
         # Write new checkpoint first, then delete the previous non-milestone one.
@@ -3281,15 +3310,14 @@ def main() -> None:
             legacy_ckpt_path.replace(".pt", "_scripted.pt"),
         )
 
-        # Delete previous rolling checkpoint if it was not a milestone.
-        if last_rolling_iteration is not None and not _is_milestone(last_rolling_iteration):
-            old_flat = _flat_checkpoint_path(args.out_dir, args.version, last_rolling_iteration)
-            old_legacy = _legacy_checkpoint_path(args.out_dir, last_rolling_iteration)
+        # Delete rolling checkpoints that have aged out of the retention window.
+        delete_iteration = iteration - rolling_ckpt_keep
+        if delete_iteration >= args.start_iteration and not _is_milestone(delete_iteration):
+            old_flat = _flat_checkpoint_path(args.out_dir, args.version, delete_iteration)
+            old_legacy = _legacy_checkpoint_path(args.out_dir, delete_iteration)
             for old_path in (old_flat, old_legacy):
                 _remove_if_exists(old_path)
                 _remove_if_exists(old_path.replace(".pt", "_scripted.pt"))
-        last_rolling_iteration = iteration
-        last_rolling_ckpt = new_ckpt_path
 
         # WS3: Log rollout win rates to metadata DB
         if _TRACKING_AVAILABLE:
