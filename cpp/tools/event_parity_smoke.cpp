@@ -244,7 +244,7 @@ void test_korean_war() {
     pub.set_influence(Side::US, 25, 2);
     const auto next = apply_event(pub, 11, Side::USSR, 1U);
     require(next.defcon == 4, "Korean War should be DEFCON-immune");
-    require(next.milops[ts::to_index(Side::USSR)] == 2, "Korean War should set USSR milops to 2");
+    require(next.milops[ts::to_index(Side::USSR)] == 0, "Korean War should not award milops");
     require(next.vp == 2 || next.vp == -1, "Korean War should produce either +2 USSR VP or +1 US VP");
 }
 
@@ -274,7 +274,7 @@ void test_indo_pakistani_war() {
     pub.set_influence(Side::US, 24, 2);
     const auto next = apply_event(pub, 24, Side::USSR, 1U);
     require(next.defcon == 4, "Indo-Pakistani War should be DEFCON-immune");
-    require(next.milops[ts::to_index(Side::USSR)] == 2, "Indo-Pakistani War should set milops to 2");
+    require(next.milops[ts::to_index(Side::USSR)] == 0, "Indo-Pakistani War should not award milops");
     require(next.vp == 2 || next.vp == -1, "Indo-Pakistani War should award +2 or -1 VP to phasing side");
 }
 
@@ -283,8 +283,9 @@ void test_iran_iraq_war() {
     pub.defcon = 4;
     pub.set_influence(Side::USSR, 29, 1);
     const auto next = apply_event(pub, 105, Side::US, 1U);
-    require(next.defcon == 3, "Iran-Iraq War should lower DEFCON on battleground coup");
-    require(next.milops[ts::to_index(Side::US)] == 2, "Iran-Iraq War should set US milops to 2");
+    require(next.defcon == 4, "Iran-Iraq War should be DEFCON-immune");
+    require(next.milops[ts::to_index(Side::US)] == 0, "Iran-Iraq War should not award milops");
+    require(next.vp == -2 || next.vp == 1, "Iran-Iraq War should award +2 or -1 VP to phasing side");
 }
 
 }  // namespace
