@@ -298,6 +298,40 @@ TEST_CASE("Cuban Missile Crisis can be cancelled by discarding a 2-op card", "[g
     REQUIRE(gs.pub.discard.test(kArabIsraeliWarId));
 }
 
+TEST_CASE("Extra action rounds resolve Cuban Missile Crisis cancellation before actions", "[game_loop]") {
+    constexpr CardId kArabIsraeliWarId = 13;
+
+    const PolicyFn no_action_policy = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+        return std::nullopt;
+    };
+
+    bool cancelled = false;
+    for (uint64_t seed = 0; seed < 64; ++seed) {
+        GameState gs;
+        gs.pub = PublicState{};
+        gs.pub.turn = 1;
+        gs.pub.ar = ars_for_turn(gs.pub.turn);
+        gs.pub.cuban_missile_crisis_active = true;
+        gs.hands[to_index(Side::US)].set(kArabIsraeliWarId);
+
+        Pcg64Rng rng(seed);
+        const auto result = run_extra_action_round_live(gs, Side::US, no_action_policy, rng);
+        REQUIRE_FALSE(result.has_value());
+
+        if (!gs.pub.cuban_missile_crisis_active) {
+            cancelled = true;
+            REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kArabIsraeliWarId));
+            REQUIRE(gs.pub.discard.test(kArabIsraeliWarId));
+            break;
+        }
+
+        REQUIRE(gs.hands[to_index(Side::US)].test(kArabIsraeliWarId));
+        REQUIRE_FALSE(gs.pub.discard.test(kArabIsraeliWarId));
+    }
+
+    REQUIRE(cancelled);
+}
+
 TEST_CASE("Glasnost with SALT grants four free ops", "[step]") {
     PublicState pub;
     pub.salt_active = true;
