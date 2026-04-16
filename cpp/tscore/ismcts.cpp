@@ -22,7 +22,6 @@
 
 #include <torch/torch.h>
 
-#include "card_properties.hpp"
 #include "game_data.hpp"
 #include "game_loop.hpp"
 #include "human_openings.hpp"
@@ -1266,15 +1265,6 @@ ActionEncoding greedy_action_from_model(
         const auto idx = static_cast<int64_t>(static_cast<int>(m));
         if (idx >= n_mode_logits_ismcts) continue;  // mode unknown to this model version
         masked_mode.index_put_({idx}, mode_logits.index({idx}));
-    }
-    // DEFCON safety: forbid coup/event for DEFCON-lowering cards at DEFCON<=2.
-    if (pub.defcon <= 2) {
-        for (auto mode_val : {ActionMode::Coup, ActionMode::Event}) {
-            if (is_card_defcon_blocked(pub, card_id)) {
-                const auto idx = static_cast<int64_t>(static_cast<int>(mode_val));
-                masked_mode.index_put_({idx}, -std::numeric_limits<float>::infinity());
-            }
-        }
     }
     // Re-check after filtering.
     const bool mode_all_masked = (masked_mode.max().item<float>() == -std::numeric_limits<float>::infinity());
