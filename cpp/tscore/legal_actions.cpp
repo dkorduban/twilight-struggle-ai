@@ -271,20 +271,12 @@ std::vector<ActionMode> legal_modes(CardId card_id, const PublicState& pub, Side
 
     modes.push_back(ActionMode::Event);
 
-    if (card_id == kNatoCardId && !nato_prerequisite_met(pub)) {
+    if (!is_event_play_allowed(pub, side, card_id)) {
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
     }
 
     if (is_trap_blocked(pub, side, card_id)) {
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Space), modes.end());
-    }
-
-    if (card_id == kWargamesCardId && !is_wargames_event_legal(pub)) {
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
-    }
-    if (card_id == kSolidarityCardId && !is_solidarity_event_legal(pub)) {
-        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
     }
 
     std::sort(modes.begin(), modes.end(), [](ActionMode lhs, ActionMode rhs) {
