@@ -1048,6 +1048,7 @@ def sample_K_league_opponents(
     wr_table: dict[str, dict] | None = None,
     pfsp_exponent: float = 1.0,
     side: str = "ussr",
+    heuristic_floor: float = 0.0,
 ) -> list[Optional[str]]:
     """Sample k opponents for one side's pool. None = heuristic.
 
@@ -1059,6 +1060,10 @@ def sample_K_league_opponents(
     - UCB-PFSP: (1-WR_side) + c*sqrt(ln(N)/n_i) using the specified side's WR.
     - self_slot: if True, prepend current_script as slot 0 (legacy; prefer False and
       handle self-play separately in the caller).
+    - heuristic_floor: minimum selection probability for __heuristic__ fixture.
+      If heuristic's normalized PFSP weight falls below this, it's boosted to the
+      floor and other weights are reduced proportionally. Prevents PFSP from starving
+      heuristic when model WR→1 (sym term→0). 0.0 = no floor (legacy behavior).
     """
     import random
     import re
@@ -1121,6 +1126,25 @@ def sample_K_league_opponents(
             combined_weights = [w / total_w for w in combined_weights]
     else:
         combined_weights = []
+
+    # Heuristic floor: if __heuristic__ is a fixture and its normalized weight < floor,
+    # boost it to the floor. This prevents PFSP from starving heuristic when WR→1
+    # (symmetric term 4*WR*(1-WR) → 0, leaving only tiny UCB bonus).
+    # The v299-v305 regression showed that without a floor, heuristic gets <2% of
+    # samples, allowing the model to forget general play while optimizing model-vs-model.
+    if heuristic_floor > 0 and HEURISTIC_FIXTURE in active_fixtures and combined_pool:
+        heur_idx = combined_pool.index(HEURISTIC_FIXTURE)
+        heur_w = combined_weights[heur_idx]
+        if heur_w < heuristic_floor:
+            # Redistribute: scale non-heuristic weights down to make room
+            deficit = heuristic_floor - heur_w
+            non_heur_total = 1.0 - heur_w
+            if non_heur_total > 0:
+                scale = (non_heur_total - deficit) / non_heur_total
+                combined_weights = [
+                    heuristic_floor if i == heur_idx else w * scale
+                    for i, w in enumerate(combined_weights)
+                ]
 
     # Don't double-count heuristic: if __heuristic__ is an explicit fixture, its PFSP
     # weight handles allocation. The coin-flip mechanism would oversample it.
@@ -1345,6 +1369,7 @@ def collect_rollout_league_batched(
     dir_epsilon: float = 0.0,
     reward_shaping: bool = False,
     reward_alpha: float = 0.5,
+    heuristic_floor: float = 0.0,
 ) -> tuple[list[Step], dict[str, float]]:
     """Collect rollout steps against K opponents in parallel (ThreadPoolExecutor).
 
@@ -1360,6 +1385,7 @@ def collect_rollout_league_batched(
     - Slot 0: always current model (self_slot=True); true self-play gradient signal.
     - Remaining slots: recency*PFSP-weighted past-self + fixtures (faded out after fixture_fadeout iters).
     - heuristic_pct chance per non-self slot of playing vs heuristic.
+    - heuristic_floor: minimum selection probability for heuristic (prevents PFSP starvation).
     - PFSP: opponents the model currently struggles against get more training time.
     """
     from concurrent.futures import ThreadPoolExecutor
@@ -1399,6 +1425,7 @@ def collect_rollout_league_batched(
         current_script=script_path,
         wr_table=wr_table,
         pfsp_exponent=pfsp_exponent,
+        heuristic_floor=heuristic_floor,
     )
     ussr_opps = sample_K_league_opponents(league_dir, k_per_side, side="ussr", fixtures=_ussr_fixtures, **_common_kwargs)
     us_opps   = sample_K_league_opponents(league_dir, k_per_side, side="us",   fixtures=_us_fixtures,   **_common_kwargs)
@@ -2903,6 +2930,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--us-league-fixtures", nargs="*", default=None,
                    help="Fixture pool for US-side opponent sampling (JSD-deduped US pool). "
                         "If omitted, falls back to --league-fixtures.")
+    p.add_argument("--heuristic-floor", type=float, default=0.0,
+                   help="Minimum selection probability for __heuristic__ in PFSP pool. "
+                        "Prevents heuristic starvation when model WR→1 drives symmetric "
+                        "PFSP weight to zero. 0.15 = heuristic gets ≥15%% of opponent slots. "
+                        "0.0 = no floor (legacy). Recommended: 0.15 for stable general strength.")
     p.add_argument("--league-recency-tau", type=float, default=20.0,
                    help="Recency half-life for past-self checkpoint sampling. "
                         "weight=exp(rank/tau); higher=more uniform, lower=more recency bias (default: 20)")
@@ -3146,7 +3178,10 @@ def main() -> None:
             return
         with torch.no_grad():
             for k, v in model.state_dict().items():
-                _ema_state[k].mul_(_ema_decay).add_(v, alpha=1.0 - _ema_decay)
+                if v.is_floating_point():
+                    _ema_state[k].mul_(_ema_decay).add_(v, alpha=1.0 - _ema_decay)
+                else:
+                    _ema_state[k].copy_(v)  # bool/int params: just copy
 
     def _apply_ema() -> dict[str, torch.Tensor]:
         """Swap EMA weights into model, return original state for restore."""
@@ -3260,6 +3295,7 @@ def main() -> None:
                 dir_epsilon=args.dir_epsilon,
                 reward_shaping=args.reward_shaping,
                 reward_alpha=args.reward_alpha,
+                heuristic_floor=args.heuristic_floor,
             )
             # Full PFSP pool weight dump at milestones for visibility
             if _is_milestone(iteration) and args.league:
@@ -3610,10 +3646,14 @@ def main() -> None:
                         #   v55 (2124) > v54 (2108) > v44 (2106) > v45 (2102) > v14 (2015).
                         # Normalized over whichever opponents actually ran (some may error).
                         _PANEL_WEIGHTS: dict[str, float] = {"v55": 0.35, "v54": 0.25, "v44": 0.20, "v45": 0.15, "v14": 0.05}
-                        _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in valid_opps)
+                        # Heuristic is tracked for monitoring but excluded from weighted avg
+                        # (checkpoint selection should optimize model-vs-model; heuristic WR
+                        # is a regression detector, not a training target).
+                        _scoring_opps = {k: v for k, v in valid_opps.items() if k != "heuristic"}
+                        _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in _scoring_opps) if _scoring_opps else 1.0
                         avg_combined = sum(
-                            v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in valid_opps.items()
-                        ) / _wsum
+                            v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in _scoring_opps.items()
+                        ) / _wsum if _scoring_opps else 0.0
                         _panel_elapsed = time.time() - _panel_launch_time if _panel_launch_time > 0 else 0.0
                         panel_log["panel/avg_combined_wr"] = avg_combined
                         panel_log["panel/eval_time_sec"] = _panel_elapsed
@@ -3857,10 +3897,11 @@ def main() -> None:
                     panel_log[f"panel/{opp_name}_combined_wr"] = stats["combined_wr"]
                 if valid_opps:
                     _PANEL_WEIGHTS: dict[str, float] = {"v55": 0.35, "v54": 0.25, "v44": 0.20, "v45": 0.15, "v14": 0.05}
-                    _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in valid_opps)
+                    _scoring_opps = {k: v for k, v in valid_opps.items() if k != "heuristic"}
+                    _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in _scoring_opps) if _scoring_opps else 1.0
                     avg_combined = sum(
-                        v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in valid_opps.items()
-                    ) / _wsum
+                        v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in _scoring_opps.items()
+                    ) / _wsum if _scoring_opps else 0.0
                     _panel_elapsed = time.time() - _panel_launch_time if _panel_launch_time > 0 else 0.0
                     panel_log["panel/avg_combined_wr"] = avg_combined
                     panel_log["panel/eval_time_sec"] = _panel_elapsed
