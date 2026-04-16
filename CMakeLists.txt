@@ -116,6 +116,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_subdirectory(cpp/tscore)
+add_subdirectory(cpp/experimental)
 add_subdirectory(cpp/tools)
 
 if(TS_BUILD_PYTHON_BINDINGS)

@@ -24,11 +24,13 @@ add_executable(test_tscore
     test_observation.cpp
     test_public_state.cpp
     test_adjacency.cpp
+    test_experimental_heuristic.cpp
 )
 
 target_link_libraries(test_tscore
     PRIVATE
         tscore
+        ts_experimental_core
         Catch2::Catch2WithMain
 )
 
