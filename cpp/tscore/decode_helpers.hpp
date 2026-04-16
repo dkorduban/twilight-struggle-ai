@@ -393,6 +393,45 @@ inline auto choose_action_from_outputs(
     return heuristic_fallback();
 }
 
+template <typename HeuristicFallbackFn, typename NoActionFn>
+inline auto choose_greedy_action_from_outputs(
+    const PublicState& pub,
+    const CardSet& hand,
+    bool holds_china,
+    bool use_country_head,
+    const torch::Tensor& card_logits,
+    const torch::Tensor& mode_logits,
+    const torch::Tensor& country_logits,
+    const torch::Tensor& strategy_logits,
+    const torch::Tensor& country_strategy_logits,
+    Pcg64Rng& rng,
+    HeuristicFallbackFn&& heuristic_fallback,
+    NoActionFn&& no_action,
+    const torch::Tensor& marginal_logits = torch::Tensor{}
+) {
+    return choose_action_from_outputs(
+        pub,
+        hand,
+        holds_china,
+        use_country_head,
+        card_logits,
+        mode_logits,
+        country_logits,
+        strategy_logits,
+        country_strategy_logits,
+        rng,
+        [](const torch::Tensor& masked_card) -> CardId {
+            return static_cast<CardId>(argmax_index(masked_card) + 1);
+        },
+        [](const torch::Tensor& masked_mode) -> ActionMode {
+            return static_cast<ActionMode>(argmax_index(masked_mode));
+        },
+        std::forward<HeuristicFallbackFn>(heuristic_fallback),
+        std::forward<NoActionFn>(no_action),
+        marginal_logits
+    );
+}
+
 inline DecodeWithLogProbsResult choose_action_from_outputs_with_logprobs(
     const PublicState& pub,
     const CardSet& hand,
