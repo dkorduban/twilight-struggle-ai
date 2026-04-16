@@ -2635,10 +2635,16 @@ def _export_torchscript_model(model: nn.Module, script_path: str, *, warn_only: 
         try:
             scripted = torch.jit.script(model_cpu)
         except Exception:
+            # Auto-detect scalar dim from model weights (SCALAR_DIM constant may be stale)
+            scalar_dim = SCALAR_DIM
+            for name, param in model_cpu.named_parameters():
+                if "scalar_encoder" in name and name.endswith(".weight"):
+                    scalar_dim = param.shape[1]
+                    break
             example_inputs = (
                 torch.zeros((1, 172), dtype=torch.float32),
                 torch.zeros((1, 448), dtype=torch.float32),
-                torch.zeros((1, SCALAR_DIM), dtype=torch.float32),
+                torch.zeros((1, scalar_dim), dtype=torch.float32),
             )
             scripted = torch.jit.trace(model_cpu, example_inputs, strict=False)
         scripted.save(script_path)
