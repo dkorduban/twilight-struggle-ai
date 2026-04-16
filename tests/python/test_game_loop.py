@@ -804,6 +804,24 @@ def test_final_scoring_turn_10_does_not_emit_vp_threshold():
     )
 
 
+def test_end_reason_midgame_vp_threshold_is_not_europe_control():
+    """Immediate wins at |VP| >= 20 are VP-threshold wins, not Europe Control."""
+    from tsrl.engine.game_loop import _end_reason
+
+    pub = PublicState(vp=20, defcon=3)
+
+    assert _end_reason(pub, Side.USSR) == "vp_threshold"
+
+
+def test_end_reason_europe_control_stays_distinct_from_vp_threshold():
+    """Europe Control scoring wins can end the game without the VP track hitting ±20."""
+    from tsrl.engine.game_loop import _end_reason
+
+    pub = PublicState(vp=7, defcon=3)
+
+    assert _end_reason(pub, Side.USSR) == "europe_control"
+
+
 def test_final_scoring_se_asia_included_in_asia():
     """SE Asia countries count toward Asia Presence/Domination at Turn 10.
 

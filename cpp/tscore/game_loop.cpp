@@ -157,7 +157,7 @@ std::string end_reason(const PublicState& pub, std::optional<Side> winner, int c
         return "wargames";
     }
     if (winner.has_value()) {
-        return "europe_control";
+        return std::abs(pub.vp) >= 20 ? "vp_threshold" : "europe_control";
     }
     return "vp_threshold";
 }

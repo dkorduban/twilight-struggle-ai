@@ -809,7 +809,7 @@ def _end_reason(pub: PublicState, winner: Optional[Side]) -> str:
     if pub.defcon <= 1:
         return "defcon1"
     if winner is not None:
-        return "europe_control"
+        return "vp_threshold" if abs(pub.vp) >= 20 else "europe_control"
     return "vp_threshold"
 
 
