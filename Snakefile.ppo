@@ -157,6 +157,11 @@ def _dynamic_ppo_train_args():
     upgo_flag = str(cfg.get("upgo_flag", "")).strip()
     if upgo_flag:
         parts.append(upgo_flag)
+    if cfg.get("reward_shaping"):
+        parts.append("--reward-shaping")
+        alpha = cfg.get("reward_alpha", 0.5)
+        if alpha != 0.5:
+            parts.append(f"--reward-alpha {alpha}")
     # Skip smoke test when restarting from an older-architecture checkpoint (e.g. 5-mode
     # checkpoint after NUM_MODES expanded to 6). The scripted .pt sibling would be stale
     # and crash in C++ benchmark_batched. Training itself handles the mismatch correctly.
