@@ -126,7 +126,7 @@ def _dynamic_ppo_train_args():
         cfg.get("panel_v55", ""),
     ]
     parts = [
-        "--n-iterations 30",
+        "--n-iterations 50",  # 2026-04-16: increased from 30; iter 20/30 was still best → model not plateaued
         "--games-per-iter 200",
         "--lr 5e-5",
         "--clip-eps 0.12",
