@@ -3685,10 +3685,90 @@ def main() -> None:
     except Exception as _promote_err:
         print(f"  Warning: ppo_best.pt promotion failed (non-fatal): {_promote_err}", flush=True)
 
-    # Clean up any still-running panel eval process
+    # Wait for any still-running panel eval (e.g. final iteration) instead of
+    # killing it — the result is valuable for checkpoint selection and W&B.
     if _panel_proc is not None and _panel_proc.is_alive():
-        _panel_proc.terminate()
-        _panel_proc.join(timeout=5)
+        print("  [panel eval] waiting for final panel eval to complete (up to 120s)...", flush=True)
+        _panel_proc.join(timeout=120)
+        if _panel_proc.is_alive():
+            print("  [panel eval] timed out — terminating", flush=True)
+            _panel_proc.terminate()
+            _panel_proc.join(timeout=5)
+    if _panel_proc is not None:
+        _panel_proc.join(timeout=1)
+        _panel_proc = None
+        # Process the result the same way the main loop does
+        if _panel_result_path and os.path.exists(_panel_result_path):
+            try:
+                with open(_panel_result_path) as f:
+                    panel_res = json.load(f)
+                valid_opps = {k: v for k, v in panel_res.items() if "error" not in v}
+                panel_log: dict = {}
+                for opp_name, stats in panel_res.items():
+                    if "error" in stats:
+                        print(f"  [panel eval] {opp_name}: ERROR {stats['error']}", flush=True)
+                        continue
+                    panel_log[f"panel/{opp_name}_ussr_wr"] = stats["ussr_wr"]
+                    panel_log[f"panel/{opp_name}_us_wr"] = stats["us_wr"]
+                    panel_log[f"panel/{opp_name}_combined_wr"] = stats["combined_wr"]
+                if valid_opps:
+                    _PANEL_WEIGHTS: dict[str, float] = {"v55": 0.35, "v54": 0.25, "v44": 0.20, "v45": 0.15, "v14": 0.05}
+                    _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in valid_opps)
+                    avg_combined = sum(
+                        v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in valid_opps.items()
+                    ) / _wsum
+                    _panel_elapsed = time.time() - _panel_launch_time if _panel_launch_time > 0 else 0.0
+                    panel_log["panel/avg_combined_wr"] = avg_combined
+                    panel_log["panel/eval_time_sec"] = _panel_elapsed
+                    print(
+                        f"  [panel eval iter {_panel_trigger_iter}] avg={avg_combined:.3f} "
+                        f"elapsed={_panel_elapsed:.0f}s: "
+                        + " | ".join(f"{k}={v['combined_wr']:.3f}" for k, v in valid_opps.items()),
+                        flush=True,
+                    )
+                if wandb_run is not None and panel_log:
+                    wandb_run.log(panel_log, step=_panel_trigger_iter)
+                # Persist to panel_eval_history.json
+                history_path = os.path.join(args.out_dir, "panel_eval_history.json")
+                try:
+                    history: dict = {}
+                    if os.path.exists(history_path):
+                        with open(history_path) as f:
+                            history = json.load(f)
+                    history[str(_panel_trigger_iter)] = panel_res
+                    _save_json_atomic(history_path, history)
+                except Exception as he:
+                    print(f"  [panel eval] history save failed: {he}", flush=True)
+                # Update running best if this is a new high-water mark
+                if valid_opps and avg_combined > _panel_best_wr:
+                    _panel_best_wr = avg_combined
+                    _hwm_ckpt = os.path.join(
+                        args.out_dir, f"ppo_iter{_panel_trigger_iter:04d}.pt"
+                    )
+                    if os.path.exists(_hwm_ckpt):
+                        import shutil as _shutil
+                        _shutil.copy2(_hwm_ckpt, _running_best_path)
+                        _hwm_scripted = _hwm_ckpt.replace(".pt", "_scripted.pt")
+                        if os.path.exists(_hwm_scripted):
+                            _shutil.copy2(_hwm_scripted, _running_best_path.replace(".pt", "_scripted.pt"))
+                        _prov = {
+                            "source_checkpoint": os.path.basename(_hwm_ckpt),
+                            "source_path": _hwm_ckpt,
+                            "panel_avg_wr": round(avg_combined, 6),
+                            "panel_trigger_iter": _panel_trigger_iter,
+                            "run_dir": args.out_dir,
+                            "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "panel_opponents": list(valid_opps.keys()),
+                        }
+                        _save_json_atomic(_running_best_provenance_path, _prov)
+                        print(
+                            f"  [panel eval] NEW HIGH-WATER MARK iter={_panel_trigger_iter} "
+                            f"avg_wr={avg_combined:.4f} → ppo_running_best.pt "
+                            f"(provenance: {os.path.basename(_hwm_ckpt)})",
+                            flush=True,
+                        )
+            except Exception as e:
+                print(f"  [panel eval] final result read failed: {e}", flush=True)
     for leftover in [_panel_result_path, _panel_script_path]:
         if leftover:
             try:
