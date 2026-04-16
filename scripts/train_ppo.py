@@ -2074,11 +2074,17 @@ def ppo_update_packed(
     vf_coef: float = 0.5,
     ent_coef: float = 0.01,
     minibatch_size: int = 2048,
+    target_kl: float = 0.015,
 ) -> dict[str, float]:
     """PPO update with packed tensors — ~12x faster than baseline.
 
     Packs the batch to device once, uses index_select for minibatches,
     avoids per-minibatch Python tensor assembly. PPO math identical to ppo_update.
+
+    target_kl: per-epoch KL early stopping. When the average KL over minibatches
+    in an epoch exceeds this threshold, remaining epochs are skipped. This prevents
+    the policy from drifting too far in a single update, smoothing training.
+    Set to 0 to disable.
     """
     num_steps = packed_steps.influence.shape[0]
     if num_steps == 0:
@@ -2091,7 +2097,11 @@ def ppo_update_packed(
                "entropy": 0.0, "clip_fraction": 0.0, "approx_kl": 0.0}
     n_updates = 0
 
-    for _ in range(ppo_epochs):
+    _epochs_run = 0
+    _kl_early_stopped = False
+    for _epoch_i in range(ppo_epochs):
+        _epoch_kl_sum = 0.0
+        _epoch_kl_count = 0
         perm = torch.randperm(num_steps, device=device)
         for start in range(0, num_steps, minibatch_size):
             idx = perm[start:start + minibatch_size]
@@ -2205,10 +2215,23 @@ def ppo_update_packed(
             metrics["clip_fraction"] += clip_frac
             metrics["approx_kl"] += approx_kl
             n_updates += 1
+            _epoch_kl_sum += approx_kl
+            _epoch_kl_count += 1
+
+        _epochs_run += 1
+        # Per-epoch KL early stopping: if average KL this epoch exceeds target,
+        # skip remaining epochs to prevent policy from drifting too far.
+        if target_kl > 0 and _epoch_kl_count > 0:
+            _epoch_avg_kl = _epoch_kl_sum / _epoch_kl_count
+            if _epoch_avg_kl > target_kl:
+                _kl_early_stopped = True
+                break
 
     if n_updates > 0:
         for key in metrics:
             metrics[key] /= n_updates
+    metrics["ppo_epochs_run"] = _epochs_run
+    metrics["kl_early_stopped"] = 1.0 if _kl_early_stopped else 0.0
     return metrics
 
 
@@ -2849,7 +2872,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--wandb", action="store_true", help="Enable W&B logging")
     p.add_argument("--wandb-project", default="twilight-struggle-ai", help="W&B project")
     p.add_argument("--wandb-run-name", default=None, help="W&B run name")
-    p.add_argument("--max-kl", type=float, default=0.1, help="Early stop if KL > this")
+    p.add_argument("--max-kl", type=float, default=0.1, help="Early stop entire run if KL > this")
+    p.add_argument("--ema-decay", type=float, default=0.995,
+                   help="EMA decay for model weights (0 to disable). EMA model is used for "
+                        "panel eval and checkpoint export. Smooths out per-iteration noise.")
+    p.add_argument("--target-kl", type=float, default=0.015,
+                   help="Per-epoch KL early stopping threshold. When avg KL in a PPO epoch "
+                        "exceeds this, remaining epochs are skipped. Smooths training by "
+                        "preventing large policy updates. 0 to disable.")
     p.add_argument("--vp-reward-coef", type=float, default=0.0,
                    help="VP delta reward shaping coefficient (0 = disabled)")
     p.add_argument("--reward-shaping", action="store_true",
@@ -3100,6 +3130,37 @@ def main() -> None:
                 print(f"  [warn] Could not restore optimizer state: {e}", flush=True)
         del _opt_ckpt
 
+    # EMA (exponential moving average) model weights for smoother evaluation.
+    # The live model trains normally; the EMA model is a smoothed version used for
+    # panel eval, league pool export, and final checkpoint. This prevents the
+    # oscillation pattern where single-iteration checkpoints regress.
+    _ema_decay = args.ema_decay
+    _ema_state: dict[str, torch.Tensor] | None = None
+    if _ema_decay > 0:
+        _ema_state = {k: v.clone().detach() for k, v in model.state_dict().items()}
+        print(f"  EMA enabled: decay={_ema_decay}", flush=True)
+
+    def _update_ema() -> None:
+        """Update EMA weights: ema = decay * ema + (1 - decay) * current."""
+        if _ema_state is None:
+            return
+        with torch.no_grad():
+            for k, v in model.state_dict().items():
+                _ema_state[k].mul_(_ema_decay).add_(v, alpha=1.0 - _ema_decay)
+
+    def _apply_ema() -> dict[str, torch.Tensor]:
+        """Swap EMA weights into model, return original state for restore."""
+        if _ema_state is None:
+            return {}
+        original = {k: v.clone() for k, v in model.state_dict().items()}
+        model.load_state_dict(_ema_state)
+        return original
+
+    def _restore_from_ema(original: dict[str, torch.Tensor]) -> None:
+        """Restore original (non-EMA) weights after eval/export."""
+        if original:
+            model.load_state_dict(original)
+
     # Determine training sides
     if args.side == "ussr":
         sides = [tscore.Side.USSR]
@@ -3174,7 +3235,10 @@ def main() -> None:
             if iteration == 1 or iteration % args.league_save_every == 0:
                 Path(args.league).mkdir(parents=True, exist_ok=True)
                 pool_path = str(Path(args.league) / f"iter_{iteration:04d}.pt")
+                # Use EMA weights for league pool (smoother opponents)
+                _ema_orig_pool = _apply_ema()
                 _export_torchscript_model(model, pool_path, warn_only=True)
+                _restore_from_ema(_ema_orig_pool)
                 print(f"  Saved to league pool: {pool_path}", flush=True)
             all_steps, ucb_metrics, _rollout_opp_results = collect_rollout_league_batched(
                 model, args.league, args.games_per_iter, seed, device,
@@ -3352,9 +3416,21 @@ def main() -> None:
             vf_coef=args.vf_coef,
             ent_coef=current_ent_coef,
             minibatch_size=args.minibatch_size,
+            target_kl=args.target_kl,
         )
         t_update = time.time() - t_update_start
         t_iter = time.time() - t_iter_start
+
+        # Update EMA weights after each PPO step
+        _update_ema()
+
+        # Cosine LR decay: smoothly reduce LR from args.lr to args.lr * 0.1 over the run.
+        # Applied after warmup phase. Prevents late-training overshooting.
+        if args.lr_warmup_iters == 0 or iteration > args.lr_warmup_iters:
+            cos_progress = (iteration - 1) / max(1, args.n_iterations - 1)
+            cos_lr = args.lr * (0.1 + 0.9 * 0.5 * (1.0 + math.cos(math.pi * cos_progress)))
+            for pg in optimizer.param_groups:
+                pg["lr"] = cos_lr
 
         # Early stopping on KL divergence
         if metrics.get("approx_kl", 0) > args.max_kl:
@@ -3362,6 +3438,7 @@ def main() -> None:
                   f"{args.max_kl:.4f}, stopping early")
             break
 
+        _epochs_info = f" ep={int(metrics.get('ppo_epochs_run', args.ppo_epochs))}/{args.ppo_epochs}" if metrics.get("kl_early_stopped", 0) > 0 else ""
         print(
             f"[iter {iteration:3d}/{args.n_iterations}] "
             f"steps={n_steps:5d} "
@@ -3370,7 +3447,7 @@ def main() -> None:
             f"vl={metrics.get('value_loss', 0):.4f} "
             f"ent={metrics.get('entropy', 0):.3f} "
             f"clip={metrics.get('clip_fraction', 0):.3f} "
-            f"kl={metrics.get('approx_kl', 0):.4f} "
+            f"kl={metrics.get('approx_kl', 0):.4f}{_epochs_info} "
             f"t={t_iter:.1f}s (rollout={t_rollout:.1f}s update={t_update:.1f}s)",
             flush=True,
         )
@@ -3498,6 +3575,9 @@ def main() -> None:
         log_dict["steps_per_game"] = steps_per_game
         log_dict["iter_time_s"] = t_iter
         log_dict["ent_coef"] = current_ent_coef
+        log_dict["lr"] = optimizer.param_groups[0]["lr"]
+        log_dict["ppo_epochs_run"] = metrics.get("ppo_epochs_run", args.ppo_epochs)
+        log_dict["kl_early_stopped"] = metrics.get("kl_early_stopped", 0.0)
         if args.self_play:
             log_dict["sp_rollout_wr_ussr"] = sp_rollout_wr_ussr
             log_dict["sp_rollout_wr_us"] = sp_rollout_wr_us
@@ -3602,7 +3682,10 @@ def main() -> None:
             _panel_trigger_iter = iteration
             _panel_launch_time = time.time()
             try:
+                # Use EMA weights for panel eval (smoother, less noisy)
+                _ema_orig = _apply_ema()
                 _export_torchscript_model(model, _panel_script_path, warn_only=False)
+                _restore_from_ema(_ema_orig)
                 # Use "spawn" to avoid inheriting CUDA context from parent (fork + CUDA = deadlock).
                 _panel_proc = _mp.get_context("spawn").Process(
                     target=_panel_eval_worker,
@@ -3688,7 +3771,10 @@ def main() -> None:
     # ── Final checkpoint + summary ────────────────────────────────────────────
     final_path = os.path.join(args.out_dir, "ppo_final.pt")
     ckpt_meta["total_iters"] = global_iter_offset + args.n_iterations
+    # Use EMA weights for final checkpoint (smoother)
+    _ema_orig_final = _apply_ema()
     export_checkpoint(model, final_path, ckpt_meta)
+    _restore_from_ema(_ema_orig_final)
     # Verify ppo_final.pt was written; if missing, copy from last rolling checkpoint.
     # This guard catches a rare race condition where ppo_final.pt gets deleted after writing.
     if not os.path.exists(final_path):
