@@ -22,6 +22,7 @@
 
 #include <torch/torch.h>
 
+#include "decode_helpers.hpp"
 #include "game_data.hpp"
 #include "game_loop.hpp"
 #include "human_openings.hpp"
@@ -1234,139 +1235,44 @@ ActionEncoding greedy_action_from_model(
 
     const auto card_logits = outputs.card_logits.index({bi});
     const auto mode_logits = outputs.mode_logits.index({bi});
+    const auto country_logits_raw = outputs.country_logits.defined()
+        ? outputs.country_logits.index({bi})
+        : torch::Tensor{};
+    const auto marginal_logits_raw = outputs.marginal_logits.defined()
+        ? outputs.marginal_logits.index({bi})
+        : torch::Tensor{};
+    const auto strategy_logits_raw = outputs.strategy_logits.defined()
+        ? outputs.strategy_logits.index({bi})
+        : torch::Tensor{};
+    const auto country_strategy_logits_raw = outputs.country_strategy_logits.defined()
+        ? outputs.country_strategy_logits.index({bi})
+        : torch::Tensor{};
 
-    // Mask illegal cards (DEFCON-lowering safety included).
-    auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
-    for (const auto card_id : playable) {
-        if (is_card_blocked_by_defcon(pub, side, card_id)) {
-            continue;
-        }
-        const auto idx = static_cast<int64_t>(card_id - 1);
-        masked_card.index_put_({idx}, card_logits.index({idx}));
-    }
+    auto decode_pub = pub;
+    decode_pub.phasing = side;
+    auto action = decode::choose_greedy_action_from_outputs(
+        decode_pub,
+        hand,
+        holds_china,
+        /*use_country_head=*/true,
+        card_logits,
+        mode_logits,
+        country_logits_raw,
+        strategy_logits_raw,
+        country_strategy_logits_raw,
+        rng,
+        heuristic_fallback,
+        heuristic_fallback,
+        marginal_logits_raw
+    );
 
-    // If all playable cards were masked, fall back.
-    const bool all_masked = (masked_card.max().item<float>() == -std::numeric_limits<float>::infinity());
-    if (all_masked) {
-        return heuristic_fallback();
-    }
-
-    const auto card_id = static_cast<CardId>(masked_card.argmax().item<int64_t>() + 1);
-
-    // Mode selection.
-    auto modes = legal_modes(card_id, pub, side);
-    if (modes.empty()) {
-        return heuristic_fallback();
-    }
-
-    auto masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
-    const auto n_mode_logits_ismcts = mode_logits.size(0);
-    for (const auto m : modes) {
-        const auto idx = static_cast<int64_t>(static_cast<int>(m));
-        if (idx >= n_mode_logits_ismcts) continue;  // mode unknown to this model version
-        masked_mode.index_put_({idx}, mode_logits.index({idx}));
-    }
-    // Re-check after filtering.
-    const bool mode_all_masked = (masked_mode.max().item<float>() == -std::numeric_limits<float>::infinity());
-    if (mode_all_masked) {
-        return heuristic_fallback();
-    }
-    const auto mode = static_cast<ActionMode>(masked_mode.argmax().item<int64_t>());
-
-    // Country / target selection.
-    ActionEncoding action{.card_id = card_id, .mode = mode, .targets = {}};
-
-    if (mode == ActionMode::Coup || mode == ActionMode::Realign) {
-        auto accessible = accessible_countries(side, pub, mode);
-        if (accessible.empty()) {
-            return heuristic_fallback();
-        }
-        // Filter forbidden targets (DEFCON, NATO, etc.) using the cache logic.
+    if (action.mode == ActionMode::Space && action.targets.empty()) {
         const auto& cache = AccessibleCache::build(side, pub);
-        const auto& valid = (mode == ActionMode::Coup) ? cache.coup : cache.realign;
-        if (valid.empty()) {
-            return heuristic_fallback();
-        }
-        // Pick highest logit among accessible countries.
-        const auto country_logits = outputs.country_logits.defined()
-            ? outputs.country_logits.index({bi})
-            : torch::zeros(kMaxCountryLogits);
-        CountryId best_country = valid[0];
-        float best_val = -std::numeric_limits<float>::infinity();
-        for (const auto cid : valid) {
-            const float v = country_logits.index({static_cast<int64_t>(cid)}).item<float>();
-            if (v > best_val) {
-                best_val = v;
-                best_country = cid;
-            }
-        }
-        action.targets.push_back(best_country);
-    } else if (mode == ActionMode::Influence || mode == ActionMode::Space) {
-        const auto& cache = AccessibleCache::build(side, pub);
-        if (mode == ActionMode::Space) {
-            // Space: pick best country (though usually irrelevant for space).
-            if (!cache.influence.empty()) {
-                action.targets.push_back(cache.influence[0]);
-            }
-        } else {
-            const auto ops = effective_ops(card_id, pub, side);
-            const auto& accessible = cache.influence;
-            if (accessible.empty()) {
-                return heuristic_fallback();
-            }
-            const auto country_logits = outputs.country_logits.defined()
-                ? outputs.country_logits.index({bi})
-                : torch::zeros(kMaxCountryLogits);
-            // Allocate ops proportional to logits (deterministic, like greedy_action_from_outputs).
-            std::vector<float> vals;
-            vals.reserve(accessible.size());
-            float max_v = -std::numeric_limits<float>::infinity();
-            for (const auto cid : accessible) {
-                const float v = country_logits.index({static_cast<int64_t>(cid)}).item<float>();
-                vals.push_back(v);
-                if (v > max_v) max_v = v;
-            }
-            // Softmax.
-            float sum_exp = 0.0f;
-            for (auto& v : vals) {
-                v = std::exp(v - max_v);
-                sum_exp += v;
-            }
-            for (auto& v : vals) {
-                v /= sum_exp;
-            }
-            // Floor allocation.
-            std::vector<int> alloc(accessible.size(), 0);
-            float rem = static_cast<float>(ops);
-            for (size_t i = 0; i < accessible.size(); ++i) {
-                alloc[i] = static_cast<int>(std::floor(vals[i] * static_cast<float>(ops)));
-                rem -= static_cast<float>(alloc[i]);
-            }
-            // Distribute remaining ops by largest fractional.
-            int rem_int = static_cast<int>(std::round(rem));
-            if (rem_int > 0) {
-                std::vector<std::pair<float, size_t>> fractional;
-                for (size_t i = 0; i < accessible.size(); ++i) {
-                    const float frac = vals[i] * static_cast<float>(ops) - static_cast<float>(alloc[i]);
-                    fractional.emplace_back(-frac, i);  // negate for ascending sort = descending frac
-                }
-                std::sort(fractional.begin(), fractional.end());
-                for (int k = 0; k < rem_int && k < static_cast<int>(fractional.size()); ++k) {
-                    alloc[fractional[static_cast<size_t>(k)].second] += 1;
-                }
-            }
-            for (size_t i = 0; i < accessible.size(); ++i) {
-                for (int k = 0; k < alloc[i]; ++k) {
-                    action.targets.push_back(accessible[i]);
-                }
-            }
+        if (!cache.influence.empty()) {
+            action.targets.push_back(cache.influence.front());
         }
     }
-    // Event mode: no targets needed.
 
-    if (action.targets.empty() && mode != ActionMode::Event && mode != ActionMode::Space) {
-        return heuristic_fallback();
-    }
     return action;
 }
 
