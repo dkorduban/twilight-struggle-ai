@@ -12,6 +12,7 @@ add_library(tscore STATIC
     policies.cpp
     public_state.cpp
     rng.cpp
+    rule_queries.cpp
     scoring.cpp
     step.cpp
 )
@@ -76,6 +77,7 @@ install(FILES
     types.hpp
     public_state.hpp
     rng.hpp
+    rule_queries.hpp
     scoring.hpp
     step.hpp
     hand_knowledge.hpp
