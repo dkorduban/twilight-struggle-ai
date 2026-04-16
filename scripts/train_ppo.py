@@ -587,37 +587,57 @@ def _sample_action_and_step(
 # Reward computation
 # ---------------------------------------------------------------------------
 
-def _compute_reward(result: "tscore.GameResult", side_int: int, vp_coef: float = 0.0) -> float:
+def _compute_reward(
+    result: "tscore.GameResult",
+    side_int: int,
+    vp_coef: float = 0.0,
+    reward_shaping: bool = False,
+    reward_alpha: float = 0.5,
+) -> float:
     """Terminal reward. side_int 0=USSR, 1=US. Optional VP-magnitude component.
 
     VP shaping uses the pre-transfer VP for Wargames (card 103 gives +6 to opponent
     before checking winner, so final_vp understates the actual margin) and uses
     max-margin for Europe control (instant win regardless of VP board).
+
+    When reward_shaping=True, uses compute_shaped_reward() from tsrl.rewards for
+    VP trajectory + turn length bonuses on top of the base win/loss reward.
     """
     is_ussr = side_int == 0
     won = result.winner == (tscore.Side.USSR if is_ussr else tscore.Side.US)
-    base = 1.0 if won else -1.0
     end_reason = getattr(result, "end_reason", "")
+
     # DEFCON-1 suicide penalty: extra signal beyond -1.0 normal loss.
-    # Reduced from -1.5 to -1.2: comprehensive masking now blocks most avoidable suicides;
-    # residual DEFCON-1 losses (last-card forced play, headline collisions) are partly
-    # unavoidable, so a harsh -1.5 adds value-function noise without strategic benefit.
     if end_reason == "defcon1" and not won:
         return -1.2
+
+    if reward_shaping:
+        from tsrl.rewards import compute_shaped_reward
+        winner_int = None
+        if result.winner == tscore.Side.USSR:
+            winner_int = 0
+        elif result.winner == tscore.Side.US:
+            winner_int = 1
+        return compute_shaped_reward(
+            winner=winner_int,
+            side=side_int,
+            final_vp=result.final_vp,
+            end_turn=getattr(result, "end_turn", 10),
+            end_reason=end_reason,
+            alpha=reward_alpha,
+        )
+
+    base = 1.0 if won else -1.0
     if vp_coef <= 0.0:
         return base
     if end_reason == "europe_control":
-        # Instant win: treat as full VP margin regardless of board state.
         vp_scaled = 1.0 if won else -1.0
     elif end_reason == "wargames":
-        # final_vp is post-transfer (opponent already received +6).
-        # Recover pre-transfer margin: winner's margin was |final_vp| + 6.
         pre_vp = result.final_vp + (6 if result.final_vp > 0 else -6)
         vp_scaled = max(-1.0, min(1.0, pre_vp / 20.0))
         if not is_ussr:
             vp_scaled = -vp_scaled
     else:
-        # final_vp is from USSR perspective: positive = USSR ahead
         vp_scaled = max(-1.0, min(1.0, result.final_vp / 20.0))
         if not is_ussr:
             vp_scaled = -vp_scaled
@@ -636,6 +656,8 @@ def collect_rollout_sequential(
     device: str,
     card_specs: dict,
     vp_reward_coef: float = 0.0,
+    reward_shaping: bool = False,
+    reward_alpha: float = 0.5,
 ) -> list[Step]:
     """Play n_games and return all collected steps with rewards assigned."""
     all_steps: list[Step] = []
@@ -667,7 +689,7 @@ def collect_rollout_sequential(
 
         result = results[0]
         side_int = 0 if learned_side == tscore.Side.USSR else 1
-        reward = _compute_reward(result, side_int, vp_reward_coef)
+        reward = _compute_reward(result, side_int, vp_reward_coef, reward_shaping=reward_shaping, reward_alpha=reward_alpha)
 
         if game_steps:
             game_steps[-1].reward = reward
@@ -725,6 +747,8 @@ def collect_rollout_batched(
     card_specs: dict,
     vp_reward_coef: float = 0.0,
     rollout_temp: float = 1.0,
+    reward_shaping: bool = False,
+    reward_alpha: float = 0.5,
 ) -> list[Step]:
     """Collect PPO rollout steps through the native batched C++ game pool."""
     if not hasattr(tscore, "rollout_games_batched"):
@@ -787,7 +811,7 @@ def collect_rollout_batched(
         end = boundaries[i + 1] if i + 1 < len(boundaries) else len(all_steps)
         if start >= end:
             continue
-        all_steps[end - 1].reward = _compute_reward(result, side_int, vp_reward_coef)
+        all_steps[end - 1].reward = _compute_reward(result, side_int, vp_reward_coef, reward_shaping=reward_shaping, reward_alpha=reward_alpha)
         all_steps[end - 1].done = True
 
     return all_steps
@@ -800,6 +824,8 @@ def collect_rollout_self_play_batched(
     device: str,
     vp_reward_coef: float = 0.0,
     rollout_temp: float = 1.0,
+    reward_shaping: bool = False,
+    reward_alpha: float = 0.5,
 ) -> list[Step]:
     """Collect PPO rollout steps from self-play (both sides use learned model)."""
     if not hasattr(tscore, "rollout_self_play_batched"):
@@ -859,7 +885,7 @@ def collect_rollout_self_play_batched(
         if start >= end:
             continue
         last = all_steps[end - 1]
-        last.reward = _compute_reward(result, last.side_int, vp_reward_coef)
+        last.reward = _compute_reward(result, last.side_int, vp_reward_coef, reward_shaping=reward_shaping, reward_alpha=reward_alpha)
         last.done = True
 
     return all_steps
@@ -1192,6 +1218,8 @@ def _collect_heuristic_from_script(
     dir_alpha: float = 0.0,
     dir_epsilon: float = 0.0,
     side: str = "both",
+    reward_shaping: bool = False,
+    reward_alpha: float = 0.5,
 ) -> list[Step]:
     """Collect n_games vs heuristic using an already-exported script.
 
@@ -1228,7 +1256,7 @@ def _collect_heuristic_from_script(
             start = boundaries[i]
             end = boundaries[i + 1] if i + 1 < len(boundaries) else len(steps)
             if start < end:
-                steps[end - 1].reward = _compute_reward(result, side_int, vp_reward_coef)
+                steps[end - 1].reward = _compute_reward(result, side_int, vp_reward_coef, reward_shaping=reward_shaping, reward_alpha=reward_alpha)
                 steps[end - 1].done = True
         all_steps.extend(steps)
     return all_steps
@@ -1244,6 +1272,8 @@ def _collect_vs_model_from_script(
     dir_alpha: float = 0.0,
     dir_epsilon: float = 0.0,
     side: str = "both",
+    reward_shaping: bool = False,
+    reward_alpha: float = 0.5,
 ) -> list[Step]:
     """Collect n_games vs a scripted model opponent.
 
@@ -1286,7 +1316,7 @@ def _collect_vs_model_from_script(
             model_a_side_int = 1
         else:
             model_a_side_int = 0 if i < half else 1
-        steps[end - 1].reward = _compute_reward(result, model_a_side_int, vp_reward_coef)
+        steps[end - 1].reward = _compute_reward(result, model_a_side_int, vp_reward_coef, reward_shaping=reward_shaping, reward_alpha=reward_alpha)
         steps[end - 1].done = True
         kept.extend(steps[start:end])
     return kept
@@ -1314,6 +1344,8 @@ def collect_rollout_league_batched(
     pfsp_exponent: float = 1.0,
     dir_alpha: float = 0.0,
     dir_epsilon: float = 0.0,
+    reward_shaping: bool = False,
+    reward_alpha: float = 0.5,
 ) -> tuple[list[Step], dict[str, float]]:
     """Collect rollout steps against K opponents in parallel (ThreadPoolExecutor).
 
@@ -1436,10 +1468,11 @@ def collect_rollout_league_batched(
                 return _collect_heuristic_from_script(
                     script_path, games_per_slot, seed, vp_reward_coef,
                     rollout_temp, dir_alpha, dir_epsilon, side=collect_side,
+                    reward_shaping=reward_shaping, reward_alpha=reward_alpha,
                 )
             return _collect_vs_model_from_script(
                 script_path, opp, games_per_slot, seed, vp_reward_coef, rollout_temp, dir_alpha, dir_epsilon,
-                side=collect_side,
+                side=collect_side, reward_shaping=reward_shaping, reward_alpha=reward_alpha,
             )
 
         actual_workers = min(n_workers, len(tasks))
@@ -2635,16 +2668,13 @@ def _export_torchscript_model(model: nn.Module, script_path: str, *, warn_only: 
         try:
             scripted = torch.jit.script(model_cpu)
         except Exception:
-            # Auto-detect scalar dim from model weights (SCALAR_DIM constant may be stale)
-            scalar_dim = SCALAR_DIM
-            for name, param in model_cpu.named_parameters():
-                if "scalar_encoder" in name and name.endswith(".weight"):
-                    scalar_dim = param.shape[1]
-                    break
+            # Use SCALAR_DIM (32) for trace — this is what C++ sends.
+            # Models with region_encoder internally extend scalars before
+            # scalar_encoder, so scalar_encoder.weight.shape[1] > SCALAR_DIM.
             example_inputs = (
                 torch.zeros((1, 172), dtype=torch.float32),
                 torch.zeros((1, 448), dtype=torch.float32),
-                torch.zeros((1, scalar_dim), dtype=torch.float32),
+                torch.zeros((1, SCALAR_DIM), dtype=torch.float32),
             )
             scripted = torch.jit.trace(model_cpu, example_inputs, strict=False)
         scripted.save(script_path)
@@ -2789,6 +2819,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-kl", type=float, default=0.1, help="Early stop if KL > this")
     p.add_argument("--vp-reward-coef", type=float, default=0.0,
                    help="VP delta reward shaping coefficient (0 = disabled)")
+    p.add_argument("--reward-shaping", action="store_true",
+                   help="Enable shaped rewards (VP trajectory + turn length bonus)")
+    p.add_argument("--reward-alpha", type=float, default=0.5,
+                   help="Overall shaping weight (default: 0.5)")
     p.add_argument("--league", type=str, default=None,
                    help="League directory for checkpoint pool self-play (enables league training)")
     p.add_argument("--league-save-every", type=int, default=10,
@@ -3127,12 +3161,15 @@ def main() -> None:
                 pfsp_exponent=args.pfsp_exponent,
                 dir_alpha=args.dir_alpha,
                 dir_epsilon=args.dir_epsilon,
+                reward_shaping=args.reward_shaping,
+                reward_alpha=args.reward_alpha,
             )
         elif args.self_play:
             seed = args.seed + (iteration - 1) * args.games_per_iter
             self_play_steps = collect_rollout_self_play_batched(
                 model, args.games_per_iter, seed, device, vp_reward_coef=args.vp_reward_coef,
                 rollout_temp=args.rollout_temp,
+                reward_shaping=args.reward_shaping, reward_alpha=args.reward_alpha,
             )
             all_steps = list(self_play_steps)
             if args.self_play_heuristic_mix > 0:
@@ -3140,10 +3177,12 @@ def main() -> None:
                 heur_steps_ussr = collect_rollout_batched(
                     model, n_heur // 2, tscore.Side.USSR, seed + 1000000, device, card_specs,
                     vp_reward_coef=args.vp_reward_coef, rollout_temp=args.rollout_temp,
+                    reward_shaping=args.reward_shaping, reward_alpha=args.reward_alpha,
                 )
                 heur_steps_us = collect_rollout_batched(
                     model, n_heur // 2, tscore.Side.US, seed + 2000000, device, card_specs,
                     vp_reward_coef=args.vp_reward_coef, rollout_temp=args.rollout_temp,
+                    reward_shaping=args.reward_shaping, reward_alpha=args.reward_alpha,
                 )
                 all_steps = all_steps + heur_steps_ussr + heur_steps_us
         else:
@@ -3154,6 +3193,7 @@ def main() -> None:
                 steps = collect_rollout_batched(
                     model, games_per_side, side, side_seed, device, card_specs,
                     vp_reward_coef=args.vp_reward_coef,
+                    reward_shaping=args.reward_shaping, reward_alpha=args.reward_alpha,
                 )
                 all_steps.extend(steps)
 
