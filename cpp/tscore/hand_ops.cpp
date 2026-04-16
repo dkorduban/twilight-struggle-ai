@@ -662,17 +662,7 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
     };
 
     int idx = 0;
-    if (policy_cb != nullptr) {
-        EventDecision decision;
-        decision.kind = DecisionKind::SmallChoice;
-        decision.source_card = card_id;
-        decision.acting_side = side;
-        decision.n_options = static_cast<int>(ops_actions.size());
-        for (int option = 0; option < decision.n_options; ++option) {
-            decision.eligible_ids[option] = option;
-        }
-        idx = std::clamp((*policy_cb)(gs.pub, decision), 0, static_cast<int>(ops_actions.size()) - 1);
-    } else if (ops_actions.size() > 1 && !preferred_targets.empty()) {
+    if (ops_actions.size() > 1 && !preferred_targets.empty()) {
         size_t best_idx = 0;
         auto best_score = score_match(ops_actions.front().targets, preferred_targets);
         for (size_t candidate_idx = 1; candidate_idx < ops_actions.size(); ++candidate_idx) {
@@ -683,6 +673,17 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
             }
         }
         idx = static_cast<int>(best_idx);
+    } else if (policy_cb != nullptr) {
+        EventDecision decision;
+        decision.kind = DecisionKind::SmallChoice;
+        decision.source_card = card_id;
+        decision.acting_side = side;
+        const auto option_count = std::min(static_cast<int>(ops_actions.size()), EventDecision::kMaxEligible);
+        decision.n_options = option_count;
+        for (int option = 0; option < option_count; ++option) {
+            decision.eligible_ids[option] = option;
+        }
+        idx = std::clamp((*policy_cb)(gs.pub, decision), 0, option_count - 1);
     }
 
     auto [ops_pub, ops_over, ops_winner] =
