@@ -75,11 +75,11 @@ _DYNAMIC_TRAIN_DEFAULTS = {
     "us_fixtures": "",
     "league_fixtures": "",
     "upgo_flag": "",
-    "panel_v55": "",
+    "panel_v56": "",
     "panel_v54": "",
     "panel_v44": "",
-    "panel_v45": "",
-    "panel_v14": "",
+    "panel_v20": "",
+    "panel_v55": "",
     "elo_log": "results/logs/ppo/ppo_dynamic.log",
     "probe_set": "data/probe_positions.parquet",
     "skip_smoke_test": False,
@@ -119,11 +119,11 @@ def _dynamic_ppo_train_args():
     prev_total_iters = int(cfg["prev_total_iters"])
     run_name = f"ppo_{cfg['next_version']}"
     eval_panel = [
-        cfg.get("panel_v55", ""),
+        cfg.get("panel_v56", ""),
         cfg.get("panel_v54", ""),
         cfg.get("panel_v44", ""),
-        cfg.get("panel_v45", ""),
-        cfg.get("panel_v14", ""),
+        cfg.get("panel_v20", ""),
+        cfg.get("panel_v55", ""),
     ]
     parts = [
         "--n-iterations 30",

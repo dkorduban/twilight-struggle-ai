@@ -61,29 +61,29 @@ fi
 # Step 1: Candidate tournament (pick best checkpoint within run)
 # ---------------------------------------------------------------------------
 if [ -f "${RUN_DIR}/panel_eval_history.json" ]; then
-  # 6-mode _sc panel (switched 2026-04-14): replaces old 5-mode v55/v54/v44/v45/v14.
-  # Old 5-mode panel gave fake Elo (6-mode crushes 5-mode at 94-97% WR).
-  # v209_sc=1875(peak) | v217_sc=1837 | v232_sc=1811 | v228_sc=1796 | v227_sc=1791
-  PANEL_V209_SC="${SCRIPT_DIR}/v209_sc_scripted.pt"
-  PANEL_V217_SC="${SCRIPT_DIR}/v217_sc_scripted.pt"
-  PANEL_V232_SC="${SCRIPT_DIR}/v232_sc_scripted.pt"
-  PANEL_V228_SC="${SCRIPT_DIR}/v228_sc_scripted.pt"
-  PANEL_V227_SC="${SCRIPT_DIR}/v227_sc_scripted.pt"
+  # Pre-sc panel (switched 2026-04-16): ALL SC models (v55_sc-v295_sc) degenerate
+  # due to scoring card exploit (commit 5f8f4ea). Pre-sc models are true strongest:
+  # v56=45.1%, v54=44.1%, v44=43.9%, v20=42.4%, v55=41.1% (500 games/side vs heuristic)
+  PANEL_V56="${SCRIPT_DIR}/v56_scripted.pt"
+  PANEL_V54="${SCRIPT_DIR}/v54_scripted.pt"
+  PANEL_V44="${SCRIPT_DIR}/v44_scripted.pt"
+  PANEL_V20="${SCRIPT_DIR}/v20_scripted.pt"
+  PANEL_V55="${SCRIPT_DIR}/v55_scripted.pt"
   if [ "$DRY_RUN" = "1" ]; then
-    echo "Step 1: Would run ppo_confirm_best.py vs v209_sc, v217_sc, v232_sc, v228_sc, v227_sc (150 games each)"
+    echo "Step 1: Would run ppo_confirm_best.py vs v56, v54, v44, v20, v55 (150 games each)"
   else
     log_decision "Running candidate tournament for $VERSION ..."
     uv run python scripts/ppo_confirm_best.py \
       --run-dir "$RUN_DIR" \
       --fixtures \
-        "v209_sc:${PANEL_V209_SC}" \
-        "v217_sc:${PANEL_V217_SC}" \
-        "v232_sc:${PANEL_V232_SC}" \
-        "v228_sc:${PANEL_V228_SC}" \
-        "v227_sc:${PANEL_V227_SC}" \
+        "v56:${PANEL_V56}" \
+        "v54:${PANEL_V54}" \
+        "v44:${PANEL_V44}" \
+        "v20:${PANEL_V20}" \
+        "v55:${PANEL_V55}" \
       --n-top 8 \
       --n-games 150 \
-      --anchor v209_sc --anchor-elo 1875 \
+      --anchor v56 --anchor-elo 1900 \
       --script-dir "$SCRIPT_DIR" \
       2>&1 | tee "$CONFIRM_LOG"
     log_decision "Candidate tournament done for $VERSION"
@@ -116,7 +116,7 @@ if [ "$MODE" = "incremental" ]; then
   #
   # Strategy:
   #   - The candidate tournament (Step 1) already played VERSION vs PANEL
-  #     {v209_sc, v217_sc, v232_sc, v228_sc, v227_sc} — those 5 pairs are in the SQL match cache.
+  #     {v56, v54, v44, v20, v55} — those 5 pairs are in the SQL match cache.
   #   - We add 3 DIVERSE opponents chosen to span the full Elo range:
   #     bottom-quartile, median, and top (excluding panel models).
   #     This anchors the rating across the full distribution, not just the top.
@@ -126,7 +126,7 @@ if [ "$MODE" = "incremental" ]; then
   #   - Merge only VERSION's updated rating into elo_full_ladder.json.
 
   # Panel fixtures used in ppo_confirm_best.py (Step 1) — results already cached.
-  PANEL="v209_sc v217_sc v232_sc v228_sc v227_sc"
+  PANEL="v56 v54 v44 v20 v55"
 
   # Pick 3 diverse opponents from the full ladder, spanning the Elo range.
   # Exclude panel members, heuristic, and the new version itself.
@@ -231,7 +231,7 @@ PYEOF
 
   uv run python scripts/run_elo_tournament.py \
     --models $MODELS \
-    --games 200 --anchor v209_sc --anchor-elo 1875 \
+    --games 200 --anchor v56 --anchor-elo 1900 \
     --schedule round_robin \
     --mode incremental --new-model "$VERSION" \
     ${LADDER:+--resume-from "$LADDER"} \
