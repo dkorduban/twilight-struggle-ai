@@ -154,13 +154,35 @@ Interpretation:
   poor but better than the older `10%` authority baseline
 - this is now the working default baseline for the next OODA pass
 
-Latest OODA observation after the fresh explicit-seed benchmark correction:
+Latest OODA observation after the corrected `800+800` authority benchmark:
 
 - the earlier strong USSR-seat result was too optimistic; the clean explicit
   batch says the USSR seat is only slightly above parity
-- US-side still collapses into early `europe_control` losses
-- both seats show the same structural defect family: too much narrow Europe
-  battleground focus and not enough Europe country-count scaffolding
+- the old terminal-cause split was polluted by a classification bug:
+  mid-turn `vp_threshold` wins were being reported as `europe_control`
+- the corrected clean `800+800` baseline is the new authority for loss-mode
+  diagnosis:
+  - `search` as USSR vs `minimal` as US:
+    - `450 / 800 = 56.25%`
+    - `avg_turn = 9.363`
+    - `avg_final_vp = +1.627`
+    - causes:
+      - `turn_limit = 605`
+      - `vp = 170`
+      - `defcon1 = 23`
+      - `wargames = 2`
+  - `search` as US vs `minimal` as USSR:
+    - `98 / 800 = 12.25%`
+    - `avg_turn = 7.59`
+    - `avg_final_vp = +14.83`
+    - causes:
+      - `vp = 468`
+      - `turn_limit = 290`
+      - `scoring_card_held = 33`
+      - `defcon1 = 8`
+      - `wargames = 1`
+- on that corrected baseline, the weak US seat is mostly ordinary `vp` and
+  `turn_limit` losses, plus a meaningful `scoring_card_held` tail
 - the added global non-battleground broadening was still the wrong fix; it
   regressed both seats and should stay rejected
 - exact one-step region-score deltas were worth keeping
@@ -168,15 +190,25 @@ Latest OODA observation after the fresh explicit-seed benchmark correction:
 - planner-side Europe-cliff deltas and exact event-mode ranking were too
   expensive for the target budget and did not improve the weak seat enough
 
-Observed failure pattern from representative losing traces:
+Observed failure pattern after the corrected loss split:
 
-- losses are early and lopsided, not late and close
-- proposal traces show repeated battleground-only placement lines with very
-  weak Europe non-battleground scaffolding and country-count repair
-- once the opponent gets close to Europe control, the current influence beam is
-  still too willing to keep stacking a narrow BG set instead of buying count
-  and denial in Europe support countries
-- scoring-card handling is improved and now only a minor residual issue
+- the weak seat is not primarily dying to Europe-control auto-losses
+- the dominant corrected families are:
+  - generic `vp` losses
+  - `turn_limit` losses from finishing behind on final score
+  - a small residual `scoring_card_held` tail
+- proposal/evaluation work should therefore optimize general scoring quality
+  and scoring-card play, not just Europe denial
+- scoring-card handling had a real experimental bug:
+  - when `must_play_scoring_card(...)` became true, proposal generation could
+    still miss the scoring cards because it first truncated to a top-`k` card
+    shortlist, then filtered the already-truncated actions
+  - that could leave the proposal list empty and fall through to a generic
+    legal fallback, producing avoidable `scoring_card_held` losses
+  - this is now fixed by directly enumerating scoring-card event actions in the
+    must-play case
+  - a known failing US seed that previously ended `scoring_card_held` now
+    continues to a normal VP loss
 
 Latest OODA update after the next two candidate branches:
 
@@ -206,15 +238,17 @@ So the next loop should not widen the root or add heavy planner-side Europe
 logic again without stronger evidence. The active next step is cheaper than
 that:
 
-1. use the relaxed `~30s/game` budget to reopen moderate search-width and root
-   refinement experiments, not just the fastest baseline
-2. compare those branches against lighter-weight proposal/evaluator tuning on
-   meaningful both-seat samples
+1. rerun the post-fix baseline on at least `200+200`, then `800+800`, before
+   treating old `scoring_card_held` rates as current
+2. compare the post-fix baseline against the most plausible screened branches
+   on matched seeds:
+   - `proposal_limit_us = 12`
+   - `proposal_europe_support_pressure_bonus = 0.0`
 3. only keep branches that improve both seats enough to justify their runtime
-   under the new budget
+   under the `~30s/game` budget
 4. from the accepted `proposal_europe_support_pressure_bonus = 0.50` baseline,
-   prioritize US-side-only breadth / weight tuning that cannot damage the now
-   stronger USSR seat
+   prioritize US-side-only breadth / weight tuning for generic scoring/play
+   quality that cannot damage the now stronger USSR seat
 
 So the current code is a **working isolated heuristic/ISMCTS baseline**, but it
 is still below the tier-1 target and still has an unresolved learned-policy

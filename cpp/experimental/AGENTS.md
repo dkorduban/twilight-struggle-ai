@@ -44,18 +44,29 @@ Local rules:
        run rather than a code change
      - if the current tier is not yet met, repeat from step 1 immediately
 - Current loop priority:
-  - the latest clean explicit-seed 100-game runs are the authority:
-    - `search` as USSR vs `minimal`: `52-48`
-    - `search` as US vs `minimal`: `10-90`
+  - the latest corrected `800+800` baseline is the authority:
+    - `search` as USSR vs `minimal`: `450/800 = 56.25%`
+    - `search` as US vs `minimal`: `98/800 = 12.25%`
   - the latest accepted working baseline on the newer Europe-support branch is:
     - `search` as USSR vs `minimal`: `31-19` on a clean explicit-seed `50`-game validation
     - `search` as US vs `minimal`: `7-43` on a clean explicit-seed `50`-game validation
     - that branch was accepted because it improved the USSR seat materially (`62%` vs `52%`) while preserving the US seat at the improved post-patch level (`14%` vs the earlier `10%` authority baseline)
     - its key change is a cheaper Europe non-battleground support / country-count pressure bonus in the proposal `PrepScoring` lane, now the default working baseline
-  - both seats still leak too many `europe_control` losses, so USSR is no
-    longer "done"
-  - the active blocker is Europe-control denial and Europe country-count
-    scaffolding on both seats, especially US-side early war
+  - corrected terminal-cause labeling matters:
+    - earlier mid-turn `vp_threshold` wins were misclassified as
+      `europe_control`
+    - the active clean `800+800` baseline is the authority for terminal-cause
+      diagnosis
+  - a real experimental scoring-card bug was fixed:
+    - when `must_play_scoring_card(...)` became true, proposal generation could
+      still drop all scoring-card actions after shortlist truncation
+    - that could fall through to a generic legal fallback and cause avoidable
+      `scoring_card_held` losses
+    - known failing US seed `448498040` no longer ends
+      `scoring_card_held` after the fix
+  - the active blocker is now generic scoring/play quality on the weak US seat:
+    the corrected loss mix is mostly `vp` and `turn_limit`; the old
+    `scoring_card_held` tail needs fresh post-fix measurement
   - the first generic country-count / non-BG broadening pass regressed both
     seats and should not be repeated blindly
   - the first targeted planner-side Europe-control-denial patch improved a tiny
@@ -71,9 +82,12 @@ Local rules:
     sequential both-seat tuning and lighter-weight proposal changes; only add
     new structural heuristics if they beat that tuned baseline, not just a
     hand-picked trace
-  - the next highest-ROI loop from this baseline is US-side-only breadth and
-    weight tuning on top of the accepted Europe-support bonus, because the new
-    bonus clearly helped but did not move the US seat enough on its own
+  - the next highest-ROI loop from this baseline is:
+    - first rerun the post-fix baseline on `200+200`, then `800+800`
+    - then compare matched-seed candidates `proposal_limit_us=12` and
+      `proposal_europe_support_pressure_bonus=0.0`
+    - then continue US-side-only breadth and weight tuning for generic
+      scoring/play quality
 - Treat performance as a hard part of strength work:
   - prefer changes that improve both candidate quality and throughput
   - use all local CPU cores when running experimental benchmark or tuning jobs

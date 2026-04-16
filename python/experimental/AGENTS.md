@@ -42,8 +42,12 @@ Local rules:
        active
      - if the current tier is still unmet, restart immediately
 - Current loop priority:
-  - support both-seat Europe-control repair first; the latest clean explicit
-    `100`-game runs are `52-48` on the USSR seat and `10-90` on the US seat
+  - corrected cause labels are mandatory before using loss-mode analytics:
+    earlier mid-turn `vp_threshold` wins were misclassified as
+    `europe_control`
+  - the latest corrected `800+800` baseline is now the authority:
+    - `search` as USSR vs `minimal`: `450/800 = 56.25%`
+    - `search` as US vs `minimal`: `98/800 = 12.25%`
   - the latest accepted working baseline on the newer Europe-support branch is
     `31-19` on a clean explicit-seed `50`-game USSR-seat validation and `7-43`
     on the matching US-seat validation; that branch is accepted because it
@@ -52,6 +56,11 @@ Local rules:
   - that accepted branch is now the default working baseline and comes from a
     cheap Europe non-battleground support / country-count pressure bonus in the
     native proposal `PrepScoring` lane
+  - a real experimental scoring-card bug is now fixed:
+    - must-play scoring cards could be dropped by shortlist truncation and then
+      bypassed by fallback action selection
+    - known failing US seed `448498040` no longer ends
+      `scoring_card_held` after the fix
   - the first generic non-BG broadening pass regressed both seats, so do not
     optimize the wrapper around that direction
   - the first targeted planner-side Europe-denial patch also failed its larger
@@ -59,12 +68,16 @@ Local rules:
   - the wider-root config (`proposal_limit=12`, `search_candidate_limit=2`) is
     too slow for the old tighter budget; with the new `~30s/game` budget it may
     be reconsidered if it materially improves both-seat strength
-  - favor wrapper/config and benchmark support that helps reduce
-    `europe_control` first via targeted fast exact scoring-delta native fixes
-    and sequential tuning support; do not promote expensive planner-side
-    heuristics unless they beat the fast baseline on both seats
-  - from this new baseline, prioritize wrapper/config support for US-side-only
-    breadth and weight tuning before adding another structural native change
+  - favor wrapper/config and benchmark support that improves generic
+    scoring/play quality first, because the corrected weak-seat loss mix is
+    dominated by `vp` and `turn_limit`, not `europe_control`; remeasure the
+    old `scoring_card_held` tail on the post-fix baseline before using it for
+    prioritization
+  - next wrapper/benchmark support priority:
+    - rerun post-fix `200+200`, then `800+800`
+    - compare matched-seed candidates `proposal_limit_us=12` and
+      `proposal_europe_support_pressure_bonus=0.0`
+    - then continue US-side-only breadth and weight tuning
 - Performance and tuning are part of the same loop:
   - move wrapper/config support forward whenever it unlocks 50-100 game
     benchmark runs, parallel evaluation, or SPSA-style tuning
