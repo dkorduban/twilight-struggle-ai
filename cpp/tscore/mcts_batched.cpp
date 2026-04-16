@@ -3811,8 +3811,7 @@ std::vector<GameResult> benchmark_games_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback =
-                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                const auto needs_callback = action.mode == ActionMode::EventFirst;
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -3958,8 +3957,7 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback =
-                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                const auto needs_callback = action.mode == ActionMode::EventFirst;
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -3995,8 +3993,7 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback =
-                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                const auto needs_callback = action.mode == ActionMode::EventFirst;
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -4179,8 +4176,7 @@ RolloutResult rollout_model_vs_model_batched(
                     outputs_a.small_choice_logits.defined() && outputs_a.small_choice_logits.size(0) > batch_idx
                         ? outputs_a.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback =
-                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                const auto needs_callback = action.mode == ActionMode::EventFirst;
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -4232,8 +4228,7 @@ RolloutResult rollout_model_vs_model_batched(
                     outputs_b.small_choice_logits.defined() && outputs_b.small_choice_logits.size(0) > batch_idx
                         ? outputs_b.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback =
-                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                const auto needs_callback = action.mode == ActionMode::EventFirst;
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -4431,8 +4426,7 @@ RolloutResult rollout_games_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback =
-                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                const auto needs_callback = action.mode == ActionMode::EventFirst;
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -4618,8 +4612,7 @@ RolloutResult rollout_self_play_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback =
-                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
+                const auto needs_callback = action.mode == ActionMode::EventFirst;
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
