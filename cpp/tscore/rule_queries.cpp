@@ -51,8 +51,8 @@ bool nato_prerequisite_met(const PublicState& pub) {
     return pub.warsaw_pact_played || pub.marshall_plan_played || pub.truman_doctrine_played;
 }
 
-bool is_card_defcon_blocked(const PublicState& pub, CardId card_id) {
-    return pub.defcon <= 2 && is_defcon_lowering_card(card_id);
+bool is_card_defcon_blocked(const PublicState& pub, Side side, CardId card_id) {
+    return is_card_blocked_by_defcon(pub, side, card_id);
 }
 
 bool is_wargames_event_legal(const PublicState& pub) {
@@ -64,7 +64,7 @@ bool is_solidarity_event_legal(const PublicState& pub) {
 }
 
 bool is_event_play_allowed(const PublicState& pub, Side side, CardId card_id) {
-    if (is_card_defcon_blocked(pub, card_id)) {
+    if (is_card_defcon_blocked(pub, side, card_id)) {
         return false;
     }
     if (is_trap_blocked(pub, side, card_id)) {
