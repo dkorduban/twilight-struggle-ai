@@ -23,6 +23,7 @@
 #include "game_data.hpp"
 #include "legal_actions.hpp"
 #include "rng.hpp"
+#include "rule_queries.hpp"
 #include "scoring.hpp"
 #include "search_common.hpp"
 
@@ -34,6 +35,24 @@ inline torch::Tensor tensor_at(const torch::Tensor& tensor, int64_t index) {
 
 inline int argmax_index(const torch::Tensor& tensor) {
     return tensor.argmax(/*dim=*/0).item<int>();
+}
+
+[[nodiscard]] inline bool requires_defcon_fallback(
+    const PublicState& pub,
+    Side side,
+    CardId card_id,
+    ActionMode mode
+) {
+    if (!is_card_defcon_blocked(pub, card_id)) {
+        return false;
+    }
+
+    const auto& card_info = card_spec(card_id);
+    const bool event_fires_for_any_mode = (card_info.side != side && card_info.side != Side::Neutral);
+    const bool event_fires_for_event_space =
+        (mode == ActionMode::Event) ||
+        (mode == ActionMode::Space && event_fires_for_any_mode);
+    return event_fires_for_any_mode || event_fires_for_event_space;
 }
 
 struct DecodeLogProbs {
@@ -354,6 +373,39 @@ inline auto choose_action_from_outputs(
     auto masked_mode = build_masked_mode();
     auto mode = static_cast<ActionMode>(std::forward<SelectModeFn>(select_mode)(masked_mode));
 
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        erase_mode(modes, ActionMode::Coup);
+        if (modes.empty()) {
+            return no_action();
+        }
+        masked_mode = build_masked_mode();
+        mode = static_cast<ActionMode>(std::forward<SelectModeFn>(select_mode)(masked_mode));
+    }
+
+    const bool is_defcon_lowering_event =
+        mode == ActionMode::Event && is_card_defcon_blocked(pub, sampled_card_id);
+    if (is_defcon_lowering_event) {
+        erase_mode(modes, ActionMode::Event);
+        if (modes.empty()) {
+            return no_action();
+        }
+        masked_mode = build_masked_mode();
+        mode = static_cast<ActionMode>(std::forward<SelectModeFn>(select_mode)(masked_mode));
+    }
+
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        erase_mode(modes, ActionMode::Coup);
+        if (modes.empty()) {
+            return no_action();
+        }
+        masked_mode = build_masked_mode();
+        mode = static_cast<ActionMode>(std::forward<SelectModeFn>(select_mode)(masked_mode));
+    }
+
+    if (requires_defcon_fallback(pub, side, sampled_card_id, mode)) {
+        return heuristic_fallback();
+    }
+
     if (mode == ActionMode::Event || mode == ActionMode::Space || mode == ActionMode::EventFirst) {
         return Result{ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {}}};
     }
@@ -393,45 +445,6 @@ inline auto choose_action_from_outputs(
     return heuristic_fallback();
 }
 
-template <typename HeuristicFallbackFn, typename NoActionFn>
-inline auto choose_greedy_action_from_outputs(
-    const PublicState& pub,
-    const CardSet& hand,
-    bool holds_china,
-    bool use_country_head,
-    const torch::Tensor& card_logits,
-    const torch::Tensor& mode_logits,
-    const torch::Tensor& country_logits,
-    const torch::Tensor& strategy_logits,
-    const torch::Tensor& country_strategy_logits,
-    Pcg64Rng& rng,
-    HeuristicFallbackFn&& heuristic_fallback,
-    NoActionFn&& no_action,
-    const torch::Tensor& marginal_logits = torch::Tensor{}
-) {
-    return choose_action_from_outputs(
-        pub,
-        hand,
-        holds_china,
-        use_country_head,
-        card_logits,
-        mode_logits,
-        country_logits,
-        strategy_logits,
-        country_strategy_logits,
-        rng,
-        [](const torch::Tensor& masked_card) -> CardId {
-            return static_cast<CardId>(argmax_index(masked_card) + 1);
-        },
-        [](const torch::Tensor& masked_mode) -> ActionMode {
-            return static_cast<ActionMode>(argmax_index(masked_mode));
-        },
-        std::forward<HeuristicFallbackFn>(heuristic_fallback),
-        std::forward<NoActionFn>(no_action),
-        marginal_logits
-    );
-}
-
 inline DecodeWithLogProbsResult choose_action_from_outputs_with_logprobs(
     const PublicState& pub,
     const CardSet& hand,
@@ -463,6 +476,12 @@ inline DecodeWithLogProbsResult choose_action_from_outputs_with_logprobs(
     result.log_probs.card_lp = card_lp;
 
     auto modes = legal_modes(sampled_card_id, pub, side);
+    if (pub.defcon <= 2) {
+        erase_mode(modes, ActionMode::Coup);
+        if (is_card_defcon_blocked(pub, sampled_card_id)) {
+            erase_mode(modes, ActionMode::Event);
+        }
+    }
     if (modes.empty()) {
         result.needs_fallback = true;
         return result;
@@ -473,6 +492,11 @@ inline DecodeWithLogProbsResult choose_action_from_outputs_with_logprobs(
     const auto mode = static_cast<ActionMode>(mode_idx);
     result.trace.mode_idx = static_cast<int>(mode_idx);
     result.log_probs.mode_lp = mode_lp;
+
+    if (requires_defcon_fallback(pub, side, sampled_card_id, mode)) {
+        result.needs_fallback = true;
+        return result;
+    }
 
     result.should_populate_rollout_features = true;
 

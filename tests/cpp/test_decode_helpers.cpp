@@ -24,6 +24,14 @@ int legacy_argmax_index(const torch::Tensor& tensor) {
     return tensor.argmax(/*dim=*/0).item<int>();
 }
 
+bool legacy_is_defcon_lowering_card(CardId card_id) {
+    static constexpr std::array<int, 8> kDefconLoweringCards = {
+        4, 20, 48, 49, 50, 53, 83, 92,
+    };
+    return std::find(kDefconLoweringCards.begin(), kDefconLoweringCards.end(), static_cast<int>(card_id)) !=
+        kDefconLoweringCards.end();
+}
+
 std::vector<CountryId> legacy_accessible_countries_filtered(
     const PublicState& pub,
     Side side,
@@ -130,8 +138,15 @@ ActionEncoding legacy_greedy_decode(
 
     auto masked_card = torch::full_like(card_logits, -std::numeric_limits<float>::infinity());
     for (const auto card_id : playable) {
-        if (is_card_blocked_by_defcon(pub, side, card_id)) {
-            continue;
+        if (legacy_is_defcon_lowering_card(card_id)) {
+            const auto& ci = card_spec(card_id);
+            const bool is_opp = (ci.side != side && ci.side != Side::Neutral);
+            const bool is_neutral = (ci.side == Side::Neutral);
+            if (is_opp) {
+                if (pub.defcon <= 2) continue;
+                if (pub.defcon == 3 && pub.ar == 0) continue;
+            }
+            if (is_neutral && pub.ar == 0 && pub.defcon <= 3) continue;
         }
         const auto index = static_cast<int64_t>(card_id - 1);
         masked_card.index_put_({index}, legacy_tensor_at(card_logits, index));
@@ -164,6 +179,60 @@ ActionEncoding legacy_greedy_decode(
         masked_mode.index_put_({index}, legacy_tensor_at(mode_logits, index));
     }
     auto mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
+        if (modes.empty()) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+                .value_or(ActionEncoding{});
+        }
+        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        for (const auto legal_mode : modes) {
+            const auto index = static_cast<int64_t>(static_cast<int>(legal_mode));
+            masked_mode.index_put_({index}, legacy_tensor_at(mode_logits, index));
+        }
+        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+    }
+
+    if (pub.defcon <= 2 && mode == ActionMode::Event && legacy_is_defcon_lowering_card(sampled_card_id)) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
+        if (modes.empty()) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+                .value_or(ActionEncoding{});
+        }
+        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        for (const auto legal_mode : modes) {
+            const auto index = static_cast<int64_t>(static_cast<int>(legal_mode));
+            masked_mode.index_put_({index}, legacy_tensor_at(mode_logits, index));
+        }
+        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+    }
+
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Coup), modes.end());
+        if (modes.empty()) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+                .value_or(ActionEncoding{});
+        }
+        masked_mode = torch::full_like(mode_logits, -std::numeric_limits<float>::infinity());
+        for (const auto legal_mode : modes) {
+            const auto index = static_cast<int64_t>(static_cast<int>(legal_mode));
+            masked_mode.index_put_({index}, legacy_tensor_at(mode_logits, index));
+        }
+        mode = static_cast<ActionMode>(masked_mode.argmax(/*dim=*/0).item<int64_t>());
+    }
+
+    if (pub.defcon <= 2 && legacy_is_defcon_lowering_card(sampled_card_id)) {
+        const auto& ci = card_spec(sampled_card_id);
+        const bool event_fires_for_any_mode = (ci.side != side && ci.side != Side::Neutral);
+        const bool event_fires_for_event_space =
+            (mode == ActionMode::Event) ||
+            (mode == ActionMode::Space && event_fires_for_any_mode);
+        if (event_fires_for_any_mode || event_fires_for_event_space) {
+            return choose_action(PolicyKind::MinimalHybrid, pub, hand, holds_china, rng)
+                .value_or(ActionEncoding{});
+        }
+    }
 
     if (mode == ActionMode::Event || mode == ActionMode::Space) {
         return ActionEncoding{.card_id = sampled_card_id, .mode = mode, .targets = {}};
@@ -300,7 +369,7 @@ TEST_CASE("decode helper matches legacy greedy decode on fixed positions", "[dec
         REQUIRE_FALSE(helper.targets.empty());
     }
 
-    SECTION("own DEFCON-lowering event stays selectable when engine marks it legal") {
+    SECTION("danger card event is filtered at DEFCON 2") {
         const auto state = reset_game(11);
         auto pub = state.pub;
         pub.phasing = Side::USSR;
@@ -324,7 +393,7 @@ TEST_CASE("decode helper matches legacy greedy decode on fixed positions", "[dec
             pub, hand, false, true, card_logits, mode_logits, country_logits, torch::Tensor{}, torch::Tensor{}, helper_rng);
 
         REQUIRE(helper == legacy);
-        REQUIRE(helper.mode == ActionMode::Event);
+        REQUIRE(helper.mode != ActionMode::Event);
     }
 
     SECTION("all masked cards return null action when legal_cards filters at source") {
