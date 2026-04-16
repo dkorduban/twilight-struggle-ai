@@ -787,6 +787,23 @@ def test_final_scoring_europe_control_ends_game():
     assert result.winner == Side.USSR, f"Expected USSR win, got {result.winner}"
 
 
+def test_final_scoring_turn_10_does_not_emit_vp_threshold():
+    """Turn-10 final scoring should flow into turn-limit resolution, not vp-threshold."""
+    from tsrl.engine.game_loop import _end_of_turn
+
+    gs = _make_turn10_gs(vp=19)
+    gs.pub.milops = [5, 5]
+    gs.pub.influence[(Side.USSR, 55)] = 2  # Venezuela -> SA Presence + BG
+
+    result = _end_of_turn(gs, make_rng(0), turn=10)
+
+    assert gs.pub.vp > 20, f"Expected final scoring to push VP above 20, got {gs.pub.vp}"
+    assert result is None, (
+        "Turn-10 final scoring without Europe Control should not produce an "
+        "immediate vp-threshold result inside _end_of_turn."
+    )
+
+
 def test_final_scoring_se_asia_included_in_asia():
     """SE Asia countries count toward Asia Presence/Domination at Turn 10.
 
@@ -839,6 +856,27 @@ def test_final_scoring_china_card_bonus_in_asia():
         f"China Card: USSR holding should give +1 vs US holding (net +2 diff). "
         f"USSR holds: vp={vp_with_china}, US holds: vp={vp_us_holds_china}"
     )
+
+
+def test_turn_10_scoring_card_held_loses_before_final_scoring():
+    """Held scoring cards still lose on turn 10 because reveal happens before final scoring."""
+    from tsrl.engine.game_loop import _end_of_turn
+    from tsrl.etl.game_data import load_cards
+
+    cards = load_cards()
+    scoring_cid = next(cid for cid, spec in cards.items() if spec.is_scoring)
+
+    gs = _make_turn10_gs(vp=0)
+    gs.pub.milops = [5, 5]
+    gs.pub.influence[(Side.USSR, 55)] = 2  # Would otherwise help USSR in final scoring.
+    gs.hands[Side.USSR] = frozenset({scoring_cid})
+    gs.hands[Side.US] = frozenset()
+
+    result = _end_of_turn(gs, make_rng(0), turn=10)
+
+    assert result is not None, "Expected held scoring card to end the game on turn 10"
+    assert result.end_reason == "scoring_card_held"
+    assert result.winner == Side.US
 
 
 def test_north_sea_oil_extra_ar_fires():

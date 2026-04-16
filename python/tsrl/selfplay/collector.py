@@ -11,7 +11,7 @@ Feature columns match python/tsrl/etl/dataset.py exactly.  Self-play adds:
   winner_side    int    +1=USSR, -1=US, 0=draw  (value training target)
   final_vp       int    final VP score at game end
   end_turn       int    turn on which the game ended
-  end_reason     str    'vp_threshold' | 'defcon1' | 'turn_limit' | 'europe_control'
+  end_reason     str    e.g. 'vp_threshold' | 'defcon1' | 'turn_limit' | 'europe_control' | 'scoring_card_held'
 
 Action encoding columns (instead of legacy card_id / country_id / action_kind):
   action_card_id  int   card played

@@ -181,7 +181,7 @@ class GameResult:
     winner: Optional[Side]   # None = draw (DEFCON 1 mutual destruction)
     final_vp: int
     end_turn: int
-    end_reason: str           # 'vp_threshold' | 'defcon1' | 'turn_limit' | 'europe_control'
+    end_reason: str           # e.g. 'vp_threshold' | 'defcon1' | 'turn_limit' | 'europe_control' | 'scoring_card_held'
 
 
 @dataclass
@@ -714,30 +714,10 @@ def _end_of_turn(
 
     # Turn 10 final scoring: score all 6 regions (§10.3.2).
     # SE Asia is included in Asia scoring, not scored separately.
-    # This happens after MilOps penalties but before discarding hands.
-    if turn == 10:
-        from tsrl.engine.scoring import apply_final_scoring
-        final = apply_final_scoring(gs.pub)
-        gs.pub.vp += final.vp_delta
-        if final.game_over:
-            return GameResult(
-                winner=final.winner,
-                final_vp=gs.pub.vp,
-                end_turn=turn,
-                end_reason="europe_control",
-            )
-        over, winner = _check_vp_win(gs.pub)
-        if over:
-            return GameResult(
-                winner=winner,
-                final_vp=gs.pub.vp,
-                end_turn=turn,
-                end_reason="vp_threshold",
-            )
-
+    # This happens after MilOps penalties and held-card checks, but before discarding hands.
     # Scoring card hold = immediate loss (the holder loses).
     # Per TS rules, a player who still holds a scoring card at end-of-turn
-    # cleanup loses the game immediately before discarding hands.
+    # cleanup loses the game immediately before turn-10 final scoring.
     from tsrl.etl.game_data import load_cards as _load_cards
     _cards_spec = _load_cards()
     for side in (Side.USSR, Side.US):
@@ -752,6 +732,18 @@ def _end_of_turn(
                     end_turn=gs.pub.turn,
                     end_reason="scoring_card_held",
                 )
+
+    if turn == 10:
+        from tsrl.engine.scoring import apply_final_scoring
+        final = apply_final_scoring(gs.pub)
+        gs.pub.vp += final.vp_delta
+        if final.game_over:
+            return GameResult(
+                winner=final.winner,
+                final_vp=gs.pub.vp,
+                end_turn=turn,
+                end_reason="europe_control",
+            )
 
     # Discard remaining hands.
     for side in (Side.USSR, Side.US):

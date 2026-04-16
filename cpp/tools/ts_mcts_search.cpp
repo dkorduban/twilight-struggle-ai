@@ -473,28 +473,6 @@ std::optional<ts::GameResult> end_of_turn_cleanup(ts::GameState& gs, int turn) {
     gs.pub.chernobyl_blocked_region.reset();
     gs.pub.latam_coup_bonus.reset();
 
-    if (turn == kMaxTurns) {
-        auto final = ts::apply_final_scoring(gs.pub);
-        gs.pub.vp += final.vp_delta;
-        if (final.game_over) {
-            return ts::GameResult{
-                .winner = final.winner,
-                .final_vp = gs.pub.vp,
-                .end_turn = turn,
-                .end_reason = "europe_control",
-            };
-        }
-        std::tie(over, winner) = ts::check_vp_win(gs.pub);
-        if (over) {
-            return ts::GameResult{
-                .winner = winner,
-                .final_vp = gs.pub.vp,
-                .end_turn = turn,
-                .end_reason = "vp_threshold",
-            };
-        }
-    }
-
     for (const auto side : {ts::Side::USSR, ts::Side::US}) {
         for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
             if (gs.hands[ts::to_index(side)].test(card_id) &&
@@ -506,6 +484,19 @@ std::optional<ts::GameResult> end_of_turn_cleanup(ts::GameState& gs, int turn) {
                     .end_reason = "scoring_card_held",
                 };
             }
+        }
+    }
+
+    if (turn == kMaxTurns) {
+        auto final = ts::apply_final_scoring(gs.pub);
+        gs.pub.vp += final.vp_delta;
+        if (final.game_over) {
+            return ts::GameResult{
+                .winner = final.winner,
+                .final_vp = gs.pub.vp,
+                .end_turn = turn,
+                .end_reason = "europe_control",
+            };
         }
     }
 

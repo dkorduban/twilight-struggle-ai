@@ -149,6 +149,8 @@ struct MatchSummary {
     int us_wins = 0;
     int draws = 0;
     int defcon1 = 0;
+    int wargames = 0;
+    int europe_control = 0;
     int turn_limit = 0;
     int scoring_card_held = 0;
     int vp_threshold = 0;

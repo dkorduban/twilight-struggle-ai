@@ -547,28 +547,6 @@ std::optional<GameResult> end_of_turn(GameState& gs, int turn) {
     gs.pub.chernobyl_blocked_region.reset();
     gs.pub.latam_coup_bonus.reset();
 
-    if (turn == kMaxTurns) {
-        auto final = apply_final_scoring(gs.pub);
-        gs.pub.vp += final.vp_delta;
-        if (final.game_over) {
-            return GameResult{
-                .winner = final.winner,
-                .final_vp = gs.pub.vp,
-                .end_turn = turn,
-                .end_reason = "europe_control",
-            };
-        }
-        std::tie(over, winner) = check_vp_win(gs.pub);
-        if (over) {
-            return GameResult{
-                .winner = winner,
-                .final_vp = gs.pub.vp,
-                .end_turn = turn,
-                .end_reason = "vp_threshold",
-            };
-        }
-    }
-
     for (const auto side : {Side::USSR, Side::US}) {
         for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
             if (!gs.hands[to_index(side)].test(card_id)) {
@@ -582,6 +560,19 @@ std::optional<GameResult> end_of_turn(GameState& gs, int turn) {
                     .end_reason = "scoring_card_held",
                 };
             }
+        }
+    }
+
+    if (turn == kMaxTurns) {
+        auto final = apply_final_scoring(gs.pub);
+        gs.pub.vp += final.vp_delta;
+        if (final.game_over) {
+            return GameResult{
+                .winner = final.winner,
+                .final_vp = gs.pub.vp,
+                .end_turn = turn,
+                .end_reason = "europe_control",
+            };
         }
     }
 
@@ -1088,6 +1079,10 @@ MatchSummary summarize_results(std::span<const GameResult> results) {
 
         if (result.end_reason == "defcon1") {
             ++summary.defcon1;
+        } else if (result.end_reason == "wargames") {
+            ++summary.wargames;
+        } else if (result.end_reason == "europe_control") {
+            ++summary.europe_control;
         } else if (result.end_reason == "turn_limit") {
             ++summary.turn_limit;
         } else if (result.end_reason == "scoring_card_held") {
