@@ -34,10 +34,10 @@ constexpr double kDefcon3NonBgSafeCoupBonus = 5.0;
 constexpr double kDefcon2NonBgSafeCoupBonus = 12.0;
 constexpr int kMaxInfluenceTargets = 86;
 
-// Heuristic scoring still uses partial penalty buckets for a few risky cards.
-// The full DEFCON-lowering rule check comes from is_defcon_lowering_card().
-constexpr std::array<CardId, 1> kHeuristicProbDefconPenaltyCards = {20};
-constexpr std::array<CardId, 3> kHeuristicRandomCoupPenaltyCards = {52, 68, 83};
+// Heuristic penalties remain intentionally narrower than the engine legality rules.
+// Canonical DEFCON-lowering membership always comes from is_defcon_lowering_card().
+constexpr std::array<CardId, 1> kHeuristicPenaltyCardsProbDefcon = {20};
+constexpr std::array<CardId, 3> kHeuristicPenaltyCardsRandomCoup = {52, 68, 83};
 constexpr double kDefconLoweringDefcon3Penalty = 20.0;
 constexpr double kDefconProbDefcon3Penalty = 50.0;
 constexpr double kDefconRandomCoupDefcon3Penalty = 100.0;
@@ -63,11 +63,11 @@ bool contains(const std::array<T, N>& values, const T& value) {
 }
 
 bool is_heuristic_prob_defcon_penalty_card(CardId card_id) {
-    return contains(kHeuristicProbDefconPenaltyCards, card_id);
+    return contains(kHeuristicPenaltyCardsProbDefcon, card_id);
 }
 
 bool is_heuristic_random_coup_penalty_card(CardId card_id) {
-    return contains(kHeuristicRandomCoupPenaltyCards, card_id);
+    return contains(kHeuristicPenaltyCardsRandomCoup, card_id);
 }
 
 bool is_asia_or_sea(CountryId country_id) {
