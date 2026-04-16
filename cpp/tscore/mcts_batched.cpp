@@ -3295,6 +3295,24 @@ ActionEncoding greedy_action_from_outputs(
             .value_or(ActionEncoding{});
     };
 
+    if (temperature <= 0.0f) {
+        return decode::choose_greedy_action_from_outputs(
+            pub,
+            hand,
+            obs.holds_china,
+            /*use_country_head=*/true,
+            card_logits,
+            mode_logits,
+            country_logits_raw,
+            strategy_logits_raw,
+            country_strategy_logits_raw,
+            rng,
+            heuristic_fallback,
+            heuristic_fallback,
+            marginal_logits_raw
+        );
+    }
+
     return decode::choose_action_from_outputs(
         pub,
         hand,
