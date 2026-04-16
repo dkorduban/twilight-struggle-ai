@@ -38,6 +38,7 @@ constexpr int kMaxInfluenceTargets = 86;
 // Canonical DEFCON-lowering membership always comes from is_defcon_lowering_card().
 constexpr std::array<CardId, 1> kHeuristicPenaltyCardsProbDefcon = {20};
 constexpr std::array<CardId, 3> kHeuristicPenaltyCardsRandomCoup = {52, 68, 83};
+constexpr std::array<CardId, 1> kHeuristicPenaltyCardsDoubleCoup = {83};
 constexpr double kDefconLoweringDefcon3Penalty = 20.0;
 constexpr double kDefconProbDefcon3Penalty = 50.0;
 constexpr double kDefconRandomCoupDefcon3Penalty = 100.0;
@@ -68,6 +69,10 @@ bool is_heuristic_prob_defcon_penalty_card(CardId card_id) {
 
 bool is_heuristic_random_coup_penalty_card(CardId card_id) {
     return contains(kHeuristicPenaltyCardsRandomCoup, card_id);
+}
+
+bool is_heuristic_double_coup_penalty_card(CardId card_id) {
+    return contains(kHeuristicPenaltyCardsDoubleCoup, card_id);
 }
 
 bool is_asia_or_sea(CountryId country_id) {
@@ -215,7 +220,7 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
         }
         // At DEFCON 3, Che (double-coup risk) via Space is also dangerous.
         if (pub.defcon == 3 && card.side != side && card.side != Side::Neutral &&
-            static_cast<int>(action.card_id) == 83) {
+            is_heuristic_double_coup_penalty_card(action.card_id)) {
             return -kDefcon2BattlegroundSuicidePenalty;
         }
         return 0.0;
@@ -263,7 +268,7 @@ double defcon_safety_penalty(const DecisionContext& context, const ActionEncodin
                 // Che (83) fires TWO sequential coups: DEFCON 3→2 (first coup) then 2→1 if
                 // the first succeeds (second coup) = instant nuclear war chain.
                 // Hard-block Event mode for Che at DEFCON 3.
-                if (static_cast<int>(action.card_id) == 83) {
+                if (is_heuristic_double_coup_penalty_card(action.card_id)) {
                     return -kDefcon2BattlegroundSuicidePenalty;
                 }
                 return -kDefconRandomCoupDefcon3Penalty;
