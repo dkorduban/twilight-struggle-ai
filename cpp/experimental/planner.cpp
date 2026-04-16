@@ -1454,17 +1454,66 @@ std::vector<ActionProposal> enumerate_action_proposals(
     const HeuristicConfig& config
 ) {
     const profile::ScopedTimer timer(profile::Slot::EnumerateActionProposals);
-    std::vector<ActionEncoding> actions = candidate_actions(gs, side, config);
     if (must_play_scoring_card(gs, side)) {
-        actions.erase(
-            std::remove_if(
-                actions.begin(),
-                actions.end(),
-                [](const ActionEncoding& action) { return !card_spec(action.card_id).is_scoring; }
-            ),
-            actions.end()
+        std::vector<ActionEncoding> actions;
+        for (int raw = 1; raw <= kMaxCardId; ++raw) {
+            const auto card_id = static_cast<CardId>(raw);
+            if (!gs.hands[to_index(side)].test(card_id) || !card_spec(card_id).is_scoring) {
+                continue;
+            }
+            actions.push_back(ActionEncoding{
+                .card_id = card_id,
+                .mode = ActionMode::Event,
+                .targets = {},
+            });
+        }
+
+        std::unordered_set<ActionEncoding, ActionEncodingHash> seen;
+        std::vector<ScoredConcreteAction> scored;
+        scored.reserve(actions.size());
+        for (const auto& action : actions) {
+            if (!seen.insert(action).second) {
+                continue;
+            }
+            scored.push_back(score_concrete_action(gs, side, action, config));
+        }
+
+        std::sort(scored.begin(), scored.end(), [](const auto& lhs, const auto& rhs) {
+            return lhs.score > rhs.score;
+        });
+
+        std::vector<ActionProposal> out;
+        const size_t limit = std::min(
+            scored.size(),
+            static_cast<size_t>(std::max(proposal_limit_for_side(side, config), config.search_candidate_limit))
         );
+        out.reserve(limit);
+        std::vector<double> logits;
+        logits.reserve(limit);
+        for (size_t idx = 0; idx < limit; ++idx) {
+            logits.push_back(scored[idx].score / std::max(0.05, config.prior_temperature));
+        }
+        const double max_logit = logits.empty() ? 0.0 : *std::max_element(logits.begin(), logits.end());
+        double denom = 0.0;
+        for (size_t idx = 0; idx < logits.size(); ++idx) {
+            logits[idx] = std::exp(logits[idx] - max_logit);
+            denom += logits[idx];
+        }
+        denom = std::max(denom, 1e-9);
+        const double uniform_prior = limit > 0 ? 1.0 / static_cast<double>(limit) : 0.0;
+        for (size_t idx = 0; idx < limit; ++idx) {
+            const double softmax_prior = logits[idx] / denom;
+            const double prior = (1.0 - config.proposal_uniform_mix) * softmax_prior + config.proposal_uniform_mix * uniform_prior;
+            out.push_back(ActionProposal{
+                .action = scored[idx].action,
+                .heuristic_score = scored[idx].score,
+                .prior = prior,
+            });
+        }
+        return out;
     }
+
+    std::vector<ActionEncoding> actions = candidate_actions(gs, side, config);
 
     std::unordered_set<ActionEncoding, ActionEncodingHash> seen;
     std::vector<ScoredConcreteAction> scored;

@@ -40,3 +40,23 @@ TEST_CASE("match summaries keep cause-based terminal counts", "[experimental][he
     REQUIRE(summary.turn_limit == 1);
     REQUIRE(summary.vp_threshold == 1);
 }
+
+TEST_CASE("search no longer drops must-play scoring cards on known failing US seed", "[experimental][heuristic]") {
+    ts::experimental::HeuristicConfig config;
+    config.proposal_europe_support_pressure_bonus = 0.50;
+
+    const auto trace = ts::experimental::play_matchup_game(
+        ts::experimental::ExperimentalAgentSpec{
+            .kind = ts::experimental::ExperimentalAgentKind::MinimalHybrid,
+            .model_path = {},
+        },
+        ts::experimental::ExperimentalAgentSpec{
+            .kind = ts::experimental::ExperimentalAgentKind::Search,
+            .model_path = {},
+        },
+        448498040u,
+        config
+    );
+
+    REQUIRE(trace.result.end_reason != "scoring_card_held");
+}

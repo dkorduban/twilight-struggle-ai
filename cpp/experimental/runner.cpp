@@ -150,7 +150,7 @@ std::string infer_terminal_cause(
         return "wargames";
     }
     if (winner.has_value()) {
-        return "europe_control";
+        return std::abs(pub.vp) >= 20 ? "vp" : "europe_control";
     }
     return "vp";
 }
@@ -498,7 +498,9 @@ std::optional<GameResult> run_headline_phase(
 
     for (const auto& [side, plan] : ordered) {
         gs.pub.phasing = side;
-        const auto replay = make_replay_callback(plan.script);
+        CallbackScript callback_trace;
+        const auto replay = make_recording_replay_callback(plan.script, &callback_trace);
+        const auto pub_before = gs.pub;
         auto& hand = gs.hands[to_index(side)];
         if (hand.test(plan.action.card_id)) {
             hand.reset(plan.action.card_id);
@@ -511,6 +513,9 @@ std::optional<GameResult> run_headline_phase(
             .ar = 0,
             .side = side,
             .action = plan.action,
+            .pub_before = pub_before,
+            .pub_after = gs.pub,
+            .callback_trace = std::move(callback_trace),
             .static_score = plan.static_score,
             .rollout_score = plan.rollout_score,
             .search_visits = plan.search_visits,
@@ -555,7 +560,9 @@ std::optional<GameResult> run_action_rounds(
             }
             const auto& agent = side == Side::USSR ? ussr_agent : us_agent;
             auto plan = choose_plan_for_agent(agent, gs, side, rng, config);
-            const auto replay = make_replay_callback(plan.script);
+            CallbackScript callback_trace;
+            const auto replay = make_recording_replay_callback(plan.script, &callback_trace);
+            const auto pub_before = gs.pub;
             auto& hand = gs.hands[to_index(side)];
             if (hand.test(plan.action.card_id)) {
                 hand.reset(plan.action.card_id);
@@ -568,6 +575,9 @@ std::optional<GameResult> run_action_rounds(
                 .ar = ar,
                 .side = side,
                 .action = plan.action,
+                .pub_before = pub_before,
+                .pub_after = gs.pub,
+                .callback_trace = std::move(callback_trace),
                 .static_score = plan.static_score,
                 .rollout_score = plan.rollout_score,
                 .search_visits = plan.search_visits,
@@ -644,7 +654,10 @@ ExperimentalTrace play_matchup_from_state_internal(
     ExperimentalTrace trace;
 
     if (gs.phase == GamePhase::Setup && gs.setup_influence_remaining[0] > 0) {
+        trace.has_setup_snapshot = true;
+        trace.setup_before = gs.pub;
         run_atomic_setup(gs, rng);
+        trace.setup_after = gs.pub;
     }
 
     const int max_turns = std::max(1, config.max_turns);

@@ -305,4 +305,17 @@ PolicyCallbackFn make_replay_callback(const CallbackScript& script) {
     };
 }
 
+PolicyCallbackFn make_recording_replay_callback(const CallbackScript& script, CallbackScript* actual) {
+    return [state = ReplayScriptCallback{.script = script.decisions}, actual](
+               const PublicState& pub,
+               const EventDecision& decision
+           ) mutable {
+        const int choice = state(pub, decision);
+        if (actual != nullptr && decision.n_options > 0) {
+            actual->decisions.push_back(make_script_decision(decision, choice));
+        }
+        return choice;
+    };
+}
+
 }  // namespace ts::experimental

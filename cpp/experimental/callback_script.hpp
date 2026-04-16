@@ -17,5 +17,6 @@ CallbackScript solve_callback_script(
 );
 
 PolicyCallbackFn make_replay_callback(const CallbackScript& script);
+PolicyCallbackFn make_recording_replay_callback(const CallbackScript& script, CallbackScript* actual);
 
 }  // namespace ts::experimental

@@ -182,12 +182,18 @@ struct ExperimentalStep {
     int ar = 0;
     Side side = Side::USSR;
     ActionEncoding action;
+    PublicState pub_before;
+    PublicState pub_after;
+    CallbackScript callback_trace;
     double static_score = 0.0;
     double rollout_score = 0.0;
     int search_visits = 0;
 };
 
 struct ExperimentalTrace {
+    bool has_setup_snapshot = false;
+    PublicState setup_before;
+    PublicState setup_after;
     std::vector<ExperimentalStep> steps;
     GameResult result;
 };
