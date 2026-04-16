@@ -3202,6 +3202,25 @@ def main() -> None:
             print(f"[iter {iteration}] No steps collected, skipping")
             continue
 
+        # ── n_steps regression check (after iter 1) ─────────────────────────
+        # Healthy games average ~60 steps each (8-10 turns × ~7 decisions/turn).
+        # Degenerate games (scoring card exploit, DEFCON safety removed) average
+        # <15 steps. Check after iter 1 to catch engine regressions immediately.
+        # Threshold: 30 steps/game (~4 turns). Below this = likely engine bug.
+        MIN_STEPS_PER_GAME = 30
+        steps_per_game = n_steps / max(1, args.games_per_iter)
+        if iteration == 1 and steps_per_game < MIN_STEPS_PER_GAME:
+            print(
+                f"\n  *** WARNING: n_steps regression detected! ***\n"
+                f"  steps_per_game = {steps_per_game:.1f} (threshold: {MIN_STEPS_PER_GAME})\n"
+                f"  n_steps = {n_steps}, games = {args.games_per_iter}\n"
+                f"  This usually means an engine bug (DEFCON safety removed, scoring\n"
+                f"  card enforcement missing, etc.) is causing abnormally short games.\n"
+                f"  Check: git log --oneline -5 -- cpp/tscore/\n"
+                f"  Healthy baseline: ~60 steps/game (v55/v56 era)\n",
+                flush=True,
+            )
+
         # Compute GAE advantages — must come BEFORE saving parquet so s.returns is populated
         compute_gae_batch(all_steps, gamma=args.gamma, lam=args.gae_lambda)
 
@@ -3418,6 +3437,7 @@ def main() -> None:
         log_dict["rollout_wr_ussr"] = rollout_wr_ussr
         log_dict["rollout_wr_us"] = rollout_wr_us
         log_dict["n_steps"] = n_steps
+        log_dict["steps_per_game"] = steps_per_game
         log_dict["iter_time_s"] = t_iter
         log_dict["ent_coef"] = current_ent_coef
         if args.self_play:
