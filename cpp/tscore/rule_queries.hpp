@@ -23,7 +23,7 @@ inline constexpr std::array<CountryId, 12> kNatoWesternEurope = {1, 2, 4, 7, 8, 
 // NATO is only playable after Warsaw Pact, Marshall Plan, or Truman Doctrine.
 [[nodiscard]] bool nato_prerequisite_met(const PublicState& pub);
 
-[[nodiscard]] bool is_card_defcon_blocked(const PublicState& pub, CardId card_id);
+[[nodiscard]] bool is_card_defcon_blocked(const PublicState& pub, Side side, CardId card_id);
 
 [[nodiscard]] bool is_wargames_event_legal(const PublicState& pub);
 
