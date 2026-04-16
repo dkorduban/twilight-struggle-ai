@@ -1071,12 +1071,11 @@ def sample_K_league_opponents(
             iter_pts.append((int(m.group(1)), str(p)))
     iter_pts.sort(key=lambda x: x[0])
 
-    # Compute total games across all opponents for UCB exploration bonus
+    # Compute total games for THIS SIDE only (UCB exploration denominator N).
+    # Must be per-side to avoid cross-contamination between USSR and US pools.
     _wr = wr_table or {}
-    total_games_all = sum(
-        int(v.get("total_ussr", 0)) + int(v.get("total_us", 0))
-        for v in _wr.values()
-    )
+    _total_key = "total_ussr" if side == "ussr" else "total_us"
+    total_games_all = sum(int(v.get(_total_key, 0)) for v in _wr.values())
 
     # Recency-weighted past-self pool, multiplied by UCB-PFSP factor
     past_self_paths: list[str] = []
@@ -1423,11 +1422,15 @@ def collect_rollout_league_batched(
         else:
             print(f"  [league] ussr_pool: {[_label(o) for o in ussr_opps]} | us_pool: {[_label(o) for o in us_opps]}", flush=True)
 
-        # Print per-side PFSP weights
+        # Print per-side PFSP weights with component breakdown
         if wr_table:
+            # Per-side totals for correct UCB (no cross-side contamination)
+            _log_total_ussr = sum(int(v.get("total_ussr", 0)) for v in wr_table.values())
+            _log_total_us = sum(int(v.get("total_us", 0)) for v in wr_table.values())
             all_shown_keys: set[str] = set()
             pfsp_lines = []
             for pool_side, pool_opps in [("ussr", ussr_opps), ("us", us_opps)]:
+                _side_total = _log_total_ussr if pool_side == "ussr" else _log_total_us
                 seen: set[str] = set()
                 for opp in pool_opps:
                     label = _label(opp)
@@ -1437,12 +1440,20 @@ def collect_rollout_league_batched(
                     all_shown_keys.add(label)
                     wr_key = "heuristic" if (opp is None or opp == HEURISTIC_FIXTURE) else label
                     info = wr_table.get(wr_key, {})
-                    total_u = int(info.get("total_ussr", 0))
-                    total_s = int(info.get("total_us", 0))
-                    wr_u_str = f"{info.get('wins_ussr',0)/total_u:.2f}" if total_u >= 10 else "?"
-                    wr_s_str = f"{info.get('wins_us',0)/total_s:.2f}" if total_s >= 10 else "?"
-                    w = _pfsp_weight(wr_key, wr_table, pfsp_exponent, side=pool_side)
-                    pfsp_lines.append(f"    [{pool_side}] {label}: WR_ussr={wr_u_str}(n={total_u}) WR_us={wr_s_str}(n={total_s}) pfsp={w:.3f}")
+                    wins_key = "wins_ussr" if pool_side == "ussr" else "wins_us"
+                    total_key = "total_ussr" if pool_side == "ussr" else "total_us"
+                    n_side = int(info.get(total_key, 0))
+                    if n_side >= 10:
+                        wr_side = int(info.get(wins_key, 0)) / n_side
+                        sym = 4.0 * wr_side * (1.0 - wr_side)
+                        ucb_val = pfsp_exponent * math.sqrt(math.log(_side_total) / n_side) if _side_total > 0 and n_side > 0 else 0.0
+                        w = max(0.01, sym + ucb_val)
+                        pfsp_lines.append(
+                            f"    [{pool_side}] {label}: WR={wr_side:.2f}(n={n_side}) "
+                            f"sym={sym:.3f} ucb={ucb_val:.3f} → pfsp={w:.3f}"
+                        )
+                    else:
+                        pfsp_lines.append(f"    [{pool_side}] {label}: WR=?(n={n_side}) pfsp=1.000 (< MIN_GAMES)")
             if pfsp_lines:
                 print("  [pfsp]", flush=True)
                 for line in pfsp_lines:
@@ -1516,26 +1527,48 @@ def collect_rollout_league_batched(
         # Compute UCB metrics for all WR table entries → W&B logging
         ucb_metrics: dict[str, float] = {}
         if wr_table:
-            _total_all = sum(
-                int(v.get("total_ussr", 0)) + int(v.get("total_us", 0))
-                for v in wr_table.values()
-            )
+            # Per-side totals for correct UCB denominator (no cross-contamination)
+            _total_ussr = sum(int(v.get("total_ussr", 0)) for v in wr_table.values())
+            _total_us = sum(int(v.get("total_us", 0)) for v in wr_table.values())
+            # Aggregate pool composition metrics
+            _fixture_weight_ussr_sum = 0.0
+            _fixture_weight_us_sum = 0.0
+            _self_weight_ussr_sum = 0.0
+            _self_weight_us_sum = 0.0
             for key, info in wr_table.items():
-                if key == "__self__" or key.startswith("iter_"):
+                if key == "__self__":
                     continue
                 # Clean name for W&B: v8_scripted → v8
                 clean = key.replace("_scripted", "")
-                w_u = _pfsp_weight(key, wr_table, pfsp_exponent, _total_all, side="ussr")
-                w_s = _pfsp_weight(key, wr_table, pfsp_exponent, _total_all, side="us")
-                ucb_metrics[f"ucb/{clean}_weight_ussr"] = w_u
-                ucb_metrics[f"ucb/{clean}_weight_us"] = w_s
-                # Also log per-side WR for context
+                w_u = _pfsp_weight(key, wr_table, pfsp_exponent, _total_ussr, side="ussr")
+                w_s = _pfsp_weight(key, wr_table, pfsp_exponent, _total_us, side="us")
+                is_self_snap = key.startswith("iter_")
+                if not is_self_snap:
+                    ucb_metrics[f"ucb/{clean}_weight_ussr"] = w_u
+                    ucb_metrics[f"ucb/{clean}_weight_us"] = w_s
+                    _fixture_weight_ussr_sum += w_u
+                    _fixture_weight_us_sum += w_s
+                else:
+                    _self_weight_ussr_sum += w_u
+                    _self_weight_us_sum += w_s
+                # Per-side WR for context
                 t_u = int(info.get("total_ussr", 0))
                 t_s = int(info.get("total_us", 0))
                 if t_u >= 10:
                     ucb_metrics[f"ucb/{clean}_wr_ussr"] = int(info.get("wins_ussr", 0)) / t_u
                 if t_s >= 10:
                     ucb_metrics[f"ucb/{clean}_wr_us"] = int(info.get("wins_us", 0)) / t_s
+            # Pool composition: fixture vs past-self weight mass
+            ucb_metrics["ucb/fixture_mass_ussr"] = _fixture_weight_ussr_sum
+            ucb_metrics["ucb/fixture_mass_us"] = _fixture_weight_us_sum
+            ucb_metrics["ucb/self_mass_ussr"] = _self_weight_ussr_sum
+            ucb_metrics["ucb/self_mass_us"] = _self_weight_us_sum
+            if (_fixture_weight_ussr_sum + _self_weight_ussr_sum) > 0:
+                ucb_metrics["ucb/fixture_frac_ussr"] = _fixture_weight_ussr_sum / (_fixture_weight_ussr_sum + _self_weight_ussr_sum)
+            if (_fixture_weight_us_sum + _self_weight_us_sum) > 0:
+                ucb_metrics["ucb/fixture_frac_us"] = _fixture_weight_us_sum / (_fixture_weight_us_sum + _self_weight_us_sum)
+            ucb_metrics["ucb/total_games_ussr"] = _total_ussr
+            ucb_metrics["ucb/total_games_us"] = _total_us
 
         return all_steps, ucb_metrics, per_opp_results
     finally:
@@ -3164,6 +3197,31 @@ def main() -> None:
                 reward_shaping=args.reward_shaping,
                 reward_alpha=args.reward_alpha,
             )
+            # Full PFSP pool weight dump at milestones for visibility
+            if _is_milestone(iteration) and args.league:
+                _wr_path = os.path.join(args.league, "wr_table.json")
+                _wr_data = _load_wr_table(_wr_path) if os.path.exists(_wr_path) else {}
+                if _wr_data:
+                    _t_u = sum(int(v.get("total_ussr", 0)) for v in _wr_data.values())
+                    _t_s = sum(int(v.get("total_us", 0)) for v in _wr_data.values())
+                    print(f"  [pfsp pool dump iter={iteration}] N_ussr={_t_u} N_us={_t_s}", flush=True)
+                    # Collect all candidates with weights
+                    _pool_entries: list[tuple[str, str, float, float, float, int]] = []  # (key, type, wr, sym, ucb, n)
+                    for _pk, _pv in sorted(_wr_data.items()):
+                        if _pk == "__self__":
+                            continue
+                        _ptype = "self" if _pk.startswith("iter_") else "fix"
+                        for _ps, _pt, _pn_total in [("ussr", _t_u, "total_ussr"), ("us", _t_s, "total_us")]:
+                            _pn = int(_pv.get(_pn_total, 0))
+                            _pw_key = "wins_ussr" if _ps == "ussr" else "wins_us"
+                            if _pn >= 10:
+                                _pwr = int(_pv.get(_pw_key, 0)) / _pn
+                                _psym = 4.0 * _pwr * (1.0 - _pwr)
+                                _pucb = args.pfsp_exponent * math.sqrt(math.log(_pt) / _pn) if _pt > 0 and _pn > 0 else 0.0
+                                _pw = max(0.01, _psym + _pucb)
+                                print(f"    [{_ps}] {_pk:20s} ({_ptype}) WR={_pwr:.3f} n={_pn:4d} sym={_psym:.3f} ucb={_pucb:.3f} → w={_pw:.3f}", flush=True)
+                            else:
+                                print(f"    [{_ps}] {_pk:20s} ({_ptype}) WR=?     n={_pn:4d} → w=1.000 (warmup)", flush=True)
         elif args.self_play:
             seed = args.seed + (iteration - 1) * args.games_per_iter
             self_play_steps = collect_rollout_self_play_batched(
