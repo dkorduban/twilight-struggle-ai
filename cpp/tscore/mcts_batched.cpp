@@ -338,25 +338,29 @@ DraftsResult collect_card_drafts_cached(const Observation& obs) {
         obs.holds_china,
         [&](CardDraft& card, CardId card_id) {
             const auto& spec = card_spec(card_id);
+            const auto legal = legal_modes(card_id, pub, side);
+            const auto has_mode = [&](ActionMode mode) {
+                return std::find(legal.begin(), legal.end(), mode) != legal.end();
+            };
 
             if (spec.ops > 0) {
-                if (!cache.influence.empty()) {
+                if (has_mode(ActionMode::Influence) && !cache.influence.empty()) {
                     append_single_edge_mode_draft(card, card_id, ActionMode::Influence);
                 }
 
-                if (pub.defcon > 2) {
+                if (has_mode(ActionMode::Coup)) {
                     append_country_target_mode_draft(card, card_id, ActionMode::Coup, cache.coup);
                 }
-                append_country_target_mode_draft(card, card_id, ActionMode::Realign, cache.realign);
+                if (has_mode(ActionMode::Realign)) {
+                    append_country_target_mode_draft(card, card_id, ActionMode::Realign, cache.realign);
+                }
 
-                if (cache.can_space && spec.ops >= cache.space_ops_min) {
-                    if (!is_trap_blocked(pub, side, card_id)) {
-                        append_single_edge_mode_draft(card, card_id, ActionMode::Space);
-                    }
+                if (has_mode(ActionMode::Space) && cache.can_space && spec.ops >= cache.space_ops_min) {
+                    append_single_edge_mode_draft(card, card_id, ActionMode::Space);
                 }
             }
 
-            if (is_event_play_allowed(pub, side, card_id)) {
+            if (has_mode(ActionMode::Event)) {
                 append_single_edge_mode_draft(card, card_id, ActionMode::Event);
             }
         }
@@ -399,20 +403,21 @@ CompactLegalCardsResult collect_compact_legal_cards(const Observation& obs) {
         }
 
         const auto& spec = card_spec(card_id);
-        const int ops = effective_ops(card_id, pub, side);
-        const bool trapped = is_trap_blocked(pub, side, card_id);
+        const auto legal = legal_modes(card_id, pub, side);
+        const auto has_mode = [&](ActionMode mode) {
+            return std::find(legal.begin(), legal.end(), mode) != legal.end();
+        };
 
         LegalCardInfo card{
             .card_id = card_id,
-            .ops = ops,
-            .has_influence = spec.ops > 0 && !cache.influence.empty(),
-            .has_coup = spec.ops > 0 && !cache.coup.empty() && pub.defcon > 2,
-            .has_realign = spec.ops > 0 && !cache.realign.empty(),
-            .has_space = spec.ops > 0 && cache.can_space && spec.ops >= cache.space_ops_min && !trapped,
-            .has_event = false,
+            .ops = effective_ops(card_id, pub, side),
+            .has_influence = spec.ops > 0 && has_mode(ActionMode::Influence) && !cache.influence.empty(),
+            .has_coup = spec.ops > 0 && has_mode(ActionMode::Coup) && !cache.coup.empty(),
+            .has_realign = spec.ops > 0 && has_mode(ActionMode::Realign) && !cache.realign.empty(),
+            .has_space = spec.ops > 0 && has_mode(ActionMode::Space) && cache.can_space &&
+                spec.ops >= cache.space_ops_min,
+            .has_event = has_mode(ActionMode::Event),
         };
-
-        card.has_event = is_event_play_allowed(pub, side, card_id);
 
         if (card.has_influence || card.has_coup || card.has_realign || card.has_space || card.has_event) {
             cards.push_back(card);
@@ -1515,22 +1520,26 @@ bool has_any_model_action_cached_exact(const Observation& obs) {
         }
 
         const auto& spec = card_spec(card_id);
+        const auto legal = legal_modes(card_id, pub, side);
+        const auto has_mode = [&](ActionMode mode) {
+            return std::find(legal.begin(), legal.end(), mode) != legal.end();
+        };
         if (spec.ops > 0) {
-            if (!cache.influence.empty()) {
+            if (has_mode(ActionMode::Influence) && !cache.influence.empty()) {
                 return true;
             }
-            if (!cache.coup.empty() && pub.defcon > 2) {
+            if (has_mode(ActionMode::Coup) && !cache.coup.empty()) {
                 return true;
             }
-            if (!cache.realign.empty()) {
+            if (has_mode(ActionMode::Realign) && !cache.realign.empty()) {
                 return true;
             }
-            if (cache.can_space && spec.ops >= cache.space_ops_min && !is_trap_blocked(pub, side, card_id)) {
+            if (has_mode(ActionMode::Space) && cache.can_space && spec.ops >= cache.space_ops_min) {
                 return true;
             }
         }
 
-        if (is_event_play_allowed(pub, side, card_id)) {
+        if (has_mode(ActionMode::Event)) {
             return true;
         }
     }
