@@ -203,6 +203,33 @@ std::vector<CardId> legal_cards(const CardSet& hand, const PublicState& pub, Sid
         ),
         cards.end()
     );
+
+    // TS rule: players MUST play all scoring cards during the turn.
+    // Holding a scoring card at end of turn = instant loss.
+    // Force scoring card play when remaining ARs for this side <= scoring cards held.
+    if (pub.ar > 0) {
+        const int total_ars = ars_for_turn(pub.turn);
+        // USSR acts on odd ARs (1,3,5,...), US on even ARs (2,4,6,...).
+        int my_remaining = 0;
+        for (int ar = pub.ar; ar <= total_ars; ++ar) {
+            const bool ussr_turn = (ar % 2 == 1);
+            if ((side == Side::USSR && ussr_turn) || (side == Side::US && !ussr_turn)) {
+                ++my_remaining;
+            }
+        }
+        int scoring_count = 0;
+        std::vector<CardId> scoring_cards;
+        for (const auto card_id : cards) {
+            if (card_spec(card_id).is_scoring) {
+                ++scoring_count;
+                scoring_cards.push_back(card_id);
+            }
+        }
+        if (scoring_count > 0 && my_remaining <= scoring_count) {
+            return scoring_cards;
+        }
+    }
+
     return cards;
 }
 

@@ -1954,7 +1954,7 @@ std::string end_reason(const PublicState& pub, std::optional<Side> winner, int c
         return "wargames";
     }
     if (winner.has_value()) {
-        return std::abs(pub.vp) >= 20 ? "vp_threshold" : "europe_control";
+        return "europe_control";
     }
     return "vp_threshold";
 }
@@ -1996,6 +1996,28 @@ std::optional<GameResult> finish_turn(GameState& gs, int turn) {
     gs.pub.chernobyl_blocked_region.reset();
     gs.pub.latam_coup_bonus.reset();
 
+    if (turn == kMaxTurns) {
+        auto final = apply_final_scoring(gs.pub);
+        gs.pub.vp += final.vp_delta;
+        if (final.game_over) {
+            return GameResult{
+                .winner = final.winner,
+                .final_vp = gs.pub.vp,
+                .end_turn = turn,
+                .end_reason = "europe_control",
+            };
+        }
+        std::tie(over, winner) = check_vp_win(gs.pub);
+        if (over) {
+            return GameResult{
+                .winner = winner,
+                .final_vp = gs.pub.vp,
+                .end_turn = turn,
+                .end_reason = "vp_threshold",
+            };
+        }
+    }
+
     for (const auto side : {Side::USSR, Side::US}) {
         for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
             if (!gs.hands[to_index(side)].test(card_id)) {
@@ -2009,19 +2031,6 @@ std::optional<GameResult> finish_turn(GameState& gs, int turn) {
                     .end_reason = "scoring_card_held",
                 };
             }
-        }
-    }
-
-    if (turn == kMaxTurns) {
-        auto final = apply_final_scoring(gs.pub);
-        gs.pub.vp += final.vp_delta;
-        if (final.game_over) {
-            return GameResult{
-                .winner = final.winner,
-                .final_vp = gs.pub.vp,
-                .end_turn = turn,
-                .end_reason = "europe_control",
-            };
         }
     }
 
@@ -3811,7 +3820,8 @@ std::vector<GameResult> benchmark_games_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback = action.mode == ActionMode::EventFirst;
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -3957,7 +3967,8 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback = action.mode == ActionMode::EventFirst;
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -3993,7 +4004,8 @@ std::vector<GameResult> benchmark_model_vs_model_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback = action.mode == ActionMode::EventFirst;
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -4176,7 +4188,8 @@ RolloutResult rollout_model_vs_model_batched(
                     outputs_a.small_choice_logits.defined() && outputs_a.small_choice_logits.size(0) > batch_idx
                         ? outputs_a.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback = action.mode == ActionMode::EventFirst;
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -4228,7 +4241,8 @@ RolloutResult rollout_model_vs_model_batched(
                     outputs_b.small_choice_logits.defined() && outputs_b.small_choice_logits.size(0) > batch_idx
                         ? outputs_b.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback = action.mode == ActionMode::EventFirst;
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -4426,7 +4440,8 @@ RolloutResult rollout_games_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback = action.mode == ActionMode::EventFirst;
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
@@ -4612,7 +4627,8 @@ RolloutResult rollout_self_play_batched(
                     outputs.small_choice_logits.defined() && outputs.small_choice_logits.size(0) > batch_idx
                         ? outputs.small_choice_logits[batch_idx]
                         : torch::Tensor{};
-                const auto needs_callback = action.mode == ActionMode::EventFirst;
+                const auto needs_callback =
+                    action.mode == ActionMode::EventFirst || small_choice_logits.defined();
                 PolicyCallbackFn policy_cb;
                 const PolicyCallbackFn* cb_ptr = nullptr;
                 if (needs_callback) {
