@@ -315,12 +315,19 @@ def collect_from_pair(
     return _finalize_data(all_data, boundaries, gamma, lam)
 
 
+_MODE_MASK_WIDTH = 6  # canonical width; 5-mode checkpoints get padded with False
+
+
 def arrays_to_table(data: dict[str, np.ndarray]) -> pa.Table:
     """Convert collected data dict to an Arrow table."""
     arrays = {}
     for key, val in data.items():
         if isinstance(val, np.ndarray):
             if val.ndim == 2:
+                # Pad mode_mask to canonical width so all tables have same schema
+                if key == "mode_mask" and val.shape[1] < _MODE_MASK_WIDTH:
+                    pad = np.zeros((val.shape[0], _MODE_MASK_WIDTH - val.shape[1]), dtype=val.dtype)
+                    val = np.concatenate([val, pad], axis=1)
                 # Store 2D arrays as fixed-size lists for efficiency
                 arrays[key] = pa.FixedSizeListArray.from_arrays(
                     pa.array(val.ravel(), type=pa.from_numpy_dtype(val.dtype)),
