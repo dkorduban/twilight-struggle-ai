@@ -41,28 +41,47 @@ def run_awr_eval(
     device: str = "cuda",
     max_rows: int = 0,
     crr_filter: bool = False,
+    preloaded_dataset=None,
+    train_indices=None,
+    val_indices=None,
 ) -> dict:
-    """Run AWR evaluation for a single architecture. Returns metrics dict."""
+    """Run AWR evaluation for a single architecture. Returns metrics dict.
+
+    If preloaded_dataset is provided (along with train_indices/val_indices),
+    skip dataset loading — just create DataLoaders and run.
+    """
     # Import here to share dataset across calls
     from scripts.train_awr import AWRDataset, eval_epoch, train_epoch
 
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    from torch.utils.data import DataLoader, random_split
+    from torch.utils.data import DataLoader, Subset, random_split
 
-    dataset = AWRDataset(data_path, max_rows=max_rows)
-    val_size = int(len(dataset) * val_frac)
-    train_size = len(dataset) - val_size
-    train_ds, val_ds = random_split(
-        dataset, [train_size, val_size],
-        generator=torch.Generator().manual_seed(seed),
-    )
+    if preloaded_dataset is not None and train_indices is not None and val_indices is not None:
+        # Reshuffle train indices with this seed for reproducibility across seeds
+        rng = np.random.default_rng(seed)
+        train_idx = rng.permutation(train_indices).tolist()
+        val_idx = val_indices.tolist() if hasattr(val_indices, 'tolist') else list(val_indices)
+        train_ds = Subset(preloaded_dataset, train_idx)
+        val_ds = Subset(preloaded_dataset, val_idx)
+    else:
+        dataset = AWRDataset(data_path, max_rows=max_rows)
+        val_size_n = int(len(dataset) * val_frac)
+        train_size_n = len(dataset) - val_size_n
+        train_ds, val_ds = random_split(
+            dataset, [train_size_n, val_size_n],
+            generator=torch.Generator().manual_seed(seed),
+        )
+    train_size = len(train_ds)
+    val_size = len(val_ds)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                              num_workers=0, pin_memory=(device == "cuda"))
+                              num_workers=2, pin_memory=(device == "cuda"),
+                              persistent_workers=True)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
-                            num_workers=0, pin_memory=(device == "cuda"))
+                            num_workers=1, pin_memory=(device == "cuda"),
+                            persistent_workers=True)
 
     # Create model
     cls = MODEL_REGISTRY[model_type]
@@ -163,6 +182,22 @@ def main() -> None:
     print(f"Epochs: {args.epochs}, LR: {args.lr}")
     print()
 
+    # Pre-load dataset once — avoids re-reading parquet for each experiment
+    # (1.27M rows takes 3-5 min to parse; 108x loading = hours of overhead)
+    from scripts.train_awr import AWRDataset
+    print("Loading dataset (once for all experiments)...")
+    t0_load = time.time()
+    full_dataset = AWRDataset(args.data, max_rows=args.max_rows)
+    val_size = int(len(full_dataset) * 0.1)  # 10% val split
+    train_size = len(full_dataset) - val_size
+    # Use seed 42 for the canonical train/val split (all seeds see same split)
+    rng = np.random.default_rng(42)
+    all_idx = rng.permutation(len(full_dataset))
+    val_indices = all_idx[:val_size]
+    train_indices = all_idx[val_size:]
+    print(f"  Loaded in {time.time()-t0_load:.1f}s — train={train_size:,} val={val_size:,}")
+    print()
+
     all_results = []
     run_idx = 0
     for arch, hdim in base_experiments:
@@ -186,6 +221,9 @@ def main() -> None:
                     device=args.device,
                     max_rows=args.max_rows,
                     crr_filter=args.crr_filter,
+                    preloaded_dataset=full_dataset,
+                    train_indices=train_indices,
+                    val_indices=val_indices,
                 )
                 metrics["tau"] = tau
                 metrics["seed"] = seed

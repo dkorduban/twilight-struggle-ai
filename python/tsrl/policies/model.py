@@ -1885,6 +1885,151 @@ class TSCountryAttnFiLMModel(nn.Module):
         }
 
 
+class TSControlFeatGNNCardAttnModel(nn.Module):
+    """GNN board encoder + card-to-country cross-attention + FiLM side conditioning.
+
+    Extends TSControlFeatGNNFiLMModel by adding cross-attention between hand
+    card embeddings and per-country board features. This lets the model learn
+    card-country affinity (e.g., De Gaulle → France, Truman Doctrine → Europe).
+
+    Cross-attention mechanism:
+      Q: static card embeddings (112, D_attn) for all cards
+      K, V: per-country features (B, 86, D_attn)
+      Attend for cards in hand; pool result over hand → (B, CARD_HIDDEN) added to h_card
+
+    No input/output shape change vs TSControlFeatGNNFiLMModel. ~10K extra params.
+    """
+
+    _REGION_SCALAR_DIM = 42
+    _SIDE_SCALAR_IDX = 10
+    _XATTN_DIM = 32
+    _NUM_XATTN_HEADS = 4
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        # Standard GNN + flat encoders
+        self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.influence_encoder_embed = ControlFeatGNNEncoder()
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+
+        # Cross-attention: hand cards attend to per-country board features
+        self.register_buffer("card_static", _CARD_FEATS.clone())          # (112, 8)
+        self.register_buffer("country_static", _COUNTRY_FEATS.clone())    # (86, 11)
+        self.card_proj = nn.Linear(_CARD_FEAT_DIM, self._XATTN_DIM)       # (8 → D)
+        self.country_proj = nn.Linear(_COUNTRY_FEAT_DIM + 2, self._XATTN_DIM)  # (13 → D)
+        self.cross_attn = nn.MultiheadAttention(
+            self._XATTN_DIM, self._NUM_XATTN_HEADS,
+            batch_first=True, dropout=dropout,
+        )
+        # Project cross-attn output (D) to CARD_HIDDEN and add to h_card
+        self.cross_attn_proj = nn.Linear(self._XATTN_DIM, CARD_HIDDEN)
+
+        # FiLM side conditioning
+        self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
+        self.film_gamma = nn.Linear(SIDE_EMBED_DIM, hidden_dim)
+        self.film_beta = nn.Linear(SIDE_EMBED_DIM, hidden_dim)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+
+        self.value_branch_ussr = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_ussr = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+        self.value_branch_us = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_us = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
+        # Init FiLM to identity: gamma=1, beta=0
+        nn.init.zeros_(self.film_gamma.weight)
+        nn.init.ones_(self.film_gamma.bias)
+        nn.init.zeros_(self.film_beta.weight)
+        nn.init.zeros_(self.film_beta.bias)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        B = influence.shape[0]
+
+        # Standard GNN encoders
+        h_inf_embed, region_scalars = self.influence_encoder_embed(influence)
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + h_inf_embed
+        h_card = torch.relu(self.card_encoder(cards))
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+
+        # Cross-attention: per-country features (B, 86, D_attn)
+        ussr_inf = influence[:, :NUM_COUNTRIES] / 10.0   # (B, 86)
+        us_inf   = influence[:, NUM_COUNTRIES:] / 10.0   # (B, 86)
+        static_c = self.country_static.unsqueeze(0).expand(B, -1, -1)  # (B, 86, 11)
+        dyn_c    = torch.stack([ussr_inf, us_inf], dim=-1)              # (B, 86, 2)
+        countries = torch.relu(
+            self.country_proj(torch.cat([dyn_c, static_c], dim=-1))
+        )  # (B, 86, D_attn)
+
+        # Per-card static embeddings: (B, 112, D_attn)
+        card_emb = torch.relu(self.card_proj(self.card_static))          # (112, D_attn)
+        card_emb = card_emb.unsqueeze(0).expand(B, -1, -1)               # (B, 112, D_attn)
+
+        # Cross-attention: all card embeddings attend to all countries
+        attn_out, _ = self.cross_attn(card_emb, countries, countries)    # (B, 112, D_attn)
+
+        # Pool over cards in hand (actor_known_in = first 112 cols)
+        hand_mask_f = cards[:, :NUM_CARDS].unsqueeze(-1)                  # (B, 112, 1)
+        hand_n = hand_mask_f.sum(dim=1).clamp(min=1.0)                    # (B, 1)
+        attn_pool = (attn_out * hand_mask_f).sum(dim=1) / hand_n          # (B, D_attn)
+        h_cross = torch.relu(self.cross_attn_proj(attn_pool))             # (B, CARD_HIDDEN)
+
+        # Residual: add cross-attention context to card features
+        h_card = h_card + h_cross
+
+        # FiLM conditioning
+        side_idx = scalars[:, self._SIDE_SCALAR_IDX].long()
+        h_side   = self.side_embed(side_idx)
+        gamma = self.film_gamma(h_side)
+        beta  = self.film_beta(h_side)
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        trunk_base  = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        trunk_base  = gamma * trunk_base + beta
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits  = self.card_head(hidden)
+        mode_logits  = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(B, NUM_STRATEGIES, NUM_COUNTRIES)
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+        small_choice_logits = self.small_choice_head(hidden)
+
+        v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
+        v_us   = torch.tanh(self.value_head_us  (torch.relu(self.value_branch_us  (hidden))))
+        is_us  = side_idx.unsqueeze(1).float()
+        value  = (1.0 - is_us) * v_ussr + is_us * v_us
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+            "small_choice_logits": small_choice_logits,
+        }
+
+
 class TSCountryAttnSidePolicyModel(nn.Module):
     """Country-attention model with per-side policy heads.
 

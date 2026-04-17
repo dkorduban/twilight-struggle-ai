@@ -46,6 +46,56 @@ NUM_COUNTRIES = 86
 # Dataset
 # ---------------------------------------------------------------------------
 
+def _fsl_to_numpy(col, dtype=np.float32) -> np.ndarray:
+    """Fast conversion of a FixedSizeList Arrow column to 2D numpy array.
+
+    Avoids the slow .to_pylist() + np.stack() path.
+    - Numeric types: reads Arrow value buffer directly (zero-copy reshape).
+    - Boolean types: casts to uint8 via Arrow compute, then reads buffer.
+    """
+    import pyarrow as pa
+    if hasattr(col, "combine_chunks"):
+        arr = col.combine_chunks()
+    else:
+        arr = col
+    W = arr.type.list_size
+    vt = arr.type.value_type
+
+    if pa.types.is_boolean(vt):
+        # Arrow bool is bit-packed — cast to uint8 FSL first, then read buffer
+        uint8_col = pa.chunked_array([arr]).cast(pa.list_(pa.uint8(), W))
+        arr_u8 = uint8_col.combine_chunks()
+        flat = arr_u8.flatten()
+        buf = flat.buffers()[1]
+        np_flat = np.frombuffer(buf, dtype=np.uint8).copy()
+        np_flat = np_flat[flat.offset: flat.offset + len(flat)]
+        result = np_flat.reshape(-1, W)
+        if dtype != np.uint8:
+            result = result.astype(dtype)
+        return result
+
+    # Numeric types: read the flat value buffer directly
+    if pa.types.is_float32(vt):
+        el_dtype = np.dtype("float32")
+    elif pa.types.is_float64(vt):
+        el_dtype = np.dtype("float64")
+    elif pa.types.is_int32(vt):
+        el_dtype = np.dtype("int32")
+    elif pa.types.is_int64(vt):
+        el_dtype = np.dtype("int64")
+    else:
+        el_dtype = np.dtype("float32")
+
+    flat = arr.flatten()
+    buf = flat.buffers()[1]
+    np_flat = np.frombuffer(buf, dtype=el_dtype).copy()
+    np_flat = np_flat[flat.offset: flat.offset + len(flat)]
+    result = np_flat.reshape(-1, W)
+    if result.dtype != dtype:
+        result = result.astype(dtype)
+    return result
+
+
 class AWRDataset(Dataset):
     """Parquet-backed dataset for AWR training."""
 
@@ -58,27 +108,15 @@ class AWRDataset(Dataset):
         N = len(t)
         print(f"  Loaded {N:,} rows from {parquet_path}")
 
-        # Features: convert fixed-size list columns to contiguous float32
-        self.influence = torch.from_numpy(
-            np.stack(t.column("influence").to_pylist()).astype(np.float32)
-        )
-        self.cards = torch.from_numpy(
-            np.stack(t.column("cards").to_pylist()).astype(np.float32)
-        )
-        self.scalars = torch.from_numpy(
-            np.stack(t.column("scalars").to_pylist()).astype(np.float32)
-        )
+        # Fast FixedSizeList → numpy via Arrow buffer (avoids slow to_pylist+stack)
+        self.influence = torch.from_numpy(_fsl_to_numpy(t.column("influence")))
+        self.cards     = torch.from_numpy(_fsl_to_numpy(t.column("cards")))
+        self.scalars   = torch.from_numpy(_fsl_to_numpy(t.column("scalars")))
 
-        # Masks
-        self.card_mask = torch.from_numpy(
-            np.stack(t.column("card_mask").to_pylist()).astype(bool)
-        )
-        self.mode_mask = torch.from_numpy(
-            np.stack(t.column("mode_mask").to_pylist()).astype(bool)
-        )
-        self.country_mask = torch.from_numpy(
-            np.stack(t.column("country_mask").to_pylist()).astype(bool)
-        )
+        # Masks (bool FSL columns: cast via uint8 intermediate for fast path)
+        self.card_mask    = torch.from_numpy(_fsl_to_numpy(t.column("card_mask"),    dtype=np.uint8) > 0)
+        self.mode_mask    = torch.from_numpy(_fsl_to_numpy(t.column("mode_mask"),    dtype=np.uint8) > 0)
+        self.country_mask = torch.from_numpy(_fsl_to_numpy(t.column("country_mask"), dtype=np.uint8) > 0)
 
         # Targets
         self.card_idx = torch.from_numpy(t.column("card_idx").to_numpy().astype(np.int64))
@@ -103,9 +141,14 @@ class AWRDataset(Dataset):
         # Per-model advantage normalization: normalize within each model's data
         # so that weaker models (with noisier value heads) don't dominate the weights
         if "model_name" in t.schema.names:
-            model_names = t.column("model_name").to_pylist()
-            unique_models = set(model_names)
-            model_names_arr = np.array(model_names)
+            # Fast string array via dictionary-encoded Arrow column
+            model_col = t.column("model_name")
+            if hasattr(model_col, "combine_chunks"):
+                model_col = model_col.combine_chunks()
+            # Use pandas for fast string groupby (avoids slow to_pylist on strings)
+            import pandas as pd
+            model_names_arr = model_col.to_pandas().values
+            unique_models = np.unique(model_names_arr)
             advantage_normed = advantage_raw.copy()
             for m in unique_models:
                 mask = model_names_arr == m
