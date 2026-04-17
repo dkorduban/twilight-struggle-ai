@@ -54,6 +54,8 @@ COMMAND_HELP = {
     "/board": "show region control summary",
     "/status": "alias for /board",
     "/hand": "show your current hand",
+    "/hand set Card1 Card2..": "set your hand (external mode)",
+    "/draw Card1 Card2..": "add drawn cards to hand (external mode)",
     "/legal": "show your legal actions",
     "/suggest": "re-show model suggestions",
     "/s": "alias for /suggest",
@@ -187,10 +189,13 @@ class RequestView:
 
 
 class PlaySession:
-    def __init__(self, seed: int, human_side: Side, checkpoint: str) -> None:
+    def __init__(self, seed: int, human_side: Side, checkpoint: str, *, external: bool = False) -> None:
         self.master_seed = int(seed)
         self.human_side = human_side
         self.checkpoint = checkpoint
+        self.external = external
+        # In external mode, user-specified hand (not engine-dealt).
+        self._external_hand: set[int] = set()
         self.history: list[dict[str, Any]] = []
         self.result = None
         self.req = None
@@ -206,11 +211,28 @@ class PlaySession:
         deck_seed, rng_seed = sequence.generate_state(2, dtype=np.uint32)
         return int(deck_seed), int(rng_seed)
 
+    def _apply_history_entry(self, entry: dict[str, Any], game_gen) -> None:
+        """Apply one history entry: either a hand override or an action."""
+        if entry.get("type") == "hand_set":
+            cards = frozenset(int(c) for c in entry["cards"])
+            self._external_hand = set(cards)
+            # Patch engine hand to match user-specified hand
+            self.gs.hands[self.human_side] = cards - {6}  # China tracked separately
+            return
+        # Action entry — inject card into hand if needed (external mode)
+        action = action_from_dict(entry["parsed"])
+        if self.external and action.card_id != 6:
+            side = Side.USSR if entry.get("side", "") == "ussr" else Side.US
+            if action.card_id not in self.gs.hands[side]:
+                self.gs.hands[side] = self.gs.hands[side] | {action.card_id}
+
     def _rebuild(self, history: list[dict[str, Any]]) -> None:
         deck_seed, rng_seed = self._derive_seeds()
         gs = reset(seed=deck_seed)
         rng = make_rng(rng_seed)
         game_gen = _run_game_gen(gs, rng, _MAX_TURNS)
+        self.gs = gs
+        self._external_hand = set()
         result = None
         try:
             req = next(game_gen)
@@ -220,12 +242,15 @@ class PlaySession:
         for entry in history:
             if req is None:
                 raise RuntimeError("history continues after game over")
+            if entry.get("type") == "hand_set":
+                self._apply_history_entry(entry, game_gen)
+                continue
+            self._apply_history_entry(entry, game_gen)
             try:
                 req = game_gen.send(action_from_dict(entry["parsed"]))
             except StopIteration as exc:
                 req = None
                 result = exc.value
-        self.gs = gs
         self.req = req
         self.result = result
         self._gen = game_gen
@@ -235,23 +260,37 @@ class PlaySession:
         self.master_seed = int(payload["seed"])
         self.human_side = parse_side(payload["human_side"])
         self.checkpoint = str(payload["checkpoint"])
+        self.external = bool(payload.get("external", False))
         self._rebuild(list(payload.get("history", [])))
 
     def save_payload(self) -> dict[str, Any]:
         return {
-            "version": 1,
+            "version": 2,
             "seed": self.master_seed,
             "human_side": self.human_side.name.lower(),
             "checkpoint": self.checkpoint,
+            "external": self.external,
             "history": self.history,
         }
+
+    def set_hand(self, card_ids: list[int]) -> None:
+        """Set the human player's hand (external mode). Records in history for undo."""
+        self._external_hand = set(card_ids)
+        engine_cards = frozenset(c for c in card_ids if c != 6)
+        self.gs.hands[self.human_side] = engine_cards
+        self.history.append({"type": "hand_set", "cards": card_ids})
 
     def apply(self, raw_text: str, action: ActionEncoding) -> None:
         if self.req is None:
             raise RuntimeError("game is already over")
+        side = self.req.side
+        # In external mode, inject card into hand if engine doesn't have it
+        if self.external and action.card_id != 6:
+            if action.card_id not in self.gs.hands[side]:
+                self.gs.hands[side] = self.gs.hands[side] | {action.card_id}
         self.history.append(
             {
-                "side": side_name(self.req.side).lower(),
+                "side": side_name(side).lower(),
                 "raw": raw_text,
                 "parsed": action_to_dict(action),
             }
@@ -261,6 +300,9 @@ class PlaySession:
         except StopIteration as exc:
             self.req = None
             self.result = exc.value
+        # In external mode, after opponent plays, remove card from their hand tracking
+        if self.external and side == self.human_side:
+            self._external_hand.discard(action.card_id)
 
     def undo(self) -> bool:
         if not self.history:
@@ -269,6 +311,8 @@ class PlaySession:
         return True
 
     def full_hand(self, side: Side, *, legal_only: bool = False) -> frozenset[int]:
+        if self.external and side == self.human_side:
+            return frozenset(self._external_hand)
         hand = set(self.gs.hands[side])
         if self.gs.pub.china_held_by == side and (self.gs.pub.china_playable or not legal_only):
             hand.add(6)
@@ -277,13 +321,17 @@ class PlaySession:
     def current(self) -> RequestView | None:
         if self.req is None:
             return None
-        hand = set(self.req.hand)
-        if self.gs.phase != GamePhase.HEADLINE and self.req.holds_china:
-            hand.add(6)
+        if self.external and self.req.side == self.human_side:
+            hand = frozenset(self._external_hand)
+        else:
+            hand = set(self.req.hand)
+            if self.gs.phase != GamePhase.HEADLINE and self.req.holds_china:
+                hand.add(6)
+            hand = frozenset(hand)
         return RequestView(
             side=self.req.side,
             pub=self.req.pub,
-            hand=frozenset(hand),
+            hand=hand,
             holds_china=self.req.holds_china,
         )
 
@@ -622,8 +670,21 @@ def parse_action_text(session: PlaySession, text: str) -> ActionEncoding:
         raise ActionParseError("empty input")
 
     legal_hand = req.hand
-    legal_playable = legal_cards(legal_hand, req.pub, req.side, holds_china=req.holds_china)
-    visible_catalog = set(legal_hand) if req.side == session.human_side else set(CARDS)
+    # In external mode, relax validation: opponent can play any card, human plays from external hand
+    if session.external:
+        if req.side != session.human_side:
+            # Opponent move — accept any card
+            legal_playable = set(CARDS)
+            visible_catalog = set(CARDS)
+        else:
+            # Human move — use external hand if set
+            if session._external_hand:
+                legal_hand = frozenset(session._external_hand)
+            legal_playable = legal_cards(legal_hand, req.pub, req.side, holds_china=req.holds_china)
+            visible_catalog = set(legal_hand)
+    else:
+        legal_playable = legal_cards(legal_hand, req.pub, req.side, holds_china=req.holds_china)
+        visible_catalog = set(legal_hand) if req.side == session.human_side else set(CARDS)
 
     phase_is_headline = session.gs.phase == GamePhase.HEADLINE or req.pub.ar == 0
     mode_index = next((idx for idx, token in enumerate(tokens) if token.lower() in MODE_ALIASES), None)
@@ -886,7 +947,42 @@ def handle_command(
         show_board(session)
         return True
     if command == "/hand":
+        if arg and arg.lower() == "set" and len(parts) > 2:
+            if not session.external:
+                print("Hand override only available in --external mode.")
+                return True
+            card_tokens = parts[2:]
+            try:
+                card_ids = [resolve_card(t, set(CARDS)) for t in card_tokens]
+            except ActionParseError as exc:
+                print(str(exc))
+                return True
+            session.set_hand(card_ids)
+            names = [CARDS[c].name for c in card_ids]
+            print(f"Hand set: {', '.join(names)}")
+            logger.log("hand_set", cards=card_ids)
+            return True
         show_hand(session)
+        return True
+    if command == "/draw":
+        if not session.external:
+            print("/draw only available in --external mode.")
+            return True
+        if len(parts) < 2:
+            print("Usage: /draw Card1 Card2 ...")
+            return True
+        card_tokens = parts[1:]
+        try:
+            card_ids = [resolve_card(t, set(CARDS)) for t in card_tokens]
+        except ActionParseError as exc:
+            print(str(exc))
+            return True
+        existing = list(session._external_hand)
+        session.set_hand(existing + card_ids)
+        names = [CARDS[c].name for c in card_ids]
+        print(f"Drew: {', '.join(names)}")
+        print(f"Hand now: {format_hand(session)}")
+        logger.log("draw", cards=card_ids)
         return True
     if command == "/legal":
         show_legal(session)
@@ -930,6 +1026,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-file", default=None, help="JSONL log path")
     parser.add_argument("--seed", type=int, default=None, help="Deterministic master seed")
     parser.add_argument("--top-k", type=int, default=5, help="Suggestion count to show")
+    parser.add_argument("--external", action="store_true",
+                        help="External game mode: you enter your own draws and opponent moves. "
+                             "Use /hand set ... and /draw ... to manage your hand.")
     return parser
 
 
@@ -1012,7 +1111,7 @@ def run_cli(args: argparse.Namespace) -> int:
     seed = args.seed if args.seed is not None else secrets.randbits(32)
     log_file = Path(args.log_file).expanduser().resolve() if args.log_file else default_log_path()
     logger = JsonlLogger(log_file)
-    session = PlaySession(seed=seed, human_side=args.side, checkpoint=args.checkpoint)
+    session = PlaySession(seed=seed, human_side=args.side, checkpoint=args.checkpoint, external=args.external)
     model = ModelAdapter(args.checkpoint)
 
     logger.log(
@@ -1023,6 +1122,8 @@ def run_cli(args: argparse.Namespace) -> int:
     )
 
     print(f"Welcome to TS Play Assistant. You are playing {side_name(session.human_side)}.")
+    if session.external:
+        print("EXTERNAL MODE: Enter your draws with /hand set or /draw. Enter opponent moves directly.")
     print(f"Model: {Path(session.checkpoint).name}")
     print(f"Log: {log_file}")
     print("Type /help for commands.")
@@ -1050,6 +1151,8 @@ def run_cli(args: argparse.Namespace) -> int:
         for line in state_header(session, req):
             print(line)
         log_state(logger, session)
+        if session.external and req.side == session.human_side and not session._external_hand:
+            print(">>> Hand not set. Use /hand set Card1 Card2... before playing.")
         if req.side == session.human_side:
             print_suggestions(model, session, logger, args.top_k)
 
