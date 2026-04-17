@@ -60,6 +60,12 @@ COMMAND_HELP = {
     "/draw Card1 Card2..": "alias for /hand add (external mode)",
     "/place ussr|us Country [=N]": "set influence to N (external mode)",
     "/add ussr|us Country [N]": "add N influence (default: 1) (external mode)",
+    "/set vp N": "set VP score (positive=USSR lead) (external mode)",
+    "/set defcon N": "set DEFCON level (1-5) (external mode)",
+    "/set milops ussr|us N": "set military ops (external mode)",
+    "/set space ussr|us N": "set space race level (external mode)",
+    "/set turn N": "set current turn (external mode)",
+    "/set ar N": "set current action round (external mode)",
     "/legal": "show your legal actions",
     "/suggest": "re-show model suggestions",
     "/s": "alias for /suggest",
@@ -605,11 +611,19 @@ def _match_entity(query: str, variants: dict[int, set[str]], names: dict[int, st
     if not needle:
         raise ActionParseError(f"could not understand '{query}'")
 
-    exact = [entity_id for entity_id in sorted(allowed) if needle in variants[entity_id]]
-    if len(exact) == 1:
-        return exact[0]
-    if len(exact) > 1:
-        raise ActionParseError("ambiguous match: " + ", ".join(names[item] for item in exact[:5]))
+    # Prefer exact variant match (e.g. "asia" == "asia" from "Asia Scoring")
+    # over substring containment (e.g. "asia" in "southeastasiascoring")
+    exact_variant = [entity_id for entity_id in sorted(allowed) if needle in variants[entity_id]]
+    if len(exact_variant) == 1:
+        return exact_variant[0]
+    if len(exact_variant) > 1:
+        # Multiple exact variant hits — disambiguate by preferring the one where
+        # the full normalized name starts with the needle (e.g. "asia" → "asiascoring"
+        # wins over "southeastasiascoring")
+        starts = [eid for eid in exact_variant if normalize_name(names[eid]).startswith(needle)]
+        if len(starts) == 1:
+            return starts[0]
+        raise ActionParseError("ambiguous match: " + ", ".join(names[item] for item in exact_variant[:5]))
 
     partial = [
         entity_id
@@ -829,6 +843,7 @@ def _country_probs(country_tensor, allowed: list[int]):
 
 
 def rank_suggestions(model: ModelAdapter, session: PlaySession, top_k: int) -> tuple[list[dict[str, Any]], float]:
+    """Fast suggestions from model logits — no action enumeration."""
     req = session.current()
     if req is None:
         return [], 0.0
@@ -840,49 +855,143 @@ def rank_suggestions(model: ModelAdapter, session: PlaySession, top_k: int) -> t
         country_logits = country_logits[0]
     value = float(outputs["value"][0, 0].item())
 
-    actions = enumerate_actions(req.hand, req.pub, req.side, holds_china=req.holds_china)
     playable = sorted(legal_cards(req.hand, req.pub, req.side, holds_china=req.holds_china))
+    if not playable:
+        return [], value
     card_probs = _masked_softmax(card_logits, [card_id - 1 for card_id in playable])
 
-    mode_cache: dict[int, Any] = {}
-    country_cache: dict[tuple[int, ActionMode], Any] = {}
-    scored: list[tuple[float, ActionEncoding]] = []
-    for action in actions:
-        if action.card_id not in mode_cache:
-            legal = sorted(legal_modes(action.card_id, req.pub, req.side), key=int)
-            mode_cache[action.card_id] = _masked_softmax(mode_logits, [int(mode) for mode in legal])
-        log_score = math.log(float(card_probs[action.card_id - 1].item()) + 1e-30)
-        log_score += math.log(float(mode_cache[action.card_id][int(action.mode)].item()) + 1e-30)
-        if action.mode not in (ActionMode.EVENT, ActionMode.SPACE):
-            cache_key = (action.card_id, action.mode)
-            if cache_key not in country_cache:
-                legal = sorted(legal_countries(action.card_id, action.mode, req.pub, req.side))
-                country_cache[cache_key] = _country_probs(country_logits, legal)
-            for target in action.targets:
-                log_score += math.log(float(country_cache[cache_key][target].item()) + 1e-30)
-        scored.append((log_score, action))
+    is_headline = session.gs.phase == GamePhase.HEADLINE or req.pub.ar == 0
 
-    if not scored:
-        return [], value
-    max_log = max(item[0] for item in scored)
-    weights = [math.exp(item[0] - max_log) for item in scored]
-    total = sum(weights)
     ranked: list[dict[str, Any]] = []
-    for (log_score, action), weight in sorted(
-        zip(scored, weights, strict=True),
-        key=lambda item: item[0][0],
-        reverse=True,
-    )[:top_k]:
-        ranked.append(
-            {
-                "card_id": action.card_id,
-                "mode": int(action.mode),
-                "targets": list(action.targets),
-                "prob": weight / total,
-                "text": format_action(action),
-            }
-        )
-    return ranked, value
+    for card_id in playable:
+        card_p = float(card_probs[card_id - 1].item())
+        if card_p < 1e-6:
+            continue
+
+        if is_headline:
+            # Headline: only card choice matters, always EVENT
+            ranked.append({
+                "card_id": card_id,
+                "mode": int(ActionMode.EVENT),
+                "targets": [],
+                "prob": card_p,
+                "text": f"{CARDS[card_id].name}",
+            })
+            continue
+
+        modes = sorted(legal_modes(card_id, req.pub, req.side), key=int)
+        mode_probs = _masked_softmax(mode_logits, [int(m) for m in modes])
+        best_mode = max(modes, key=lambda m: float(mode_probs[int(m)].item()))
+
+        # For influence/coup/realign, show the top country target
+        targets: tuple[int, ...] = ()
+        target_text = ""
+        if best_mode not in (ActionMode.EVENT, ActionMode.SPACE):
+            legal = sorted(legal_countries(card_id, best_mode, req.pub, req.side))
+            if legal:
+                cprobs = _country_probs(country_logits, legal)
+                best_cid = max(legal, key=lambda c: float(cprobs[c].item()))
+                targets = (best_cid,)
+                target_text = f" {COUNTRIES[best_cid].name}"
+
+        ranked.append({
+            "card_id": card_id,
+            "mode": int(best_mode),
+            "targets": list(targets),
+            "prob": card_p,
+            "text": f"{CARDS[card_id].name} {best_mode.name.title()}{target_text}",
+        })
+
+    ranked.sort(key=lambda x: x["prob"], reverse=True)
+    return ranked[:top_k], value
+
+
+def snapshot_pub(pub: PublicState) -> dict:
+    """Capture key fields for diffing."""
+    inf = {}
+    for (side, cid), val in pub.influence.items():
+        if val > 0:
+            inf[(side, cid)] = val
+    return {
+        "vp": pub.vp, "defcon": pub.defcon,
+        "milops": list(pub.milops), "space": list(pub.space),
+        "turn": pub.turn, "ar": pub.ar,
+        "influence": inf,
+        "discard": set(pub.discard), "removed": set(pub.removed),
+        "china_held_by": pub.china_held_by, "china_playable": pub.china_playable,
+        "bear_trap": pub.bear_trap_active, "quagmire": pub.quagmire_active,
+        "nato": pub.nato_active, "norad": pub.norad_active,
+        "shuttle_diplomacy": pub.shuttle_diplomacy_active,
+        "flower_power": pub.flower_power_active,
+        "cuban_missile_crisis": pub.cuban_missile_crisis_active,
+    }
+
+
+def print_state_diff(before: dict, after_pub: PublicState) -> None:
+    """Print human-readable summary of what changed."""
+    after = snapshot_pub(after_pub)
+    lines: list[str] = []
+
+    # Scalar changes
+    for key, label in [
+        ("vp", "VP"), ("defcon", "DEFCON"), ("turn", "Turn"), ("ar", "AR"),
+    ]:
+        if before[key] != after[key]:
+            if key == "vp":
+                lines.append(f"  {label}: {vp_text(before[key])} → {vp_text(after[key])}")
+            else:
+                lines.append(f"  {label}: {before[key]} → {after[key]}")
+
+    for idx, side_name_str in [(0, "USSR"), (1, "US")]:
+        if before["milops"][idx] != after["milops"][idx]:
+            lines.append(f"  MilOps {side_name_str}: {before['milops'][idx]} → {after['milops'][idx]}")
+        if before["space"][idx] != after["space"][idx]:
+            lines.append(f"  Space {side_name_str}: {before['space'][idx]} → {after['space'][idx]}")
+
+    if before["china_held_by"] != after["china_held_by"] or before["china_playable"] != after["china_playable"]:
+        holder = "USSR" if after["china_held_by"] == Side.USSR else "US"
+        face = "playable" if after["china_playable"] else "face-down"
+        lines.append(f"  China Card → {holder} ({face})")
+
+    # Influence changes
+    all_keys = set(before["influence"].keys()) | set(after["influence"].keys())
+    inf_changes: list[str] = []
+    for key in sorted(all_keys, key=lambda k: (k[0].value, k[1])):
+        side, cid = key
+        old_val = before["influence"].get(key, 0)
+        new_val = after["influence"].get(key, 0)
+        if old_val != new_val:
+            s = "USSR" if side == Side.USSR else "US"
+            inf_changes.append(f"{s} {COUNTRIES[cid].name}: {old_val}→{new_val}")
+    if inf_changes:
+        lines.append(f"  Influence: {', '.join(inf_changes)}")
+
+    # Cards removed/discarded
+    new_discard = after["discard"] - before["discard"]
+    new_removed = after["removed"] - before["removed"]
+    if new_discard:
+        names = [CARDS[c].name for c in sorted(new_discard)]
+        lines.append(f"  Discarded: {', '.join(names)}")
+    if new_removed:
+        names = [CARDS[c].name for c in sorted(new_removed)]
+        lines.append(f"  Removed: {', '.join(names)}")
+
+    # Effect flags
+    for key, label in [
+        ("bear_trap", "Bear Trap"), ("quagmire", "Quagmire"),
+        ("nato", "NATO"), ("norad", "NORAD"),
+        ("shuttle_diplomacy", "Shuttle Diplomacy"),
+        ("flower_power", "Flower Power"),
+        ("cuban_missile_crisis", "Cuban Missile Crisis"),
+    ]:
+        if before[key] != after[key]:
+            status = "ACTIVE" if after[key] else "inactive"
+            lines.append(f"  {label}: → {status}")
+
+    if lines:
+        print("  --- State changes ---")
+        for line in lines:
+            print(line)
 
 
 def save_session(path: Path, session: PlaySession) -> None:
@@ -1058,6 +1167,50 @@ def handle_command(
             print(f"  {side_str.upper()} in {COUNTRIES[cid].name}: {new_val}")
         logger.log(command.lstrip("/"), side=side_str, countries=[cid for cid in country_ids], amount=amount, absolute=absolute)
         return True
+    if command == "/set":
+        if not session.external:
+            print("/set only available in --external mode.")
+            return True
+        if len(parts) < 3:
+            print("Usage: /set vp|defcon|turn|ar N  or  /set milops|space ussr|us N")
+            return True
+        field = parts[1].lower()
+        pub = session.gs.pub
+        if field == "vp":
+            old = pub.vp
+            pub.vp = int(parts[2])
+            print(f"VP: {old} → {pub.vp}")
+        elif field == "defcon":
+            old = pub.defcon
+            pub.defcon = max(1, min(5, int(parts[2])))
+            print(f"DEFCON: {old} → {pub.defcon}")
+        elif field == "turn":
+            old = pub.turn
+            pub.turn = max(1, min(10, int(parts[2])))
+            print(f"Turn: {old} → {pub.turn}")
+        elif field == "ar":
+            old = pub.ar
+            pub.ar = max(0, int(parts[2]))
+            print(f"AR: {old} → {pub.ar}")
+        elif field in ("milops", "space"):
+            if len(parts) < 4:
+                print(f"Usage: /set {field} ussr|us N")
+                return True
+            side_str = parts[2].lower()
+            if side_str not in ("ussr", "us"):
+                print(f"Unknown side '{parts[2]}'. Use 'ussr' or 'us'.")
+                return True
+            idx = 0 if side_str == "ussr" else 1
+            val = max(0, int(parts[3]))
+            target = pub.milops if field == "milops" else pub.space
+            old = target[idx]
+            target[idx] = val
+            print(f"{field.title()} {side_str.upper()}: {old} → {val}")
+        else:
+            print(f"Unknown field '{field}'. Use: vp, defcon, turn, ar, milops, space")
+            return True
+        logger.log("set", field=field, parts=parts[2:])
+        return True
     if command == "/legal":
         show_legal(session)
         return True
@@ -1205,6 +1358,7 @@ def run_cli(args: argparse.Namespace) -> int:
     prompt_session = PromptSession()
     completer = make_completer(session)
 
+    show_suggestions = True
     while True:
         req = session.current()
         if req is None:
@@ -1227,7 +1381,7 @@ def run_cli(args: argparse.Namespace) -> int:
         log_state(logger, session)
         if session.external and req.side == session.human_side and not session._external_hand:
             print(">>> Hand not set. Use /hand set Card1 Card2... before playing.")
-        if req.side == session.human_side:
+        if show_suggestions and req.side == session.human_side:
             print_suggestions(model, session, logger, args.top_k)
 
         try:
@@ -1238,6 +1392,7 @@ def run_cli(args: argparse.Namespace) -> int:
             return 0
 
         if not raw.strip():
+            show_suggestions = False
             continue
         if raw.lstrip().startswith("/"):
             try:
@@ -1247,6 +1402,8 @@ def run_cli(args: argparse.Namespace) -> int:
             except Exception as exc:
                 print(str(exc))
                 logger.log("error", message=str(exc), raw_input=raw)
+            # Only re-show suggestions after /suggest or /s; skip after other commands
+            show_suggestions = raw.strip().lower() in ("/suggest", "/s")
             continue
 
         try:
@@ -1257,8 +1414,11 @@ def run_cli(args: argparse.Namespace) -> int:
                 raw=raw,
                 parsed=parsed,
             )
+            before = snapshot_pub(session.gs.pub)
             session.apply(raw, action)
             print(f"Applied: {format_action(action)}")
+            print_state_diff(before, session.gs.pub)
+            show_suggestions = True
             logger.log(
                 "action_applied",
                 side=side_name(req.side).lower(),

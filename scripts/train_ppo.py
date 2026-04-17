@@ -2881,6 +2881,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ppo-epochs", type=int, default=4, help="PPO update epochs per batch")
     p.add_argument("--clip-eps", type=float, default=0.2, help="PPO clip epsilon")
     p.add_argument("--lr", type=float, default=1e-4, help="Learning rate (after warmup)")
+    p.add_argument("--lr-schedule", choices=["cosine", "constant"], default="cosine",
+                   help="LR schedule: 'cosine' decays to 10%% of base by end (default), "
+                        "'constant' holds LR fixed throughout training.")
     p.add_argument("--lr-warmup-iters", type=int, default=0,
                    help="Number of iterations to linearly warm up LR from lr/10 to lr. "
                         "Use 15 when resuming from a checkpoint with new input features "
@@ -3425,6 +3428,23 @@ def main() -> None:
         us_done = [s for s in terminal_steps if s.side_int == 1]
         rollout_wr_ussr = sum(1 for s in ussr_done if s.reward > 0) / max(1, len(ussr_done))
         rollout_wr_us = sum(1 for s in us_done if s.reward > 0) / max(1, len(us_done))
+        # Panel-vs-self split WR (league mode only)
+        rollout_wr_panel = rollout_wr  # default: all games count as panel if no league
+        rollout_wr_self = 0.0
+        if args.league and _rollout_opp_results:
+            panel_wins, panel_n, self_wins, self_n = 0, 0, 0, 0
+            for opp_result in _rollout_opp_results:
+                label = opp_result["opponent"]
+                w, n = opp_result["wins"], opp_result["n_games"]
+                if label in ("__self__",) or label.startswith("iter_"):
+                    self_wins += w
+                    self_n += n
+                else:
+                    panel_wins += w
+                    panel_n += n
+            rollout_wr_panel = panel_wins / max(1, panel_n)
+            rollout_wr_self = self_wins / max(1, self_n)
+
         sp_rollout_wr_ussr = 0.0
         sp_rollout_wr_us = 0.0
         if args.self_play:
@@ -3481,10 +3501,13 @@ def main() -> None:
         # Cosine LR decay: smoothly reduce LR from args.lr to args.lr * 0.1 over the run.
         # Applied after warmup phase. Prevents late-training overshooting.
         if args.lr_warmup_iters == 0 or iteration > args.lr_warmup_iters:
-            cos_progress = (iteration - 1) / max(1, args.n_iterations - 1)
-            cos_lr = args.lr * (0.1 + 0.9 * 0.5 * (1.0 + math.cos(math.pi * cos_progress)))
+            if args.lr_schedule == "cosine":
+                cos_progress = (iteration - 1) / max(1, args.n_iterations - 1)
+                scheduled_lr = args.lr * (0.1 + 0.9 * 0.5 * (1.0 + math.cos(math.pi * cos_progress)))
+            else:
+                scheduled_lr = args.lr
             for pg in optimizer.param_groups:
-                pg["lr"] = cos_lr
+                pg["lr"] = scheduled_lr
 
         # Early stopping on KL divergence
         if metrics.get("approx_kl", 0) > args.max_kl:
@@ -3496,7 +3519,7 @@ def main() -> None:
         print(
             f"[iter {iteration:3d}/{args.n_iterations}] "
             f"steps={n_steps:5d} "
-            f"rollout_wr={rollout_wr:.3f} (ussr={rollout_wr_ussr:.3f} us={rollout_wr_us:.3f}) "
+            f"rollout_wr={rollout_wr:.3f} (ussr={rollout_wr_ussr:.3f} us={rollout_wr_us:.3f} panel={rollout_wr_panel:.3f}) "
             f"pl={metrics.get('policy_loss', 0):.4f} "
             f"vl={metrics.get('value_loss', 0):.4f} "
             f"ent={metrics.get('entropy', 0):.3f} "
@@ -3625,6 +3648,8 @@ def main() -> None:
         log_dict["rollout_wr"] = rollout_wr
         log_dict["rollout_wr_ussr"] = rollout_wr_ussr
         log_dict["rollout_wr_us"] = rollout_wr_us
+        log_dict["rollout_wr_panel"] = rollout_wr_panel
+        log_dict["rollout_wr_self"] = rollout_wr_self
         log_dict["n_steps"] = n_steps
         log_dict["steps_per_game"] = steps_per_game
         log_dict["iter_time_s"] = t_iter
