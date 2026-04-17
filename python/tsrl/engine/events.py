@@ -164,12 +164,18 @@ def _free_coup(
     defcon_immune=True: battleground coup does NOT reduce DEFCON (war card rule per ITS rules).
     Updates MilOps for `side` to max(current, ops).
     """
-    from tsrl.engine.dice import coup_result
+    from tsrl.engine.dice import coup_result, roll_d6, coup_net
+    from tsrl.engine.event_log import log_event
     opp = Side.US if side == Side.USSR else Side.USSR
     c = _countries()
     stability = c[cid].stability if cid in c else 1
     is_bg = c[cid].is_battleground if cid in c else False
-    net = coup_result(ops, stability, rng=rng)
+    cname = c[cid].name if cid in c else f"country#{cid}"
+    roll = roll_d6(rng)
+    net = coup_net(roll, ops, stability)
+    side_str = "USSR" if side == Side.USSR else "US"
+    result_str = f"success (net {net})" if net > 0 else "fails"
+    log_event(f"Coup {cname}: {side_str} rolls {roll} + {ops} ops - 2×{stability} stability = {net} → {result_str}")
     if net > 0:
         opp_inf = pub.influence.get((opp, cid), 0)
         removed = min(net, opp_inf)
@@ -190,6 +196,10 @@ def _free_coup(
 
 def _vp_delta(pub: PublicState, side: Side, delta: int) -> None:
     """Award delta VP to side. USSR gains → pub.vp increases; US gains → pub.vp decreases."""
+    from tsrl.engine.event_log import log_event
+    side_str = "USSR" if side == Side.USSR else "US"
+    if delta != 0:
+        log_event(f"VP: {side_str} {'gains' if delta > 0 else 'loses'} {abs(delta)} VP")
     if side == Side.USSR:
         pub.vp += delta
     else:
@@ -583,8 +593,11 @@ def _event_duck_and_cover(
     pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
     """Card 4: Duck and Cover. US gains (5 - defcon) VP; DEFCON drops by 1."""
+    from tsrl.engine.event_log import log_event
     pre_defcon = pub.defcon
-    pub.vp -= (5 - pre_defcon)  # US gains (5-defcon) VP; negative = US lead
+    vp_gain = 5 - pre_defcon
+    log_event(f"Duck and Cover: DEFCON {pre_defcon}→{max(1, pre_defcon-1)}, US gains {vp_gain} VP")
+    pub.vp -= vp_gain
     pub.defcon = max(1, pub.defcon - 1)
     return pub, *_check_win(pub)
 
@@ -595,6 +608,8 @@ def _event_korean_war(
     """Card 11: Korean War*. Free 2-ops USSR coup in South Korea (war card: defcon_immune).
     Success: USSR gains 2 VP. Failure: US gains 1 VP.
     """
+    from tsrl.engine.event_log import log_event
+    log_event("Korean War: target is South Korea")
     net = _free_coup(pub, Side.USSR, _SOUTH_KOREA, 2, rng, defcon_immune=True)
     if net > 0:
         pub.vp += 2   # USSR gains 2 VP
@@ -609,6 +624,8 @@ def _event_arab_israeli_war(
     """Card 13: Arab-Israeli War. Free 2-ops USSR coup in Israel (war card: defcon_immune).
     Failure: US gains 1 VP. No extra VP on success.
     """
+    from tsrl.engine.event_log import log_event
+    log_event("Arab-Israeli War: target is Israel")
     net = _free_coup(pub, Side.USSR, _ISRAEL, 2, rng, defcon_immune=True)
     if net <= 0:
         pub.vp -= 1   # US gains 1 VP on failure
@@ -621,7 +638,10 @@ def _event_indo_pakistani_war(
     """Card 24: Indo-Pakistani War. Phasing player coups randomly in India or Pakistan.
     Success: phasing gains 2 VP. Failure: phasing loses 1 VP.
     """
+    from tsrl.engine.event_log import log_event
     target = int(rng.choice([_INDIA, _PAKISTAN]))
+    cname = _countries()[target].name if target in _countries() else f"#{target}"
+    log_event(f"Indo-Pakistani War: target is {cname}")
     net = _free_coup(pub, side, target, 2, rng, defcon_immune=True)
     if net > 0:
         _vp_delta(pub, side, 2)
@@ -656,6 +676,9 @@ def _event_brush_war(
     if not pool:
         return pub, False, None
     target = int(rng.choice(sorted(pool)))
+    from tsrl.engine.event_log import log_event
+    cname = c[target].name if target in c else f"#{target}"
+    log_event(f"Brush War: target is {cname}")
     net = _free_coup(pub, Side.USSR, target, 3, rng, defcon_immune=False)
     if net > 0:
         # Additional removal: up to 2 more US influence beyond what coup already removed
@@ -897,7 +920,10 @@ def _event_iran_iraq_war(
     DEFCON drops if target is battleground (not defcon_immune).
     Success: phasing gains 2 VP. Failure: phasing loses 1 VP.
     """
+    from tsrl.engine.event_log import log_event
     target = int(rng.choice([_IRAN, _IRAQ]))
+    cname = _countries()[target].name if target in _countries() else f"#{target}"
+    log_event(f"Iran-Iraq War: target is {cname}")
     net = _free_coup(pub, side, target, 2, rng, defcon_immune=False)
     if net > 0:
         _vp_delta(pub, side, 2)

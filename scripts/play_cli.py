@@ -883,16 +883,22 @@ def rank_suggestions(model: ModelAdapter, session: PlaySession, top_k: int) -> t
         mode_probs = _masked_softmax(mode_logits, [int(m) for m in modes])
         best_mode = max(modes, key=lambda m: float(mode_probs[int(m)].item()))
 
-        # For influence/coup/realign, show the top country target
+        # For influence, show top-N countries (N=ops); for coup/realign, show top-1
         targets: tuple[int, ...] = ()
         target_text = ""
         if best_mode not in (ActionMode.EVENT, ActionMode.SPACE):
             legal = sorted(legal_countries(card_id, best_mode, req.pub, req.side))
             if legal:
                 cprobs = _country_probs(country_logits, legal)
-                best_cid = max(legal, key=lambda c: float(cprobs[c].item()))
-                targets = (best_cid,)
-                target_text = f" {COUNTRIES[best_cid].name}"
+                if best_mode == ActionMode.INFLUENCE:
+                    ops = effective_ops(card_id, req.pub, req.side)
+                    top_cids = sorted(legal, key=lambda c: float(cprobs[c].item()), reverse=True)[:ops]
+                    targets = tuple(top_cids)
+                    target_text = " " + ", ".join(COUNTRIES[c].name for c in top_cids)
+                else:
+                    best_cid = max(legal, key=lambda c: float(cprobs[c].item()))
+                    targets = (best_cid,)
+                    target_text = f" {COUNTRIES[best_cid].name}"
 
         ranked.append({
             "card_id": card_id,
@@ -1414,9 +1420,13 @@ def run_cli(args: argparse.Namespace) -> int:
                 raw=raw,
                 parsed=parsed,
             )
+            from tsrl.engine.event_log import drain_events
+            drain_events()  # clear any stale events
             before = snapshot_pub(session.gs.pub)
             session.apply(raw, action)
             print(f"Applied: {format_action(action)}")
+            for evt in drain_events():
+                print(f"  >> {evt}")
             print_state_diff(before, session.gs.pub)
             show_suggestions = True
             logger.log(
