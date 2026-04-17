@@ -1684,6 +1684,207 @@ class TSCountryAttnSideModel(nn.Module):
         }
 
 
+class TSControlFeatGNNFiLMModel(nn.Module):
+    """TSControlFeatGNNSideModel with FiLM conditioning instead of side-embed concatenation.
+
+    FiLM (Feature-wise Linear Modulation) replaces the concat side embedding with
+    multiplicative + additive modulation of the trunk activations:
+        gamma, beta = f(side_embedding)
+        trunk = gamma * trunk + beta
+
+    This is strictly more expressive than concatenation: FiLM can learn to conditionally
+    negate/swap any trunk neuron based on side, approximating virtual feature flipping.
+    With SIDE_EMBED_DIM=32 and hidden_dim=256, this adds ~16K params (vs 8K for concat).
+
+    Input/output contract: identical to TSControlFeatGNNSideModel.
+    """
+
+    _REGION_SCALAR_DIM = 42
+    _SIDE_SCALAR_IDX = 10
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.influence_encoder_embed = ControlFeatGNNEncoder()
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+
+        # FiLM: side embedding projects to gamma and beta for trunk modulation
+        self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
+        self.film_gamma = nn.Linear(SIDE_EMBED_DIM, hidden_dim)
+        self.film_beta = nn.Linear(SIDE_EMBED_DIM, hidden_dim)
+
+        # Trunk uses TRUNK_IN (no extra SIDE_EMBED_DIM since FiLM is post-proj)
+        self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+
+        self.value_branch_ussr = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_ussr = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+        self.value_branch_us = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_us = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
+        # Initialize FiLM to identity: gamma=1, beta=0
+        nn.init.zeros_(self.film_gamma.weight)
+        nn.init.ones_(self.film_gamma.bias)
+        nn.init.zeros_(self.film_beta.weight)
+        nn.init.zeros_(self.film_beta.bias)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        h_inf_embed, region_scalars = self.influence_encoder_embed(influence)
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + h_inf_embed
+
+        h_card = torch.relu(self.card_encoder(cards))
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+
+        side_idx = scalars[:, self._SIDE_SCALAR_IDX].long()
+        h_side = self.side_embed(side_idx)  # (B, SIDE_EMBED_DIM)
+
+        # FiLM conditioning: modulate trunk activations feature-wise by side
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        gamma = self.film_gamma(h_side)  # (B, hidden_dim)
+        beta = self.film_beta(h_side)    # (B, hidden_dim)
+        trunk_base = gamma * trunk_base + beta
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(
+            hidden.shape[0], 4, 86
+        )
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+        small_choice_logits = self.small_choice_head(hidden)
+
+        v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
+        v_us = torch.tanh(self.value_head_us(torch.relu(self.value_branch_us(hidden))))
+        is_us = side_idx.unsqueeze(1).float()
+        value = (1.0 - is_us) * v_ussr + is_us * v_us
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+            "small_choice_logits": small_choice_logits,
+        }
+
+
+class TSCountryAttnFiLMModel(nn.Module):
+    """TSCountryAttnSideModel with FiLM conditioning instead of side-embed concatenation.
+
+    Same as TSControlFeatGNNFiLMModel but uses CountryAttnEncoder (self-attention)
+    instead of ControlFeatGNNEncoder (graph message passing).
+
+    Input/output contract: identical to TSCountryAttnSideModel.
+    """
+
+    _REGION_SCALAR_DIM = 42
+    _SIDE_SCALAR_IDX = 10
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.influence_encoder_embed = CountryAttnEncoder()
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.region_encoder = ControlFeatGNNEncoder()
+        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+
+        self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
+        self.film_gamma = nn.Linear(SIDE_EMBED_DIM, hidden_dim)
+        self.film_beta = nn.Linear(SIDE_EMBED_DIM, hidden_dim)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+
+        self.value_branch_ussr = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_ussr = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+        self.value_branch_us = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_us = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
+        # Initialize FiLM to identity: gamma=1, beta=0
+        nn.init.zeros_(self.film_gamma.weight)
+        nn.init.ones_(self.film_gamma.bias)
+        nn.init.zeros_(self.film_beta.weight)
+        nn.init.zeros_(self.film_beta.bias)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + self.influence_encoder_embed(influence)
+        h_card = torch.relu(self.card_encoder(cards))
+        _, region_scalars = self.region_encoder(influence)
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+
+        side_idx = scalars[:, self._SIDE_SCALAR_IDX].long()
+        h_side = self.side_embed(side_idx)
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        gamma = self.film_gamma(h_side)
+        beta = self.film_beta(h_side)
+        trunk_base = gamma * trunk_base + beta
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(hidden.shape[0], 4, 86)
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+        small_choice_logits = self.small_choice_head(hidden)
+
+        v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
+        v_us = torch.tanh(self.value_head_us(torch.relu(self.value_branch_us(hidden))))
+        is_us = side_idx.unsqueeze(1).float()
+        value = (1.0 - is_us) * v_ussr + is_us * v_us
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+            "small_choice_logits": small_choice_logits,
+        }
+
+
 class TSCountryAttnSidePolicyModel(nn.Module):
     """Country-attention model with per-side policy heads.
 

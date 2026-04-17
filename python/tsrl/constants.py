@@ -32,9 +32,11 @@ class _LazyModelRegistry(dict[str, type]):
         from tsrl.policies.model import (
             TSBaselineModel,
             TSCardEmbedModel,
+            TSControlFeatGNNFiLMModel,
             TSControlFeatGNNModel,
             TSControlFeatGNNSideModel,
             TSControlFeatModel,
+            TSCountryAttnFiLMModel,
             TSCountryAttnModel,
             TSCountryAttnSideModel,
             TSCountryAttnSidePolicyModel,
@@ -54,11 +56,13 @@ class _LazyModelRegistry(dict[str, type]):
                 "country_attn": TSCountryAttnModel,
                 "country_attn_side": TSCountryAttnSideModel,
                 "country_attn_side_policy": TSCountryAttnSidePolicyModel,
+                "country_attn_film": TSCountryAttnFiLMModel,
                 "direct_country": TSDirectCountryModel,
                 "marginal_value": TSMarginalValueModel,
                 "control_feat": TSControlFeatModel,
                 "control_feat_gnn": TSControlFeatGNNModel,
                 "control_feat_gnn_side": TSControlFeatGNNSideModel,
+                "control_feat_gnn_film": TSControlFeatGNNFiLMModel,
             },
         )
 
