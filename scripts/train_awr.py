@@ -98,7 +98,24 @@ class AWRDataset(Dataset):
         self.country_lengths = torch.from_numpy(ct_lengths)
 
         # Values and advantages
-        self.advantage = torch.from_numpy(t.column("advantage").to_numpy().astype(np.float32))
+        advantage_raw = t.column("advantage").to_numpy().astype(np.float32)
+
+        # Per-model advantage normalization: normalize within each model's data
+        # so that weaker models (with noisier value heads) don't dominate the weights
+        if "model_name" in t.schema.names:
+            model_names = t.column("model_name").to_pylist()
+            unique_models = set(model_names)
+            model_names_arr = np.array(model_names)
+            advantage_normed = advantage_raw.copy()
+            for m in unique_models:
+                mask = model_names_arr == m
+                vals = advantage_raw[mask]
+                mu, sigma = vals.mean(), vals.std()
+                advantage_normed[mask] = (vals - mu) / (sigma + 1e-8)
+            advantage_raw = advantage_normed
+            print(f"  Per-model advantage normalization: {len(unique_models)} models")
+
+        self.advantage = torch.from_numpy(advantage_raw)
         self.returns = torch.from_numpy(t.column("returns").to_numpy().astype(np.float32))
         self.value = torch.from_numpy(t.column("value").to_numpy().astype(np.float32))
         self.side_int = torch.from_numpy(t.column("side_int").to_numpy().astype(np.int64))
@@ -170,7 +187,8 @@ def compute_masked_log_prob(
     masked_country = masked_country / (masked_country.sum(dim=-1, keepdim=True) + 1e-10)
     country_lp = torch.log(masked_country + 1e-10)
 
-    # Sum log-probs over country targets (multi-point allocation)
+    # Average log-probs over country targets (macro-action weighting)
+    # Dividing by K prevents multi-point placements from dominating the loss
     max_T = country_targets.shape[1]
     country_log_prob = torch.zeros(B, device=card_logits.device)
     for t in range(max_T):
@@ -180,6 +198,7 @@ def compute_masked_log_prob(
         targets_t = country_targets[:, t].clamp(0, NUM_COUNTRIES - 1)
         lp_t = country_lp.gather(1, targets_t.unsqueeze(1)).squeeze(1)
         country_log_prob = country_log_prob + lp_t * active.float()
+    country_log_prob = country_log_prob / country_lengths.clamp(min=1).float()
 
     return card_log_prob + mode_log_prob + country_log_prob
 
@@ -214,6 +233,7 @@ def train_epoch(
     device: str,
     tau: float = 1.0,
     vf_coef: float = 0.5,
+    crr_filter: bool = False,
 ) -> dict[str, float]:
     """One epoch of AWR training. Returns metrics dict."""
     model.train()
@@ -239,6 +259,24 @@ def train_epoch(
         country_lengths = batch["country_lengths"].to(device)
         advantages = batch["advantage"].to(device)
         returns = batch["returns"].to(device)
+
+        # CRR-lite: filter to positive-advantage examples only
+        if crr_filter:
+            pos_mask = advantages > 0
+            if pos_mask.sum() < 2:
+                continue
+            inf = inf[pos_mask]
+            cards = cards[pos_mask]
+            scalars = scalars[pos_mask]
+            card_mask = card_mask[pos_mask]
+            mode_mask = mode_mask[pos_mask]
+            country_mask = country_mask[pos_mask]
+            card_idx = card_idx[pos_mask]
+            mode_idx = mode_idx[pos_mask]
+            country_targets = country_targets[pos_mask]
+            country_lengths = country_lengths[pos_mask]
+            advantages = advantages[pos_mask]
+            returns = returns[pos_mask]
 
         outputs = model(inf, cards, scalars)
         card_logits = outputs["card_logits"]
@@ -420,6 +458,8 @@ def main() -> None:
     parser.add_argument("--out-dir", default=None, help="Save checkpoint to this directory")
     parser.add_argument("--wandb", action="store_true", help="Log to W&B")
     parser.add_argument("--wandb-project", default="twilight-struggle-ai", help="W&B project")
+    parser.add_argument("--crr-filter", action="store_true",
+                        help="CRR-lite: train only on positive-advantage examples")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -494,7 +534,8 @@ def main() -> None:
     for epoch in range(args.epochs):
         t_ep = time.time()
         train_metrics = train_epoch(model, train_loader, optimizer, device,
-                                    tau=args.tau, vf_coef=args.vf_coef)
+                                    tau=args.tau, vf_coef=args.vf_coef,
+                                    crr_filter=args.crr_filter)
         val_metrics = eval_epoch(model, val_loader, device, tau=args.tau)
 
         elapsed = time.time() - t_ep

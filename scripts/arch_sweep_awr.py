@@ -40,6 +40,7 @@ def run_awr_eval(
     seed: int = 42,
     device: str = "cuda",
     max_rows: int = 0,
+    crr_filter: bool = False,
 ) -> dict:
     """Run AWR evaluation for a single architecture. Returns metrics dict."""
     # Import here to share dataset across calls
@@ -85,7 +86,7 @@ def run_awr_eval(
 
     for epoch in range(epochs):
         train_metrics = train_epoch(model, train_loader, optimizer, device,
-                                    tau=tau, vf_coef=vf_coef)
+                                    tau=tau, vf_coef=vf_coef, crr_filter=crr_filter)
         val_metrics = eval_epoch(model, val_loader, device, tau=tau)
 
         if val_metrics["val_policy_loss"] < best_val_loss:
@@ -118,78 +119,132 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=5, help="Training epochs per arch")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
     parser.add_argument("--batch-size", type=int, default=2048, help="Batch size")
-    parser.add_argument("--tau", type=float, default=1.0, help="AWR temperature")
+    # Multi-tau support: sweep over multiple temperatures, tau=1e6 approximates uniform BC
+    parser.add_argument("--taus", nargs="+", type=float, default=[1.0],
+                        help="AWR temperatures to sweep (default [1.0]; use 0.5 1.0 2.0 1e6 for full sweep)")
+    parser.add_argument("--tau", type=float, default=None,
+                        help="Single AWR temperature (deprecated, use --taus)")
+    parser.add_argument("--seeds", nargs="+", type=int, default=[42],
+                        help="Random seeds (results averaged across seeds)")
+    parser.add_argument("--crr-filter", action="store_true",
+                        help="CRR-lite: train only on positive-advantage examples")
     parser.add_argument("--max-rows", type=int, default=0, help="Max rows (0=all)")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--device", default="cuda", help="Device")
     parser.add_argument("--out", default=None, help="Save results JSON to this path")
     args = parser.parse_args()
+
+    # Backward compat: --tau overrides --taus
+    if args.tau is not None:
+        args.taus = [args.tau]
 
     if args.device == "cuda" and not torch.cuda.is_available():
         print("CUDA not available, using CPU")
         args.device = "cpu"
 
-    # Build experiment grid
-    experiments = []
+    # Build experiment grid: arch × hidden_dim × tau × seed
+    base_experiments = []
     for arch in args.archs:
         if arch not in MODEL_REGISTRY:
             print(f"WARNING: {arch} not in MODEL_REGISTRY, skipping")
             continue
         for hdim in args.hidden_dims:
-            experiments.append((arch, hdim))
+            base_experiments.append((arch, hdim))
 
-    if not experiments:
+    if not base_experiments:
         print("ERROR: no valid architectures specified")
         sys.exit(1)
 
-    print(f"=== AWR Architecture Sweep ===")
+    total_runs = len(base_experiments) * len(args.taus) * len(args.seeds)
+    crr_label = " [CRR-lite]" if args.crr_filter else ""
+    print(f"=== AWR Architecture Sweep{crr_label} ===")
     print(f"Data: {args.data}")
-    print(f"Experiments: {len(experiments)}")
-    print(f"Epochs: {args.epochs}, LR: {args.lr}, tau: {args.tau}")
+    print(f"Archs×dims: {len(base_experiments)}, Taus: {args.taus}, Seeds: {args.seeds}")
+    print(f"Total runs: {total_runs}")
+    print(f"Epochs: {args.epochs}, LR: {args.lr}")
     print()
 
-    results = []
-    for i, (arch, hdim) in enumerate(experiments):
-        tag = f"{arch}_h{hdim}"
-        print(f"[{i+1}/{len(experiments)}] {tag}...", flush=True)
+    all_results = []
+    run_idx = 0
+    for arch, hdim in base_experiments:
+        for tau in args.taus:
+            seed_metrics = []
+            for seed in args.seeds:
+                run_idx += 1
+                tag = f"{arch}_h{hdim}_tau{tau}_s{seed}"
+                print(f"[{run_idx}/{total_runs}] {tag}...", flush=True)
 
-        metrics = run_awr_eval(
-            data_path=args.data,
-            model_type=arch,
-            hidden_dim=hdim,
-            checkpoint=args.checkpoint,
-            epochs=args.epochs,
-            lr=args.lr,
-            batch_size=args.batch_size,
-            tau=args.tau,
-            seed=args.seed,
-            device=args.device,
-            max_rows=args.max_rows,
-        )
-        results.append(metrics)
+                metrics = run_awr_eval(
+                    data_path=args.data,
+                    model_type=arch,
+                    hidden_dim=hdim,
+                    checkpoint=args.checkpoint,
+                    epochs=args.epochs,
+                    lr=args.lr,
+                    batch_size=args.batch_size,
+                    tau=tau,
+                    seed=seed,
+                    device=args.device,
+                    max_rows=args.max_rows,
+                    crr_filter=args.crr_filter,
+                )
+                metrics["tau"] = tau
+                metrics["seed"] = seed
+                seed_metrics.append(metrics)
+                all_results.append(metrics)
 
-        print(f"  → card={metrics.get('val_card_acc', 0):.3f} "
-              f"adv_card={metrics.get('val_adv_card_acc', 0):.3f} "
-              f"pl={metrics.get('val_policy_loss', 0):.3f} "
-              f"vl={metrics.get('val_value_loss', 0):.3f} "
-              f"({metrics['time_s']:.0f}s, {metrics['params']:,} params)")
+                print(f"  → card={metrics.get('val_card_acc', 0):.3f} "
+                      f"adv_card={metrics.get('val_adv_card_acc', 0):.3f} "
+                      f"pl={metrics.get('val_policy_loss', 0):.3f} "
+                      f"({metrics['time_s']:.0f}s)")
 
-    # Ranked table
-    print(f"\n{'='*80}")
-    print(f"{'Architecture':<35} {'Params':>8} {'Card%':>6} {'AdvCard%':>8} "
-          f"{'PolicyL':>8} {'ValueL':>7} {'Time':>5}")
-    print(f"{'='*80}")
+            # Aggregate across seeds for this arch×tau
+            if len(seed_metrics) > 1:
+                avg_adv = np.mean([m.get("val_adv_card_acc", 0) for m in seed_metrics])
+                std_adv = np.std([m.get("val_adv_card_acc", 0) for m in seed_metrics])
+                print(f"  → {arch}_h{hdim} tau={tau}: adv_card={avg_adv:.3f} ± {std_adv:.3f}")
 
-    # Sort by advantage-weighted card accuracy (best metric for play strength proxy)
-    ranked = sorted(results, key=lambda r: r.get("val_adv_card_acc", 0), reverse=True)
+    # Aggregate per arch×dim×tau: mean across seeds
+    from collections import defaultdict
+    agg = defaultdict(list)
+    for r in all_results:
+        key = (r["model_type"], r["hidden_dim"], r.get("tau", 1.0))
+        agg[key].append(r)
+
+    agg_results = []
+    for key, runs in agg.items():
+        arch, hdim, tau = key
+        entry = {
+            "model_type": arch,
+            "hidden_dim": hdim,
+            "tau": tau,
+            "params": runs[0]["params"],
+            "n_seeds": len(runs),
+        }
+        for metric in ["val_adv_card_acc", "val_card_acc", "val_policy_loss", "val_value_loss", "time_s"]:
+            vals = [r.get(metric, 0) for r in runs]
+            entry[metric] = float(np.mean(vals))
+            entry[f"{metric}_std"] = float(np.std(vals))
+        agg_results.append(entry)
+
+    # Ranked table (sorted by val_adv_card_acc across taus within each arch)
+    print(f"\n{'='*90}")
+    print(f"{'Architecture':<35} {'tau':>6} {'Seeds':>5} {'Card%':>6} {'AdvCard%':>9} {'AdvCard±':>8} {'PolicyL':>8}")
+    print(f"{'='*90}")
+
+    ranked = sorted(agg_results, key=lambda r: r.get("val_adv_card_acc", 0), reverse=True)
     for r in ranked:
         tag = f"{r['model_type']}_h{r['hidden_dim']}"
-        print(f"{tag:<35} {r['params']:>8,} {r.get('val_card_acc',0):>6.1%} "
-              f"{r.get('val_adv_card_acc',0):>8.1%} "
-              f"{r.get('val_policy_loss',0):>8.3f} {r.get('val_value_loss',0):>7.4f} "
-              f"{r['time_s']:>4.0f}s")
+        tau_str = f"{r['tau']:.3g}"
+        print(f"{tag:<35} {tau_str:>6} {r['n_seeds']:>5} {r.get('val_card_acc',0):>6.1%} "
+              f"{r.get('val_adv_card_acc',0):>9.1%} "
+              f"±{r.get('val_adv_card_acc_std',0):>6.3f} "
+              f"{r.get('val_policy_loss',0):>8.3f}")
 
-    print(f"{'='*80}")
+    print(f"{'='*90}")
+    print(f"\nTop-3 by val_adv_card_acc:")
+    for r in ranked[:3]:
+        tag = f"{r['model_type']}_h{r['hidden_dim']}_tau{r['tau']:.3g}"
+        print(f"  {tag}: {r.get('val_adv_card_acc',0):.3%}")
 
     # Save results
     if args.out:
@@ -197,7 +252,7 @@ def main() -> None:
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, "w") as f:
-            json.dump(results, f, indent=2)
+            json.dump({"runs": all_results, "aggregated": agg_results}, f, indent=2)
         print(f"\nResults saved to {out_path}")
 
 
