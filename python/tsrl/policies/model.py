@@ -1682,3 +1682,134 @@ class TSCountryAttnSideModel(nn.Module):
             "value": value,
             "small_choice_logits": small_choice_logits,
         }
+
+
+class TSCountryAttnSidePolicyModel(nn.Module):
+    """Country-attention model with per-side policy heads.
+
+    Same trunk/encoder as TSCountryAttnSideModel, but duplicates all policy
+    heads (card, mode, strategy, small_choice) per side. This eliminates
+    gradient interference between USSR and US policy learning while keeping
+    a shared representation trunk.
+
+    Value heads are already per-side (inherited from TSCountryAttnSideModel).
+    """
+
+    _REGION_SCALAR_DIM = 42
+    _SIDE_SCALAR_IDX = 10
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__()
+
+        # Shared encoders (identical to TSCountryAttnSideModel)
+        self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.influence_encoder_embed = CountryAttnEncoder()
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.region_encoder = ControlFeatGNNEncoder()
+        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+        self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
+
+        # Shared trunk
+        self.trunk_proj = nn.Linear(TRUNK_IN + SIDE_EMBED_DIM, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        # Shared policy heads (kept for checkpoint warm-start compatibility)
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
+        # Per-side policy heads (USSR)
+        self.card_head_ussr = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head_ussr = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads_ussr = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer_ussr = nn.Linear(hidden_dim, NUM_STRATEGIES)
+        self.small_choice_head_ussr = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
+        # Per-side policy heads (US)
+        self.card_head_us = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head_us = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads_us = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer_us = nn.Linear(hidden_dim, NUM_STRATEGIES)
+        self.small_choice_head_us = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
+        # Per-side value heads
+        self.value_branch_ussr = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_ussr = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+        self.value_branch_us = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_us = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+    def _init_from_shared(self) -> None:
+        """Copy shared head weights to per-side heads for warm-start."""
+        for suffix in ("ussr", "us"):
+            for name in ("card_head", "mode_head", "strategy_heads", "strategy_mixer", "small_choice_head"):
+                src = getattr(self, name)
+                dst = getattr(self, f"{name}_{suffix}")
+                dst.weight.data.copy_(src.weight.data)
+                dst.bias.data.copy_(src.bias.data)
+
+    def _compute_country_logits(
+        self, hidden: torch.Tensor, strategy_heads: nn.Linear, strategy_mixer: nn.Linear
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        country_strategy_logits = strategy_heads(hidden).view(hidden.shape[0], 4, 86)
+        strategy_logits = strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+        return country_logits, country_strategy_logits, strategy_logits
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        # Shared trunk (identical to TSCountryAttnSideModel)
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + self.influence_encoder_embed(influence)
+        h_card = torch.relu(self.card_encoder(cards))
+        _, region_scalars = self.region_encoder(influence)
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+        side_idx = scalars[:, self._SIDE_SCALAR_IDX].long()
+        h_side = self.side_embed(side_idx)
+        trunk_input = torch.cat([h_inf, h_card, h_scalar, h_side], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        # Per-side policy heads
+        is_us = side_idx.unsqueeze(1).float()
+
+        card_logits = (1.0 - is_us) * self.card_head_ussr(hidden) + is_us * self.card_head_us(hidden)
+        mode_logits = (1.0 - is_us) * self.mode_head_ussr(hidden) + is_us * self.mode_head_us(hidden)
+        small_choice_logits = (
+            (1.0 - is_us) * self.small_choice_head_ussr(hidden)
+            + is_us * self.small_choice_head_us(hidden)
+        )
+
+        cl_ussr, csl_ussr, sl_ussr = self._compute_country_logits(
+            hidden, self.strategy_heads_ussr, self.strategy_mixer_ussr
+        )
+        cl_us, csl_us, sl_us = self._compute_country_logits(
+            hidden, self.strategy_heads_us, self.strategy_mixer_us
+        )
+        country_logits = (1.0 - is_us) * cl_ussr + is_us * cl_us
+        country_strategy_logits = (1.0 - is_us.unsqueeze(2)) * csl_ussr + is_us.unsqueeze(2) * csl_us
+        strategy_logits = (1.0 - is_us) * sl_ussr + is_us * sl_us
+
+        # Per-side value heads
+        v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
+        v_us = torch.tanh(self.value_head_us(torch.relu(self.value_branch_us(hidden))))
+        value = (1.0 - is_us) * v_ussr + is_us * v_us
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+            "small_choice_logits": small_choice_logits,
+        }
