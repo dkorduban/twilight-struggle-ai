@@ -1370,11 +1370,16 @@ def collect_rollout_league_batched(
     reward_shaping: bool = False,
     reward_alpha: float = 0.5,
     heuristic_floor: float = 0.0,
+    side: str = "both",
 ) -> tuple[list[Step], dict[str, float]]:
     """Collect rollout steps against K opponents in parallel (ThreadPoolExecutor).
 
     Returns (steps, ucb_metrics) where ucb_metrics maps "ucb/{key}" to the UCB
     weight for each fixture/opponent in the WR table. Suitable for W&B logging.
+
+    side: "ussr"/"us"/"both". When not "both", only the matching pool is used
+    and self-slot (if enabled) is restricted to that side. This allows league
+    training with --side for capacity tests.
 
     Exports the model once, splits n_games evenly across K opponents, and runs
     each opponent's batch in a separate thread. The C++ rollout functions release
@@ -1415,6 +1420,7 @@ def collect_rollout_league_batched(
 
     # Two independent opponent pools — USSR and US — each weighted by per-side PFSP.
     # k_per_side opponents per pool; self-play slot is always added separately.
+    # When side != "both", only the matching pool is used (for capacity tests).
     k_per_side = max(1, (mix_k - (1 if self_slot else 0)) // 2)
     _common_kwargs = dict(
         recency_tau=recency_tau,
@@ -1427,11 +1433,20 @@ def collect_rollout_league_batched(
         pfsp_exponent=pfsp_exponent,
         heuristic_floor=heuristic_floor,
     )
-    ussr_opps = sample_K_league_opponents(league_dir, k_per_side, side="ussr", fixtures=_ussr_fixtures, **_common_kwargs)
-    us_opps   = sample_K_league_opponents(league_dir, k_per_side, side="us",   fixtures=_us_fixtures,   **_common_kwargs)
+    use_ussr_pool = side in ("both", "ussr")
+    use_us_pool = side in ("both", "us")
+    if use_ussr_pool:
+        ussr_opps = sample_K_league_opponents(league_dir, k_per_side, side="ussr", fixtures=_ussr_fixtures, **_common_kwargs)
+    else:
+        ussr_opps = []
+    if use_us_pool:
+        us_opps = sample_K_league_opponents(league_dir, k_per_side, side="us", fixtures=_us_fixtures, **_common_kwargs)
+    else:
+        us_opps = []
 
     # Each slot gets an equal share of n_games; self gets both sides, pools get one side each.
-    total_slots = (1 if self_slot else 0) + k_per_side * 2
+    n_pools = (1 if use_ussr_pool else 0) + (1 if use_us_pool else 0)
+    total_slots = (1 if self_slot else 0) + k_per_side * n_pools
     games_per_slot = max(2, n_games // max(total_slots, 1))
     games_per_slot = games_per_slot if games_per_slot % 2 == 0 else games_per_slot - 1
 
@@ -1488,10 +1503,12 @@ def collect_rollout_league_batched(
 
         # Build task list: (slot_index, opp, collect_side)
         # collect_side: "ussr"/"us" for pool opponents (single-side); "both" for self-slot.
+        # When side != "both", self-slot is restricted to that side.
         tasks: list[tuple[int, Optional[str], str]] = []
         slot_idx = 0
         if self_slot:
-            tasks.append((slot_idx, script_path, "both"))
+            self_collect_side = side if side != "both" else "both"
+            tasks.append((slot_idx, script_path, self_collect_side))
             slot_idx += 1
         for opp in ussr_opps:
             tasks.append((slot_idx, opp, "ussr"))
@@ -3296,6 +3313,7 @@ def main() -> None:
                 reward_shaping=args.reward_shaping,
                 reward_alpha=args.reward_alpha,
                 heuristic_floor=args.heuristic_floor,
+                side=args.side,
             )
             # Full PFSP pool weight dump at milestones for visibility
             if _is_milestone(iteration) and args.league:
