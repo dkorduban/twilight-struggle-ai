@@ -54,8 +54,12 @@ COMMAND_HELP = {
     "/board": "show region control summary",
     "/status": "alias for /board",
     "/hand": "show your current hand",
-    "/hand set Card1 Card2..": "set your hand (external mode)",
-    "/draw Card1 Card2..": "add drawn cards to hand (external mode)",
+    "/hand set Card1 Card2..": "set your full hand (external mode)",
+    "/hand add Card1 Card2..": "add cards to hand (external mode)",
+    "/hand remove Card1 Card2..": "remove cards from hand (external mode)",
+    "/draw Card1 Card2..": "alias for /hand add (external mode)",
+    "/place ussr|us Country [=N]": "set influence to N (external mode)",
+    "/add ussr|us Country [N]": "add N influence (default: 1) (external mode)",
     "/legal": "show your legal actions",
     "/suggest": "re-show model suggestions",
     "/s": "alias for /suggest",
@@ -947,24 +951,49 @@ def handle_command(
         show_board(session)
         return True
     if command == "/hand":
-        if arg and arg.lower() == "set" and len(parts) > 2:
+        if arg and len(parts) > 2 and arg.lower() in ("set", "add", "remove"):
             if not session.external:
                 print("Hand override only available in --external mode.")
                 return True
+            subcommand = arg.lower()
             card_tokens = parts[2:]
             try:
                 card_ids = [resolve_card(t, set(CARDS)) for t in card_tokens]
             except ActionParseError as exc:
                 print(str(exc))
                 return True
-            session.set_hand(card_ids)
-            names = [CARDS[c].name for c in card_ids]
-            print(f"Hand set: {', '.join(names)}")
-            logger.log("hand_set", cards=card_ids)
+            if subcommand == "set":
+                session.set_hand(card_ids)
+                names = [CARDS[c].name for c in card_ids]
+                print(f"Hand set: {', '.join(names)}")
+                logger.log("hand_set", cards=card_ids)
+            elif subcommand == "add":
+                existing = list(session._external_hand)
+                session.set_hand(existing + card_ids)
+                names = [CARDS[c].name for c in card_ids]
+                print(f"Added: {', '.join(names)}")
+                print(f"Hand now: {format_hand(session)}")
+                logger.log("hand_add", cards=card_ids)
+            elif subcommand == "remove":
+                existing = set(session._external_hand)
+                removed = []
+                for cid in card_ids:
+                    if cid in existing:
+                        existing.discard(cid)
+                        removed.append(cid)
+                    else:
+                        print(f"  {CARDS[cid].name} not in hand, skipping")
+                session.set_hand(list(existing))
+                if removed:
+                    names = [CARDS[c].name for c in removed]
+                    print(f"Removed: {', '.join(names)}")
+                print(f"Hand now: {format_hand(session)}")
+                logger.log("hand_remove", cards=removed)
             return True
         show_hand(session)
         return True
     if command == "/draw":
+        # Alias for /hand add
         if not session.external:
             print("/draw only available in --external mode.")
             return True
@@ -982,7 +1011,52 @@ def handle_command(
         names = [CARDS[c].name for c in card_ids]
         print(f"Drew: {', '.join(names)}")
         print(f"Hand now: {format_hand(session)}")
-        logger.log("draw", cards=card_ids)
+        logger.log("hand_add", cards=card_ids)
+        return True
+    if command in ("/place", "/add"):
+        if not session.external:
+            print(f"{command} only available in --external mode.")
+            return True
+        if len(parts) < 3:
+            if command == "/place":
+                print("Usage: /place ussr|us Country N  (set influence to N)")
+            else:
+                print("Usage: /add ussr|us Country [N]  (add N influence, default 1)")
+            return True
+        side_str = parts[1].lower()
+        if side_str not in ("ussr", "us"):
+            print(f"Unknown side '{parts[1]}'. Use 'ussr' or 'us'.")
+            return True
+        place_side = Side.USSR if side_str == "ussr" else Side.US
+        # Last token might be a number (amount)
+        amount_str = parts[-1]
+        if amount_str.isdigit() or (amount_str.startswith("-") and amount_str[1:].isdigit()):
+            amount = int(amount_str)
+            country_tokens = parts[2:-1]
+        else:
+            amount = 1 if command == "/add" else None
+            country_tokens = parts[2:]
+        if command == "/place" and amount is None:
+            print("Usage: /place ussr|us Country N  (N is required)")
+            return True
+        if not country_tokens:
+            print("Missing country name.")
+            return True
+        try:
+            country_ids = resolve_country_tokens(country_tokens)
+        except ActionParseError as exc:
+            print(str(exc))
+            return True
+        absolute = command == "/place"
+        for cid in country_ids:
+            if absolute:
+                session.gs.pub.influence[(place_side, cid)] = max(0, amount)
+            else:
+                current = session.gs.pub.influence.get((place_side, cid), 0)
+                session.gs.pub.influence[(place_side, cid)] = max(0, current + amount)
+            new_val = session.gs.pub.influence.get((place_side, cid), 0)
+            print(f"  {side_str.upper()} in {COUNTRIES[cid].name}: {new_val}")
+        logger.log(command.lstrip("/"), side=side_str, countries=[cid for cid in country_ids], amount=amount, absolute=absolute)
         return True
     if command == "/legal":
         show_legal(session)
