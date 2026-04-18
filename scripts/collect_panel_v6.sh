@@ -1,10 +1,13 @@
 #!/bin/bash
 # Collect AWR panel v6: {ussr_only_v5, us_only_v5, v44, v55, v56, v54, v20} + heuristic + round-robin.
 # Uses distinct model names to fix the ppo_best_scripted naming collision from panel v5.
-# Output: data/awr_eval/awr_panel_v6.parquet (Parquet zstd)
+# Panel: 7 models + heuristic = 8 players → 8 choose 2 = 28 pairs:
+#   - 7 model-vs-heuristic pairs (tagged as {model}_vs_heuristic, 200 games each)
+#   - 21 model-vs-model pairs (tagged as {a}_vs_{b}, 100 games each)
+# Output: data/awr_eval/awr_panel_v6b.parquet (Parquet zstd, corrected tags)
 set -e
 
-OUT="data/awr_eval/awr_panel_v6.parquet"
+OUT="data/awr_eval/awr_panel_v6b.parquet"
 GAMES_VS_HEURISTIC=200   # per model (split 50/50 USSR/US)
 GAMES_PER_PAIR=100        # per ordered pair in round-robin
 POOL=64
@@ -39,7 +42,9 @@ PYTHONUNBUFFERED=1 PYTHONPATH=python:build-ninja/bindings nice -n 15 uv run pyth
     --pool-size "$POOL" \
     --seed "$SEED" \
     --out "$OUT" \
-    2>&1 | tee results/capacity_test/collect_panel_v6.log
+    2>&1 | tee results/capacity_test/collect_panel_v6b.log
 
 echo ""
 echo "[$(date -u)] Done. Written to $OUT"
+echo "[$(date -u)] Note: panel v6b already exists with corrected tags from panel v6."
+echo "  If re-collecting, verify 28 unique model_names (7 *_vs_heuristic + 21 *_vs_*)"

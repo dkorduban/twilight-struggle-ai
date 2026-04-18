@@ -14,31 +14,23 @@ until [ -f "$P1_JSON" ]; do sleep 30; done
 
 echo "[$(date -u)] Phase 1 complete. Analyzing results..." | tee -a "$LOG"
 
-# Analyze and get top-3 architectures
-TOP3=$(PYTHONPATH=python uv run python scripts/analyze_awr_results.py "$P1_JSON" --top 3 --emit-phase2-cmd 2>&1)
-echo "$TOP3" | tee -a "$LOG"
+# Print Phase 1 analysis for reference
+echo "[$(date -u)] Phase 1 analysis:" | tee -a "$LOG"
+PYTHONPATH=python uv run python scripts/analyze_awr_results.py "$P1_JSON" --top 5 2>&1 | tee -a "$LOG"
 
-# Extract top-3 arch names from the analysis output
-ARCH1=$(echo "$TOP3" | grep "^  1\." | grep -oP 'control_feat_gnn_\S+|country_attn_\S+|baseline|full_embed|direct_country|control_feat\b')
-ARCH2=$(echo "$TOP3" | grep "^  2\." | grep -oP 'control_feat_gnn_\S+|country_attn_\S+|baseline|full_embed|direct_country|control_feat\b')
-ARCH3=$(echo "$TOP3" | grep "^  3\." | grep -oP 'control_feat_gnn_\S+|country_attn_\S+|baseline|full_embed|direct_country|control_feat\b')
-
-# Fallback defaults
-ARCH1="${ARCH1:-control_feat_gnn_film}"
-ARCH2="${ARCH2:-country_attn_film}"
-ARCH3="${ARCH3:-control_feat_gnn_side}"
-
-echo "[$(date -u)] Top-3: $ARCH1, $ARCH2, $ARCH3" | tee -a "$LOG"
-
-# Check if Phase 2 fits in time (estimate 2 seeds x 4 archs x 2 taus x 146s = ~23 min)
-echo "[$(date -u)] Launching Phase 2: top-3 + card_attn (2 seeds, 2 taus)" | tee -a "$LOG"
+# Phase 2 fixed architecture list (per Opus analysis 2026-04-17):
+# - GNN models are 2.5x faster than attn for statistically identical accuracy
+# - FiLM adds nothing measurable over side conditioning
+# - card_attn is the new model to validate
+# - country_attn_side kept as 1 attn slot for comparison to current PPO baseline
+echo "[$(date -u)] Launching Phase 2: fixed archs [gnn_side, card_attn, country_attn_side, baseline] (3 seeds, 2 taus)" | tee -a "$LOG"
 
 PYTHONPATH=python nice -n 15 uv run python scripts/arch_sweep_awr.py \
   --data data/awr_eval/awr_panel_v5.parquet \
-  --archs "$ARCH1" "$ARCH2" "$ARCH3" control_feat_gnn_card_attn \
+  --archs control_feat_gnn_side control_feat_gnn_card_attn country_attn_side baseline \
   --hidden-dims 256 \
   --taus 0.5 1.0 \
-  --seeds 42 43 \
+  --seeds 42 43 44 \
   --epochs 5 \
   --device cuda \
   --out results/awr_sweep/panel_v5_phase2.json \
@@ -46,10 +38,30 @@ PYTHONPATH=python nice -n 15 uv run python scripts/arch_sweep_awr.py \
 
 echo "[$(date -u)] Phase 2 complete." | tee -a "$LOG"
 
-# Final analysis
-echo "[$(date -u)] Final results comparison:" | tee -a "$LOG"
+# Phase 2 analysis — identify winner
+echo "[$(date -u)] Phase 2 analysis:" | tee -a "$LOG"
 PYTHONPATH=python uv run python scripts/analyze_awr_results.py \
   results/awr_sweep/panel_v5_phase2.json \
   --top 3 2>&1 | tee -a "$LOG"
+
+# Phase 2b: hidden_dim=384 for best GNN arch
+# Test control_feat_gnn_side and control_feat_gnn_card_attn at 384 to check capacity
+echo "[$(date -u)] Phase 2b: hidden_dim=384 capacity test for top GNN archs (3 seeds, tau=1.0)" | tee -a "$LOG"
+PYTHONPATH=python nice -n 15 uv run python scripts/arch_sweep_awr.py \
+  --data data/awr_eval/awr_panel_v5.parquet \
+  --archs control_feat_gnn_side control_feat_gnn_card_attn \
+  --hidden-dims 256 384 \
+  --taus 1.0 \
+  --seeds 42 43 44 \
+  --epochs 5 \
+  --device cuda \
+  --out results/awr_sweep/panel_v5_hidden_dim.json \
+  2>&1 | tee -a "$LOG"
+
+echo "[$(date -u)] Phase 2b complete." | tee -a "$LOG"
+echo "[$(date -u)] hidden_dim comparison:" | tee -a "$LOG"
+PYTHONPATH=python uv run python scripts/analyze_awr_results.py \
+  results/awr_sweep/panel_v5_hidden_dim.json \
+  --top 4 2>&1 | tee -a "$LOG"
 
 echo "[$(date -u)] AWR evaluation chain complete. Check results for best architecture." | tee -a "$LOG"

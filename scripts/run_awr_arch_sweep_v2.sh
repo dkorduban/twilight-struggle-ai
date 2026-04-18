@@ -17,10 +17,14 @@ OUTDIR="results/awr_sweep/v2"
 LOG="$OUTDIR/sweep.log"
 RESULTS="$OUTDIR/results.txt"
 
-# Benchmark opponents
+# Full panel opponents (same models used for data collection)
+OPP_USSR_V5="results/capacity_test/ppo_ussr_only_v5/ppo_best_scripted.pt"
+OPP_US_V5="results/capacity_test/ppo_us_only_v5/ppo_best_scripted.pt"
+OPP_V44="data/checkpoints/scripted_for_elo/v44_scripted.pt"
+OPP_V55="data/checkpoints/scripted_for_elo/v55_scripted.pt"
 OPP_V56="data/checkpoints/scripted_for_elo/v56_scripted.pt"
-OPP_USSR="results/capacity_test/ppo_ussr_only_v5/ppo_best_scripted.pt"
-OPP_US="results/capacity_test/ppo_us_only_v5/ppo_best_scripted.pt"
+OPP_V54="data/checkpoints/scripted_for_elo/v54_scripted.pt"
+OPP_V20="data/checkpoints/scripted_for_elo/v20_scripted.pt"
 
 BENCH_GAMES=100
 BENCH_POOL=32
@@ -31,11 +35,11 @@ echo "[$(date -u)] AWR arch sweep v2: 60 epochs, benchmark included" | tee "$LOG
 echo "Data: $DATA" | tee -a "$LOG"
 echo "" | tee -a "$LOG"
 
-printf "%-45s %8s %8s %8s %9s %9s %9s\n" \
-    "Architecture" "val_adv" "best_ep" "vs_v56" "vs_ussr" "vs_us" "vs_heur" \
+printf "%-45s %8s %8s %8s %8s %8s %8s %8s %8s %8s\n" \
+    "Architecture" "val_adv" "ep" "vs_heur" "vs_ussr5" "vs_us5" "vs_v44" "vs_v55" "vs_v56" "vs_v54" \
     | tee "$RESULTS"
-printf "%-45s %8s %8s %8s %9s %9s %9s\n" \
-    "---------------------------------------------" "-------" "-------" "------" "-------" "-----" "-------" \
+printf "%-45s %8s %8s %8s %8s %8s %8s %8s %8s %8s\n" \
+    "---------------------------------------------" "-------" "--" "-------" "--------" "------" "------" "------" "------" "------" \
     | tee -a "$RESULTS"
 
 ARCHS=(
@@ -89,7 +93,7 @@ print(f\"{m.get('val_adv_card_acc', 0):.4f} {m.get('best_epoch', '?')}\")
         scripts/benchmark_awr_checkpoint.py \
         --checkpoint "$BEST_CKPT" \
         --scripted-out "$SCRIPTED" \
-        --vs "$OPP_V56" "$OPP_USSR" "$OPP_US" \
+        --vs "$OPP_USSR_V5" "$OPP_US_V5" "$OPP_V44" "$OPP_V55" "$OPP_V56" "$OPP_V54" "$OPP_V20" \
         --vs-heuristic \
         --n-games "$BENCH_GAMES" \
         --pool "$BENCH_POOL" \
@@ -97,14 +101,19 @@ print(f\"{m.get('val_adv_card_acc', 0):.4f} {m.get('best_epoch', '?')}\")
         2>&1)
     echo "$BENCH_OUT" | tee -a "$LOG"
 
-    # Parse benchmark results
-    VS_V56=$(echo "$BENCH_OUT" | grep "v56" | grep -oP "combined=\K[0-9.]+")
-    VS_USSR=$(echo "$BENCH_OUT" | grep "ussr_only" | grep -oP "combined=\K[0-9.]+")
-    VS_US=$(echo "$BENCH_OUT" | grep "us_only" | grep -oP "combined=\K[0-9.]+")
+    # Parse benchmark results (grep by model name suffix)
     VS_HEUR=$(echo "$BENCH_OUT" | grep "heuristic" | grep -oP "combined=\K[0-9.]+")
+    VS_USSR5=$(echo "$BENCH_OUT" | grep "ussr_only_v5" | grep -oP "combined=\K[0-9.]+")
+    VS_US5=$(echo "$BENCH_OUT" | grep "us_only_v5" | grep -oP "combined=\K[0-9.]+")
+    VS_V44=$(echo "$BENCH_OUT" | grep "v44_scripted" | grep -oP "combined=\K[0-9.]+")
+    VS_V55=$(echo "$BENCH_OUT" | grep "v55_scripted" | grep -oP "combined=\K[0-9.]+")
+    VS_V56=$(echo "$BENCH_OUT" | grep "v56_scripted" | grep -oP "combined=\K[0-9.]+")
+    VS_V54=$(echo "$BENCH_OUT" | grep "v54_scripted" | grep -oP "combined=\K[0-9.]+")
 
-    printf "%-45s %8s %8s %8s %9s %9s %9s\n" \
-        "$ARCH" "$VAL_ADV" "$BEST_EP" "${VS_V56:-N/A}" "${VS_USSR:-N/A}" "${VS_US:-N/A}" "${VS_HEUR:-N/A}" \
+    printf "%-45s %8s %8s %8s %8s %8s %8s %8s %8s %8s\n" \
+        "$ARCH" "$VAL_ADV" "$BEST_EP" \
+        "${VS_HEUR:-N/A}" "${VS_USSR5:-N/A}" "${VS_US5:-N/A}" \
+        "${VS_V44:-N/A}" "${VS_V55:-N/A}" "${VS_V56:-N/A}" "${VS_V54:-N/A}" \
         | tee -a "$RESULTS"
 done
 

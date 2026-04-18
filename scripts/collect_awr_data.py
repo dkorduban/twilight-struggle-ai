@@ -246,6 +246,7 @@ def collect_from_model(
     all_data = _empty_data()
     if model_name is None:
         model_name = Path(model_path).stem
+    model_name = f"{model_name}_vs_heuristic"
     games_per_side = n_games // 2
     boundaries = []
     total_steps = 0

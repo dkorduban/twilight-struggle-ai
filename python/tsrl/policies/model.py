@@ -1885,6 +1885,106 @@ class TSCountryAttnFiLMModel(nn.Module):
         }
 
 
+class TSCountryAttnFiLMNormalInitModel(TSCountryAttnFiLMModel):
+    """TSCountryAttnFiLMModel with N(0,1e-2) FiLM weight init instead of zeros.
+
+    Preserves the near-identity prior but eliminates the step-0 zero-gradient
+    singularity on side_embed that zero-init causes.
+    """
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__(dropout=dropout, hidden_dim=hidden_dim)
+        nn.init.normal_(self.film_gamma.weight, 0, 1e-2)
+        nn.init.ones_(self.film_gamma.bias)
+        nn.init.normal_(self.film_beta.weight, 0, 1e-2)
+        nn.init.zeros_(self.film_beta.bias)
+
+
+class TSCountryAttnFiLMZeroBetaBiasModel(TSCountryAttnFiLMModel):
+    """TSCountryAttnFiLMModel with film_beta bias removed (bias=False).
+
+    The beta bias is a side-invariant additive offset — downstream trunk layers
+    can absorb it anyway. Removing it reduces parameters by hidden_dim with no
+    expressiveness loss for side conditioning.
+    """
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__(dropout=dropout, hidden_dim=hidden_dim)
+        self.film_beta = nn.Linear(SIDE_EMBED_DIM, hidden_dim, bias=False)
+        nn.init.zeros_(self.film_beta.weight)
+
+
+class TSCountryAttnFiLMGatedModel(TSCountryAttnFiLMModel):
+    """TSCountryAttnFiLMModel with a learnable per-neuron gate (gated-residual FiLM).
+
+    Forward: trunk' = trunk + gate * (gamma * trunk + beta - trunk)
+    Gate initialized to sigmoid(-4) ≈ 0.018 so model starts near identity,
+    but side_embed receives gradient immediately (no cold-start).
+    """
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__(dropout=dropout, hidden_dim=hidden_dim)
+        self.film_gate = nn.Parameter(torch.full((hidden_dim,), -4.0))
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + self.influence_encoder_embed(influence)
+        h_card = torch.relu(self.card_encoder(cards))
+        _, region_scalars = self.region_encoder(influence)
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+
+        side_idx = scalars[:, self._SIDE_SCALAR_IDX].long()
+        h_side = self.side_embed(side_idx)
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        gamma = self.film_gamma(h_side)
+        beta = self.film_beta(h_side)
+        gate = torch.sigmoid(self.film_gate)
+        trunk_base = trunk_base + gate * (gamma * trunk_base + beta - trunk_base)
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(hidden.shape[0], 4, 86)
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+        small_choice_logits = self.small_choice_head(hidden)
+
+        v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
+        v_us = torch.tanh(self.value_head_us(torch.relu(self.value_branch_us(hidden))))
+        is_us = side_idx.unsqueeze(1).float()
+        value = (1.0 - is_us) * v_ussr + is_us * v_us
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+            "small_choice_logits": small_choice_logits,
+        }
+
+
+class TSCountryAttnFiLMNormalInitZeroBetaModel(TSCountryAttnFiLMModel):
+    """Combines N(0,1e-2) FiLM init with bias-free film_beta (variants A + B combined)."""
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__(dropout=dropout, hidden_dim=hidden_dim)
+        self.film_beta = nn.Linear(SIDE_EMBED_DIM, hidden_dim, bias=False)
+        nn.init.normal_(self.film_gamma.weight, 0, 1e-2)
+        nn.init.ones_(self.film_gamma.bias)
+        nn.init.normal_(self.film_beta.weight, 0, 1e-2)
+
+
 class TSControlFeatGNNCardAttnModel(nn.Module):
     """GNN board encoder + card-to-country cross-attention + FiLM side conditioning.
 
