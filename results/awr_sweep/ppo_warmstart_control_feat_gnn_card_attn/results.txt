@@ -1,0 +1,14 @@
+Architecture                                   val_adv    iters  vs_heur vs_ussr5   vs_us5   vs_v44   vs_v55   vs_v56   vs_v54   vs_v20
+---------------------------------------------  -------    -----  ------- --------   ------   ------   ------   ------   ------   ------
+# PPO warmstart from v2b AWR checkpoint: 15 iters × 200 games, seed=90000
+# rollout_wr at iter 15: 0.409 (still improving)
+control_feat_gnn_card_attn (warmstart)          0.5758       15     45.0     37.8     42.5     42.0     38.2     41.0     38.0     43.2
+# avg_8panel = 40.96%
+# vs_ussr5=37.8 from log (ppo_best_scripted 1st occurrence: USSR=42.5%, US=33.0%)
+# vs heuristic: USSR=49.5%, US=40.5%
+
+# Comparison chain:
+#   AWR v2 (v6, N=100):          38.44% avg, 34.0% vs heuristic
+#   AWR v2b retrain (v7, N=200): 40.66% avg, 40.5% vs heuristic
+#   PPO warmstart 15-iter:       40.96% avg, 45.0% vs heuristic  ← CURRENT BEST
+#   v56 baseline (known):        45.1% vs heuristic combined
