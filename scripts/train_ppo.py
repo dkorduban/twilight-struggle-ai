@@ -1976,6 +1976,8 @@ def ppo_update(
 
             policy_loss = -torch.min(ratio * batch_advs, clipped_ratio * batch_advs).mean()
             value_loss = F.mse_loss(values_b, batch_returns)
+            if val_calib_coef > 0:
+                value_loss = value_loss + val_calib_coef * (values_b.mean() - batch_returns.mean()) ** 2
             entropy_loss = -entropies.mean()
 
             # ── SmallChoice auxiliary cross-entropy loss ──────────────────────
@@ -2145,6 +2147,7 @@ def ppo_update_packed(
     ppo_epochs: int = 4,
     clip_eps: float = 0.2,
     vf_coef: float = 0.5,
+    val_calib_coef: float = 0.0,
     ent_coef: float = 0.01,
     minibatch_size: int = 2048,
     target_kl: float = 0.015,
@@ -2249,6 +2252,8 @@ def ppo_update_packed(
             clipped_ratio = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
             policy_loss = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
             value_loss = F.mse_loss(values, returns)
+            if val_calib_coef > 0:
+                value_loss = value_loss + val_calib_coef * (values.mean() - returns.mean()) ** 2
             entropy_loss = -entropies.mean()
 
             # SmallChoice auxiliary cross-entropy loss
@@ -2927,6 +2932,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--global-ent-decay-end", type=int, default=2000,
                    help="Global total iteration where entropy reaches ent_coef_final")
     p.add_argument("--vf-coef", type=float, default=0.5, help="Value function coefficient")
+    p.add_argument("--val-calib-coef", type=float, default=0.0,
+                   help="Penalty for mean value bias: coef*(mean(v)-mean(returns))^2. "
+                        "Corrects systematic pessimistic/optimistic value head bias. Default 0 (off).")
     p.add_argument("--minibatch-size", type=int, default=2048, help="PPO minibatch size")
     p.add_argument("--eval-opponent", type=str, default=None,
                    help="[DEPRECATED] Use --eval-panel instead. Single scripted .pt to eval against.")
@@ -3533,6 +3541,7 @@ def main() -> None:
             ppo_epochs=args.ppo_epochs,
             clip_eps=args.clip_eps,
             vf_coef=args.vf_coef,
+            val_calib_coef=args.val_calib_coef,
             ent_coef=current_ent_coef,
             minibatch_size=args.minibatch_size,
             target_kl=args.target_kl,

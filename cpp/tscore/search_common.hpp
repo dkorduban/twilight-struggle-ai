@@ -317,6 +317,10 @@ inline void softmax_inplace(float* buf, int n) {
     Pcg64Rng& rng
 ) {
     auto value = static_cast<double>(value_ptr[batch_index * value_stride]);
+    // Model outputs actor-relative value; convert to USSR-perspective for backup.
+    if (state.pub.phasing == Side::US) {
+        value = -value;
+    }
     value = calibrate_value(value, config);
     if (!config.use_rollout_backup) {
         return value;

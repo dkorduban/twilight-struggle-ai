@@ -242,6 +242,12 @@ double evaluate(
     Pcg64Rng& rng
 ) {
     auto value = get_tensor(outputs, "value").index({0, 0}).item<double>();
+    // Model outputs actor-relative value (positive = good for the side to move).
+    // Backup and select_edge assume USSR-perspective (positive = good for USSR).
+    // Convert here at the leaf boundary: flip sign when US is the actor.
+    if (state.pub.phasing == Side::US) {
+        value = -value;
+    }
     value = calibrate_value(value, config);
     if (!config.use_rollout_backup) {
         return value;
