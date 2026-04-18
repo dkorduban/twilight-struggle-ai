@@ -1,0 +1,22 @@
+[ISMCTS profile] advance=2.281s select=45.323s nn=35.796s expand=54.665s apply=12.287s total=150.353s
+[ISMCTS profile] batches=1787 items=565135 avg_batch=316.2
+NOTE: tscore.compare_ismcts_vs_greedy_policy binding not available.
+      Fallback: run ISMCTS and compare aggregated results only.
+
+Collecting 50 games with v55 greedy-NN vs heuristic to seed root states
+model: data/checkpoints/scripted_for_elo/v55_scripted.pt
+
+Greedy USSR wr: 27/50 = 54.0%  (t=4.6s)
+ISMCTS USSR wr: 5/50 = 10.0%  (t=150.9s)
+
+Mean end_turn: greedy=8.54  ismcts=7.78
+Same end_turn (loose trajectory match): 16/50 = 32.0%
+
+Paired outcome table (same seed, same opponent):
+  Both win   : 4
+  Both lose  : 22
+  Greedy only: 23
+  ISMCTS only: 1
+
+DIAGNOSIS: search flips 23 wins to losses while recovering 1.
+           Net search value: -22 wins (negative = search hurts).

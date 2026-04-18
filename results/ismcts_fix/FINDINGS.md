@@ -82,6 +82,76 @@ This is structural, not a bug. Potential mitigations (not pursued here):
   (2,25)..(8,100) at N=10 showed no config matches greedy ceiling; opponent-model
   mismatch is structural, not fixable by search budget tuning
 
+## Extended investigation (2026-04-17)
+
+### Budget sweep vs greedy-self (N=20/side, seed=91000)
+
+| n_det | n_sim | rollouts | USSR WR | US WR | combined | secs |
+|---|---|---|---|---|---|---|
+| 2 | 25 | 50 | 55.0% | 30.0% | 42.5% | 30.3 |
+| 2 | 50 | 100 | 40.0% | 25.0% | 32.5% | 50.4 |
+| 4 | 50 | 200 | 45.0% | 30.0% | 37.5% | 99.5 |
+| 4 | 100 | 400 | 35.0% | 50.0% | 42.5% | 200.1 |
+| 8 | 100 | 800 | 35.0% | 40.0% | 37.5% | 452.5 |
+| 16 | 100 | 1600 | (USSR half only) | — | — | crashed |
+
+**No correlation between budget and combined WR.** If search worked, 800 rollouts
+should dominate 50. Instead it's flat 32-42%. Raw: `sweep_vs_self.txt`.
+
+### Policy-agreement proxy (N=50, USSR only, seed=92000, n_det=4 n_sim=50)
+
+- Greedy USSR WR: 27/50 = **54.0%** (t=4.6s)
+- ISMCTS USSR WR:  5/50 = **10.0%** (t=150.9s)
+- Paired outcomes (same seed, same opponent):
+  - Both win: 4
+  - Both lose: 22
+  - **Greedy only (ISMCTS flipped a win to loss): 23**
+  - ISMCTS only (search rescued a loss): 1
+- Mean end-turn: greedy=8.54 vs ismcts=7.78 (search games end 0.76 turns earlier
+  → losing by VP threshold faster)
+
+**Net search value: −22 wins out of 50.** Search systematically flips winning
+positions into losing ones. Raw: `policy_agreement.txt`.
+
+### Intermittent crash at (n_det=16, n_sim=100, pool=16)
+
+The sweep's final row crashed with `free(): invalid pointer` after completing
+all 20 USSR games (1708 batches, 2028088 NN items). Crash occurs during the
+transition to US-side games (pool destruction or second-half init).
+
+Repro attempt at **N=10/side** across 4 config variants (`crash_repro.txt`):
+- A: n_det=16 n_sim=100 pool=16 (identical to crasher) — **OK** 30.0%
+- B: n_det=16 n_sim=50  pool=16                       — **OK** 35.0%
+- C: n_det=16 n_sim=100 pool=4                        — **OK** 30.0%
+- D: n_det=12 n_sim=100 pool=16                       — **OK** 45.0%
+
+**Crash is scale-dependent, not config-dependent.** Triggers only at
+N≥20/side (~40 games total). Likely heap accumulation (fragmentation or small
+OOB write that corrupts glibc metadata slowly) rather than an invariant break
+per-search. Fixing requires valgrind or ASAN on a 40-game run; deferred as
+lower-leverage than the systematic search-quality bug.
+
+### Primary finding
+
+The real bug is not the crash — it's the 23/50 same-seed win→loss flips.
+Search with a 1600-rollout budget fails to match greedy argmax. Hypotheses:
+
+1. **Value head miscalibrated under determinization.** NN value was trained on
+   public state; ISMCTS feeds it a sampled full state (determinized opponent hand).
+   If the sampled hand is wrong, leaf values mislead the search.
+2. **Visit-argmax vs policy-argmax divergence.** ISMCTS returns the visit-argmax
+   child. At low simulation counts, visits track PUCT priors more than value
+   confidence; the final action may be the most-explored-due-to-prior, not the
+   highest-value. Needs introspection binding (`ismcts_policy_at_state`).
+3. **Opponent-model mismatch inside the tree.** Tree uses NN for opponent moves;
+   opponent in the benchmark also plays NN-greedy. But the search side assumes
+   stationary opponent policy; single-iteration PUCT may not converge to a
+   best-response policy.
+
+Next action: add `ismcts_policy_at_state` binding; at ~20 real root states
+compare NN argmax, ISMCTS visit-argmax, and NN value estimate of each top-K
+child. Localize whether the failure is selection (2) or evaluation (1).
+
 ## Artifacts
 
 - `scripts/ismcts_validate.py` — N=50/side validation (3 buckets)
