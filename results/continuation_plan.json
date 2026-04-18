@@ -5,21 +5,43 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "PPO v299_sc from v56 6-mode on FIXED engine (DEFCON safety checks restored). v296_sc-v298_sc discarded due to broken-engine regression from concern-separation WIP commits.",
-  "active_background": [
-    "v299_sc PPO training from v56 6-mode (PID 227653, auto-chains via watcher)"
-  ],
+  "current_task": "ISMCTS investigation CLOSED 2026-04-17. No training active. PPO chain stopped at v319_sc (user halt). Next: task #65 decision-context-features merge, or Phase 2b DP decoder, or resume PPO (user request required).",
+  "active_background": [],
+  "ismcts_investigation_closed": {
+    "date": "2026-04-17",
+    "root_cause": "Value-head bias under determinization. The NN value head was trained on true-hand observations; ISMCTS feeds it determinized states with sampled opponent hands. Budget sweep (n_sim 50→800 on AR1 divergence state) confirms mode-3 wins all budgets with no convergence to greedy's mode-0. Root value degrades monotonically (-0.12 → -0.19).",
+    "search_quality": "ISMCTS vs greedy-self: 30-47% combined WR at budgets 50-800 rollouts (flat, post-UAF+Dirichlet fixes). Search is net-negative vs greedy because rollouts systematically over-prefer Space over Influence when opponent hand is sampled.",
+    "fix_required": "Training-side: train value head on determinized observations so head calibrates to hallucinated-hand uncertainty. Or: MC rollouts with heuristic at leaves (structural fix for vs-heuristic only).",
+    "scope": "Out of scope for search-only patch. Reopen when model trains with determinization-aware observations.",
+    "artifacts": [
+      "results/ismcts_fix/FINDINGS.md (comprehensive history)",
+      "results/ismcts_fix/budget_convergence.json (n_sim sweep, no convergence)",
+      "results/ismcts_fix/first_divergence_v55_ar.json (seed=12345 AR1 state)",
+      "scripts/ismcts_first_divergence.py",
+      "scripts/ismcts_budget_convergence.py"
+    ]
+  },
+  "false_escalation_retracted_20260417": "Earlier claim of 'engine-model mat1=53 vs mat2=74 shape mismatch' blocking divergence diagnostic was FALSE. Root cause: broken torch install + stale build in worktree agent-a724a2e0. Verified on main HEAD de43e27: kScalarDim=32 (unchanged), tscore.benchmark_batched runs cleanly on v55 and v319. Main has all needed bindings: ismcts_search_from_state, play_callback_matchup, play_traced_game_with_callback. Worktree d0fc62f bindings NOT needed. Proceeding with inline diagnostic.",
   "critical_discovery_20260416": {
-    "scoring_card_bug": "ALL PPO models v55-v294 are degenerate. legal_cards() never enforced scoring-card-must-be-played rule. Models learned to hold scoring cards → instant loss at end of turn. Fix: commit 5f8f4ea.",
-    "concern_separation_regression": "WIP commits (6902851..dc6d6aa) from Codex concern-separation removed DEFCON safety checks from decode_helpers.hpp. Models DEFCON-1'd themselves. v56 benchmark dropped from 45.1% to 6%. REVERTED: commit 90f663e. v296_sc-v298_sc trained on broken engine → discarded.",
-    "pre_sc_models_strong": "Pre-sc models (v19-v61) are legitimately strong. v56=45.1% combined at N=500 is best checkpoint.",
-    "benchmark_results_500": {
-      "v56": "54.6% USSR, 35.6% US, 45.1% combined — BEST",
-      "v54": "51.6% USSR, 36.6% US, 44.1% combined — best US",
-      "v44": "54.6% USSR, 33.2% US, 43.9% combined",
-      "v20": "53.0% USSR, 31.8% US, 42.4% combined",
-      "v55": "48.4% USSR, 33.8% US, 41.1% combined"
+    "scoring_card_bug": "ALL PPO models v55-v294 were degenerate. legal_cards() never enforced scoring-card-must-be-played rule. Models learned to hold scoring cards -> instant loss at end of turn. Fix: commit 5f8f4ea.",
+    "concern_separation_regression": "WIP commits (6902851..dc6d6aa) from Codex concern-separation removed DEFCON safety checks from decode_helpers.hpp. Models DEFCON-1'd themselves. v56 benchmark dropped from 45.1% to 6%. REVERTED: commit 90f663e.",
+    "pre_sc_models_strong": "Pre-sc models (v19-v61) remain legitimately strong. v56=45.1% combined at N=500 was best baseline pre-chain."
+  },
+  "critical_discovery_20260417": {
+    "ismcts_root_causes": {
+      "uaf_bug": "cpp/tscore/ismcts.cpp RawBatchOutputs used raw float* without Tensor keepalive -> intermittent free(): invalid pointer at scale. Transplanted _storage Tensor pattern from mcts_batched.cpp. Commit de43e27.",
+      "dirichlet_leak": "IsmctsConfig inherited dir_alpha=0.2 dir_epsilon=0.25 from MctsConfig default -> search noise during eval. Overrode IsmctsConfig default initializer to zero both. Commit de43e27.",
+      "state_distribution_mismatch": "Post-fix, v84 mined positions agreement NN-vs-ISMCTS jumped 96% -> 100%. But paired greedy-vs-ISMCTS stayed at -21/50 net. ISMCTS underperforms greedy on in-game rollout states. Root cause: value-head bias under determinization — NOT fixable by search-side patches."
     }
+  },
+  "ppo_chain": {
+    "status": "STOPPED at v319_sc (user-requested halt 2026-04-17T16:33Z)",
+    "v319_sc_elo": 1962,
+    "v319_sc_elo_ussr": 1892,
+    "v319_sc_elo_us": 1985,
+    "peak_elo": "v209_sc=1875 (earlier chain)",
+    "best_baseline": "v56 6-mode (45.1% combined @ N=500)",
+    "restart_conditions": "Only restart chain on explicit user request or after architecture/engine change requiring fresh run"
   },
   "gap_tracker": "ALL DONE (GAP-001 through GAP-043). GAP-044/45/46 WONTFIX (promo cards).",
   "architecture_tasks": {
@@ -31,29 +53,32 @@
   },
   "pragmatic_heads": "ALL DONE (phases 1-4). Star Wars card 103 deck-choice low priority.",
   "jsd_probe": "DONE — jsd_probe.py + probe set + train_ppo.py integration",
-  "ppo_chain": {
-    "status": "v299_sc running from v56 6-mode on FIXED engine",
-    "best_checkpoint": "v56 (45.1% combined at N=500)",
-    "broken_runs": "v296_sc-v298_sc discarded (broken engine from concern-separation WIP commits)",
-    "next_step": "Monitor v299_sc, expect improvement over v56 baseline"
-  },
   "concern_separation": {
     "status": "BLOCKED — needs revised approach",
     "issue": "Decode-level DEFCON safety checks in decode_helpers.hpp are POLICY-LEVEL safety nets, not duplicated rule logic. They must be preserved. Only consolidate rule QUERIES (is_card_defcon_blocked, nato_prerequisite_met, is_trap_blocked) into rule_queries.hpp without removing decode fallbacks.",
     "reverted_commit": "90f663e reverts 15 WIP commits (6902851..dc6d6aa)"
   },
   "next_tasks": [
-    "Monitor v299_sc training (first run on fixed engine from v56)",
-    "Revised concern-separation: consolidate rule queries WITHOUT removing decode safety checks",
-    "If v299_sc shows improvement, continue chain; if not, investigate hyperparameters"
+    "Task #65: Merge decision context features worktree to main (check which worktree has this)",
+    "Phase 2b DP allocation decoder — requires BC pre-train on best-model games before PPO restart",
+    "Task #64: Collect 4M row extended dataset in background",
+    "Task #61: Replace wasted actor_possible mask with opponent hand support",
+    "Resume PPO chain (user request required)"
   ],
-  "last_updated": "2026-04-16T18:55:00+00:00",
+  "last_updated": "2026-04-17T23:00:00+00:00",
   "completed_this_session": [
-    "CRITICAL: Discovered and fixed concern-separation regression (commit 90f663e)",
-    "Fixed stale SC panel references in ppo_loop_step.sh, post_train_confirm.sh (v209_sc→v56)",
-    "Fixed is_valid_for_comparison filter (exclude degenerate v55_sc-v295_sc range)",
-    "Benchmarked v296_sc/v297_sc on fixed engine: confirmed garbage (11-12% combined)",
-    "Killed v298_sc, stopped auto-chain, restarted as v299_sc from v56 6-mode",
-    "v299_sc launched and training (PID 227653)"
+    "ISMCTS UAF root-caused and fixed (RawBatchOutputs + _storage Tensor keepalive)",
+    "ISMCTS Dirichlet-leak fixed (IsmctsConfig default override)",
+    "Added ismcts_search_from_state binding + scripts/ismcts_distribution_shape.py diagnostic",
+    "Confirmed post-fix NN-vs-ISMCTS top-1 agreement: 96% -> 100% on mined positions",
+    "Commit de43e27 landed",
+    "greedy_state_trace binding (commit e789c3a) — play game, return per-decision state dicts",
+    "scripts/ismcts_first_divergence.py — find first ISMCTS/greedy divergence in a game",
+    "First-divergence probes on 2 seeds: AR1 mode-flip pattern (card correct, mode flipped)",
+    "scripts/ismcts_budget_convergence.py — sweep n_sim on single state",
+    "Budget sweep (n_sim 50→800) confirms no convergence: mode 3 always wins visits, root value degrades",
+    "Root cause identified: value-head bias under determinization (confirmed, training-side fix required)",
+    "FINDINGS.md updated with first-divergence probe, budget sweep, root-cause conclusion",
+    "Task #82 (ISMCTS divergence diagnostic) COMPLETED"
   ]
 }
