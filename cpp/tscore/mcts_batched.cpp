@@ -127,6 +127,56 @@ void append_compact_edge(FastNode& node, const ActionEncoding& action, float pri
     node.children.emplace_back(nullptr);
 }
 
+void sort_edges_by_prior_desc(FastNode& node) {
+    if (node.edges.size() < 2) {
+        return;
+    }
+
+    std::vector<size_t> order(node.edges.size(), 0);
+    for (size_t i = 0; i < order.size(); ++i) {
+        order[i] = i;
+    }
+    std::stable_sort(order.begin(), order.end(),
+        [&node](size_t lhs, size_t rhs) {
+            return node.edges[lhs].prior > node.edges[rhs].prior;
+        });
+
+    std::vector<FastEdge> sorted_edges;
+    sorted_edges.reserve(node.edges.size());
+    std::vector<std::unique_ptr<FastNode>> sorted_children;
+    sorted_children.reserve(node.children.size());
+    for (const size_t index : order) {
+        sorted_edges.push_back(std::move(node.edges[index]));
+        sorted_children.push_back(std::move(node.children[index]));
+    }
+
+    node.edges = std::move(sorted_edges);
+    node.children = std::move(sorted_children);
+}
+
+void renormalize_edge_priors(FastNode& node) {
+    if (node.edges.empty()) {
+        return;
+    }
+
+    float sum = 0.0f;
+    for (const auto& edge : node.edges) {
+        sum += edge.prior;
+    }
+    if (sum > 0.0f) {
+        const float inv_sum = 1.0f / sum;
+        for (auto& edge : node.edges) {
+            edge.prior *= inv_sum;
+        }
+        return;
+    }
+
+    const auto uniform = 1.0f / static_cast<float>(node.edges.size());
+    for (auto& edge : node.edges) {
+        edge.prior = uniform;
+    }
+}
+
 void apply_root_dirichlet_noise_fast(FastNode& root, const MctsConfig& config, Pcg64Rng& rng) {
     if (config.dir_epsilon <= 0.0f || config.dir_alpha <= 0.0f || root.edges.empty()) {
         return;
@@ -152,6 +202,7 @@ void apply_root_dirichlet_noise_fast(FastNode& root, const MctsConfig& config, P
         root.edges[i].prior = static_cast<float>(
             keep * static_cast<double>(root.edges[i].prior) + epsilon * noise[i]);
     }
+    sort_edges_by_prior_desc(root);
 }
 
 // ---------------------------------------------------------------------------
@@ -1751,6 +1802,8 @@ ExpansionResult expand_from_raw_fast(
         }
     }
 
+    sort_edges_by_prior_desc(*node);
+
     // --- Edge pruning: drop low-prior edges to reduce tree width ---
     if (config.min_prior_threshold > 0.0f && node->edges.size() > 1) {
         // Find edges to keep (prior >= threshold)
@@ -1763,13 +1816,7 @@ ExpansionResult expand_from_raw_fast(
         }
         // Keep at least 1 edge (the best one)
         if (keep_indices.empty()) {
-            size_t best = 0;
-            for (size_t i = 1; i < node->edges.size(); ++i) {
-                if (node->edges[i].prior > node->edges[best].prior) {
-                    best = i;
-                }
-            }
-            keep_indices.push_back(best);
+            keep_indices.push_back(0);
         }
         if (keep_indices.size() < node->edges.size()) {
             // Compact edges and children in-place
@@ -1785,18 +1832,16 @@ ExpansionResult expand_from_raw_fast(
             // Note: resolved_targets may have dangling entries but they're only
             // accessed via edge.target_offset/target_count which remain valid.
 
-            // Renormalize priors
-            float pruned_total = 0.0f;
-            for (const auto& e : node->edges) {
-                pruned_total += e.prior;
-            }
-            if (pruned_total > 0.0f) {
-                const float inv = 1.0f / pruned_total;
-                for (auto& e : node->edges) {
-                    e.prior *= inv;
-                }
-            }
+            renormalize_edge_priors(*node);
         }
+    }
+
+    if (config.top_k_actions > 0 &&
+        static_cast<int>(node->edges.size()) > config.top_k_actions) {
+        const auto limit = static_cast<size_t>(config.top_k_actions);
+        node->edges.resize(limit);
+        node->children.resize(limit);
+        renormalize_edge_priors(*node);
     }
 
     // Maintain profiling counters
@@ -2088,22 +2133,28 @@ std::atomic<int64_t> g_cache_max_depth{0};      // max path.size() seen
 std::atomic<int64_t> g_cache_hits{0};           // selections where best_cached_depth > 0
 
 // Inline PUCT edge selection over FastNode edges.
-inline int select_edge_fast(const FastNode& node, float c_puct) {
+inline int select_edge_fast(const FastNode& node, float c_puct, int n_active = -1) {
     if (node.edges.empty()) {
+        return -1;
+    }
+    const size_t active_edges = n_active > 0
+        ? std::min(node.edges.size(), static_cast<size_t>(n_active))
+        : node.edges.size();
+    if (active_edges == 0) {
         return -1;
     }
 
     constexpr double kVirtualLossPenalty = 1.0;
     int pending_visits = 0;
-    for (const auto& edge : node.edges) {
-        pending_visits += edge.virtual_loss;
+    for (size_t i = 0; i < active_edges; ++i) {
+        pending_visits += node.edges[i].virtual_loss;
     }
 
     const auto parent_visits = std::sqrt(static_cast<double>(std::max(1, node.total_visits + pending_visits)));
     const bool invert_q = (node.side_to_move == Side::US);
     int best_index = 0;
     double best_score = -std::numeric_limits<double>::infinity();
-    for (size_t i = 0; i < node.edges.size(); ++i) {
+    for (size_t i = 0; i < active_edges; ++i) {
         const auto& edge = node.edges[i];
         const auto effective_visits = edge.visit_count + edge.virtual_loss;
         const auto virtual_loss_term = static_cast<double>(edge.virtual_loss) * kVirtualLossPenalty;
@@ -2134,7 +2185,18 @@ SelectionResult select_to_leaf(GameSlot& slot, const BatchedMctsConfig& config) 
 
     // Collect path first without applying actions.
     while (node != nullptr && !node->is_terminal && !node->edges.empty()) {
-        const auto edge_index = select_edge_fast(*node, config.mcts.c_puct);
+        int n_active = -1;
+        if (config.pw_c > 0.0f && !node->edges.empty()) {
+            const auto n = static_cast<double>(std::max(1, node->total_visits));
+            n_active = std::min(
+                static_cast<int>(node->edges.size()),
+                std::max(1, static_cast<int>(std::ceil(
+                    static_cast<double>(config.pw_c) *
+                    std::pow(n, static_cast<double>(config.pw_alpha))
+                )))
+            );
+        }
+        const auto edge_index = select_edge_fast(*node, config.mcts.c_puct, n_active);
         if (edge_index < 0) break;
 
         auto& edge = node->edges[static_cast<size_t>(edge_index)];
@@ -4814,6 +4876,9 @@ std::vector<GameResult> benchmark_mcts(
     float influence_t_country,
     bool influence_proportional_first,
     float min_prior_threshold,
+    int top_k_actions,
+    float pw_c,
+    float pw_alpha,
     float prior_t_card,
     float prior_t_mode,
     float prior_t_country
@@ -4834,6 +4899,9 @@ std::vector<GameResult> benchmark_mcts(
     config.influence_t_country = influence_t_country;
     config.influence_proportional_first = influence_proportional_first;
     config.min_prior_threshold = min_prior_threshold;
+    config.top_k_actions = top_k_actions;
+    config.pw_c = pw_c;
+    config.pw_alpha = pw_alpha;
     config.prior_t_card = prior_t_card;
     config.prior_t_mode = prior_t_mode;
     config.prior_t_country = prior_t_country;
