@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "decision_frame.hpp"
 #include "public_state.hpp"
 #include "rng.hpp"
 
@@ -133,6 +134,7 @@ struct GameState {
     std::array<CardId, 2> headline_card = {0, 0};
     bool game_over = false;
     std::optional<Side> winner;
+    std::vector<DecisionFrame> frame_stack;  // pending sub-decisions
     // Remaining setup-phase influence placements: index 0 = USSR, index 1 = US.
     // Non-zero only while phase == GamePhase::Setup.
     std::array<int, 2> setup_influence_remaining = {kUSSRSetupInfluence, kUSSetupInfluence};
