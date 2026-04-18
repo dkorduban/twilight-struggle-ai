@@ -10,7 +10,7 @@ OUTDIR="${1:-results/awr_sweep/gated_vs_parent}"
 DATA="data/awr_eval/awr_panel_v7.parquet"
 ARCHS=("control_feat_gnn_card_attn" "gnn_card_attn_gated")
 SEED=42
-EPOCHS=60
+EPOCHS=30
 TAU=1.0
 N_BENCH=200
 BENCH_SEED=90000
@@ -33,12 +33,12 @@ for ARCH in "${ARCHS[@]}"; do
 
     PYTHONUNBUFFERED=1 nice -n 15 uv run python scripts/train_awr.py \
         --data "$DATA" \
-        --arch "$ARCH" \
+        --model-type "$ARCH" \
         --out-dir "$ARCH_DIR" \
         --epochs "$EPOCHS" \
         --seed "$SEED" \
         --tau "$TAU" \
-        --batch-size 2048 \
+        --batch-size 4096 \
         2>&1 | tee "$ARCH_DIR/train.log"
 
     # Export to TorchScript

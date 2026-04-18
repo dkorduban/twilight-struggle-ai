@@ -33,7 +33,7 @@ def run_awr_eval(
     checkpoint: str | None = None,
     epochs: int = 5,
     lr: float = 3e-4,
-    batch_size: int = 2048,
+    batch_size: int = 4096,
     tau: float = 1.0,
     vf_coef: float = 0.5,
     val_frac: float = 0.1,
@@ -137,7 +137,7 @@ def main() -> None:
                         help="Warm-start checkpoint (applied to all archs)")
     parser.add_argument("--epochs", type=int, default=5, help="Training epochs per arch")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
-    parser.add_argument("--batch-size", type=int, default=2048, help="Batch size")
+    parser.add_argument("--batch-size", type=int, default=4096, help="Batch size")
     # Multi-tau support: sweep over multiple temperatures, tau=1e6 approximates uniform BC
     parser.add_argument("--taus", nargs="+", type=float, default=[1.0],
                         help="AWR temperatures to sweep (default [1.0]; use 0.5 1.0 2.0 1e6 for full sweep)")

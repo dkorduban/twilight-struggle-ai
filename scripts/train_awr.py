@@ -528,9 +528,11 @@ def main() -> None:
                                     generator=torch.Generator().manual_seed(args.seed))
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
-                              num_workers=0, pin_memory=(device == "cuda"))
+                              num_workers=4, pin_memory=(device == "cuda"),
+                              persistent_workers=True, prefetch_factor=2)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False,
-                            num_workers=0, pin_memory=(device == "cuda"))
+                            num_workers=4, pin_memory=(device == "cuda"),
+                            persistent_workers=True, prefetch_factor=2)
 
     print(f"  train: {train_size:,} rows, val: {val_size:,} rows")
 
