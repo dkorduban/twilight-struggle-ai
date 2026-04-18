@@ -614,6 +614,47 @@ void resolve_glasnost_free_ops_live(
     apply_influence_budget_impl(pub, Side::USSR, ops, static_cast<CardId>(93), rng, policy_cb);
 }
 
+// Convert old-style EventDecision to DecisionFrame for SubframePolicyFn callers.
+static DecisionFrame event_decision_to_frame(const EventDecision& ed) {
+    DecisionFrame f;
+    f.source_card = ed.source_card;
+    f.acting_side = ed.acting_side;
+    f.eligible_n = static_cast<uint8_t>(ed.n_options);
+    switch (ed.kind) {
+        case DecisionKind::SmallChoice:
+            f.kind = FrameKind::SmallChoice;
+            break;
+        case DecisionKind::CountrySelect:
+            f.kind = FrameKind::CountryPick;
+            for (int i = 0; i < ed.n_options; ++i)
+                f.eligible_countries.set(static_cast<size_t>(ed.eligible_ids[i]));
+            break;
+        case DecisionKind::CardSelect:
+            f.kind = FrameKind::CardSelect;
+            for (int i = 0; i < ed.n_options; ++i)
+                f.eligible_cards.set(static_cast<CardId>(ed.eligible_ids[i]));
+            break;
+    }
+    return f;
+}
+
+// Convert FrameAction back to the int index expected by PolicyCallbackFn.
+static int frame_action_to_index(const FrameAction& fa, const EventDecision& ed) {
+    switch (ed.kind) {
+        case DecisionKind::SmallChoice:
+            return fa.option_index;
+        case DecisionKind::CountrySelect:
+            for (int i = 0; i < ed.n_options; ++i)
+                if (ed.eligible_ids[i] == static_cast<int>(fa.country_id)) return i;
+            return 0;
+        case DecisionKind::CardSelect:
+            for (int i = 0; i < ed.n_options; ++i)
+                if (ed.eligible_ids[i] == static_cast<int>(fa.card_id)) return i;
+            return 0;
+    }
+    return 0;
+}
+
 std::optional<DecisionFrame> engine_peek(const GameState& gs) {
     if (!gs.frame_stack.empty()) {
         return gs.frame_stack.back();
@@ -628,8 +669,17 @@ StepResult engine_step_toplevel(
     Pcg64Rng& rng,
     const SubframePolicyFn& sub_policy
 ) {
-    (void)sub_policy;
-    auto [new_pub, over, winner] = apply_action_live(gs, action, side, rng);
+    const PolicyCallbackFn* cb_ptr = nullptr;
+    PolicyCallbackFn adapter;
+    if (sub_policy) {
+        adapter = [&](const PublicState&, const EventDecision& ed) -> int {
+            DecisionFrame frame = event_decision_to_frame(ed);
+            FrameAction fa = sub_policy(gs, frame);
+            return frame_action_to_index(fa, ed);
+        };
+        cb_ptr = &adapter;
+    }
+    auto [new_pub, over, winner] = apply_action_live(gs, action, side, rng, cb_ptr);
     (void)new_pub;
     return StepResult{
         .pushed_subframe = false,
