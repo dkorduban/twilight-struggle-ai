@@ -193,6 +193,8 @@ PYEOF
   # Resolve new version's checkpoint path
   NEW_PT="${RUN_DIR}/ppo_best_scripted.pt"
   [ -f "$NEW_PT" ] || NEW_PT="${RUN_DIR}/ppo_final_scripted.pt"
+  # Mid-training incremental check: use latest per-iter scripted checkpoint
+  [ -f "$NEW_PT" ] || NEW_PT=$(ls -t "${RUN_DIR}/ppo_iter"*"_scripted.pt" 2>/dev/null | head -1)
   [ -f "$NEW_PT" ] || NEW_PT="${FINISHED_SCRIPTED}"
 
   # Build --models arg: panel + diverse + new version
