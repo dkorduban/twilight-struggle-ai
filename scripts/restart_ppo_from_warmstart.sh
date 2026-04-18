@@ -57,6 +57,7 @@ PYTHONPATH=build-ninja/bindings nice -n 10 uv run python scripts/train_ppo.py \
     --self-play-heuristic-mix 0.5 \
     --device cuda \
     --eval-every 10 \
+    --eval-panel __heuristic__ \
     --wandb \
     --wandb-run-name "ppo_gnn_card_attn_v1" \
     --skip-smoke-test \

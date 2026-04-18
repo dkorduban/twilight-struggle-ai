@@ -15,7 +15,7 @@ from tsrl.constants import MODEL_REGISTRY
 from tsrl.policies.model import TSBaselineModel, TSControlFeatGNNModel
 
 CARD_SLOTS = 111
-MODE_SLOTS = 5
+MODE_SLOTS = 6  # 6-mode arch: Influence, Coup, Realign, Space, Event, OpsFirst
 COUNTRY_SLOTS = 86
 _COUNTRY_ACTIVE_MODES = frozenset({0, 1, 2})
 _LOG2 = log(2.0)
@@ -104,9 +104,13 @@ def _load_strata_index(paths: list[Path]) -> pl.DataFrame:
         frames.append(frame)
         offset += len(frame)
     frame = pl.concat(frames, how="vertical_relaxed")
+    # Normalize column names: AWR panel uses bare names, PPO rollouts use raw_* prefix
+    for bare, raw in [("turn", "raw_turn"), ("defcon", "raw_defcon"), ("vp", "raw_vp")]:
+        if raw not in frame.columns and bare in frame.columns:
+            frame = frame.rename({bare: raw})
     for column in ("raw_turn", "side_int", "raw_defcon", "raw_vp"):
         if column not in frame.columns:
-            raise ValueError(f"Source parquet missing required column {column!r}")
+            raise ValueError(f"Source parquet missing required column {column!r} (or bare {column[4:]})")
     if "mode_id" not in frame.columns:
         frame = frame.with_columns(pl.lit(-1, dtype=pl.Int32).alias("mode_id"))
     return frame
@@ -290,9 +294,14 @@ class ProbeEvaluator:
 
     def __init__(self, probe_path: str | Path, device: str = "cpu", batch_size: int = 256):
         frame = pl.read_parquet(Path(probe_path))
-        missing = sorted({"influence", "cards", "scalars", "raw_turn"} - set(frame.columns))
-        if missing:
-            raise ValueError(f"Probe parquet missing required columns: {missing}")
+        cols = set(frame.columns)
+        # Accept bare column names (AWR panel) or raw_* prefix (PPO rollouts)
+        required = {"influence", "cards", "scalars"}
+        required_turn = "raw_turn" in cols or "turn" in cols
+        missing = sorted(required - cols)
+        if missing or not required_turn:
+            need = missing + (["turn or raw_turn"] if not required_turn else [])
+            raise ValueError(f"Probe parquet missing required columns: {need}")
 
         self.device = torch.device(device)
         self.batch_size = batch_size
@@ -302,11 +311,19 @@ class ProbeEvaluator:
         self.card_mask = self._mask_tensor(frame, "card_mask", CARD_SLOTS)
         self.mode_mask = self._mask_tensor(frame, "mode_mask", MODE_SLOTS)
         self.country_mask = self._mask_tensor(frame, "country_mask", COUNTRY_SLOTS, required=False)
-        self.raw_turn = self._scalar_tensor(frame, "raw_turn")
+        # Accept both naming conventions: PPO rollouts use raw_*, AWR panel uses bare names
+        self.raw_turn = self._scalar_tensor(frame, "raw_turn") if "raw_turn" in frame.columns \
+            else self._scalar_tensor(frame, "turn")
         self.side_int = self._scalar_tensor(frame, "side_int")
-        self.raw_defcon = self._scalar_tensor(frame, "raw_defcon")
-        self.raw_vp = self._scalar_tensor(frame, "raw_vp")
-        self.mode_id = self._scalar_tensor(frame, "mode_id", default=-1)
+        self.raw_defcon = self._scalar_tensor(frame, "raw_defcon") if "raw_defcon" in frame.columns \
+            else self._scalar_tensor(frame, "defcon")
+        self.raw_vp = self._scalar_tensor(frame, "raw_vp") if "raw_vp" in frame.columns \
+            else self._scalar_tensor(frame, "vp")
+        self.mode_id = self._scalar_tensor(
+            frame,
+            "mode_id" if "mode_id" in frame.columns else "mode_idx",
+            default=-1,
+        )
         self.n_positions = len(frame)
 
     def compare(self, model_a: nn.Module, model_b: nn.Module) -> ProbeMetrics:
