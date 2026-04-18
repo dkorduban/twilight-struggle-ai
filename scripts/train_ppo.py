@@ -1975,7 +1975,8 @@ def ppo_update(
             clipped_ratio = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
 
             policy_loss = -torch.min(ratio * batch_advs, clipped_ratio * batch_advs).mean()
-            value_loss = F.mse_loss(values_b, batch_returns)
+            us_win_w = torch.where(batch_returns < 0, 2.0, 1.0)
+            value_loss = (us_win_w * (values_b - batch_returns) ** 2).mean()
             if val_calib_coef > 0:
                 value_loss = value_loss + val_calib_coef * (values_b.mean() - batch_returns.mean()) ** 2
             entropy_loss = -entropies.mean()
@@ -2251,7 +2252,8 @@ def ppo_update_packed(
             ratio = torch.exp(new_log_probs - old_log_probs)
             clipped_ratio = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
             policy_loss = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
-            value_loss = F.mse_loss(values, returns)
+            us_win_w = torch.where(returns < 0, 2.0, 1.0)
+            value_loss = (us_win_w * (values - returns) ** 2).mean()
             if val_calib_coef > 0:
                 value_loss = value_loss + val_calib_coef * (values.mean() - returns.mean()) ** 2
             entropy_loss = -entropies.mean()
