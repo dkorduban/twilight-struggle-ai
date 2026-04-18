@@ -669,6 +669,7 @@ StepResult engine_step_toplevel(
     Pcg64Rng& rng,
     const SubframePolicyFn& sub_policy
 ) {
+    gs.frame_stack.clear();
     const PolicyCallbackFn* cb_ptr = nullptr;
     PolicyCallbackFn adapter;
     if (sub_policy) {
@@ -679,10 +680,10 @@ StepResult engine_step_toplevel(
         };
         cb_ptr = &adapter;
     }
-    auto [new_pub, over, winner] = apply_action_live(gs, action, side, rng, cb_ptr);
+    auto [new_pub, over, winner] = apply_action_live(gs, action, side, rng, cb_ptr, false, &gs.frame_stack);
     (void)new_pub;
     return StepResult{
-        .pushed_subframe = false,
+        .pushed_subframe = !gs.frame_stack.empty(),
         .side_changed = !over,
         .game_over = over,
         .winner = winner,
@@ -726,13 +727,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     Side side,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb,
-    bool log_real_move
+    bool log_real_move,
+    std::vector<DecisionFrame>* frame_log
 ) {
     const int defcon_before = gs.pub.defcon;
     const int vp_before = gs.pub.vp;
     const int turn_before = gs.pub.turn;
     const int ar_before = gs.pub.ar;
-    auto result = apply_action_with_hands(gs, action, side, rng, policy_cb);
+    auto result = apply_action_with_hands(gs, action, side, rng, policy_cb, frame_log);
     if (log_real_move && action_log_enabled()) {
         const auto& card = card_spec(action.card_id);
         std::string targets_str;
