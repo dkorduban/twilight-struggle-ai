@@ -61,7 +61,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     const ActionEncoding& action,
     Side side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb = nullptr
+    const PolicyCallbackFn* policy_cb = nullptr,
+    bool log_real_move = false  // TS_ACTION_LOG env enables stderr trace for real (non-search) moves only
 );
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(

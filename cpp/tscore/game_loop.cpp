@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <string>
 
 #include "hand_ops.hpp"
 #include "human_openings.hpp"
@@ -612,14 +614,62 @@ void resolve_glasnost_free_ops_live(
     apply_influence_budget_impl(pub, Side::USSR, ops, static_cast<CardId>(93), rng, policy_cb);
 }
 
+namespace {
+
+bool action_log_enabled() {
+    static const bool enabled = (std::getenv("TS_ACTION_LOG") != nullptr);
+    return enabled;
+}
+
+const char* mode_name(ActionMode m) {
+    switch (m) {
+        case ActionMode::Event:      return "Event";
+        case ActionMode::Coup:       return "Coup";
+        case ActionMode::Realign:    return "Realign";
+        case ActionMode::Influence:  return "Infl";
+        case ActionMode::Space:      return "Space";
+        default:                     return "?";
+    }
+}
+
+}  // namespace
+
 std::tuple<PublicState, bool, std::optional<Side>> apply_action_live(
     GameState& gs,
     const ActionEncoding& action,
     Side side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb
+    const PolicyCallbackFn* policy_cb,
+    bool log_real_move
 ) {
-    return apply_action_with_hands(gs, action, side, rng, policy_cb);
+    const int defcon_before = gs.pub.defcon;
+    const int vp_before = gs.pub.vp;
+    const int turn_before = gs.pub.turn;
+    const int ar_before = gs.pub.ar;
+    auto result = apply_action_with_hands(gs, action, side, rng, policy_cb);
+    if (log_real_move && action_log_enabled()) {
+        const auto& card = card_spec(action.card_id);
+        std::string targets_str;
+        for (size_t i = 0; i < action.targets.size(); ++i) {
+            if (i > 0) targets_str += ",";
+            targets_str += std::to_string(static_cast<int>(action.targets[i]));
+        }
+        const auto over = std::get<1>(result);
+        const auto winner = std::get<2>(result);
+        std::fprintf(stderr,
+            "[APPLY] t%d/AR%d %s card=%d(%s) mode=%s targets=[%s] "
+            "defcon=%d->%d vp=%+d->%+d%s\n",
+            turn_before, ar_before,
+            (side == Side::USSR ? "USSR" : "US"),
+            static_cast<int>(action.card_id), card.name.c_str(),
+            mode_name(action.mode), targets_str.c_str(),
+            defcon_before, gs.pub.defcon,
+            vp_before, gs.pub.vp,
+            over ? (winner.has_value()
+                    ? (*winner == Side::USSR ? " GAME_OVER winner=USSR" : " GAME_OVER winner=US")
+                    : " GAME_OVER winner=DRAW") : "");
+    }
+    return result;
 }
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar_live(

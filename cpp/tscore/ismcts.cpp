@@ -10,6 +10,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -1149,7 +1151,7 @@ void commit_selected_action(IsmctsGameSlot& slot, ActionEncoding action) {
         hand.reset(action.card_id);
     }
 
-    auto [new_pub, over, winner] = apply_action_live(slot.game_state, action, decision.side, slot.rng);
+    auto [new_pub, over, winner] = apply_action_live(slot.game_state, action, decision.side, slot.rng, nullptr, /*log_real_move=*/true);
     (void)new_pub;
     sync_china_flags(slot.game_state);
 
@@ -1377,6 +1379,46 @@ ActionEncoding greedy_action_from_model(
     if (action.targets.empty() && mode != ActionMode::Event && mode != ActionMode::Space) {
         return heuristic_fallback();
     }
+
+    static const bool kPolicyLogEnabled = (std::getenv("TS_ACTION_LOG") != nullptr);
+    if (kPolicyLogEnabled) {
+        // Top-3 card scores over masked cards (post-DEFCON safety).
+        auto topk = masked_card.topk(std::min<int64_t>(3, masked_card.size(0)));
+        const auto scores = std::get<0>(topk);
+        const auto idxs = std::get<1>(topk);
+        std::string top3;
+        for (int k = 0; k < scores.size(0); ++k) {
+            const float s = scores.index({k}).item<float>();
+            if (s == -std::numeric_limits<float>::infinity()) continue;
+            const auto cid = static_cast<CardId>(idxs.index({k}).item<int64_t>() + 1);
+            if (k > 0) top3 += ",";
+            top3 += std::to_string(static_cast<int>(cid)) + "(" + card_spec(cid).name + "):" + std::to_string(s).substr(0, 5);
+        }
+        std::string defcon_blocked;
+        for (const auto cid : playable) {
+            if (is_card_blocked_by_defcon(pub, side, cid)) {
+                if (!defcon_blocked.empty()) defcon_blocked += ",";
+                defcon_blocked += std::to_string(static_cast<int>(cid)) + "(" + card_spec(cid).name + ")";
+            }
+        }
+        std::fprintf(stderr,
+            "[NN_PICK] t%d/AR%d %s defcon=%d hand=%zu blocked_defcon=[%s] top3=[%s] chose=%d(%s)/%s\n",
+            pub.turn, pub.ar,
+            (side == Side::USSR ? "USSR" : "US"),
+            pub.defcon, playable.size(), defcon_blocked.c_str(), top3.c_str(),
+            static_cast<int>(action.card_id), card_spec(action.card_id).name.c_str(),
+            [&]() -> const char* {
+                switch (action.mode) {
+                    case ActionMode::Event: return "Event";
+                    case ActionMode::Coup: return "Coup";
+                    case ActionMode::Realign: return "Realign";
+                    case ActionMode::Influence: return "Infl";
+                    case ActionMode::Space: return "Space";
+                    default: return "?";
+                }
+            }());
+    }
+
     return action;
 }
 
@@ -1491,7 +1533,7 @@ void advance_until_search_or_done(
                 }
 
                 const auto pending = slot.headline_order[slot.headline_order_index++];
-                auto [new_pub, over, winner] = apply_action_live(slot.game_state, pending.action, pending.side, slot.rng);
+                auto [new_pub, over, winner] = apply_action_live(slot.game_state, pending.action, pending.side, slot.rng, nullptr, /*log_real_move=*/true);
                 (void)new_pub;
                 sync_china_flags(slot.game_state);
                 if (over) {

@@ -75,8 +75,24 @@ struct AccessibleCache {
         };
 
         filter_military(base_coup);
+        cache.realign = base_coup;
+
+        // DEFCON=2 safety net: coup in any battleground lowers DEFCON by 1
+        // -> DEFCON=1 = nuclear war = acting side loses. Strip battleground
+        // countries from the coup target set at DEFCON=2 so search cannot
+        // expand self-destruct edges. Realignment never lowers DEFCON, so
+        // `cache.realign` keeps the full (non-battleground-filtered) set.
+        if (pub.defcon == 2) {
+            base_coup.erase(
+                std::remove_if(
+                    base_coup.begin(),
+                    base_coup.end(),
+                    [](CountryId cid) { return country_spec(cid).is_battleground; }
+                ),
+                base_coup.end()
+            );
+        }
         cache.coup = std::move(base_coup);
-        cache.realign = cache.coup;
 
         const auto level = pub.space[to_index(side)];
         const auto opp_level = pub.space[to_index(other_side(side))];
