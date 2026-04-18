@@ -257,15 +257,76 @@ search-harm is essentially unchanged (−22 → −21). Therefore:
 vs-self recovers, do not chase further here. FINDINGS.md already documents
 opponent-model mismatch as structural. Punt to follow-up:
 
-- [ ] Re-run `ismcts_sweep_vs_self.py` post-fix to see if vs-self recovers
-  (pre-fix was flat 32-42% combined). If yes → bug was the UAF + Dirichlet.
-  If no → search is fundamentally not helping at this budget.
-- [ ] Add state_dict collector callback in a heuristic-opponent benchmark so
-  the distribution-shape diagnostic can be re-run on **in-game** states. If
-  edge-top-1 drops from 100% to <80%, compound-mode-flip hypothesis confirmed.
-- [ ] Independent of search: value-head-under-determinization probe (§4 of
-  Opus strategy) — measure leaf value variance across determinizations for
-  the same public state.
+- [x] Re-run `ismcts_sweep_vs_self.py` post-fix: still flat (results/ismcts_fix/sweep_vs_self_postfix.txt shows 42% at 800 rollouts); UAF+Dirichlet did NOT fix the plateau
+- [ ] Add state_dict collector for in-game states (out of scope for this investigation pass)
+- [ ] Value-head-under-determinization probe (§4 Opus strategy): root cause identified below
+
+### First-divergence probe (2026-04-17/18)
+
+Added `tscore.greedy_state_trace` binding (C++/pybind11, commit e789c3a): plays a
+greedy-NN vs heuristic game and returns per-decision state dicts with both hands and
+deck, compatible with `game_state_from_dict`. Added `scripts/ismcts_first_divergence.py`
+to find the first state where ISMCTS disagrees with greedy.
+
+**Key results:**
+- Seed 12345 (skip-headline): first divergence at step 1 (turn=1, AR1)
+  - Greedy: card 24 (Indo-Pak War), mode 0 (Influence), targets [11=Norway, 16=Turkey]
+  - ISMCTS: card 24, mode 3 (Space), targets []
+- Seed 54321 (skip-headline): first divergence at step 1 (turn=1, AR1)
+  - Greedy: card 24, mode 1 (Coup), targets [4=Denmark]
+  - ISMCTS: card 24, mode 0 (Influence), targets []
+- Pattern: card choice is consistent with greedy; **mode choice flips**
+
+### Budget convergence probe (2026-04-18)
+
+Script `scripts/ismcts_budget_convergence.py`: load seed-12345 AR1 divergence state,
+run ISMCTS at n_det=4 with n_sim=50,100,200,400,800. Does mode converge to greedy?
+
+| n_sim | ISMCTS pick | visits | root_value |
+|-------|-------------|--------|------------|
+| 50    | card 24 mode 3 (Space) | 44 | -0.124 |
+| 100   | card 24 mode 3 (Space) | 74 | -0.127 |
+| 200   | card 24 mode 3 (Space) | 130 | -0.147 |
+| 400   | card 24 mode 3 (Space) | 173 | -0.170 |
+| 800   | card 24 mode 3 (Space) | 245 | -0.189 |
+
+**ISMCTS never converges to greedy's Influence pick at any budget.** Root value
+degrades monotonically as budget grows (more rollouts → more pessimism → search is
+drawing more negative values from the tree, not converging to greedy confidence).
+
+Mode 0 (Influence) has HIGHER prior (0.176 > 0.133) than mode 3 (Space), but PUCT
+consistently gives more visits to mode 3. This means the rollouts from Space nodes
+return consistently BETTER values than rollouts from Influence nodes, flipping the
+visit-argmax against the NN prior.
+
+### Root-cause conclusion: value-head bias under determinization
+
+The greedy NN (evaluated on the true observation with the true opponent hand) says
+"Influence is best." ISMCTS rollouts (sampling opponent hand from the unknown
+pool) say "Space is better." This disagreement is **stable across 800 simulations**
+and does not converge. This is the value-head-under-determinization hypothesis from
+Opus §1.3(c):
+
+> *If the value head's error on hallucinated hands is biased rather than zero-mean,
+> search will consistently over- or under-weight particular subtrees and not converge.*
+
+Mechanically: when the opponent hand is sampled, USSR's aggressive Influence plays
+in contested regions may look riskier (more powerful opponent cards in hand),
+pushing the search toward the safer Space play. The true opponent hand is weaker,
+so the real-game Influence play is strong but the search doesn't know this.
+
+**This requires a training-side fix**, not a search-side patch:
+- Option A: Train value head on determinized observations (expose sampled opponent
+  hand during training so the head learns to handle hallucinated hands)
+- Option B: Replace NN value head with MC rollouts using the true (heuristic) opponent
+  in the benchmark (structural fix, not general)
+- Option C: Retrain with opponent-hand awareness in the observation encoder
+
+All three are out of scope for a search-only patch. **ISMCTS with v55 is not
+production-ready** — the value head was not trained to handle determinized states.
+
+**Investigation closed on this model.** Reopen when a new model trains with
+determinization-aware observations or when Option B is tested.
 
 ## Artifacts
 
@@ -273,6 +334,11 @@ opponent-model mismatch as structural. Punt to follow-up:
 - `scripts/ismcts_sweep.py` — n_det × n_sim sweep at N=10
 - `scripts/ismcts_failure_diag.py` — initial diagnostic (N=10, 3 buckets)
 - `scripts/ismcts_log_one.py` — single-game TS_ACTION_LOG=1 harness
+- `scripts/ismcts_first_divergence.py` — find first greedy/ISMCTS disagreement in a game
+- `scripts/ismcts_budget_convergence.py` — load divergence state, sweep n_sim, check convergence
 - `results/ismcts_fix/validate_n50.txt` — validation output
 - `results/ismcts_fix/sweep_n10.txt` — sweep output
 - `results/ismcts_fix/diag_postfix_n10.txt` — first post-fix diagnostic
+- `results/ismcts_fix/first_divergence_v55_ar.json` — seed=12345 AR1 divergence state
+- `results/ismcts_fix/first_divergence_v55_ar_s54321.json` — seed=54321 AR1 divergence state
+- `results/ismcts_fix/budget_convergence.json` — n_sim sweep on seed-12345 AR1 state
