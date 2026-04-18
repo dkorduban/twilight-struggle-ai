@@ -49,6 +49,27 @@ py::dict action_to_dict(const ts::ActionEncoding& action) {
     return out;
 }
 
+// Fill in the hidden-state fields that game_state_from_dict requires beyond
+// what public_state_to_dict already emits. Used by state-trace bindings so
+// ismcts_search_from_state can be called on traced decision points.
+void augment_state_dict_with_hidden(
+    py::dict& out,
+    ts::Side side,
+    const ts::CardSet& hand_snapshot,
+    const ts::CardSet& opp_hand_snapshot,
+    const ts::InlineDeck& deck_snapshot,
+    bool ussr_holds_china,
+    bool us_holds_china
+) {
+    const ts::CardSet& ussr_hand = side == ts::Side::USSR ? hand_snapshot : opp_hand_snapshot;
+    const ts::CardSet& us_hand   = side == ts::Side::US   ? hand_snapshot : opp_hand_snapshot;
+    out["ussr_hand"] = bitset_to_list(ussr_hand);
+    out["us_hand"]   = bitset_to_list(us_hand);
+    out["deck"] = py::cast(deck_snapshot.to_vector());
+    out["ussr_holds_china"] = ussr_holds_china;
+    out["us_holds_china"]   = us_holds_china;
+}
+
 py::dict public_state_to_dict(const ts::PublicState& pub) {
     py::dict out;
     out["turn"] = pub.turn;
@@ -587,6 +608,75 @@ py::dict run_ismcts_from_state(
     out["edges"] = std::move(edges_out);
     return out;
 }
+
+// Play one greedy-NN (learned_side) vs heuristic game and emit a list of
+// {state, action, turn, ar, phasing} dicts, one per learned-side decision.
+// The state dicts are compatible with game_state_from_dict, so callers can
+// feed them back into ismcts_search_from_state / mcts_search_from_state to
+// interrogate what search would do at each greedy-NN decision point.
+std::vector<py::dict> greedy_state_trace(
+    const std::string& model_path,
+    ts::Side learned_side,
+    uint32_t seed
+) {
+    if (learned_side != ts::Side::USSR && learned_side != ts::Side::US) {
+        throw py::value_error("learned_side must be USSR or US");
+    }
+
+    ts::TorchScriptPolicy learned(model_path);
+    const ts::PolicyFn learned_fn = [&learned](
+        const ts::PublicState& pub,
+        const ts::CardSet& hand,
+        bool holds_china,
+        ts::Pcg64Rng& rng
+    ) {
+        return learned.choose_action(pub, hand, holds_china, rng);
+    };
+    const ts::PolicyFn heuristic_fn = [](
+        const ts::PublicState& pub,
+        const ts::CardSet& hand,
+        bool holds_china,
+        ts::Pcg64Rng& rng
+    ) {
+        return ts::choose_action(ts::PolicyKind::MinimalHybrid, pub, hand, holds_china, rng);
+    };
+
+    ts::GameLoopConfig config;
+    config.use_atomic_setup = true;
+
+    ts::TracedGame traced;
+    {
+        py::gil_scoped_release release;
+        traced = learned_side == ts::Side::USSR
+            ? ts::play_game_traced_fn(learned_fn, heuristic_fn, seed, config)
+            : ts::play_game_traced_fn(heuristic_fn, learned_fn, seed, config);
+    }
+
+    std::vector<py::dict> out;
+    for (const auto& step : traced.steps) {
+        if (step.side != learned_side) {
+            continue;
+        }
+        py::dict state_dict = public_state_to_dict(step.pub_snapshot);
+        augment_state_dict_with_hidden(
+            state_dict,
+            step.side,
+            step.hand_snapshot,
+            step.opp_hand_snapshot,
+            step.deck_snapshot,
+            step.ussr_holds_china_snapshot,
+            step.us_holds_china_snapshot
+        );
+        py::dict step_out;
+        step_out["state"] = std::move(state_dict);
+        step_out["action"] = action_to_dict(step.action);
+        step_out["turn"] = step.turn;
+        step_out["ar"] = step.ar;
+        step_out["phasing"] = static_cast<int>(step.pub_snapshot.phasing);
+        out.push_back(std::move(step_out));
+    }
+    return out;
+}
 #endif
 
 }  // namespace
@@ -1070,6 +1160,16 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("acting_side") = ts::Side::Neutral,
         "Run ISMCTS from a serialized game state and return aggregated edges "
         "(visits + priors per action). acting_side=Neutral defaults to state.phasing."
+    );
+    m.def(
+        "greedy_state_trace",
+        &greedy_state_trace,
+        py::arg("model_path"),
+        py::arg("learned_side"),
+        py::arg("seed"),
+        "Play one greedy-NN vs heuristic game; return per-learned-side-decision "
+        "dicts {state, action, turn, ar, phasing} where state is compatible with "
+        "game_state_from_dict for feeding into ismcts/mcts_search_from_state."
     );
     m.def(
         "benchmark_batched",
