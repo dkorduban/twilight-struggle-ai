@@ -32,6 +32,7 @@ class _LazyModelRegistry(dict[str, type]):
         from tsrl.policies.model import (
             TSBaselineModel,
             TSCardEmbedModel,
+            TSControlFeatGNNCardAttnGatedModel,
             TSControlFeatGNNCardAttnModel,
             TSControlFeatGNNFiLMModel,
             TSControlFeatGNNModel,
@@ -73,6 +74,7 @@ class _LazyModelRegistry(dict[str, type]):
                 "control_feat_gnn_side": TSControlFeatGNNSideModel,
                 "control_feat_gnn_film": TSControlFeatGNNFiLMModel,
                 "control_feat_gnn_card_attn": TSControlFeatGNNCardAttnModel,
+                "gnn_card_attn_gated": TSControlFeatGNNCardAttnGatedModel,
             },
         )
 

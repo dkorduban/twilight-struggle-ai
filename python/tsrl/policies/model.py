@@ -2130,6 +2130,89 @@ class TSControlFeatGNNCardAttnModel(nn.Module):
         }
 
 
+class TSControlFeatGNNCardAttnGatedModel(TSControlFeatGNNCardAttnModel):
+    """GNN + card cross-attention + gated FiLM (combines gnn_card_attn and film_gated).
+
+    Adds a learnable per-neuron sigmoid gate over the FiLM modulation:
+        trunk' = trunk + gate * (gamma * trunk + beta - trunk)
+    Gate initialized to sigmoid(-4) ≈ 0.018 so model starts near identity
+    but side_embed receives gradients from iteration 1 (no cold-start).
+
+    gnn_card_attn excels vs specialists (38.4% avg panel WR).
+    film_gated excels vs heuristic (43.5%), thanks to the gate.
+    This arch targets both strengths simultaneously.
+    """
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__(dropout=dropout, hidden_dim=hidden_dim)
+        self.film_gate = nn.Parameter(torch.full((hidden_dim,), -4.0))
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        B = influence.shape[0]
+
+        h_inf_embed, region_scalars = self.influence_encoder_embed(influence)
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + h_inf_embed
+        h_card = torch.relu(self.card_encoder(cards))
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+
+        # Card-to-country cross-attention (same as parent)
+        ussr_inf = influence[:, :NUM_COUNTRIES] / 10.0
+        us_inf   = influence[:, NUM_COUNTRIES:] / 10.0
+        static_c = self.country_static.unsqueeze(0).expand(B, -1, -1)
+        dyn_c    = torch.stack([ussr_inf, us_inf], dim=-1)
+        countries = torch.relu(
+            self.country_proj(torch.cat([dyn_c, static_c], dim=-1))
+        )
+        card_emb = torch.relu(self.card_proj(self.card_static)).unsqueeze(0).expand(B, -1, -1)
+        attn_out, _ = self.cross_attn(card_emb, countries, countries)
+        hand_mask_f = cards[:, :NUM_CARDS].unsqueeze(-1)
+        hand_n = hand_mask_f.sum(dim=1).clamp(min=1.0)
+        attn_pool = (attn_out * hand_mask_f).sum(dim=1) / hand_n
+        h_card = h_card + torch.relu(self.cross_attn_proj(attn_pool))
+
+        # Gated FiLM conditioning
+        side_idx = scalars[:, self._SIDE_SCALAR_IDX].long()
+        h_side   = self.side_embed(side_idx)
+        gamma = self.film_gamma(h_side)
+        beta  = self.film_beta(h_side)
+        gate  = torch.sigmoid(self.film_gate)  # (hidden_dim,), near 0 at init
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        trunk_base  = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        trunk_base  = trunk_base + gate * (gamma * trunk_base + beta - trunk_base)
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        card_logits  = self.card_head(hidden)
+        mode_logits  = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(B, NUM_STRATEGIES, NUM_COUNTRIES)
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+        small_choice_logits = self.small_choice_head(hidden)
+
+        v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
+        v_us   = torch.tanh(self.value_head_us  (torch.relu(self.value_branch_us  (hidden))))
+        is_us  = side_idx.unsqueeze(1).float()
+        value  = (1.0 - is_us) * v_ussr + is_us * v_us
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+            "small_choice_logits": small_choice_logits,
+        }
+
+
 class TSCountryAttnSidePolicyModel(nn.Module):
     """Country-attention model with per-side policy heads.
 
