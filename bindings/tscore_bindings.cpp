@@ -1538,6 +1538,7 @@ PYBIND11_MODULE(tscore, m) {
            int n_mcts_threads, int torch_intra_threads, int torch_interop_threads,
            int influence_samples, float influence_t_strategy, float influence_t_country,
            bool influence_proportional_first, float min_prior_threshold,
+           int top_k_actions, float pw_c, float pw_alpha,
            float prior_t_card, float prior_t_mode, float prior_t_country) {
             torch::Device device(device_str);
             auto model = torch::jit::load(model_path, device);
@@ -1548,6 +1549,7 @@ PYBIND11_MODULE(tscore, m) {
                 n_mcts_threads, torch_intra_threads, torch_interop_threads,
                 influence_samples, influence_t_strategy, influence_t_country,
                 influence_proportional_first, min_prior_threshold,
+                top_k_actions, pw_c, pw_alpha,
                 prior_t_card, prior_t_mode, prior_t_country);
         },
         py::arg("model_path"),
@@ -1567,6 +1569,9 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("influence_t_country") = 0.0f,
         py::arg("influence_proportional_first") = true,
         py::arg("min_prior_threshold") = 0.0f,
+        py::arg("top_k_actions") = 0,
+        py::arg("pw_c") = 0.0f,
+        py::arg("pw_alpha") = 0.5f,
         py::arg("prior_t_card") = 1.0f,
         py::arg("prior_t_mode") = 1.0f,
         py::arg("prior_t_country") = 1.0f,
@@ -1575,6 +1580,8 @@ PYBIND11_MODULE(tscore, m) {
         "per-game temperatures from the Nash mixed strategy.\n"
         "Thread params: 0 = auto. influence_samples: K edges per influence action.\n"
         "min_prior_threshold: drop edges with prior < threshold after expansion.\n"
+        "top_k_actions: keep only the top-K edges by prior after expansion.\n"
+        "pw_c/pw_alpha: progressive widening controls for active children.\n"
         "prior_t_card/mode/country: per-head temperature for NN logits (T<1=sharper, T>1=flatter).\n"
         "Returns list[GameResult]."
     );

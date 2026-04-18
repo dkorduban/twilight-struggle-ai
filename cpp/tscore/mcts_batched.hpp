@@ -97,6 +97,13 @@ struct BatchedMctsConfig {
     float min_prior_threshold = 0.0f;     // After expansion, drop edges with prior < threshold
                                            // and renormalize. 0 = keep all edges (default).
                                            // Typical values: 0.001–0.01 to reduce tree width.
+    int top_k_actions = 0;                // Keep only top-K edges by prior after expansion.
+                                           // 0 = keep all (default). Typical: 20-50.
+    float pw_c = 0.0f;                    // Progressive widening constant. 0 = disabled.
+                                           // Active children = min(n_edges, max(1,
+                                           // ceil(pw_c * n^pw_alpha))).
+    float pw_alpha = 0.5f;                // Progressive widening exponent.
+                                           // 0.5 = sqrt, 0.33 = cbrt.
     float prior_t_card = 1.0f;            // Temperature for card logits before softmax.
     float prior_t_mode = 1.0f;            // Temperature for mode logits before softmax.
     float prior_t_country = 1.0f;         // Temperature for country logits before softmax.
@@ -254,6 +261,9 @@ std::vector<GameResult> benchmark_mcts(
     float influence_t_country = 0.0f,
     bool influence_proportional_first = true,
     float min_prior_threshold = 0.0f,
+    int top_k_actions = 0,
+    float pw_c = 0.0f,
+    float pw_alpha = 0.5f,
     float prior_t_card = 1.0f,
     float prior_t_mode = 1.0f,
     float prior_t_country = 1.0f
