@@ -240,10 +240,12 @@ def collect_from_model(
     temperature: float = 1.0,
     gamma: float = 0.99,
     lam: float = 0.95,
+    model_name: str | None = None,
 ) -> dict[str, np.ndarray]:
     """Collect rollout data from a single scripted model vs heuristic."""
     all_data = _empty_data()
-    model_name = Path(model_path).stem
+    if model_name is None:
+        model_name = Path(model_path).stem
     games_per_side = n_games // 2
     boundaries = []
     total_steps = 0
@@ -280,13 +282,17 @@ def collect_from_pair(
     temperature: float = 1.0,
     gamma: float = 0.99,
     lam: float = 0.95,
+    name_a: str | None = None,
+    name_b: str | None = None,
 ) -> dict[str, np.ndarray]:
     """Collect rollout data from model_a vs model_b (steps from model_a only).
 
     model_a plays as USSR for n_games/2 and as US for n_games/2.
     """
     all_data = _empty_data()
-    model_name = f"{Path(model_a_path).stem}_vs_{Path(model_b_path).stem}"
+    na = name_a if name_a is not None else Path(model_a_path).stem
+    nb = name_b if name_b is not None else Path(model_b_path).stem
+    model_name = f"{na}_vs_{nb}"
     games_per_side = n_games // 2
     boundaries = []
     total_steps = 0
@@ -364,6 +370,7 @@ def find_top_models(n: int, scripted_dir: str = "data/checkpoints/scripted_for_e
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect AWR evaluation data")
     parser.add_argument("--models", nargs="*", default=[], help="Scripted model paths")
+    parser.add_argument("--model-names", nargs="*", default=[], help="Explicit names for --models (parallel list; overrides path stem)")
     parser.add_argument("--top-n", type=int, default=0, help="Use top-N Elo models from scripted_for_elo")
     parser.add_argument("--specialists", action="store_true",
                         help="Include USSR/US v5 specialists")
@@ -424,10 +431,17 @@ def main() -> None:
     total_rows = 0
     t0 = time.time()
 
+    # Build name lookup (model_names overrides stem for explicit --models entries)
+    explicit_names: list[str] = args.model_names or []
+    def _model_name(idx: int, path: str) -> str:
+        if idx < len(explicit_names):
+            return explicit_names[idx]
+        return Path(path).stem
+
     for i, model_path in enumerate(model_paths):
         if args.games_per_model <= 0:
             break
-        name = Path(model_path).stem
+        name = _model_name(i, model_path)
         print(f"[{i+1}/{len(model_paths)}] {name} ({args.games_per_model} games)...", end=" ", flush=True)
 
         t1 = time.time()
@@ -439,6 +453,7 @@ def main() -> None:
             temperature=args.temperature,
             gamma=args.gamma,
             lam=args.gae_lambda,
+            model_name=name,
         )
 
         table = arrays_to_table(data)
@@ -459,8 +474,8 @@ def main() -> None:
         print(f"\nRound-robin: {len(pairs)} pairs, {args.games_per_pair} games each")
 
         for pi, (a, b) in enumerate(pairs):
-            name_a = Path(model_paths[a]).stem
-            name_b = Path(model_paths[b]).stem
+            name_a = _model_name(a, model_paths[a])
+            name_b = _model_name(b, model_paths[b])
             print(f"  [{pi+1}/{len(pairs)}] {name_a} vs {name_b}...", end=" ", flush=True)
 
             t1 = time.time()
@@ -473,6 +488,8 @@ def main() -> None:
                 temperature=args.temperature,
                 gamma=args.gamma,
                 lam=args.gae_lambda,
+                name_a=name_a,
+                name_b=name_b,
             )
 
             table = arrays_to_table(data)

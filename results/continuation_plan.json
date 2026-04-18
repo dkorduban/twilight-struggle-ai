@@ -5,8 +5,28 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "ISMCTS investigation CLOSED 2026-04-17. No training active. PPO chain stopped at v319_sc (user halt). Next: task #65 decision-context-features merge, or Phase 2b DP decoder, or resume PPO (user request required).",
-  "active_background": [],
+  "current_task": "AWR arch iteration (2026-04-18). FiLM experiment running (PID 441392, country_attn_film first). MCTS full-info smoke test running (PID 441959). Next: collect panel v6, run 60-epoch AWR sweep with benchmark step.",
+  "active_background": [
+    "FiLM 5-variant experiment: scripts/run_film_experiment.sh (PID 441392) — 20 epochs each, results/awr_sweep/film_exp/",
+    "MCTS full-info smoke test: scripts/mcts_fullinfo_smoke.py (PID 441959) — n_sim 50/100/200/400, N=20/side, results/ismcts_fix/mcts_fullinfo_smoke.json"
+  ],
+  "awr_iteration_plan_20260418": {
+    "panel_v6": "ussr_only_v5, us_only_v5, v44, v55, v56, v54, v20 + heuristic. Distinct --model-names for specialists (naming collision in v5 fixed).",
+    "collection_script": "scripts/collect_panel_v6.sh → data/awr_eval/awr_panel_v6.parquet (Parquet zstd)",
+    "training": "60 epochs minimum (20 was too few — models peaked at epoch 5 due to cold-start). PYTHONUNBUFFERED=1 to fix empty logs.",
+    "evaluation": "After training: export to TorchScript, benchmark vs v56 + specialists (N=200/side). val_adv_card_acc alone is insufficient.",
+    "mini_ppo": "After best arch identified via AWR+benchmark: 10-15 PPO iterations warm-started from best checkpoint.",
+    "dense_rewards": "Design: r_shaped = delta_vp * alpha * anneal(step). Implement in collect_selfplay_rows_jsonl.cpp. StepTrace already has vp_before/vp_after.",
+    "format": "Always Parquet (zstd). Never JSONL for large collections."
+  },
+  "value_calibration_finding_20260418": {
+    "model": "ppo_best_scripted (v319 era) on awr_panel_v5",
+    "brier": 0.1106,
+    "bias": "+0.116 (systematic overoptimism)",
+    "corr": 0.7794,
+    "by_stage": "early Brier=0.050, mid=0.108, late=0.211 (late game worst)",
+    "implication": "Value head systematically overestimates win probability by ~12%. Compounds with ISMCTS determinization bias. All models show positive bias (v56=+0.054, v319=+0.116)."
+  },
   "ismcts_investigation_closed": {
     "date": "2026-04-17",
     "root_cause": "Value-head bias under determinization. The NN value head was trained on true-hand observations; ISMCTS feeds it determinized states with sampled opponent hands. Budget sweep (n_sim 50→800 on AR1 divergence state) confirms mode-3 wins all budgets with no convergence to greedy's mode-0. Root value degrades monotonically (-0.12 → -0.19).",
