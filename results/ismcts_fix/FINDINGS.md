@@ -34,12 +34,26 @@ End-reason shift confirms the fix worked:
 - Post-fix: only 5/100 games end `defcon1`; majority reach `vp_threshold` or
   `turn_limit` (i.e. games play out normally)
 
-## Remaining gap: opponent-model mismatch
+## Why the ISMCTS-vs-self WR *dropped* from 77.5% (pre-fix) to 42% (post-fix)
 
-ISMCTS beats no-search against NN self (42% WR — a reasonable search-vs-no-search
-edge given ISMCTS acts first and inherently advantaged side) but underperforms
-greedy vs heuristic (13% vs 51% ceiling).
+At first glance this looks like a regression. It is not. The fix lives in
+`AccessibleCache::build`, which is used by **both** the ISMCTS search tree **and**
+`greedy_action_from_model` (ismcts.cpp:1298: `valid = (mode==Coup) ? cache.coup :
+cache.realign`). So post-fix:
 
+- Pre-fix: both sides could self-destruct. Opponent greedy NN occasionally picked a
+  battleground coup at DEFCON=2 → nuclear war → opponent auto-loses → free ISMCTS
+  win. The 77.5% was inflated by opponent blunders.
+- Post-fix: neither side can self-destruct. Opponent plays safely. The "true"
+  ISMCTS-vs-greedy-NN WR at 4×50 sims is 42%.
+
+42% < 50% means search is slightly net-negative at this tiny sim budget — a
+separate, unrelated phenomenon (noisy determinization + leaf miscalibration at low
+simulation counts).
+
+## Remaining gap: opponent-model mismatch (vs heuristic)
+
+ISMCTS vs heuristic (13%) is still far below greedy vs heuristic (51%).
 Same search, same model, same legality → the only variable is opponent type.
 
 The NN was trained on self-play distribution (PPO). Its value head and policy prior
