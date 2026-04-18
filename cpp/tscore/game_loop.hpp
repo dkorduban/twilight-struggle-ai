@@ -8,6 +8,7 @@
 #include <optional>
 #include <vector>
 
+#include "decision_frame.hpp"
 #include "game_state.hpp"
 #include "policies.hpp"
 #include "policy_callback.hpp"
@@ -53,6 +54,28 @@ struct GameLoopConfig {
     bool use_atomic_setup = false;  // if true, place setup influence atomically from opening tables
                                      // (no per-point policy callbacks, matching batched path RNG)
 };
+
+// Inspect the next pending sub-decision. Returns nullopt if no sub-frame is
+// pending and the game loop needs a top-level AR action.
+std::optional<DecisionFrame> engine_peek(const GameState& gs);
+
+// Apply a top-level action. Slice 1 preserves the current live-loop behavior
+// and ignores sub_policy until sub-frame producers are wired in.
+StepResult engine_step_toplevel(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    const SubframePolicyFn& sub_policy = {}
+);
+
+// Apply a queued sub-frame action. Slice 2 wiring is not active yet, so this is
+// a no-op when no frames are pending.
+StepResult engine_step_subframe(
+    GameState& gs,
+    const FrameAction& action,
+    Pcg64Rng& rng
+);
 
 // Public wrappers used by tools and bindings so they can drive the native loop
 // without duplicating phase logic.
