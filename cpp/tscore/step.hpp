@@ -2,6 +2,9 @@
 
 #pragma once
 
+#include <vector>
+
+#include "decision_frame.hpp"
 #include "legal_actions.hpp"
 #include "policy_callback.hpp"
 #include "rng.hpp"
@@ -21,7 +24,8 @@ int choose_option(
     Side side,
     int n_options,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb = nullptr
+    const PolicyCallbackFn* policy_cb = nullptr,
+    std::vector<DecisionFrame>* frame_log = nullptr
 );
 
 CountryId choose_country(
@@ -30,7 +34,8 @@ CountryId choose_country(
     Side side,
     std::span<const CountryId> pool,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb = nullptr
+    const PolicyCallbackFn* policy_cb = nullptr,
+    std::vector<DecisionFrame>* frame_log = nullptr
 );
 
 CardId choose_card(
@@ -39,7 +44,8 @@ CardId choose_card(
     Side side,
     std::span<const CardId> pool,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb = nullptr
+    const PolicyCallbackFn* policy_cb = nullptr,
+    std::vector<DecisionFrame>* frame_log = nullptr
 );
 
 WarResult apply_war_card(
@@ -56,7 +62,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
     const ActionEncoding& action,
     Side side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb = nullptr
+    const PolicyCallbackFn* policy_cb = nullptr,
+    std::vector<DecisionFrame>* frame_log = nullptr
 );
 
 std::tuple<bool, std::optional<Side>> check_vp_win(const PublicState& pub);
