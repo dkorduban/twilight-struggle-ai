@@ -56,7 +56,7 @@ constexpr int kMaxStrategies = 8;
 struct FastEdge {
     CardId card_id = 0;
     ActionMode mode = ActionMode::Influence;
-    CountryId country = 0;          // for Coup/Realign; 0 for Influence/Event/Space
+    CountryId country = static_cast<CountryId>(kMaxCountryLogits);  // for Coup/Realign; kMaxCountryLogits = no target
     int target_offset = 0;          // index into FastNode::resolved_targets
     int target_count = 0;           // number of influence targets
     float prior = 0.0f;
@@ -87,7 +87,7 @@ ActionEncoding materialize_action(const FastNode& node, size_t edge_index) {
                 node.resolved_targets[static_cast<size_t>(edge.target_offset + i)]);
         }
     } else if ((edge.mode == ActionMode::Coup || edge.mode == ActionMode::Realign) &&
-               edge.country != 0) {
+               edge.country < static_cast<CountryId>(kMaxCountryLogits)) {
         action.targets.push_back(edge.country);
     }
     return action;
@@ -97,7 +97,7 @@ ActionEncoding materialize_action(const FastNode& node, size_t edge_index) {
 void append_compact_edge(FastNode& node, const ActionEncoding& action, float prior) {
     int target_offset = 0;
     int target_count = 0;
-    CountryId country = 0;
+    CountryId country = static_cast<CountryId>(kMaxCountryLogits);
     if (action.mode == ActionMode::Influence && !action.targets.empty()) {
         target_offset = static_cast<int>(node.resolved_targets.size());
         target_count = static_cast<int>(action.targets.size());
