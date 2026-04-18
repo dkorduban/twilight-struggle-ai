@@ -5,7 +5,7 @@
 set -e
 
 SWEEP_RESULTS="results/awr_sweep/v2/results.txt"
-DATA="data/awr_eval/awr_panel_v6b.parquet"
+DATA="data/awr_eval/awr_panel_v7.parquet"  # v5 (1.27M) + v6b (214k) = 1.48M rows, 50 groups
 OUTDIR="results/awr_sweep/v2b"
 LOG="$OUTDIR/retrain.log"
 
@@ -25,8 +25,8 @@ mkdir -p "$OUTDIR"
 if [ -n "$1" ]; then
     BEST_ARCH="$1"
 else
-    # Pick arch with best combined benchmark (vs_v56 column = col 8 in results.txt)
-    BEST_ARCH=$(tail -n +3 "$SWEEP_RESULTS" | awk 'NF>=8 && $8+0>0 {print $8, $1}' | sort -rn | head -1 | awk '{print $2}')
+    # Pick arch with best avg combined WR across all 8 panel opponents (cols 4-11)
+    BEST_ARCH=$(tail -n +3 "$SWEEP_RESULTS" | awk 'NF>=9 && $4+0>0 {avg=($4+$5+$6+$7+$8+$9+$10+$11)/8; print avg, $1}' | sort -rn | head -1 | awk '{print $2}')
 fi
 
 if [ -z "$BEST_ARCH" ]; then
