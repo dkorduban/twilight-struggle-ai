@@ -78,7 +78,8 @@ void apply_ops_randomly_impl(
     int ops,
     CardId context_card_id,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb
+    const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
 ) {
     auto accessible = accessible_countries(side, pub, ActionMode::Influence);
     if (accessible.empty()) {
@@ -87,7 +88,7 @@ void apply_ops_randomly_impl(
 
     const auto place_influence = [&]() {
         for (int i = 0; i < ops; ++i) {
-            const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb);
+            const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb, frame_log);
             pub.set_influence(side, target, pub.influence_of(side, target) + 1);
         }
     };
@@ -99,7 +100,7 @@ void apply_ops_randomly_impl(
         ActionMode::Realign,
     };
     const auto mode = modes[static_cast<size_t>(
-        choose_option(pub, 0, side, static_cast<int>(modes.size()), rng, policy_cb)
+        choose_option(pub, 0, side, static_cast<int>(modes.size()), rng, policy_cb, frame_log)
     )];
     const auto opponent = other_side(side);
 
@@ -128,7 +129,7 @@ void apply_ops_randomly_impl(
             return;
         }
 
-        const auto target = choose_country(pub, context_card_id, side, targets, rng, policy_cb);
+        const auto target = choose_country(pub, context_card_id, side, targets, rng, policy_cb, frame_log);
         const auto net = coup_result(ops, country_spec(target).stability, rng);
         if (net > 0) {
             const auto removed = std::min(net, pub.influence_of(opponent, target));
@@ -145,7 +146,7 @@ void apply_ops_randomly_impl(
     }
 
     for (int i = 0; i < std::min(ops, static_cast<int>(accessible.size())); ++i) {
-        const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb);
+        const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb, frame_log);
         const auto ussr_inf = pub.influence_of(Side::USSR, target);
         const auto us_inf = pub.influence_of(Side::US, target);
         auto count_adj = [&](Side player) {
@@ -174,7 +175,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     CardId card_id,
     Side side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb
+    const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
 );
 
 std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
@@ -182,17 +184,18 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
     CardId card_id,
     Side event_side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb
+    const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
 ) {
     if (is_cat_c_card(card_id)) {
-        return apply_hand_event(gs, card_id, event_side, rng, policy_cb);
+        return apply_hand_event(gs, card_id, event_side, rng, policy_cb, frame_log);
     }
     ActionEncoding action{
         .card_id = card_id,
         .mode = ActionMode::Event,
         .targets = {},
     };
-    auto [new_pub, over, winner] = apply_action(gs.pub, action, event_side, rng, policy_cb);
+    auto [new_pub, over, winner] = apply_action(gs.pub, action, event_side, rng, policy_cb, frame_log);
     gs.pub = new_pub;
     return {new_pub, over, winner};
 }
@@ -202,7 +205,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     CardId card_id,
     Side side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb
+    const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
 ) {
     auto pub = gs.pub;
 
@@ -210,7 +214,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
         case 5: {
             auto hand = hand_to_vector(gs.hands[to_index(Side::USSR)]);
             if (!hand.empty()) {
-                const auto target = choose_card(pub, 5, Side::USSR, hand, rng, policy_cb);
+                const auto target = choose_card(pub, 5, Side::USSR, hand, rng, policy_cb, frame_log);
                 gs.hands[to_index(Side::USSR)].reset(target);
                 if (card_spec(target).starred) {
                     pub.removed.set(target);
@@ -230,7 +234,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                         return {pub, true, result.winner};
                     }
                 } else if (card_spec(target).side == Side::US) {
-                    auto [event_pub, over, winner] = fire_event_with_state(gs, target, Side::US, rng, policy_cb);
+                    auto [event_pub, over, winner] = fire_event_with_state(gs, target, Side::US, rng, policy_cb, frame_log);
                     pub = event_pub;
                     if (over) {
                         card_played(pub, 5, side);
@@ -255,7 +259,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!eligible.empty()) {
-                discard_from_hand(gs, Side::US, choose_card(pub, 10, Side::US, eligible, rng, policy_cb), pub);
+                discard_from_hand(gs, Side::US, choose_card(pub, 10, Side::US, eligible, rng, policy_cb, frame_log), pub);
             } else {
                 pub.set_influence(Side::US, kWestGermanyId, 0);
             }
@@ -265,7 +269,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
         case 26: {
             const auto accessible = accessible_countries(Side::US, pub, ActionMode::Influence);
             if (!accessible.empty()) {
-                const auto target = choose_country(pub, 26, Side::US, accessible, rng, policy_cb);
+                const auto target = choose_country(pub, 26, Side::US, accessible, rng, policy_cb, frame_log);
                 pub.set_influence(Side::US, target, pub.influence_of(Side::US, target) + 1);
             }
             break;
@@ -286,10 +290,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!eligible.empty()) {
-                const auto chosen = choose_card(pub, 32, side, eligible, rng, policy_cb);
+                const auto chosen = choose_card(pub, 32, side, eligible, rng, policy_cb, frame_log);
                 const auto ops = effective_ops(chosen, pub, side);
                 discard_from_hand(gs, side, chosen, pub);
-                apply_ops_randomly_impl(pub, side, ops, static_cast<CardId>(32), rng, policy_cb);
+                apply_ops_randomly_impl(pub, side, ops, static_cast<CardId>(32), rng, policy_cb, frame_log);
             }
             break;
         }
@@ -318,7 +322,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     }
                 }
                 if (!pool.empty()) {
-                    const auto target = choose_country(pub, 36, Side::USSR, pool, rng, policy_cb);
+                    const auto target = choose_country(pub, 36, Side::USSR, pool, rng, policy_cb, frame_log);
                     pub.set_influence(Side::USSR, target, pub.influence_of(Side::USSR, target) + 1);
                 }
             }
@@ -334,7 +338,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             pub.salt_active = true;
             auto discarded = hand_to_vector(pub.discard);
             if (!discarded.empty()) {
-                const auto chosen = choose_card(pub, 46, side, discarded, rng, policy_cb);
+                const auto chosen = choose_card(pub, 46, side, discarded, rng, policy_cb, frame_log);
                 pub.discard.reset(chosen);
                 gs.hands[to_index(side)].set(chosen);
             }
@@ -366,7 +370,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = choose_card(pub, 52, side, candidates, rng, policy_cb);
+                const auto chosen = choose_card(pub, 52, side, candidates, rng, policy_cb, frame_log);
                 gs.hands[to_index(opponent)].reset(chosen);
                 apply_ops_randomly_impl(
                     pub,
@@ -374,7 +378,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     effective_ops(chosen, pub, side),
                     static_cast<CardId>(52),
                     rng,
-                    policy_cb
+                    policy_cb,
+                    frame_log
                 );
                 gs.hands[to_index(opponent)].set(chosen);
             }
@@ -395,7 +400,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             for (int i = 0; i < selections; ++i) {
                 const auto chosen =
                     (policy_cb != nullptr && candidates.size() > 1)
-                    ? choose_card(pub, 95, side, candidates, rng, policy_cb)
+                    ? choose_card(pub, 95, side, candidates, rng, policy_cb, frame_log)
                     : candidates.front();
                 discard_from_hand(gs, opponent, chosen, pub);
                 candidates.erase(std::remove(candidates.begin(), candidates.end(), chosen), candidates.end());
@@ -416,7 +421,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = choose_card(pub, 68, Side::US, candidates, rng, policy_cb);
+                const auto chosen = choose_card(pub, 68, Side::US, candidates, rng, policy_cb, frame_log);
                 gs.hands[to_index(Side::USSR)].reset(chosen);
                 apply_ops_randomly_impl(
                     pub,
@@ -424,7 +429,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     effective_ops(chosen, pub, Side::US),
                     static_cast<CardId>(68),
                     rng,
-                    policy_cb
+                    policy_cb,
+                    frame_log
                 );
                 gs.hands[to_index(Side::USSR)].set(chosen);
             }
@@ -457,7 +463,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             std::vector<CardId> chosen_discards;
             chosen_discards.reserve(static_cast<size_t>(discard_count));
             for (int i = 0; i < discard_count; ++i) {
-                const auto chosen = choose_card(pub, 78, Side::US, discardable, rng, policy_cb);
+                const auto chosen = choose_card(pub, 78, Side::US, discardable, rng, policy_cb, frame_log);
                 chosen_discards.push_back(chosen);
                 discardable.erase(std::remove(discardable.begin(), discardable.end(), chosen), discardable.end());
             }
@@ -504,7 +510,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     std::vector<CardId> kept_cards;
                     kept_cards.reserve(static_cast<size_t>(keep_count));
                     for (int i = 0; i < keep_count; ++i) {
-                        const auto kept_card = choose_card(pub, 84, Side::US, drawn, rng, policy_cb);
+                        const auto kept_card = choose_card(pub, 84, Side::US, drawn, rng, policy_cb, frame_log);
                         kept_cards.push_back(kept_card);
                         drawn.erase(std::remove(drawn.begin(), drawn.end(), kept_card), drawn.end());
                     }
@@ -535,10 +541,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     discarded.end()
                 );
                 if (!discarded.empty()) {
-                    const auto chosen = choose_card(pub, 88, side, discarded, rng, policy_cb);
+                    const auto chosen = choose_card(pub, 88, side, discarded, rng, policy_cb, frame_log);
                     pub.discard.reset(chosen);
                     gs.pub = pub;
-                    auto [event_pub, over, winner] = fire_event_with_state(gs, chosen, side, rng, policy_cb);
+                    auto [event_pub, over, winner] = fire_event_with_state(gs, chosen, side, rng, policy_cb, frame_log);
                     pub = event_pub;
                     if (over) {
                         card_played(pub, 88, side);
@@ -563,9 +569,9 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (candidates.size() >= 2) {
-                const auto first = choose_card(pub, 98, Side::US, candidates, rng, policy_cb);
+                const auto first = choose_card(pub, 98, Side::US, candidates, rng, policy_cb, frame_log);
                 candidates.erase(std::remove(candidates.begin(), candidates.end(), first), candidates.end());
-                const auto second = choose_card(pub, 98, Side::US, candidates, rng, policy_cb);
+                const auto second = choose_card(pub, 98, Side::US, candidates, rng, policy_cb, frame_log);
                 discard_from_hand(gs, Side::US, first, pub);
                 discard_from_hand(gs, Side::US, second, pub);
             } else {
@@ -585,7 +591,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = choose_card(pub, 101, Side::US, candidates, rng, policy_cb);
+                const auto chosen = choose_card(pub, 101, Side::US, candidates, rng, policy_cb, frame_log);
                 discard_from_hand(gs, Side::US, chosen, pub);
             }
             break;
@@ -613,7 +619,8 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
     Side side,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb,
-    std::span<const CountryId> preferred_targets
+    std::span<const CountryId> preferred_targets,
+    std::vector<DecisionFrame>* frame_log
 ) {
     CardSet hand;
     hand.set(static_cast<int>(card_id));
@@ -687,7 +694,7 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
     }
 
     auto [ops_pub, ops_over, ops_winner] =
-        apply_action(gs.pub, ops_actions[static_cast<size_t>(idx)], side, rng, policy_cb);
+        apply_action(gs.pub, ops_actions[static_cast<size_t>(idx)], side, rng, policy_cb, frame_log);
     gs.pub = ops_pub;
     return {ops_pub, ops_over, ops_winner};
 }
@@ -698,7 +705,8 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_a
     GameState& gs,
     Side side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb
+    const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
 ) {
     bool trapped = false;
     bool bear_trap = false;
@@ -732,7 +740,7 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_a
         return std::tuple{pub, over, winner};
     }
 
-    const auto chosen = choose_card(pub, bear_trap ? 47 : 45, side, eligible, rng, policy_cb);
+    const auto chosen = choose_card(pub, bear_trap ? 47 : 45, side, eligible, rng, policy_cb, frame_log);
     discard_from_hand(gs, side, chosen, pub);
     if (roll_d6(rng) <= 4) {
         if (bear_trap) {
@@ -750,7 +758,8 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_cuban_
     GameState& gs,
     Side side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb
+    const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
 ) {
     if (!gs.pub.cuban_missile_crisis_active) {
         return std::nullopt;
@@ -772,12 +781,12 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_cuban_
         return std::nullopt;
     }
 
-    if (choose_option(gs.pub, static_cast<CardId>(43), side, 2, rng, policy_cb) == 0) {
+    if (choose_option(gs.pub, static_cast<CardId>(43), side, 2, rng, policy_cb, frame_log) == 0) {
         return std::nullopt;
     }
 
     auto pub = gs.pub;
-    const auto chosen = choose_card(pub, static_cast<CardId>(43), side, eligible, rng, policy_cb);
+    const auto chosen = choose_card(pub, static_cast<CardId>(43), side, eligible, rng, policy_cb, frame_log);
     discard_from_hand(gs, side, chosen, pub);
     pub.cuban_missile_crisis_active = false;
     gs.pub = pub;
@@ -790,29 +799,30 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     const ActionEncoding& action,
     Side side,
     Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb
+    const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
 ) {
     if (action.mode != ActionMode::Event && action.mode != ActionMode::Space) {
         const auto owner = card_spec(action.card_id).side;
         if (owner == other_side(side)) {
             if (action.mode == ActionMode::EventFirst) {
                 auto [event_pub, event_over, event_winner] =
-                    fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
+                    fire_event_with_state(gs, action.card_id, owner, rng, policy_cb, frame_log);
                 gs.pub = event_pub;
                 if (event_over) {
                     return {event_pub, true, event_winner};
                 }
-                return execute_deferred_ops(gs, action.card_id, side, rng, policy_cb, action.targets);
+                return execute_deferred_ops(gs, action.card_id, side, rng, policy_cb, action.targets, frame_log);
             }
 
-            auto [ops_pub, ops_over, ops_winner] = apply_action(gs.pub, action, side, rng, policy_cb);
+            auto [ops_pub, ops_over, ops_winner] = apply_action(gs.pub, action, side, rng, policy_cb, frame_log);
             gs.pub = ops_pub;
             if (ops_over) {
                 return {ops_pub, true, ops_winner};
             }
 
             auto [event_pub, event_over, event_winner] =
-                fire_event_with_state(gs, action.card_id, owner, rng, policy_cb);
+                fire_event_with_state(gs, action.card_id, owner, rng, policy_cb, frame_log);
             gs.pub = event_pub;
             if (event_over) {
                 return {event_pub, true, event_winner};
@@ -823,10 +833,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     }
 
     if (action.mode == ActionMode::Event && is_cat_c_card(action.card_id)) {
-        return apply_hand_event(gs, action.card_id, side, rng, policy_cb);
+        return apply_hand_event(gs, action.card_id, side, rng, policy_cb, frame_log);
     }
 
-    auto [new_pub, over, winner] = apply_action(gs.pub, action, side, rng, policy_cb);
+    auto [new_pub, over, winner] = apply_action(gs.pub, action, side, rng, policy_cb, frame_log);
     gs.pub = new_pub;
     if (!over && action.mode == ActionMode::Space) {
         const auto opponent = other_side(side);
