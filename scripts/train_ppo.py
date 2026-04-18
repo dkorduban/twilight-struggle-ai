@@ -738,6 +738,27 @@ def _recompute_log_probs_and_values(
     model.train()
 
 
+def _apply_dense_vp_rewards(
+    all_steps: list,
+    boundaries: list[int],
+    results: list,
+    alpha: float,
+    anneal_factor: float,
+) -> None:
+    """Add per-step delta_vp shaped rewards (VP sign = USSR-positive)."""
+    for i, result in enumerate(results):
+        start = boundaries[i]
+        end = boundaries[i + 1] if i + 1 < len(boundaries) else len(all_steps)
+        for j in range(start, end):
+            step = all_steps[j]
+            if step.raw_vp is None:
+                continue
+            next_vp = all_steps[j + 1].raw_vp if j + 1 < end and all_steps[j + 1].raw_vp is not None else step.raw_vp
+            delta_vp = next_vp - step.raw_vp
+            delta_for_actor = delta_vp if step.side_int == 0 else -delta_vp
+            step.reward += alpha * anneal_factor * float(delta_for_actor) / 20.0
+
+
 def collect_rollout_batched(
     model: nn.Module,
     n_games: int,
@@ -749,6 +770,9 @@ def collect_rollout_batched(
     rollout_temp: float = 1.0,
     reward_shaping: bool = False,
     reward_alpha: float = 0.5,
+    dense_reward_alpha: float = 0.0,
+    dense_reward_anneal_steps: int = 500_000,
+    global_step: int = 0,
 ) -> list[Step]:
     """Collect PPO rollout steps through the native batched C++ game pool."""
     if not hasattr(tscore, "rollout_games_batched"):
@@ -813,6 +837,11 @@ def collect_rollout_batched(
             continue
         all_steps[end - 1].reward = _compute_reward(result, side_int, vp_reward_coef, reward_shaping=reward_shaping, reward_alpha=reward_alpha)
         all_steps[end - 1].done = True
+
+    if dense_reward_alpha > 0:
+        anneal_factor = max(0.0, 1.0 - global_step / max(1, dense_reward_anneal_steps))
+        if anneal_factor > 0:
+            _apply_dense_vp_rewards(all_steps, boundaries, results, dense_reward_alpha, anneal_factor)
 
     return all_steps
 
@@ -2933,6 +2962,11 @@ def parse_args() -> argparse.Namespace:
                    help="Enable shaped rewards (VP trajectory + turn length bonus)")
     p.add_argument("--reward-alpha", type=float, default=0.5,
                    help="Overall shaping weight (default: 0.5)")
+    p.add_argument("--dense-reward-alpha", type=float, default=0.0,
+                   help="Per-step VP-change reward coefficient (0 = disabled). "
+                        "Adds alpha*anneal*(delta_vp/20) shaped reward at each step.")
+    p.add_argument("--dense-reward-anneal-steps", type=int, default=500_000,
+                   help="Anneal dense VP rewards to 0 over this many global steps (default: 500000)")
     p.add_argument("--league", type=str, default=None,
                    help="League directory for checkpoint pool self-play (enables league training)")
     p.add_argument("--league-save-every", type=int, default=10,
@@ -3282,6 +3316,8 @@ def main() -> None:
         all_steps: list[Step] = []
         self_play_steps: list[Step] = []
         ucb_metrics: dict[str, float] = {}
+        # Approximate global step for dense reward annealing (iteration * games * ~100 steps/game)
+        global_step = (iteration - args.start_iteration) * args.games_per_iter * 100
         if args.league:
             seed = args.seed + (iteration - 1) * args.games_per_iter
             # Save current checkpoint to league pool before rollout.
@@ -3357,11 +3393,17 @@ def main() -> None:
                     model, n_heur // 2, tscore.Side.USSR, seed + 1000000, device, card_specs,
                     vp_reward_coef=args.vp_reward_coef, rollout_temp=args.rollout_temp,
                     reward_shaping=args.reward_shaping, reward_alpha=args.reward_alpha,
+                    dense_reward_alpha=args.dense_reward_alpha,
+                    dense_reward_anneal_steps=args.dense_reward_anneal_steps,
+                    global_step=global_step,
                 )
                 heur_steps_us = collect_rollout_batched(
                     model, n_heur // 2, tscore.Side.US, seed + 2000000, device, card_specs,
                     vp_reward_coef=args.vp_reward_coef, rollout_temp=args.rollout_temp,
                     reward_shaping=args.reward_shaping, reward_alpha=args.reward_alpha,
+                    dense_reward_alpha=args.dense_reward_alpha,
+                    dense_reward_anneal_steps=args.dense_reward_anneal_steps,
+                    global_step=global_step,
                 )
                 all_steps = all_steps + heur_steps_ussr + heur_steps_us
         else:
@@ -3373,6 +3415,9 @@ def main() -> None:
                     model, games_per_side, side, side_seed, device, card_specs,
                     vp_reward_coef=args.vp_reward_coef,
                     reward_shaping=args.reward_shaping, reward_alpha=args.reward_alpha,
+                    dense_reward_alpha=args.dense_reward_alpha,
+                    dense_reward_anneal_steps=args.dense_reward_anneal_steps,
+                    global_step=global_step,
                 )
                 all_steps.extend(steps)
 

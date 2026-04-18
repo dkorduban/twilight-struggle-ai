@@ -1,19 +1,19 @@
 {
   "goals": [
-    "1. Complete correct engine — fix all GAPs, all choices policy-driven",
-    "2. Full policy control — every rng decision routes through PolicyCallback",
+    "1. Complete correct engine \u2014 fix all GAPs, all choices policy-driven",
+    "2. Full policy control \u2014 every rng decision routes through PolicyCallback",
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "AWR arch iteration (2026-04-18). FiLM experiment running (PID 441392, country_attn_film first). MCTS full-info smoke test running (PID 441959). Next: collect panel v6, run 60-epoch AWR sweep with benchmark step.",
+  "current_task": "AWR arch sweep v2 running (PID 446959). 5 archs x 60 epochs x benchmark. Arch 1 (country_attn_side) at epoch 38/60, val_adv peaked at epoch 7 (0.564). Panel v6b created with correct _vs_heuristic tags (28 pairs).",
   "active_background": [
-    "FiLM 5-variant experiment: scripts/run_film_experiment.sh (PID 441392) — 20 epochs each, results/awr_sweep/film_exp/",
-    "MCTS full-info smoke test: scripts/mcts_fullinfo_smoke.py (PID 441959) — n_sim 50/100/200/400, N=20/side, results/ismcts_fix/mcts_fullinfo_smoke.json"
+    "FiLM 5-variant experiment: scripts/run_film_experiment.sh (PID 441392) \u2014 20 epochs each, results/awr_sweep/film_exp/",
+    "MCTS full-info smoke test: scripts/mcts_fullinfo_smoke.py (PID 441959) \u2014 n_sim 50/100/200/400, N=20/side, results/ismcts_fix/mcts_fullinfo_smoke.json"
   ],
   "awr_iteration_plan_20260418": {
     "panel_v6": "ussr_only_v5, us_only_v5, v44, v55, v56, v54, v20 + heuristic. Distinct --model-names for specialists (naming collision in v5 fixed).",
-    "collection_script": "scripts/collect_panel_v6.sh → data/awr_eval/awr_panel_v6.parquet (Parquet zstd)",
-    "training": "60 epochs minimum (20 was too few — models peaked at epoch 5 due to cold-start). PYTHONUNBUFFERED=1 to fix empty logs.",
+    "collection_script": "scripts/collect_panel_v6.sh \u2192 data/awr_eval/awr_panel_v6.parquet (Parquet zstd)",
+    "training": "60 epochs minimum (20 was too few \u2014 models peaked at epoch 5 due to cold-start). PYTHONUNBUFFERED=1 to fix empty logs.",
     "evaluation": "After training: export to TorchScript, benchmark vs v56 + specialists (N=200/side). val_adv_card_acc alone is insufficient.",
     "mini_ppo": "After best arch identified via AWR+benchmark: 10-15 PPO iterations warm-started from best checkpoint.",
     "dense_rewards": "Design: r_shaped = delta_vp * alpha * anneal(step). Implement in collect_selfplay_rows_jsonl.cpp. StepTrace already has vp_before/vp_after.",
@@ -29,7 +29,7 @@
   },
   "ismcts_investigation_closed": {
     "date": "2026-04-17",
-    "root_cause": "Value-head bias under determinization. The NN value head was trained on true-hand observations; ISMCTS feeds it determinized states with sampled opponent hands. Budget sweep (n_sim 50→800 on AR1 divergence state) confirms mode-3 wins all budgets with no convergence to greedy's mode-0. Root value degrades monotonically (-0.12 → -0.19).",
+    "root_cause": "Value-head bias under determinization. The NN value head was trained on true-hand observations; ISMCTS feeds it determinized states with sampled opponent hands. Budget sweep (n_sim 50\u2192800 on AR1 divergence state) confirms mode-3 wins all budgets with no convergence to greedy's mode-0. Root value degrades monotonically (-0.12 \u2192 -0.19).",
     "search_quality": "ISMCTS vs greedy-self: 30-47% combined WR at budgets 50-800 rollouts (flat, post-UAF+Dirichlet fixes). Search is net-negative vs greedy because rollouts systematically over-prefer Space over Influence when opponent hand is sampled.",
     "fix_required": "Training-side: train value head on determinized observations so head calibrates to hallucinated-hand uncertainty. Or: MC rollouts with heuristic at leaves (structural fix for vs-heuristic only).",
     "scope": "Out of scope for search-only patch. Reopen when model trains with determinization-aware observations.",
@@ -51,7 +51,7 @@
     "ismcts_root_causes": {
       "uaf_bug": "cpp/tscore/ismcts.cpp RawBatchOutputs used raw float* without Tensor keepalive -> intermittent free(): invalid pointer at scale. Transplanted _storage Tensor pattern from mcts_batched.cpp. Commit de43e27.",
       "dirichlet_leak": "IsmctsConfig inherited dir_alpha=0.2 dir_epsilon=0.25 from MctsConfig default -> search noise during eval. Overrode IsmctsConfig default initializer to zero both. Commit de43e27.",
-      "state_distribution_mismatch": "Post-fix, v84 mined positions agreement NN-vs-ISMCTS jumped 96% -> 100%. But paired greedy-vs-ISMCTS stayed at -21/50 net. ISMCTS underperforms greedy on in-game rollout states. Root cause: value-head bias under determinization — NOT fixable by search-side patches."
+      "state_distribution_mismatch": "Post-fix, v84 mined positions agreement NN-vs-ISMCTS jumped 96% -> 100%. But paired greedy-vs-ISMCTS stayed at -21/50 net. ISMCTS underperforms greedy on in-game rollout states. Root cause: value-head bias under determinization \u2014 NOT fixable by search-side patches."
     }
   },
   "ppo_chain": {
@@ -72,18 +72,19 @@
     "E_mcts_batched_fast": "DEFERRED"
   },
   "pragmatic_heads": "ALL DONE (phases 1-4). Star Wars card 103 deck-choice low priority.",
-  "jsd_probe": "DONE — jsd_probe.py + probe set + train_ppo.py integration",
+  "jsd_probe": "DONE \u2014 jsd_probe.py + probe set + train_ppo.py integration",
   "concern_separation": {
-    "status": "BLOCKED — needs revised approach",
+    "status": "BLOCKED \u2014 needs revised approach",
     "issue": "Decode-level DEFCON safety checks in decode_helpers.hpp are POLICY-LEVEL safety nets, not duplicated rule logic. They must be preserved. Only consolidate rule QUERIES (is_card_defcon_blocked, nato_prerequisite_met, is_trap_blocked) into rule_queries.hpp without removing decode fallbacks.",
     "reverted_commit": "90f663e reverts 15 WIP commits (6902851..dc6d6aa)"
   },
   "next_tasks": [
-    "Task #65: Merge decision context features worktree to main (check which worktree has this)",
-    "Phase 2b DP allocation decoder — requires BC pre-train on best-model games before PPO restart",
-    "Task #64: Collect 4M row extended dataset in background",
-    "Task #61: Replace wasted actor_possible mask with opponent hand support",
-    "Resume PPO chain (user request required)"
+    "When sweep v2 finishes: run awr_best_arch_retrain.sh to train winner on panel v6b",
+    "After retrain: mini-PPO 10-15 iterations warm-started from best AWR checkpoint",
+    "benchmark_mcts_vs_greedy SIGSEGV: background agent investigating (cpp/tscore/mcts_batched.cpp)",
+    "Decision context features (kScalarDim 32->36): implement after AWR sweep completes and panel v7 collection planned",
+    "Dense reward shaping: implement in collect_selfplay_rows_jsonl.cpp for next PPO restart",
+    "Task #61: Replace wasted actor_possible mask with opponent hand support"
   ],
   "last_updated": "2026-04-17T23:00:00+00:00",
   "completed_this_session": [
@@ -92,13 +93,23 @@
     "Added ismcts_search_from_state binding + scripts/ismcts_distribution_shape.py diagnostic",
     "Confirmed post-fix NN-vs-ISMCTS top-1 agreement: 96% -> 100% on mined positions",
     "Commit de43e27 landed",
-    "greedy_state_trace binding (commit e789c3a) — play game, return per-decision state dicts",
-    "scripts/ismcts_first_divergence.py — find first ISMCTS/greedy divergence in a game",
+    "greedy_state_trace binding (commit e789c3a) \u2014 play game, return per-decision state dicts",
+    "scripts/ismcts_first_divergence.py \u2014 find first ISMCTS/greedy divergence in a game",
     "First-divergence probes on 2 seeds: AR1 mode-flip pattern (card correct, mode flipped)",
-    "scripts/ismcts_budget_convergence.py — sweep n_sim on single state",
-    "Budget sweep (n_sim 50→800) confirms no convergence: mode 3 always wins visits, root value degrades",
+    "scripts/ismcts_budget_convergence.py \u2014 sweep n_sim on single state",
+    "Budget sweep (n_sim 50\u2192800) confirms no convergence: mode 3 always wins visits, root value degrades",
     "Root cause identified: value-head bias under determinization (confirmed, training-side fix required)",
     "FINDINGS.md updated with first-divergence probe, budget sweep, root-cause conclusion",
     "Task #82 (ISMCTS divergence diagnostic) COMPLETED"
-  ]
+  ],
+  "awr_sweep_v2_state": {
+    "status": "running",
+    "pid": 446959,
+    "data": "data/awr_eval/awr_panel_v6.parquet (213933 rows, 28 groups)",
+    "arch_1_peak_epoch": 7,
+    "arch_1_peak_val_adv": 0.564,
+    "note": "baseline peaks early (epoch 7), expected \u2014 awr_best.pt captures it",
+    "benchmark_vs": "all 7 panel models + heuristic (8 total, N=100/side)",
+    "expected_completion": "~6 hours from start (2026-04-18 06:44 UTC)"
+  }
 }

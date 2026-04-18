@@ -404,6 +404,11 @@ int main(int argc, char** argv) {
         for (size_t step_idx = 0; step_idx < traced.steps.size(); ++step_idx) {
             const auto& step = traced.steps[step_idx];
             const auto& pub = step.pub_snapshot;
+            // vp_after: VP at the start of the next decision point (or final_vp if terminal).
+            // Enables dense reward shaping: delta_vp = vp_after - vp (can be anneal-weighted at train time).
+            const int vp_after = (step_idx + 1 < traced.steps.size())
+                ? traced.steps[step_idx + 1].pub_snapshot.vp
+                : traced.result.final_vp;
 
             auto actor_hand_mask = card_mask(step.hand_snapshot);
             std::vector<int> cq(ts::kCardSlots, 3);
@@ -521,6 +526,7 @@ int main(int argc, char** argv) {
                 << ",\"state_dict_complete\":true"
                 << ",\"game_result\":\"" << game_result_str(traced.result.winner) << "\""
                 << ",\"winner_side\":" << winner_side_int(traced.result.winner)
+                << ",\"vp_after\":" << vp_after
                 << ",\"final_vp\":" << traced.result.final_vp
                 << ",\"end_turn\":" << traced.result.end_turn
                 << ",\"end_reason\":\"" << traced.result.end_reason << "\"}\n";
