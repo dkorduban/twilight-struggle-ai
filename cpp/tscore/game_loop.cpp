@@ -614,6 +614,42 @@ void resolve_glasnost_free_ops_live(
     apply_influence_budget_impl(pub, Side::USSR, ops, static_cast<CardId>(93), rng, policy_cb);
 }
 
+std::optional<DecisionFrame> engine_peek(const GameState& gs) {
+    if (!gs.frame_stack.empty()) {
+        return gs.frame_stack.back();
+    }
+    return std::nullopt;
+}
+
+StepResult engine_step_toplevel(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    const SubframePolicyFn& sub_policy
+) {
+    (void)sub_policy;
+    auto [new_pub, over, winner] = apply_action_live(gs, action, side, rng);
+    (void)new_pub;
+    return StepResult{
+        .pushed_subframe = false,
+        .side_changed = !over,
+        .game_over = over,
+        .winner = winner,
+    };
+}
+
+StepResult engine_step_subframe(GameState& gs, const FrameAction& action, Pcg64Rng& rng) {
+    (void)action;
+    (void)rng;
+    return StepResult{
+        .pushed_subframe = !gs.frame_stack.empty(),
+        .side_changed = false,
+        .game_over = gs.game_over,
+        .winner = gs.winner,
+    };
+}
+
 namespace {
 
 bool action_log_enabled() {
