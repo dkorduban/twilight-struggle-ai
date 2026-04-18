@@ -1,0 +1,14 @@
+
+# FiLM variant experiment results (20 epochs, data=v5, seed=42)
+# Benchmarks vs full 8-panel (N=100 games, seed=80000)
+# NOTE: normal_init/zero_beta_bias/gated failed (not registered when experiment started).
+#       These 3 variants are evaluated in sweep v2 with 60 epochs on v6 data.
+
+Architecture                                    AdvCard%  BestEp  vs_heur  vs_ussr5  vs_us5   vs_v44   vs_v55   vs_v56   vs_v54   vs_v20
+---------------------------------------------   --------  ------  -------  --------  ------   ------   ------   ------   ------   ------
+country_attn_film (v5, zero-init)               0.5714      9     0.410    0.330     0.370    0.435    0.380    0.315    0.325    0.385
+country_attn_side (v6, baseline)                0.5570     12     0.340    0.325     0.375    0.360    0.320    0.285    0.335    0.350
+
+# FiLM clearly improves vs heuristic (+7pp) and older models (+3-7pp). Mixed vs specialists.
+# country_attn_film on v5 data = strong candidate for final PPO warmstart.
+# Sweep v2 testing: film_gated, film_normal_init, gnn_card_attn, film_normal_init_zero_beta on v6.
