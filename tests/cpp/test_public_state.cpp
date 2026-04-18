@@ -402,6 +402,32 @@ TEST_CASE("Resolving Glasnost free ops clears the pending budget", "[game_loop]"
     REQUIRE(pub.glasnost_free_ops == 0);
 }
 
+TEST_CASE("engine_step_toplevel records event sub-decision frames", "[game_loop][frame_stack]") {
+    GameState gs;
+    DecisionFrame stale;
+    stale.source_card = 99;
+    gs.frame_stack.push_back(stale);
+
+    const ActionEncoding action{
+        .card_id = 23,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto result = engine_step_toplevel(gs, action, Side::US, rng);
+
+    REQUIRE(result.pushed_subframe);
+    REQUIRE_FALSE(gs.frame_stack.empty());
+
+    const auto& frame = gs.frame_stack.front();
+    REQUIRE(frame.kind == FrameKind::CountryPick);
+    REQUIRE(frame.source_card == 23);
+    REQUIRE(frame.acting_side == Side::US);
+    REQUIRE(frame.eligible_n > 0);
+    REQUIRE(frame.eligible_countries.count() >= frame.eligible_n);
+}
+
 TEST_CASE("Glasnost free ops routes influence targets through the policy callback", "[game_loop]") {
     constexpr CardId kGlasnostId = 93;
 
