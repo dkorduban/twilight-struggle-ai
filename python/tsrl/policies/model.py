@@ -5,10 +5,8 @@ Input contract
 All inputs are batched tensors with shape (B, *).
 
   influence : (B, 172)  — concat [ussr_influence, us_influence], raw counts (86 countries × 2)
-  cards     : (B, 448)  — concat [actor_known_in, opp_unaccounted,
+  cards     : (B, 448)  — concat [actor_known_in, actor_known_in,
                                    discard_mask, removed_mask], binary
-                          opp_unaccounted = cards not in actor hand, discard, or removed
-                          (opponent's possible hand + undrawn deck; replaces duplicate actor_possible)
   scalars   : (B, 11)   — pre-normalised game scalars (see dataset.py)
 
 Output contract
@@ -409,7 +407,7 @@ class CardEmbedEncoder(nn.Module):
 
     The 4 masks are:
       cards[:, 0:112]     = actor_known_in
-      cards[:, 112:224]   = opp_unaccounted  (cards not in hand/discard/removed)
+      cards[:, 112:224]   = actor_known_in (duplicate)
       cards[:, 224:336]   = discard_mask
       cards[:, 336:448]   = removed_mask
 

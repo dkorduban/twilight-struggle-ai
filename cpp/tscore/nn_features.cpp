@@ -33,15 +33,7 @@ void fill_influence_array(float* ptr, const PublicState& pub, Side side) {
 
 void fill_cards(float* ptr, const PublicState& pub, const CardSet& hand) {
     fill_card_mask(ptr, hand);
-    // [112..223]: cards not in actor's hand, discard, or removed — opponent's possible hand
-    // plus undrawn deck cards. Replaces the prior duplicate of the actor's hand mask.
-    CardSet unaccounted;
-    for (int c = 1; c <= kMaxCardId; ++c) {
-        if (!hand.test(c) && !pub.discard.test(c) && !pub.removed.test(c)) {
-            unaccounted.set(c);
-        }
-    }
-    fill_card_mask(ptr + kCardMaskLen, unaccounted);
+    fill_card_mask(ptr + kCardMaskLen, hand);
     fill_card_mask(ptr + (2 * kCardMaskLen), pub.discard);
     fill_card_mask(ptr + (3 * kCardMaskLen), pub.removed);
 }
