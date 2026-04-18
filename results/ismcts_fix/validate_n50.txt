@@ -1,0 +1,33 @@
+POST-FIX VALIDATION: N=50/side, n_det=4 n_sim=50
+model=data/checkpoints/scripted_for_elo/v55_scripted.pt
+
+=== C) greedy NN vs heuristic (control) ===
+elapsed=7.5s
+  USSR : wr=31/50=62.0% mean_end_turn=7.8 reasons[europe_control=23, turn_limit=12, defcon1=7, vp_threshold=4]
+  US   : wr=20/50=40.0% mean_end_turn=8.9 reasons[turn_limit=27, europe_control=10, defcon1=5, vp_threshold=5]
+  COMBINED: 51/100=51.0%
+
+=== B) ISMCTS vs heuristic ===
+[ISMCTS profile] advance=1.834s select=37.387s nn=26.881s expand=46.426s apply=10.021s total=122.549s
+[ISMCTS profile] batches=1687 items=549055 avg_batch=325.5
+[ISMCTS profile] advance=1.909s select=33.429s nn=28.332s expand=41.969s apply=8.980s total=114.620s
+[ISMCTS profile] batches=1688 items=573501 avg_batch=339.8
+elapsed=238.2s
+  USSR : wr=4/50=8.0% mean_end_turn=7.6 reasons[vp_threshold=23, turn_limit=19, vp=4, defcon1=3]
+  US   : wr=9/50=18.0% mean_end_turn=7.9 reasons[vp_threshold=23, turn_limit=19, vp=3, defcon1=2]
+  COMBINED: 13/100=13.0%
+
+=== A) ISMCTS vs greedy v55 self ===
+[ISMCTS vs model profile] advance=4.949s select=42.608s nn=30.471s expand=48.816s apply=10.748s total=137.592s
+[ISMCTS vs model profile] batches=1763 items=618052 avg_batch=350.6
+[ISMCTS vs model profile] advance=5.058s select=39.391s nn=31.101s expand=46.748s apply=10.439s total=132.737s
+[ISMCTS vs model profile] batches=1797 items=628254 avg_batch=349.6
+elapsed=271.6s
+  ISMCTS-USSR vs greedy-US  : wr=18/50=36.0% mean_end_turn=8.5 reasons[turn_limit=24, vp_threshold=16, defcon1=4, scoring_card_held=3]
+  ISMCTS-US   vs greedy-USSR: wr=24/50=48.0% mean_end_turn=8.5 reasons[turn_limit=29, vp_threshold=13, defcon1=5, scoring_card_held=2]
+  COMBINED: 42/100=42.0%
+
+=== SUMMARY ===
+greedy  vs heuristic : 51.0%  <- ceiling
+ISMCTS  vs heuristic : 13.0%  <- target: match or beat greedy
+ISMCTS  vs greedy-self: 42.0%  <- search-vs-no-search check
