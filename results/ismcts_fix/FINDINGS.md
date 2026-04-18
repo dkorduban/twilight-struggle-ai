@@ -152,6 +152,121 @@ Next action: add `ismcts_policy_at_state` binding; at ~20 real root states
 compare NN argmax, ISMCTS visit-argmax, and NN value estimate of each top-K
 child. Localize whether the failure is selection (2) or evaluation (1).
 
+### Distribution-shape diagnostic (2026-04-18)
+
+Added `tscore.ismcts_search_from_state` binding (mirrors `mcts_search_from_state`
+but calls `ismcts_search` on the equivalent Observation). Runs ISMCTS at a mined
+root state and returns per-legal-action `prior` (NN softmax, post-mask) and
+`visits` (ISMCTS visit count). Script: `scripts/ismcts_distribution_shape.py`.
+
+Ran 50 mined v84 hard positions at n_det=4, n_sim=50, c_puct=1.5 with v55_scripted.
+
+| metric | value |
+|---|---|
+| Edge-level top-1 match (card+mode) | **96% (48/50)** |
+| Card-level top-1 match | **100% (50/50)** |
+| Mean NN entropy (over legal actions) | 4.43 |
+| Mean ISMCTS entropy | 2.49 |
+| Mean max(NN prior) | 0.192 |
+| Mean visit concentration (max/total) | 0.357 |
+| Mean JS(NN‖ISMCTS) | 0.266 |
+| Mean Spearman ρ over priors vs visits | +0.47 |
+| q_gap > +0.01 (search found better) | 1/50 (2%) |
+| q_gap < −0.01 (search found worse) | 1/50 (2%) |
+| mean q_gap | −0.001 |
+
+Raw: `results/ismcts_fix/distribution_shape.jsonl` + `.txt`.
+
+**Interpretation.** ISMCTS is essentially a no-op at the card level at these roots.
+It just sharpens the per-action distribution. The 2 edge disagreements were
+different *modes* of the same card (coup vs event vs space); q-gap to the NN
+pick was zero within noise.
+
+This rules out "search picks a different card and loses" at the root. The
+−22/50 win-flip signal from `policy_agreement.txt` must therefore come from:
+
+1. **Cumulative mode flips across ~20 decisions/game.** 4% edge-level disagreement
+   per decision × 20 decisions ≈ 56% of games have ≥1 mode flip. If these flips
+   are systematically worse (e.g. coup→event when coup was correct), they
+   compound into game losses.
+2. **Mined positions ≠ typical game states.** v84 hard positions may skew toward
+   stable decisions where search agrees with greedy. In-game states from the
+   heuristic-opponent benchmark likely contain more ambiguous mid-value
+   situations where NN argmax is itself unconfident (low max-prior) and small
+   differences in leaf value estimation flip the top action.
+3. **Determinization variance under ISMCTS.** With n_det=4 and n_sim=50, each
+   determinization only gets 50 rollouts; aggregated visits are noisy.
+
+**Next probe.** Extract ~50 actual mid-game decision states (not v84 mined
+positions) via a collector callback that dumps state_dicts during a real
+heuristic-opponent benchmark, then re-run the diagnostic. If disagreement rate
+climbs from 4% to 20-30% on in-game states, hypothesis (2) is correct.
+
+### Two source bugs landed (2026-04-18)
+
+Opus strategy review found two latent bugs in source:
+
+**Bug 1 — UAF in `cpp/tscore/ismcts.cpp:RawBatchOutputs::extract`.**
+`auto cont_card = outputs.card_logits.contiguous()` is a local Tensor; its
+storage is freed when `extract()` returns. `raw.card_logits` then points to
+freed memory. The sibling `mcts_batched.cpp:RawBatchOutputs` keeps `_storage`
+Tensor fields as members. Transplanted the `_storage` pattern into ismcts.cpp.
+This is the likely root cause of the scale-dependent `free(): invalid pointer`
+crash seen at n_det=16 n_sim=100 pool=16 N≥20/side (task #80).
+
+**Bug 2 — Dirichlet noise leaks into eval benchmarks.** `MctsConfig` defaults
+to `dir_alpha=0.2, dir_epsilon=0.25`. `IsmctsConfig::mcts_config` inherits
+these defaults. `apply_root_dirichlet_noise` is called unconditionally in all
+four ISMCTS paths (ismcts.cpp:2061,2112,2246,2296). Fix: override `IsmctsConfig`
+default initializer to set `mcts_config.dir_alpha=0, dir_epsilon=0`. Benchmarks
+that want noise can opt in explicitly (same as `mcts_batched.hpp` already does).
+
+Commit: see `Fix ISMCTS UAF + Dirichlet leak` — closes task #80.
+
+### Post-fix measurements (2026-04-18)
+
+| Metric | Pre-fix | Post-fix |
+|---|---|---|
+| Mined-pos edge top-1 match (N=50) | 96.0% | **100.0%** |
+| Mined-pos card top-1 match | 100.0% | 96.0% |
+| Mean NN entropy | 4.43 | 3.61 |
+| Mean ISMCTS entropy | 2.49 | 2.03 |
+| Mean max(prior) | 0.19 | 0.26 |
+| Mean visit concentration | 0.36 | 0.40 |
+| Paired benchmark: greedy USSR WR | 54% (27/50) | 54% (27/50) |
+| Paired benchmark: ISMCTS USSR WR | 10% (5/50) | 12% (6/50) |
+| Net search value (win flips) | −22 | **−21** |
+
+Raw: `distribution_shape_postfix.{jsonl,txt}`, `policy_agreement_postfix.txt`.
+
+**Interpretation.** The Dirichlet fix sharpened the NN prior distribution and
+removed the 2 mined-position edge-flips (they were noise). But the in-game
+search-harm is essentially unchanged (−22 → −21). Therefore:
+
+1. ISMCTS agrees with NN argmax 100% at mined v84 root states.
+2. ISMCTS disagrees enough with NN argmax at **in-game states** during the
+   heuristic-opponent benchmark to flip 24 wins to losses.
+3. These two facts together imply that **v84 mined positions are not a
+   representative sample of the states ISMCTS encounters in real games**.
+   Mined positions come from self-play trajectories where the NN was confident
+   enough to act. The benchmark-against-heuristic reaches different mid-game
+   states where NN priors are shallower and visit concentration flips the top
+   pick.
+
+**Remaining action.** Per Opus strategy §5: if vs-heuristic stays weak while
+vs-self recovers, do not chase further here. FINDINGS.md already documents
+opponent-model mismatch as structural. Punt to follow-up:
+
+- [ ] Re-run `ismcts_sweep_vs_self.py` post-fix to see if vs-self recovers
+  (pre-fix was flat 32-42% combined). If yes → bug was the UAF + Dirichlet.
+  If no → search is fundamentally not helping at this budget.
+- [ ] Add state_dict collector callback in a heuristic-opponent benchmark so
+  the distribution-shape diagnostic can be re-run on **in-game** states. If
+  edge-top-1 drops from 100% to <80%, compound-mode-flip hypothesis confirmed.
+- [ ] Independent of search: value-head-under-determinization probe (§4 of
+  Opus strategy) — measure leaf value variance across determinizations for
+  the same public state.
+
 ## Artifacts
 
 - `scripts/ismcts_validate.py` — N=50/side validation (3 buckets)

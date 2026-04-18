@@ -17,7 +17,12 @@ namespace ts {
 struct IsmctsConfig {
     int n_determinizations = 8;
     int max_pending_per_det = 8;  // concurrent leaves per determinization (virtual loss)
-    MctsConfig mcts_config;
+    MctsConfig mcts_config = []() {
+        MctsConfig cfg;
+        cfg.dir_alpha = 0.0f;
+        cfg.dir_epsilon = 0.0f;
+        return cfg;
+    }();
 };
 
 struct IsmctsResult {

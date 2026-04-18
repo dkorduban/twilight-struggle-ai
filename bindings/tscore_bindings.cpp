@@ -522,6 +522,71 @@ py::dict run_mcts_search_from_state(
     out["edges"] = std::move(edges_out);
     return out;
 }
+
+py::dict run_ismcts_from_state(
+    const py::dict& state_dict,
+    const std::string& model_path,
+    int n_determinizations,
+    int n_simulations,
+    int max_pending_per_det,
+    float c_puct,
+    float calib_a,
+    float calib_b,
+    py::object seed_obj,
+    ts::Side acting_side_override
+) {
+    if (n_determinizations <= 0) {
+        throw py::value_error("n_determinizations must be positive");
+    }
+    if (n_simulations <= 0) {
+        throw py::value_error("n_simulations must be positive");
+    }
+
+    ts::GameState gs = game_state_from_dict(state_dict);
+    auto& model = get_or_load_model(model_path);
+
+    const ts::Side acting_side = (acting_side_override == ts::Side::Neutral)
+        ? gs.pub.phasing
+        : acting_side_override;
+    const ts::Observation obs = ts::make_observation(gs, acting_side);
+
+    ts::IsmctsConfig config;
+    config.n_determinizations = n_determinizations;
+    config.max_pending_per_det = max_pending_per_det;
+    config.mcts_config.n_simulations = n_simulations;
+    config.mcts_config.c_puct = c_puct;
+    config.mcts_config.calib_a = calib_a;
+    config.mcts_config.calib_b = calib_b;
+
+    ts::Pcg64Rng rng = seed_obj.is_none()
+        ? ts::Pcg64Rng()
+        : ts::Pcg64Rng(seed_obj.cast<uint64_t>());
+
+    const ts::IsmctsResult result = ts::ismcts_search(obs, model, config, rng);
+
+    py::list edges_out;
+    for (const auto& edge : result.aggregated_edges) {
+        py::dict edge_out;
+        edge_out["card_id"] = edge.action.card_id;
+        edge_out["mode"] = static_cast<int>(edge.action.mode);
+        edge_out["targets"] = edge.action.targets;
+        edge_out["visits"] = edge.visit_count;
+        edge_out["mean_value"] = edge.mean_value();
+        edge_out["prior"] = edge.prior;
+        edges_out.append(std::move(edge_out));
+    }
+
+    py::dict out;
+    py::object best_action = py::none();
+    if (!result.aggregated_edges.empty() && result.best_action.card_id != 0) {
+        best_action = action_to_dict(result.best_action);
+    }
+    out["best_action"] = std::move(best_action);
+    out["root_value"] = result.mean_root_value;
+    out["total_determinizations"] = result.total_determinizations;
+    out["edges"] = std::move(edges_out);
+    return out;
+}
 #endif
 
 }  // namespace
@@ -989,6 +1054,22 @@ PYBIND11_MODULE(tscore, m) {
         py::arg("calib_b") = 0.0f,
         py::arg("seed") = py::none(),
         "Alias for mcts_search_from_state that runs native PUCT MCTS from a serialized game state."
+    );
+    m.def(
+        "ismcts_search_from_state",
+        &run_ismcts_from_state,
+        py::arg("state_dict"),
+        py::arg("model_path"),
+        py::arg("n_determinizations") = 4,
+        py::arg("n_simulations") = 50,
+        py::arg("max_pending_per_det") = 8,
+        py::arg("c_puct") = 1.5f,
+        py::arg("calib_a") = 1.0f,
+        py::arg("calib_b") = 0.0f,
+        py::arg("seed") = py::none(),
+        py::arg("acting_side") = ts::Side::Neutral,
+        "Run ISMCTS from a serialized game state and return aggregated edges "
+        "(visits + priors per action). acting_side=Neutral defaults to state.phasing."
     );
     m.def(
         "benchmark_batched",

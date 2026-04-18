@@ -551,64 +551,71 @@ std::optional<ExpansionResult> expand_without_model(const TreeState& state, Pcg6
 
 // Pre-extracted raw pointers from batch outputs for zero-copy per-item access.
 struct RawBatchOutputs {
+    // Storage tensors keep the contiguous data alive across barriers.
+    torch::Tensor card_logits_storage;
     const float* card_logits = nullptr;  // [batch, n_card]
     int n_card = 0;
     int card_stride = 0;
 
+    torch::Tensor mode_logits_storage;
     const float* mode_logits = nullptr;  // [batch, n_mode]
     int n_mode = 0;
     int mode_stride = 0;
 
+    torch::Tensor country_logits_storage;
     const float* country_logits = nullptr;  // [batch, n_country]
     int n_country = 0;
     int country_stride = 0;
 
+    torch::Tensor strategy_logits_storage;
     const float* strategy_logits = nullptr;  // [batch, n_strategy]
     int n_strategy = 0;
     int strategy_stride = 0;
 
+    torch::Tensor country_strategy_logits_storage;
     const float* country_strategy_logits = nullptr;  // [batch, n_strat, n_country]
     int cs_n_strategies = 0;
     int cs_n_countries = 0;
     int cs_batch_stride = 0;  // stride between batch items
 
+    torch::Tensor value_storage;
     const float* value = nullptr;  // [batch, 1]
     int value_stride = 0;
 
     static RawBatchOutputs extract(const nn::BatchOutputs& outputs) {
         RawBatchOutputs raw;
-        auto cont_card = outputs.card_logits.contiguous();
-        raw.card_logits = cont_card.data_ptr<float>();
-        raw.n_card = std::min(static_cast<int>(cont_card.size(1)), kMaxCardLogits);
-        raw.card_stride = static_cast<int>(cont_card.stride(0));
+        raw.card_logits_storage = outputs.card_logits.contiguous();
+        raw.card_logits = raw.card_logits_storage.data_ptr<float>();
+        raw.n_card = std::min(static_cast<int>(raw.card_logits_storage.size(1)), kMaxCardLogits);
+        raw.card_stride = static_cast<int>(raw.card_logits_storage.stride(0));
 
-        auto cont_mode = outputs.mode_logits.contiguous();
-        raw.mode_logits = cont_mode.data_ptr<float>();
-        raw.n_mode = std::min(static_cast<int>(cont_mode.size(1)), kMaxModeLogits);
-        raw.mode_stride = static_cast<int>(cont_mode.stride(0));
+        raw.mode_logits_storage = outputs.mode_logits.contiguous();
+        raw.mode_logits = raw.mode_logits_storage.data_ptr<float>();
+        raw.n_mode = std::min(static_cast<int>(raw.mode_logits_storage.size(1)), kMaxModeLogits);
+        raw.mode_stride = static_cast<int>(raw.mode_logits_storage.stride(0));
 
         if (outputs.country_logits.defined()) {
-            auto cont = outputs.country_logits.contiguous();
-            raw.country_logits = cont.data_ptr<float>();
-            raw.n_country = std::min(static_cast<int>(cont.size(1)), kMaxCountryLogits);
-            raw.country_stride = static_cast<int>(cont.stride(0));
+            raw.country_logits_storage = outputs.country_logits.contiguous();
+            raw.country_logits = raw.country_logits_storage.data_ptr<float>();
+            raw.n_country = std::min(static_cast<int>(raw.country_logits_storage.size(1)), kMaxCountryLogits);
+            raw.country_stride = static_cast<int>(raw.country_logits_storage.stride(0));
         }
         if (outputs.strategy_logits.defined()) {
-            auto cont = outputs.strategy_logits.contiguous();
-            raw.strategy_logits = cont.data_ptr<float>();
-            raw.n_strategy = std::min(static_cast<int>(cont.size(1)), kMaxStrategies);
-            raw.strategy_stride = static_cast<int>(cont.stride(0));
+            raw.strategy_logits_storage = outputs.strategy_logits.contiguous();
+            raw.strategy_logits = raw.strategy_logits_storage.data_ptr<float>();
+            raw.n_strategy = std::min(static_cast<int>(raw.strategy_logits_storage.size(1)), kMaxStrategies);
+            raw.strategy_stride = static_cast<int>(raw.strategy_logits_storage.stride(0));
         }
         if (outputs.country_strategy_logits.defined()) {
-            auto cont = outputs.country_strategy_logits.contiguous();
-            raw.country_strategy_logits = cont.data_ptr<float>();
-            raw.cs_n_strategies = static_cast<int>(cont.size(1));
-            raw.cs_n_countries = static_cast<int>(cont.size(2));
-            raw.cs_batch_stride = static_cast<int>(cont.stride(0));
+            raw.country_strategy_logits_storage = outputs.country_strategy_logits.contiguous();
+            raw.country_strategy_logits = raw.country_strategy_logits_storage.data_ptr<float>();
+            raw.cs_n_strategies = static_cast<int>(raw.country_strategy_logits_storage.size(1));
+            raw.cs_n_countries = static_cast<int>(raw.country_strategy_logits_storage.size(2));
+            raw.cs_batch_stride = static_cast<int>(raw.country_strategy_logits_storage.stride(0));
         }
-        auto cont_val = outputs.value.contiguous();
-        raw.value = cont_val.data_ptr<float>();
-        raw.value_stride = static_cast<int>(cont_val.stride(0));
+        raw.value_storage = outputs.value.contiguous();
+        raw.value = raw.value_storage.data_ptr<float>();
+        raw.value_stride = static_cast<int>(raw.value_storage.stride(0));
 
         return raw;
     }
