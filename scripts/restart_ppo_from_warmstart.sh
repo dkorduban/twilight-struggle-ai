@@ -58,6 +58,9 @@ PYTHONPATH=build-ninja/bindings nice -n 10 uv run python scripts/train_ppo.py \
     --device cuda \
     --eval-every 10 \
     --eval-panel __heuristic__ \
+    --jsd-probe-path data/probe_positions.parquet \
+    --jsd-probe-interval 10 \
+    --jsd-probe-bc-checkpoint results/awr_sweep/ppo_warmstart_control_feat_gnn_card_attn/ppo_warmstart_scripted.pt \
     --wandb \
     --wandb-run-name "ppo_gnn_card_attn_v1" \
     --skip-smoke-test \
