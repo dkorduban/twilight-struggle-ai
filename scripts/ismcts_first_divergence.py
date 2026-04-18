@@ -27,7 +27,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--model",
-        default="data/checkpoints/retrain_v55/baseline_best_scripted.pt",
+        default="data/checkpoints/scripted_for_elo/v55_scripted.pt",
     )
     ap.add_argument("--learned-side", choices=["ussr", "us"], default="ussr")
     ap.add_argument("--seed", type=int, default=12345)
@@ -35,6 +35,11 @@ def main() -> int:
     ap.add_argument("--n-sim", type=int, default=50)
     ap.add_argument("--ismcts-seed", type=int, default=42)
     ap.add_argument("--max-steps", type=int, default=0, help="0 = all")
+    ap.add_argument(
+        "--skip-headline",
+        action="store_true",
+        help="Skip ar=0 decisions to test whether the bug is AR-phase-specific",
+    )
     ap.add_argument("--output", default="results/ismcts_fix/first_divergence_v55.json")
     args = ap.parse_args()
 
@@ -50,6 +55,8 @@ def main() -> int:
 
     for i in range(limit):
         step = trace[i]
+        if args.skip_headline and step["ar"] == 0:
+            continue
         state = step["state"]
         greedy_act = step["action"]
         result = tscore.ismcts_search_from_state(
