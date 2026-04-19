@@ -22,6 +22,15 @@ void apply_ops_randomly_impl(
     std::vector<DecisionFrame>* frame_log = nullptr
 );
 
+bool apply_frame_ops_impl(
+    GameState& gs,
+    std::vector<DecisionFrame>* frame_log,
+    CardId card_id,
+    Side side,
+    int ops,
+    Pcg64Rng& rng
+);
+
 std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     GameState& gs,
     const ActionEncoding& action,

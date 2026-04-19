@@ -485,11 +485,36 @@ TEST_CASE("engine_step_subframe Grain Sales to Soviets resolves card selection",
     REQUIRE(frame->source_card == 68);
     REQUIRE(frame->eligible_cards.test(12));
 
-    const auto sub = engine_step_subframe(gs, FrameAction{.card_id = 12}, rng);
-    REQUIRE_FALSE(sub.pushed_subframe);
+    const auto card_sub = engine_step_subframe(gs, FrameAction{.card_id = 12}, rng);
+    REQUIRE(card_sub.pushed_subframe);
+
+    const auto mode_frame = engine_peek(gs);
+    REQUIRE(mode_frame.has_value());
+    REQUIRE(mode_frame->kind == FrameKind::SmallChoice);
+    REQUIRE(mode_frame->source_card == 68);
+    REQUIRE(mode_frame->eligible_n == 4);
+    REQUIRE(mode_frame->budget_remaining == 1);
+
+    const auto mode_sub = engine_step_subframe(gs, FrameAction{.option_index = 0}, rng);
+    REQUIRE(mode_sub.pushed_subframe);
+
+    const auto country_frame = engine_peek(gs);
+    REQUIRE(country_frame.has_value());
+    REQUIRE(country_frame->kind == FrameKind::CountryPick);
+    REQUIRE(country_frame->source_card == 68);
+    REQUIRE(country_frame->step_index == 1);
+    REQUIRE(country_frame->total_steps == 2);
+    REQUIRE(country_frame->budget_remaining == 1);
+    REQUIRE(country_frame->criteria_bits == 0);
+
+    const auto country = first_eligible_country(*country_frame);
+    REQUIRE(country != 0);
+    const auto ops_sub = engine_step_subframe(gs, FrameAction{.country_id = country}, rng);
+    REQUIRE_FALSE(ops_sub.pushed_subframe);
     REQUIRE(gs.frame_stack.empty());
     REQUIRE(gs.hands[to_index(Side::USSR)].test(12));
     REQUIRE(gs.pub.discard.test(68));
+    REQUIRE(gs.pub.influence_of(Side::US, country) == 1);
 #else
     SUCCEED("DecisionFrame frame stack API is not available in this worktree");
 #endif

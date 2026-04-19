@@ -198,6 +198,13 @@ void set_latest_frame_eligible_cards(
     }
 }
 
+void set_latest_frame_budget(std::vector<DecisionFrame>* frame_log, int budget) {
+    if (frame_log == nullptr || frame_log->empty()) {
+        return;
+    }
+    frame_log->back().budget_remaining = static_cast<int16_t>(budget);
+}
+
 std::vector<CardId> cmc_cancel_cards(const GameState& gs, Side side) {
     std::vector<CardId> eligible;
     if (gs.pub.china_held_by == side) {
@@ -323,6 +330,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
                 const auto ops = effective_ops(chosen, pub, side);
                 discard_from_hand(gs, side, chosen, pub);
+                gs.pub = pub;
+                if (
+                    gs.frame_stack_mode &&
+                    policy_cb == nullptr &&
+                    apply_frame_ops_impl(gs, frame_log, static_cast<CardId>(32), side, ops, rng)
+                ) {
+                    return {gs.pub, false, std::nullopt};
+                }
                 apply_ops_randomly_impl(pub, side, ops, static_cast<CardId>(32), rng, policy_cb, frame_log);
             }
             break;
@@ -417,6 +432,22 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     return {pub, false, std::nullopt};
                 }
                 gs.hands[to_index(opponent)].reset(chosen);
+                gs.pub = pub;
+                if (
+                    gs.frame_stack_mode &&
+                    policy_cb == nullptr &&
+                    apply_frame_ops_impl(
+                        gs,
+                        frame_log,
+                        static_cast<CardId>(52),
+                        side,
+                        effective_ops(chosen, pub, side),
+                        rng
+                    )
+                ) {
+                    gs.hands[to_index(opponent)].set(chosen);
+                    return {gs.pub, false, std::nullopt};
+                }
                 apply_ops_randomly_impl(
                     pub,
                     side,
@@ -473,6 +504,22 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     return {pub, false, std::nullopt};
                 }
                 gs.hands[to_index(Side::USSR)].reset(chosen);
+                gs.pub = pub;
+                if (
+                    gs.frame_stack_mode &&
+                    policy_cb == nullptr &&
+                    apply_frame_ops_impl(
+                        gs,
+                        frame_log,
+                        static_cast<CardId>(68),
+                        Side::US,
+                        effective_ops(chosen, pub, Side::US),
+                        rng
+                    )
+                ) {
+                    gs.hands[to_index(Side::USSR)].set(chosen);
+                    return {gs.pub, false, std::nullopt};
+                }
                 apply_ops_randomly_impl(
                     pub,
                     Side::US,
@@ -813,6 +860,32 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
 
 }  // namespace
 
+bool apply_frame_ops_impl(
+    GameState& gs,
+    std::vector<DecisionFrame>* frame_log,
+    CardId card_id,
+    Side side,
+    int ops,
+    Pcg64Rng& rng
+) {
+    (void)rng;
+    if (frame_log == nullptr || ops <= 0) {
+        return false;
+    }
+
+    const auto accessible = accessible_countries(side, gs.pub, ActionMode::Influence);
+    if (accessible.empty()) {
+        return false;
+    }
+
+    push_option_frame(frame_log, FrameKind::SmallChoice, card_id, side, 4, 0, 1);
+    if (frame_log->empty()) {
+        return false;
+    }
+    frame_log->back().budget_remaining = static_cast<int16_t>(ops);
+    return true;
+}
+
 void apply_ops_randomly_impl(
     PublicState& pub,
     Side side,
@@ -827,9 +900,16 @@ void apply_ops_randomly_impl(
         return;
     }
 
-    const auto place_influence = [&]() {
+    const auto place_influence = [&](int mode_index) {
         for (int i = 0; i < ops; ++i) {
             const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb, frame_log);
+            annotate_latest_frame(
+                frame_log,
+                i + 1,
+                ops + 1,
+                static_cast<uint16_t>(mode_index)
+            );
+            set_latest_frame_budget(frame_log, ops);
             pub.set_influence(side, target, pub.influence_of(side, target) + 1);
         }
     };
@@ -840,18 +920,35 @@ void apply_ops_randomly_impl(
         ActionMode::Coup,
         ActionMode::Realign,
     };
-    const auto mode = modes[static_cast<size_t>(
-        choose_option(pub, 0, side, static_cast<int>(modes.size()), rng, policy_cb, frame_log)
-    )];
+    auto mode_index = choose_option(
+        pub,
+        context_card_id,
+        side,
+        static_cast<int>(modes.size()),
+        rng,
+        policy_cb,
+        frame_log
+    );
+    mode_index = std::clamp(mode_index, 0, static_cast<int>(modes.size()) - 1);
+    const auto mode = modes[static_cast<size_t>(mode_index)];
+    const auto country_step_count = mode == ActionMode::Coup ? 1 : ops;
+    annotate_latest_frame(
+        frame_log,
+        0,
+        country_step_count + 1,
+        static_cast<uint16_t>(mode_index)
+    );
+    set_latest_frame_budget(frame_log, ops);
     const auto opponent = other_side(side);
 
     if (mode == ActionMode::Influence) {
-        place_influence();
+        place_influence(mode_index);
         return;
     }
 
     if (mode == ActionMode::Coup && pub.defcon <= 2) {
-        place_influence();
+        annotate_latest_frame(frame_log, 0, ops + 1, static_cast<uint16_t>(mode_index));
+        place_influence(0);
         return;
     }
 
@@ -866,11 +963,14 @@ void apply_ops_randomly_impl(
             targets.end()
         );
         if (targets.empty()) {
-            place_influence();
+            annotate_latest_frame(frame_log, 0, ops + 1, static_cast<uint16_t>(mode_index));
+            place_influence(0);
             return;
         }
 
         const auto target = choose_country(pub, context_card_id, side, targets, rng, policy_cb, frame_log);
+        annotate_latest_frame(frame_log, 1, 2, static_cast<uint16_t>(mode_index));
+        set_latest_frame_budget(frame_log, ops);
         const auto net = coup_result(ops, country_spec(target).stability, rng);
         if (net > 0) {
             const auto removed = std::min(net, pub.influence_of(opponent, target));
@@ -886,8 +986,16 @@ void apply_ops_randomly_impl(
         return;
     }
 
-    for (int i = 0; i < std::min(ops, static_cast<int>(accessible.size())); ++i) {
+    const auto realign_steps = std::min(ops, static_cast<int>(accessible.size()));
+    for (int i = 0; i < realign_steps; ++i) {
         const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb, frame_log);
+        annotate_latest_frame(
+            frame_log,
+            i + 1,
+            realign_steps + 1,
+            static_cast<uint16_t>(mode_index)
+        );
+        set_latest_frame_budget(frame_log, ops);
         const auto ussr_inf = pub.influence_of(Side::USSR, target);
         const auto us_inf = pub.influence_of(Side::US, target);
         auto count_adj = [&](Side player) {
