@@ -1354,7 +1354,7 @@ void resume_card_20(GameState& gs, const DecisionFrame& frame, const FrameAction
         add_frame_influence(gs.pub, frame.acting_side, action.country_id, 1);
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = static_cast<int>(frame.total_steps);
+    constexpr int total_steps = 4;
     if (next_step < total_steps) {
         push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
         if (!gs.frame_stack.empty()) {

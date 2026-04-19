@@ -1145,18 +1145,18 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
 
         case 60: {
             next.defcon = std::min(5, next.defcon + 1);
-            apply_vp_delta(next, side, 1);
             std::vector<CountryId> eligible;
+            const auto opponent = other_side(side);
             for (const auto cid : all_country_ids()) {
-                if (next.influence_of(side, cid) > 0) {
+                if (!controls_country(opponent, cid, next)) {
                     eligible.push_back(cid);
                 }
             }
-            for (int i = 0; i < 2 && !eligible.empty(); ++i) {
+            for (int i = 0; i < 4 && !eligible.empty(); ++i) {
                 const auto cid =
                     choose_country(next, static_cast<CardId>(60), side, eligible, rng, policy_cb, frame_log, frame_stack_mode);
                 if (cid == kInvalidCountryId && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
-                    annotate_latest_frame(frame_log, i, 2);
+                    annotate_latest_frame(frame_log, i, 4);
                     return {next, false, std::nullopt};
                 }
                 add_influence(next, side, cid, 1);
