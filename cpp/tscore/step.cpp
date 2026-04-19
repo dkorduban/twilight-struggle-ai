@@ -803,6 +803,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 total_to_move += next.influence_of(Side::USSR, cid);
             }
             total_to_move = std::min(total_to_move, 4);
+            const int total_steps_33 = total_to_move * 2;
             for (int i = 0; i < total_to_move; ++i) {
                 std::vector<CountryId> available_sources;
                 for (const auto cid : sources) {
@@ -813,10 +814,16 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 if (available_sources.empty() || destinations.empty()) {
                     break;
                 }
-                const auto src =
-                    choose_country(next, static_cast<CardId>(33), Side::USSR, available_sources, rng, policy_cb, frame_log);
-                const auto dst =
-                    choose_country(next, static_cast<CardId>(33), Side::USSR, destinations, rng, policy_cb, frame_log);
+                const auto src = choose_country(next, static_cast<CardId>(33), Side::USSR, available_sources, rng, policy_cb, frame_log, frame_stack_mode);
+                if (src == 0) {
+                    annotate_latest_frame(frame_log, 2 * i, total_steps_33);
+                    return {next, false, std::nullopt};
+                }
+                const auto dst = choose_country(next, static_cast<CardId>(33), Side::USSR, destinations, rng, policy_cb, frame_log, frame_stack_mode);
+                if (dst == 0) {
+                    annotate_latest_frame(frame_log, 2 * i + 1, total_steps_33, static_cast<uint16_t>(src));
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, Side::USSR, src, -1);
                 add_influence(next, Side::USSR, dst, 1);
             }

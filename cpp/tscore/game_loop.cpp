@@ -1507,6 +1507,68 @@ void resume_liberation_theology(GameState& gs, const DecisionFrame& frame, const
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_33(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    const bool is_src_pick = (frame.step_index % 2 == 0);
+    const auto total_steps = static_cast<int>(frame.total_steps);
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+
+    if (is_src_pick) {
+        if (!frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+            finish_frame_event(gs, frame.source_card, frame.acting_side);
+            return;
+        }
+        // Build destinations: countries not US-controlled
+        std::bitset<kCountrySlots> dst_eligible;
+        for (const auto cid : all_country_ids()) {
+            if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
+                continue;
+            }
+            if (!controls_country(Side::US, cid, gs.pub)) {
+                dst_eligible.set(static_cast<size_t>(cid));
+            }
+        }
+        if (dst_eligible.any() && next_step < total_steps) {
+            push_country_frame(
+                gs, frame.source_card, frame.acting_side, dst_eligible, next_step, total_steps,
+                static_cast<uint16_t>(action.country_id)
+            );
+            if (!gs.frame_stack.empty()) {
+                return;
+            }
+        }
+        finish_frame_event(gs, frame.source_card, frame.acting_side);
+    } else {
+        // Dst pick: apply -1 to source, +1 to destination
+        const auto src_cid = static_cast<CountryId>(frame.criteria_bits);
+        if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+            add_frame_influence(gs.pub, Side::USSR, src_cid, -1);
+            add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+        }
+        if (next_step < total_steps) {
+            // Rebuild available sources from current state
+            std::bitset<kCountrySlots> src_eligible;
+            for (const auto cid : all_country_ids()) {
+                if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
+                    continue;
+                }
+                if (gs.pub.influence_of(Side::USSR, cid) > 0) {
+                    src_eligible.set(static_cast<size_t>(cid));
+                }
+            }
+            if (src_eligible.any()) {
+                push_country_frame(gs, frame.source_card, frame.acting_side, src_eligible, next_step, total_steps, 0);
+                if (!gs.frame_stack.empty()) {
+                    return;
+                }
+            }
+        }
+        finish_frame_event(gs, frame.source_card, frame.acting_side);
+    }
+}
+
 void resume_card_50(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
     if (frame.kind != FrameKind::CountryPick) {
         return;
@@ -1551,6 +1613,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 10:
             resume_card_10(gs, frame, action);
+            break;
+        case 33:
+            resume_card_33(gs, frame, action);
             break;
         case 14:
             resume_card_14(gs, frame, action);
