@@ -1016,6 +1016,26 @@ void resume_card_101(GameState& gs, const DecisionFrame& frame, const FrameActio
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_14(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = std::max<int>(1, frame.total_steps);
+    if (next_step < total_steps) {
+        auto next_eligible = frame.eligible_countries;
+        next_eligible.reset(static_cast<size_t>(action.country_id));
+        push_country_frame(gs, frame.source_card, frame.acting_side, next_eligible, next_step, total_steps);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_19(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
     if (frame.kind != FrameKind::CountryPick) {
         return;
@@ -1069,6 +1089,24 @@ void resume_card_29(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_30(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = std::max<int>(1, frame.total_steps);
+    if (next_step < total_steps) {
+        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_49(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
     if (frame.kind != FrameKind::SmallChoice) {
         return;
@@ -1098,6 +1136,24 @@ void resume_card_59(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_60(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, frame.acting_side, action.country_id, 1);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = std::max<int>(1, frame.total_steps);
+    if (next_step < total_steps) {
+        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_67(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
     if (frame.kind != FrameKind::CountryPick) {
         return;
@@ -1118,6 +1174,24 @@ void resume_card_67(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_71(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::US, action.country_id, 1);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = std::max<int>(1, frame.total_steps);
+    if (next_step < total_steps) {
+        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_75(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
     if (frame.kind != FrameKind::CountryPick) {
         return;
@@ -1131,6 +1205,24 @@ void resume_card_75(GameState& gs, const DecisionFrame& frame, const FrameAction
         auto next_eligible = frame.eligible_countries;
         next_eligible.reset(static_cast<size_t>(action.country_id));
         push_country_frame(gs, frame.source_card, frame.acting_side, next_eligible, next_step, total_steps);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_77(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, frame.acting_side, action.country_id, 1);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = std::max<int>(1, frame.total_steps);
+    if (next_step < total_steps) {
+        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
         if (!gs.frame_stack.empty()) {
             return;
         }
@@ -1286,6 +1378,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
         case 7:
             resume_socialist_governments(gs, frame, action);
             break;
+        case 14:
+            resume_card_14(gs, frame, action);
+            break;
         case 16:
             resume_warsaw_pact(gs, frame, action);
             break;
@@ -1301,6 +1396,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
         case 29:
             resume_card_29(gs, frame, action);
             break;
+        case 30:
+            resume_card_30(gs, frame, action);
+            break;
         case 49:
             resume_card_49(gs, frame, action);
             break;
@@ -1310,14 +1408,23 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
         case 59:
             resume_card_59(gs, frame, action);
             break;
+        case 60:
+            resume_card_60(gs, frame, action);
+            break;
         case 67:
             resume_card_67(gs, frame, action);
+            break;
+        case 71:
+            resume_card_71(gs, frame, action);
             break;
         case 76:
             resume_liberation_theology(gs, frame, action);
             break;
         case 75:
             resume_card_75(gs, frame, action);
+            break;
+        case 77:
+            resume_card_77(gs, frame, action);
             break;
         case 68:
             resume_card_68(gs, frame, action, rng);
