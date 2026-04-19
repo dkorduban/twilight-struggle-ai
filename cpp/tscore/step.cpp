@@ -493,9 +493,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     break;
                 }
                 const auto cid =
-                    (policy_cb != nullptr && pool.size() > 1)
-                    ? choose_country(next, static_cast<CardId>(14), Side::USSR, pool, rng, policy_cb, frame_log)
-                    : pool.front();
+                    choose_country(next, static_cast<CardId>(14), Side::USSR, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, std::min<int>(4, i + static_cast<int>(pool.size())));
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, Side::USSR, cid, 1);
                 pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
@@ -742,7 +744,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 if (pool.empty()) {
                     break;
                 }
-                const auto cid = choose_country(next, static_cast<CardId>(30), Side::USSR, pool, rng, policy_cb, frame_log);
+                const auto cid =
+                    choose_country(next, static_cast<CardId>(30), Side::USSR, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, 4);
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, Side::USSR, cid, 1);
             }
             break;
@@ -1025,7 +1032,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             for (int i = 0; i < 2 && !eligible.empty(); ++i) {
-                const auto cid = choose_country(next, static_cast<CardId>(60), side, eligible, rng, policy_cb, frame_log);
+                const auto cid =
+                    choose_country(next, static_cast<CardId>(60), side, eligible, rng, policy_cb, frame_log, frame_stack_mode);
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, 2);
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, side, cid, 1);
             }
             break;
@@ -1121,7 +1133,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             for (int i = 0; i < 2 && !pool.empty(); ++i) {
-                const auto cid = choose_country(next, static_cast<CardId>(71), Side::US, pool, rng, policy_cb, frame_log);
+                const auto cid =
+                    choose_country(next, static_cast<CardId>(71), Side::US, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, 2);
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, Side::US, cid, 1);
             }
             break;
@@ -1212,21 +1229,22 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
+            const Side acting = next.china_held_by;
             if (next.china_held_by == Side::USSR) {
                 next.china_held_by = Side::US;
                 next.china_playable = true;
-                for (int i = 0; i < 4 && !pool.empty(); ++i) {
-                    const auto cid =
-                        choose_country(next, static_cast<CardId>(77), Side::USSR, pool, rng, policy_cb, frame_log);
-                    add_influence(next, Side::USSR, cid, 1);
-                }
             } else {
                 next.china_held_by = Side::USSR;
                 next.china_playable = true;
-                for (int i = 0; i < 4 && !pool.empty(); ++i) {
-                    const auto cid = choose_country(next, static_cast<CardId>(77), Side::US, pool, rng, policy_cb, frame_log);
-                    add_influence(next, Side::US, cid, 1);
+            }
+            for (int i = 0; i < 4 && !pool.empty(); ++i) {
+                const auto cid =
+                    choose_country(next, static_cast<CardId>(77), acting, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, 4);
+                    return {next, false, std::nullopt};
                 }
+                add_influence(next, acting, cid, 1);
             }
             break;
         }
