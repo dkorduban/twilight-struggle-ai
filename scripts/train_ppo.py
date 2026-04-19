@@ -3998,12 +3998,10 @@ def main() -> None:
                     panel_log[f"panel/{opp_name}_us_wr"] = stats["us_wr"]
                     panel_log[f"panel/{opp_name}_combined_wr"] = stats["combined_wr"]
                 if valid_opps:
-                    _PANEL_WEIGHTS: dict[str, float] = {"v55": 0.35, "v54": 0.25, "v44": 0.20, "v45": 0.15, "v14": 0.05}
-                    _scoring_opps = {k: v for k, v in valid_opps.items() if k != "heuristic"}
-                    _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in _scoring_opps) if _scoring_opps else 1.0
-                    avg_combined = sum(
-                        v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in _scoring_opps.items()
-                    ) / _wsum if _scoring_opps else 0.0
+                    # Uniform equal weight across all panel members (including heuristic).
+                    _scoring_opps = valid_opps
+                    _wsum = float(len(_scoring_opps)) if _scoring_opps else 1.0
+                    avg_combined = sum(v["combined_wr"] for v in _scoring_opps.values()) / _wsum if _scoring_opps else 0.0
                     _panel_elapsed = time.time() - _panel_launch_time if _panel_launch_time > 0 else 0.0
                     panel_log["panel/avg_combined_wr"] = avg_combined
                     panel_log["panel/eval_time_sec"] = _panel_elapsed
