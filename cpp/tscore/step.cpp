@@ -313,15 +313,19 @@ CountryId resolve_event_country_choice(
     std::span<const CountryId> pool,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb,
-    std::vector<DecisionFrame>* frame_log
+    std::vector<DecisionFrame>* frame_log,
+    bool frame_stack_mode = false
 ) {
+    if (policy_cb == nullptr && frame_stack_mode && frame_log != nullptr) {
+        return choose_country(pub, card_id, side, pool, rng, policy_cb, frame_log, frame_stack_mode);
+    }
     if (!action.targets.empty()) {
         const auto requested = action.targets.front();
         if (std::find(pool.begin(), pool.end(), requested) != pool.end()) {
             return requested;
         }
     }
-    return choose_country(pub, card_id, side, pool, rng, policy_cb, frame_log);
+    return choose_country(pub, card_id, side, pool, rng, policy_cb, frame_log, frame_stack_mode);
 }
 
 void apply_vp_delta(PublicState& pub, Side side, int delta) {
@@ -659,8 +663,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         case 24: {
             static constexpr std::array<CountryId, 2> kTargets = {kIndiaId, kPakistanId};
             const auto target = resolve_event_country_choice(
-                next, action, 24, side, std::span<const CountryId>(kTargets), rng, policy_cb, frame_log
+                next, action, 24, side, std::span<const CountryId>(kTargets), rng, policy_cb, frame_log, frame_stack_mode
             );
+            if (target == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                annotate_latest_frame(frame_log, 0, 1);
+                return {next, false, std::nullopt};
+            }
             apply_war_card(next, side, target, 2, 2, rng);
             break;
         }
