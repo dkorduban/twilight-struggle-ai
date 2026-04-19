@@ -1016,6 +1016,49 @@ void resume_card_101(GameState& gs, const DecisionFrame& frame, const FrameActio
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_10(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CardSelect) {
+        return;
+    }
+    if (frame.eligible_cards.test(static_cast<size_t>(action.card_id))) {
+        discard_frame_hand_card(gs, Side::US, action.card_id);
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_26(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::US, action.country_id, 1);
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_46(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CardSelect) {
+        return;
+    }
+    if (frame.eligible_cards.test(static_cast<size_t>(action.card_id))) {
+        gs.pub.discard.reset(action.card_id);
+        gs.hands[to_index(frame.acting_side)].set(action.card_id);
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_52(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CardSelect) {
+        return;
+    }
+    if (frame.eligible_cards.test(static_cast<size_t>(action.card_id))) {
+        const auto opponent = other_side(frame.acting_side);
+        gs.hands[to_index(opponent)].reset(action.card_id);
+        gs.hands[to_index(frame.acting_side)].set(action.card_id);
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_14(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
     if (frame.kind != FrameKind::CountryPick) {
         return;
@@ -1463,6 +1506,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
         case 7:
             resume_socialist_governments(gs, frame, action);
             break;
+        case 10:
+            resume_card_10(gs, frame, action);
+            break;
         case 14:
             resume_card_14(gs, frame, action);
             break;
@@ -1478,6 +1524,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
         case 23:
             resume_card_23(gs, frame, action);
             break;
+        case 26:
+            resume_card_26(gs, frame, action);
+            break;
         case 28:
             resume_suez_crisis(gs, frame, action);
             break;
@@ -1490,11 +1539,17 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
         case 37:
             resume_card_37(gs, frame, action);
             break;
+        case 46:
+            resume_card_46(gs, frame, action);
+            break;
         case 48:
             resume_card_48(gs, frame, action);
             break;
         case 49:
             resume_card_49(gs, frame, action);
+            break;
+        case 52:
+            resume_card_52(gs, frame, action);
             break;
         case 56:
             resume_south_african_unrest(gs, frame, action);
