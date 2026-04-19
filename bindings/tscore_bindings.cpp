@@ -23,6 +23,15 @@ namespace py = pybind11;
 
 namespace {
 
+enum class BoundStepResult {
+    Complete = 0,
+    SubframePending = 1,
+};
+
+BoundStepResult bind_step_result(const ts::StepResult& result) {
+    return result.pushed_subframe ? BoundStepResult::SubframePending : BoundStepResult::Complete;
+}
+
 py::list bitset_to_list(const ts::CardSet& cards) {
     py::list out;
     for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
@@ -31,6 +40,38 @@ py::list bitset_to_list(const ts::CardSet& cards) {
         }
     }
     return out;
+}
+
+py::list country_bits_to_list(const std::bitset<ts::kCountrySlots>& countries, int limit) {
+    py::list out;
+    int emitted = 0;
+    for (int country_id = 0; country_id <= ts::kMaxCountryId && emitted < limit; ++country_id) {
+        if (countries.test(static_cast<size_t>(country_id))) {
+            out.append(country_id);
+            ++emitted;
+        }
+    }
+    return out;
+}
+
+py::list card_bits_to_list(const ts::CardSet& cards, int limit) {
+    py::list out;
+    int emitted = 0;
+    for (int card_id = 1; card_id <= ts::kMaxCardId && emitted < limit; ++card_id) {
+        if (cards.test(static_cast<size_t>(card_id))) {
+            out.append(card_id);
+            ++emitted;
+        }
+    }
+    return out;
+}
+
+py::list decision_frame_cards_to_list(const ts::DecisionFrame& frame) {
+    return card_bits_to_list(frame.eligible_cards, static_cast<int>(frame.eligible_n));
+}
+
+py::list decision_frame_countries_to_list(const ts::DecisionFrame& frame) {
+    return country_bits_to_list(frame.eligible_countries, static_cast<int>(frame.eligible_n));
 }
 
 py::list influence_to_list(const ts::InfluenceBlock& influence) {
@@ -47,6 +88,23 @@ py::dict action_to_dict(const ts::ActionEncoding& action) {
     out["mode"] = static_cast<int>(action.mode);
     out["targets"] = action.targets;
     return out;
+}
+
+ts::FrameAction make_frame_action(int option_index, int card_id, int country_id) {
+    return ts::FrameAction{
+        .option_index = option_index,
+        .card_id = static_cast<ts::CardId>(card_id),
+        .country_id = static_cast<ts::CountryId>(country_id),
+    };
+}
+
+std::vector<ts::ActionEncoding> current_top_level_actions(const ts::GameState& gs) {
+    const auto side = gs.pub.phasing;
+    if (!ts::is_player_side(side)) {
+        return {};
+    }
+    const auto holds_china = side == ts::Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
+    return ts::enumerate_actions(gs.hands[ts::to_index(side)], gs.pub, side, holds_china);
 }
 
 // Fill in the hidden-state fields that game_state_from_dict requires beyond
@@ -694,11 +752,102 @@ PYBIND11_MODULE(tscore, m) {
         .value("Coup", ts::ActionMode::Coup)
         .value("Realign", ts::ActionMode::Realign)
         .value("Space", ts::ActionMode::Space)
-        .value("Event", ts::ActionMode::Event);
+        .value("Event", ts::ActionMode::Event)
+        .value("EventFirst", ts::ActionMode::EventFirst);
 
     py::enum_<ts::PolicyKind>(m, "PolicyKind")
         .value("Random", ts::PolicyKind::Random)
         .value("MinimalHybrid", ts::PolicyKind::MinimalHybrid);
+
+    py::enum_<ts::FrameKind>(m, "FrameKind")
+        .value("TopLevelAR", ts::FrameKind::TopLevelAR)
+        .value("SmallChoice", ts::FrameKind::SmallChoice)
+        .value("CountryPick", ts::FrameKind::CountryPick)
+        .value("CardSelect", ts::FrameKind::CardSelect)
+        .value("ForcedDiscard", ts::FrameKind::ForcedDiscard)
+        .value("CancelChoice", ts::FrameKind::CancelChoice)
+        .value("FreeOpsInfluence", ts::FrameKind::FreeOpsInfluence)
+        .value("NoradInfluence", ts::FrameKind::NoradInfluence)
+        .value("DeferredOps", ts::FrameKind::DeferredOps)
+        .value("SetupPlacement", ts::FrameKind::SetupPlacement)
+        .value("Headline", ts::FrameKind::Headline);
+
+    py::enum_<BoundStepResult>(m, "StepResult")
+        .value("Complete", BoundStepResult::Complete)
+        .value("SubframePending", BoundStepResult::SubframePending);
+
+    py::class_<ts::Pcg64Rng>(m, "Pcg64Rng")
+        .def(py::init<>())
+        .def(py::init<uint64_t>(), py::arg("seed"));
+
+    py::class_<ts::DecisionFrame>(m, "DecisionFrame")
+        .def_property_readonly("kind", [](const ts::DecisionFrame& frame) { return frame.kind; })
+        .def_property_readonly("acting_side", [](const ts::DecisionFrame& frame) { return frame.acting_side; })
+        .def_property_readonly("source_card", [](const ts::DecisionFrame& frame) {
+            return static_cast<int>(frame.source_card);
+        })
+        .def_property_readonly("step_index", [](const ts::DecisionFrame& frame) {
+            return static_cast<int>(frame.step_index);
+        })
+        .def_property_readonly("total_steps", [](const ts::DecisionFrame& frame) {
+            return static_cast<int>(frame.total_steps);
+        })
+        .def_property_readonly("budget_remaining", [](const ts::DecisionFrame& frame) {
+            return static_cast<int>(frame.budget_remaining);
+        })
+        .def_property_readonly("stack_depth", [](const ts::DecisionFrame& frame) {
+            return static_cast<int>(frame.stack_depth);
+        })
+        .def_property_readonly("parent_card", [](const ts::DecisionFrame& frame) {
+            return static_cast<int>(frame.parent_card);
+        })
+        .def_property_readonly("eligible_n", [](const ts::DecisionFrame& frame) {
+            return static_cast<int>(frame.eligible_n);
+        })
+        .def_property_readonly("eligible_cards", &decision_frame_cards_to_list)
+        .def_property_readonly("eligible_countries", &decision_frame_countries_to_list)
+        .def_property_readonly("criteria_bits", [](const ts::DecisionFrame& frame) {
+            return static_cast<int>(frame.criteria_bits);
+        });
+
+    py::class_<ts::FrameAction>(m, "FrameAction")
+        .def(
+            py::init(&make_frame_action),
+            py::arg("option_index") = 0,
+            py::arg("card_id") = 0,
+            py::arg("country_id") = 0
+        )
+        .def_readwrite("option_index", &ts::FrameAction::option_index)
+        .def_property(
+            "card_id",
+            [](const ts::FrameAction& action) { return static_cast<int>(action.card_id); },
+            [](ts::FrameAction& action, int card_id) { action.card_id = static_cast<ts::CardId>(card_id); }
+        )
+        .def_property(
+            "country_id",
+            [](const ts::FrameAction& action) { return static_cast<int>(action.country_id); },
+            [](ts::FrameAction& action, int country_id) {
+                action.country_id = static_cast<ts::CountryId>(country_id);
+            }
+        );
+
+    py::class_<ts::GameState>(m, "GameState")
+        .def(py::init<>())
+        .def_property_readonly("pub", [](const ts::GameState& gs) {
+            return public_state_to_dict(gs.pub);
+        })
+        .def_property_readonly("ussr_hand", [](const ts::GameState& gs) {
+            return bitset_to_list(gs.hands[ts::to_index(ts::Side::USSR)]);
+        })
+        .def_property_readonly("us_hand", [](const ts::GameState& gs) {
+            return bitset_to_list(gs.hands[ts::to_index(ts::Side::US)]);
+        })
+        .def_property_readonly("frame_stack", [](const ts::GameState& gs) {
+            return gs.frame_stack;
+        })
+        .def_readwrite("frame_stack_mode", &ts::GameState::frame_stack_mode)
+        .def_readonly("game_over", &ts::GameState::game_over)
+        .def_readonly("winner", &ts::GameState::winner);
 
     py::class_<ts::GameResult>(m, "GameResult")
         .def_readonly("winner", &ts::GameResult::winner)
@@ -848,6 +997,52 @@ PYBIND11_MODULE(tscore, m) {
             return ts::summarize_results(results);
         },
         py::arg("results")
+    );
+    m.def(
+        "reset_game",
+        [](py::object seed_obj) {
+            std::optional<uint32_t> seed;
+            if (!seed_obj.is_none()) {
+                seed = seed_obj.cast<uint32_t>();
+            }
+            return ts::reset_game(seed);
+        },
+        py::arg("seed") = py::none()
+    );
+    m.def(
+        "engine_peek",
+        [](const ts::GameState& gs) {
+            return ts::engine_peek(gs);
+        },
+        py::arg("game_state")
+    );
+    m.def(
+        "engine_step_toplevel",
+        [](ts::GameState& gs, int action_index, ts::Pcg64Rng& rng) {
+            const auto actions = current_top_level_actions(gs);
+            if (action_index < 0 || action_index >= static_cast<int>(actions.size())) {
+                throw py::index_error("action_index out of range for current top-level legal actions");
+            }
+            const auto result = ts::engine_step_toplevel(
+                gs,
+                actions[static_cast<size_t>(action_index)],
+                gs.pub.phasing,
+                rng
+            );
+            return bind_step_result(result);
+        },
+        py::arg("game_state"),
+        py::arg("action_index"),
+        py::arg("rng")
+    );
+    m.def(
+        "engine_step_subframe",
+        [](ts::GameState& gs, const ts::FrameAction& action, ts::Pcg64Rng& rng) {
+            return bind_step_result(ts::engine_step_subframe(gs, action, rng));
+        },
+        py::arg("game_state"),
+        py::arg("frame_action"),
+        py::arg("rng")
     );
     m.def("ars_for_turn", &ts::ars_for_turn, py::arg("turn"));
     m.def("hand_size_for_turn", &ts::hand_size_for_turn, py::arg("turn"));
