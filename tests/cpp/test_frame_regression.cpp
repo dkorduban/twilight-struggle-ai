@@ -182,15 +182,15 @@ TEST_CASE("frame_regression Wargames records a SmallChoice frame", "[frame_regre
     );
 }
 
-TEST_CASE("frame_regression Aldrich Ames Remix records a SmallChoice frame", "[frame_regression]") {
+TEST_CASE("frame_regression Aldrich Ames Remix records a CardSelect frame", "[frame_regression]") {
     expect_first_frame_kind(
         {
-            .card_id = 100,
+            .card_id = 101,
             .actor = Side::USSR,
             .turn = 8,
             .extra_hand_cards = {{Side::US, 5}, {Side::US, 27}},
         },
-        ExpectedFrameKind::SmallChoice
+        ExpectedFrameKind::CardSelect
     );
 }
 
@@ -311,7 +311,7 @@ TEST_CASE("frame_regression Terrorism discard records a CardSelect frame", "[fra
 TEST_CASE("frame_regression Aldrich Ames Remix discard records a CardSelect frame", "[frame_regression]") {
     expect_first_frame_kind(
         {
-            .card_id = 100,
+            .card_id = 101,
             .actor = Side::USSR,
             .turn = 8,
             .extra_hand_cards = {{Side::US, 5}, {Side::US, 27}, {Side::US, 56}},
@@ -360,6 +360,158 @@ TEST_CASE("engine_step_subframe CIA Created resolves influence placement", "[fra
     REQUIRE(gs.frame_stack.empty());
     REQUIRE(gs.pub.influence_of(Side::USSR, 71) == south_africa_before + 2);
     REQUIRE(gs.pub.influence_of(Side::USSR, chosen) == chosen_before + 2);
+#else
+    SUCCEED("DecisionFrame frame stack API is not available in this worktree");
+#endif
+}
+
+TEST_CASE("engine_step_subframe Five Year Plan resolves discard", "[frame_regression]") {
+#if TS_FRAME_REGRESSION_HAS_FRAME_API
+    GameState gs = make_action_round_state({
+        .card_id = 5,
+        .actor = Side::USSR,
+        .turn = 1,
+        .extra_hand_cards = {{Side::USSR, 12}},
+    });
+    gs.frame_stack_mode = true;
+
+    const ActionEncoding action{
+        .card_id = 5,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto top = engine_step_toplevel(gs, action, Side::USSR, rng);
+    REQUIRE(top.pushed_subframe);
+
+    const auto frame = engine_peek(gs);
+    REQUIRE(frame.has_value());
+    REQUIRE(frame->kind == FrameKind::CardSelect);
+    REQUIRE(frame->source_card == 5);
+    REQUIRE(frame->eligible_cards.test(12));
+
+    const auto sub = engine_step_subframe(gs, FrameAction{.card_id = 12}, rng);
+    REQUIRE_FALSE(sub.pushed_subframe);
+    REQUIRE(gs.frame_stack.empty());
+    REQUIRE_FALSE(gs.hands[to_index(Side::USSR)].test(12));
+    REQUIRE(gs.pub.removed.test(12));
+    REQUIRE(gs.pub.discard.test(5));
+#else
+    SUCCEED("DecisionFrame frame stack API is not available in this worktree");
+#endif
+}
+
+TEST_CASE("engine_step_subframe Grain Sales to Soviets resolves card selection", "[frame_regression]") {
+#if TS_FRAME_REGRESSION_HAS_FRAME_API
+    GameState gs = make_action_round_state({
+        .card_id = 68,
+        .actor = Side::US,
+        .turn = 4,
+        .extra_hand_cards = {{Side::USSR, 12}},
+    });
+    gs.frame_stack_mode = true;
+
+    const ActionEncoding action{
+        .card_id = 68,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto top = engine_step_toplevel(gs, action, Side::US, rng);
+    REQUIRE(top.pushed_subframe);
+
+    const auto frame = engine_peek(gs);
+    REQUIRE(frame.has_value());
+    REQUIRE(frame->kind == FrameKind::CardSelect);
+    REQUIRE(frame->source_card == 68);
+    REQUIRE(frame->eligible_cards.test(12));
+
+    const auto sub = engine_step_subframe(gs, FrameAction{.card_id = 12}, rng);
+    REQUIRE_FALSE(sub.pushed_subframe);
+    REQUIRE(gs.frame_stack.empty());
+    REQUIRE(gs.hands[to_index(Side::USSR)].test(12));
+    REQUIRE(gs.pub.discard.test(68));
+#else
+    SUCCEED("DecisionFrame frame stack API is not available in this worktree");
+#endif
+}
+
+TEST_CASE("engine_step_subframe Star Wars resolves selected event", "[frame_regression]") {
+#if TS_FRAME_REGRESSION_HAS_FRAME_API
+    constexpr CountryId kRomaniaIdForTest = 13;
+    GameState gs = make_action_round_state({
+        .card_id = 88,
+        .actor = Side::US,
+        .turn = 8,
+    });
+    gs.frame_stack_mode = true;
+    gs.pub.space[to_index(Side::US)] = 1;
+    gs.pub.space[to_index(Side::USSR)] = 0;
+    gs.pub.discard.set(12);
+    gs.pub.set_influence(Side::US, kRomaniaIdForTest, 2);
+
+    const ActionEncoding action{
+        .card_id = 88,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto top = engine_step_toplevel(gs, action, Side::US, rng);
+    REQUIRE(top.pushed_subframe);
+
+    const auto frame = engine_peek(gs);
+    REQUIRE(frame.has_value());
+    REQUIRE(frame->kind == FrameKind::CardSelect);
+    REQUIRE(frame->source_card == 88);
+    REQUIRE(frame->eligible_cards.test(12));
+
+    const auto sub = engine_step_subframe(gs, FrameAction{.card_id = 12}, rng);
+    REQUIRE_FALSE(sub.pushed_subframe);
+    REQUIRE(gs.frame_stack.empty());
+    REQUIRE(gs.pub.influence_of(Side::US, kRomaniaIdForTest) == 0);
+    REQUIRE(gs.pub.influence_of(Side::USSR, kRomaniaIdForTest) == 3);
+    REQUIRE(gs.pub.removed.test(12));
+    REQUIRE(gs.pub.removed.test(88));
+#else
+    SUCCEED("DecisionFrame frame stack API is not available in this worktree");
+#endif
+}
+
+TEST_CASE("engine_step_subframe Aldrich Ames Remix resolves discard", "[frame_regression]") {
+#if TS_FRAME_REGRESSION_HAS_FRAME_API
+    GameState gs = make_action_round_state({
+        .card_id = 101,
+        .actor = Side::USSR,
+        .turn = 8,
+        .extra_hand_cards = {{Side::US, 27}},
+    });
+    gs.frame_stack_mode = true;
+
+    const ActionEncoding action{
+        .card_id = 101,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto top = engine_step_toplevel(gs, action, Side::USSR, rng);
+    REQUIRE(top.pushed_subframe);
+
+    const auto frame = engine_peek(gs);
+    REQUIRE(frame.has_value());
+    REQUIRE(frame->kind == FrameKind::CardSelect);
+    REQUIRE(frame->source_card == 101);
+    REQUIRE(frame->eligible_cards.test(27));
+
+    const auto sub = engine_step_subframe(gs, FrameAction{.card_id = 27}, rng);
+    REQUIRE_FALSE(sub.pushed_subframe);
+    REQUIRE(gs.frame_stack.empty());
+    REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(27));
+    REQUIRE(gs.pub.removed.test(27));
+    REQUIRE(gs.pub.removed.test(101));
 #else
     SUCCEED("DecisionFrame frame stack API is not available in this worktree");
 #endif
