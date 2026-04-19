@@ -784,10 +784,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             std::vector<CountryId> pool;
             for (const auto cid : all_country_ids()) {
                 const auto region = country_spec(cid).region;
-                if (region == Region::Africa || region == Region::SoutheastAsia) {
+                if ((region == Region::Africa || region == Region::SoutheastAsia) &&
+                    !controls_country(Side::US, cid, next)) {
                     pool.push_back(cid);
                 }
             }
+            const int total_steps_30 = std::min<int>(4, static_cast<int>(pool.size()));
             for (int i = 0; i < 4; ++i) {
                 if (pool.empty()) {
                     break;
@@ -795,10 +797,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 const auto cid =
                     choose_country(next, static_cast<CardId>(30), Side::USSR, pool, rng, policy_cb, frame_log, frame_stack_mode);
                 if (cid == kInvalidCountryId && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
-                    annotate_latest_frame(frame_log, i, 4);
+                    annotate_latest_frame(frame_log, i, total_steps_30);
                     return {next, false, std::nullopt};
                 }
                 add_influence(next, Side::USSR, cid, 1);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
         }

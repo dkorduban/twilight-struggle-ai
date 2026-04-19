@@ -1243,7 +1243,9 @@ void resume_card_30(GameState& gs, const DecisionFrame& frame, const FrameAction
     const auto next_step = static_cast<int>(frame.step_index) + 1;
     const auto total_steps = static_cast<int>(frame.total_steps);
     if (next_step < total_steps) {
-        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+        auto next_eligible = frame.eligible_countries;
+        next_eligible.reset(static_cast<size_t>(action.country_id));
+        push_country_frame(gs, frame.source_card, frame.acting_side, next_eligible, next_step, total_steps);
         if (!gs.frame_stack.empty()) {
             return;
         }
