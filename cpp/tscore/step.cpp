@@ -811,47 +811,60 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 33: {
-            std::vector<CountryId> sources;
-            std::vector<CountryId> destinations;
-            for (const auto cid : all_country_ids()) {
-                if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
-                    continue;
-                }
-                if (next.influence_of(Side::USSR, cid) > 0) {
-                    sources.push_back(cid);
-                }
-                if (!controls_country(Side::US, cid, next)) {
-                    destinations.push_back(cid);
-                }
-            }
-            int total_to_move = 0;
-            for (const auto cid : sources) {
-                total_to_move += next.influence_of(Side::USSR, cid);
-            }
-            total_to_move = std::min(total_to_move, 4);
-            const int total_steps_33 = total_to_move * 2;
-            for (int i = 0; i < total_to_move; ++i) {
+            constexpr int kMaxDestalinizationSteps = 8;
+            int moved_count = 0;
+            while (moved_count < 4) {
                 std::vector<CountryId> available_sources;
-                for (const auto cid : sources) {
+                for (const auto cid : all_country_ids()) {
+                    if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
+                        continue;
+                    }
                     if (next.influence_of(Side::USSR, cid) > 0) {
                         available_sources.push_back(cid);
                     }
                 }
-                if (available_sources.empty() || destinations.empty()) {
+                if (available_sources.empty()) {
+                    break;
+                }
+                const int choice = choose_option(next, static_cast<CardId>(33), Side::USSR, 2, rng, policy_cb, frame_log, frame_stack_mode);
+                if (choice < 0) {
+                    annotate_latest_frame(frame_log, moved_count, kMaxDestalinizationSteps, static_cast<uint16_t>(moved_count));
+                    return {next, false, std::nullopt};
+                }
+                if (choice != 0) {
                     break;
                 }
                 const auto src = choose_country(next, static_cast<CardId>(33), Side::USSR, available_sources, rng, policy_cb, frame_log, frame_stack_mode);
                 if (src == kInvalidCountryId) {
-                    annotate_latest_frame(frame_log, 2 * i, total_steps_33);
-                    return {next, false, std::nullopt};
-                }
-                const auto dst = choose_country(next, static_cast<CardId>(33), Side::USSR, destinations, rng, policy_cb, frame_log, frame_stack_mode);
-                if (dst == kInvalidCountryId) {
-                    annotate_latest_frame(frame_log, 2 * i + 1, total_steps_33, static_cast<uint16_t>(src));
+                    annotate_latest_frame(frame_log, moved_count, kMaxDestalinizationSteps, static_cast<uint16_t>(moved_count));
                     return {next, false, std::nullopt};
                 }
                 add_influence(next, Side::USSR, src, -1);
+                ++moved_count;
+            }
+
+            std::array<int, kCountrySlots> placed_counts = {};
+            const int total_steps_33 = moved_count * 2;
+            for (int i = 0; i < moved_count; ++i) {
+                std::vector<CountryId> destinations;
+                for (const auto cid : all_country_ids()) {
+                    if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
+                        continue;
+                    }
+                    if (!controls_country(Side::US, cid, next) && placed_counts[static_cast<size_t>(cid)] < 2) {
+                        destinations.push_back(cid);
+                    }
+                }
+                if (destinations.empty()) {
+                    break;
+                }
+                const auto dst = choose_country(next, static_cast<CardId>(33), Side::USSR, destinations, rng, policy_cb, frame_log, frame_stack_mode);
+                if (dst == kInvalidCountryId) {
+                    annotate_latest_frame(frame_log, moved_count + i, total_steps_33);
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, Side::USSR, dst, 1);
+                ++placed_counts[static_cast<size_t>(dst)];
             }
             break;
         }

@@ -708,6 +708,30 @@ uint8_t frame_count(size_t value) {
     return static_cast<uint8_t>(std::min<size_t>(value, 255));
 }
 
+void push_option_frame(
+    GameState& gs,
+    CardId source_card,
+    Side acting_side,
+    int n_options,
+    int step_index,
+    int total_steps,
+    uint16_t criteria_bits = 0
+) {
+    if (n_options <= 0) {
+        return;
+    }
+    DecisionFrame frame;
+    frame.kind = FrameKind::SmallChoice;
+    frame.source_card = source_card;
+    frame.acting_side = acting_side;
+    frame.step_index = frame_count(static_cast<size_t>(std::max(0, step_index)));
+    frame.total_steps = frame_count(static_cast<size_t>(std::max(1, total_steps)));
+    frame.stack_depth = frame_count(gs.frame_stack.size());
+    frame.eligible_n = frame_count(static_cast<size_t>(n_options));
+    frame.criteria_bits = criteria_bits;
+    gs.frame_stack.push_back(frame);
+}
+
 void add_frame_influence(PublicState& pub, Side side, CountryId country_id, int delta) {
     pub.set_influence(side, country_id, std::max(0, pub.influence_of(side, country_id) + delta));
 }
@@ -802,6 +826,81 @@ void finish_frame_event(GameState& gs, CardId card_id, Side acting_side) {
     const auto [over, winner] = check_vp_win(gs.pub);
     gs.game_over = over;
     gs.winner = winner;
+}
+
+uint16_t pack_destalinization_picks(CountryId first, CountryId second) {
+    return static_cast<uint16_t>(first) | (static_cast<uint16_t>(second) << 8);
+}
+
+CountryId unpack_destalinization_pick(uint16_t packed, int slot) {
+    const auto raw = static_cast<CountryId>((packed >> (slot * 8)) & 0xff);
+    return raw == kInvalidCountryId ? kInvalidCountryId : raw;
+}
+
+std::bitset<kCountrySlots> destalinization_source_bits(const PublicState& pub) {
+    std::bitset<kCountrySlots> eligible;
+    for (const auto cid : all_country_ids()) {
+        if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
+            continue;
+        }
+        if (pub.influence_of(Side::USSR, cid) > 0) {
+            eligible.set(static_cast<size_t>(cid));
+        }
+    }
+    return eligible;
+}
+
+std::bitset<kCountrySlots> destalinization_destination_bits(
+    const PublicState& pub,
+    std::span<const CountryId> prior_picks
+) {
+    std::bitset<kCountrySlots> eligible;
+    for (const auto cid : all_country_ids()) {
+        if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
+            continue;
+        }
+        if (!controls_country(Side::US, cid, pub)) {
+            eligible.set(static_cast<size_t>(cid));
+        }
+    }
+    for (const auto cid : all_country_ids()) {
+        int count = 0;
+        for (const auto picked : prior_picks) {
+            if (picked == cid) {
+                ++count;
+            }
+        }
+        if (count >= 2) {
+            eligible.reset(static_cast<size_t>(cid));
+        }
+    }
+    return eligible;
+}
+
+void push_destalinization_destination_frame(
+    GameState& gs,
+    CardId source_card,
+    Side acting_side,
+    int moved_count
+) {
+    if (moved_count <= 0) {
+        finish_frame_event(gs, source_card, acting_side);
+        return;
+    }
+    const std::array<CountryId, 0> prior_picks{};
+    const auto eligible = destalinization_destination_bits(gs.pub, prior_picks);
+    push_country_frame(
+        gs,
+        source_card,
+        acting_side,
+        eligible,
+        moved_count,
+        moved_count * 2,
+        pack_destalinization_picks(kInvalidCountryId, kInvalidCountryId)
+    );
+    if (gs.frame_stack.empty()) {
+        finish_frame_event(gs, source_card, acting_side);
+    }
 }
 
 void discard_frame_card(PublicState& pub, CardId card_id) {
@@ -1690,65 +1789,102 @@ void resume_liberation_theology(GameState& gs, const DecisionFrame& frame, const
 }
 
 void resume_card_33(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    constexpr int kMaxDestalinizationSteps = 8;
+
+    if (frame.kind == FrameKind::SmallChoice) {
+        const auto moved_count = static_cast<int>(frame.criteria_bits);
+        if (action.option_index != 0 || moved_count >= 4) {
+            push_destalinization_destination_frame(gs, frame.source_card, frame.acting_side, moved_count);
+            return;
+        }
+        const auto sources = destalinization_source_bits(gs.pub);
+        if (sources.none()) {
+            push_destalinization_destination_frame(gs, frame.source_card, frame.acting_side, moved_count);
+            return;
+        }
+        push_country_frame(
+            gs,
+            frame.source_card,
+            frame.acting_side,
+            sources,
+            moved_count,
+            kMaxDestalinizationSteps,
+            static_cast<uint16_t>(moved_count)
+        );
+        return;
+    }
+
     if (frame.kind != FrameKind::CountryPick) {
         return;
     }
-    const bool is_src_pick = (frame.step_index % 2 == 0);
     const auto total_steps = static_cast<int>(frame.total_steps);
     const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const bool is_src_pick = total_steps == kMaxDestalinizationSteps && frame.step_index < 4;
 
     if (is_src_pick) {
         if (!frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
             finish_frame_event(gs, frame.source_card, frame.acting_side);
             return;
         }
-        // Build destinations: countries not US-controlled
-        std::bitset<kCountrySlots> dst_eligible;
-        for (const auto cid : all_country_ids()) {
-            if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
-                continue;
-            }
-            if (!controls_country(Side::US, cid, gs.pub)) {
-                dst_eligible.set(static_cast<size_t>(cid));
-            }
+        add_frame_influence(gs.pub, Side::USSR, action.country_id, -1);
+
+        const auto moved_count = static_cast<int>(frame.criteria_bits) + 1;
+        if (moved_count >= 4) {
+            push_destalinization_destination_frame(gs, frame.source_card, frame.acting_side, moved_count);
+            return;
         }
-        if (dst_eligible.any() && next_step < total_steps) {
-            push_country_frame(
-                gs, frame.source_card, frame.acting_side, dst_eligible, next_step, total_steps,
-                static_cast<uint16_t>(action.country_id)
-            );
-            if (!gs.frame_stack.empty()) {
-                return;
-            }
+        if (destalinization_source_bits(gs.pub).none()) {
+            push_destalinization_destination_frame(gs, frame.source_card, frame.acting_side, moved_count);
+            return;
         }
-        finish_frame_event(gs, frame.source_card, frame.acting_side);
-    } else {
-        // Dst pick: apply -1 to source, +1 to destination
-        const auto src_cid = static_cast<CountryId>(frame.criteria_bits);
-        if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
-            add_frame_influence(gs.pub, Side::USSR, src_cid, -1);
-            add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
-        }
-        if (next_step < total_steps) {
-            // Rebuild available sources from current state
-            std::bitset<kCountrySlots> src_eligible;
-            for (const auto cid : all_country_ids()) {
-                if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
-                    continue;
-                }
-                if (gs.pub.influence_of(Side::USSR, cid) > 0) {
-                    src_eligible.set(static_cast<size_t>(cid));
-                }
-            }
-            if (src_eligible.any()) {
-                push_country_frame(gs, frame.source_card, frame.acting_side, src_eligible, next_step, total_steps, 0);
-                if (!gs.frame_stack.empty()) {
-                    return;
-                }
-            }
-        }
-        finish_frame_event(gs, frame.source_card, frame.acting_side);
+        push_option_frame(
+            gs,
+            frame.source_card,
+            frame.acting_side,
+            2,
+            moved_count,
+            kMaxDestalinizationSteps,
+            static_cast<uint16_t>(moved_count)
+        );
+        return;
     }
+
+    const auto moved_count = std::max(1, total_steps / 2);
+    const auto place_index = static_cast<int>(frame.step_index) - moved_count;
+    if (!frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        finish_frame_event(gs, frame.source_card, frame.acting_side);
+        return;
+    }
+
+    add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+
+    const auto first = unpack_destalinization_pick(frame.criteria_bits, 0);
+    const auto second = unpack_destalinization_pick(frame.criteria_bits, 1);
+    auto next_criteria = frame.criteria_bits;
+    if (place_index == 0) {
+        next_criteria = pack_destalinization_picks(action.country_id, kInvalidCountryId);
+    } else if (place_index == 1) {
+        next_criteria = pack_destalinization_picks(first, action.country_id);
+    }
+
+    if (next_step < total_steps) {
+        std::bitset<kCountrySlots> next_eligible;
+        if (place_index == 0) {
+            const std::array<CountryId, 1> prior_picks = {action.country_id};
+            next_eligible = destalinization_destination_bits(gs.pub, prior_picks);
+        } else if (place_index == 1) {
+            const std::array<CountryId, 2> prior_picks = {first, action.country_id};
+            next_eligible = destalinization_destination_bits(gs.pub, prior_picks);
+        } else {
+            const std::array<CountryId, 3> prior_picks = {first, second, action.country_id};
+            next_eligible = destalinization_destination_bits(gs.pub, prior_picks);
+        }
+        push_country_frame(gs, frame.source_card, frame.acting_side, next_eligible, next_step, total_steps, next_criteria);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
 void resume_card_50(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
