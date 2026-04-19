@@ -690,9 +690,251 @@ StepResult engine_step_toplevel(
     };
 }
 
-StepResult engine_step_subframe(GameState& gs, const FrameAction& action, Pcg64Rng& rng) {
-    (void)action;
+namespace {
+
+constexpr CountryId kFrameFranceId = 7;
+constexpr CountryId kFrameUkId = 17;
+constexpr CountryId kFrameIsraelId = 30;
+constexpr CountryId kFrameSouthAfricaId = 71;
+
+uint8_t frame_count(size_t value) {
+    return static_cast<uint8_t>(std::min<size_t>(value, 255));
+}
+
+void add_frame_influence(PublicState& pub, Side side, CountryId country_id, int delta) {
+    pub.set_influence(side, country_id, std::max(0, pub.influence_of(side, country_id) + delta));
+}
+
+void mark_frame_event_played(PublicState& pub, CardId card_id, Side side) {
+    if (pub.discard.test(card_id) || pub.removed.test(card_id)) {
+        return;
+    }
+    if (card_id == kChinaCardId) {
+        pub.china_held_by = other_side(side);
+        pub.china_playable = false;
+        return;
+    }
+    if (card_spec(card_id).starred) {
+        pub.removed.set(card_id);
+    } else {
+        pub.discard.set(card_id);
+    }
+}
+
+std::bitset<kCountrySlots> country_bits(std::span<const CountryId> countries) {
+    std::bitset<kCountrySlots> bits;
+    for (const auto cid : countries) {
+        bits.set(static_cast<size_t>(cid));
+    }
+    return bits;
+}
+
+void push_country_frame(
+    GameState& gs,
+    CardId source_card,
+    Side acting_side,
+    const std::bitset<kCountrySlots>& eligible,
+    int step_index,
+    int total_steps,
+    uint16_t criteria_bits = 0
+) {
+    if (eligible.none()) {
+        return;
+    }
+    DecisionFrame frame;
+    frame.kind = FrameKind::CountryPick;
+    frame.source_card = source_card;
+    frame.acting_side = acting_side;
+    frame.step_index = frame_count(static_cast<size_t>(std::max(0, step_index)));
+    frame.total_steps = frame_count(static_cast<size_t>(std::max(1, total_steps)));
+    frame.stack_depth = frame_count(gs.frame_stack.size());
+    frame.eligible_countries = eligible;
+    frame.eligible_n = frame_count(eligible.count());
+    frame.criteria_bits = criteria_bits;
+    gs.frame_stack.push_back(frame);
+}
+
+void finish_frame_event(GameState& gs, CardId card_id, Side acting_side) {
+    mark_frame_event_played(gs.pub, card_id, acting_side);
+    const auto [over, winner] = check_vp_win(gs.pub);
+    gs.game_over = over;
+    gs.winner = winner;
+}
+
+void resume_warsaw_pact(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    constexpr uint16_t kAddInfluenceChoice = 1;
+
+    if (frame.kind == FrameKind::SmallChoice) {
+        if (action.option_index <= 0) {
+            std::bitset<kCountrySlots> eligible;
+            for (const auto cid : kSetupEasternBlocIds) {
+                if (gs.pub.influence_of(Side::US, cid) > 0) {
+                    eligible.set(static_cast<size_t>(cid));
+                }
+            }
+            if (eligible.none()) {
+                gs.pub.warsaw_pact_played = true;
+                finish_frame_event(gs, frame.source_card, frame.acting_side);
+                return;
+            }
+            push_country_frame(
+                gs,
+                frame.source_card,
+                frame.acting_side,
+                eligible,
+                0,
+                std::min<int>(4, static_cast<int>(eligible.count()))
+            );
+            return;
+        }
+
+        push_country_frame(
+            gs,
+            frame.source_card,
+            frame.acting_side,
+            country_bits(kSetupEasternBlocIds),
+            0,
+            5,
+            kAddInfluenceChoice
+        );
+        return;
+    }
+
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        if ((frame.criteria_bits & kAddInfluenceChoice) != 0) {
+            add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+        } else {
+            gs.pub.set_influence(Side::US, action.country_id, 0);
+        }
+    }
+
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = std::max<int>(1, frame.total_steps);
+    if (next_step < total_steps) {
+        auto next_eligible = frame.eligible_countries;
+        if ((frame.criteria_bits & kAddInfluenceChoice) == 0) {
+            next_eligible.reset(static_cast<size_t>(action.country_id));
+        }
+        push_country_frame(
+            gs,
+            frame.source_card,
+            frame.acting_side,
+            next_eligible,
+            next_step,
+            total_steps,
+            frame.criteria_bits
+        );
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+
+    gs.pub.warsaw_pact_played = true;
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_suez_crisis(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::US, action.country_id, -2);
+    }
+
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = std::max<int>(1, frame.total_steps);
+    if (next_step < total_steps) {
+        auto next_eligible = frame.eligible_countries;
+        next_eligible.reset(static_cast<size_t>(action.country_id));
+        push_country_frame(
+            gs,
+            frame.source_card,
+            frame.acting_side,
+            next_eligible,
+            next_step,
+            total_steps
+        );
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_south_african_unrest(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind == FrameKind::CountryPick &&
+        frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::USSR, action.country_id, 2);
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_liberation_theology(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+    }
+
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = std::max<int>(1, frame.total_steps);
+    if (next_step < total_steps) {
+        push_country_frame(
+            gs,
+            frame.source_card,
+            frame.acting_side,
+            frame.eligible_countries,
+            next_step,
+            total_steps
+        );
+        return;
+    }
+
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
     (void)rng;
+    switch (frame.source_card) {
+        case 16:
+            resume_warsaw_pact(gs, frame, action);
+            break;
+        case 28:
+            resume_suez_crisis(gs, frame, action);
+            break;
+        case 56:
+            resume_south_african_unrest(gs, frame, action);
+            break;
+        case 76:
+            resume_liberation_theology(gs, frame, action);
+            break;
+        default:
+            break;
+    }
+}
+
+}  // namespace
+
+StepResult engine_step_subframe(GameState& gs, const FrameAction& action, Pcg64Rng& rng) {
+    if (gs.frame_stack.empty()) {
+        return StepResult{
+            .pushed_subframe = false,
+            .side_changed = false,
+            .game_over = gs.game_over,
+            .winner = gs.winner,
+        };
+    }
+    const auto frame = gs.frame_stack.back();
+    gs.frame_stack.pop_back();
+    resume_card_subframe(gs, frame, action, rng);
     return StepResult{
         .pushed_subframe = !gs.frame_stack.empty(),
         .side_changed = false,
