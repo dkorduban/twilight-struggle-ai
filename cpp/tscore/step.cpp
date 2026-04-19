@@ -82,6 +82,21 @@ void record_card_frame(
     frame_log->push_back(frame);
 }
 
+void annotate_latest_frame(
+    std::vector<DecisionFrame>* frame_log,
+    int step_index,
+    int total_steps,
+    uint16_t criteria_bits = 0
+) {
+    if (frame_log == nullptr || frame_log->empty()) {
+        return;
+    }
+    auto& frame = frame_log->back();
+    frame.step_index = clamp_frame_count(static_cast<size_t>(std::max(0, step_index)));
+    frame.total_steps = clamp_frame_count(static_cast<size_t>(std::max(1, total_steps)));
+    frame.criteria_bits = criteria_bits;
+}
+
 }  // namespace
 
 int choose_option(
@@ -91,10 +106,15 @@ int choose_option(
     int n_options,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb,
-    std::vector<DecisionFrame>* frame_log
+    std::vector<DecisionFrame>* frame_log,
+    bool frame_stack_mode
 ) {
     if (n_options <= 0) {
         return 0;
+    }
+    if (policy_cb == nullptr && frame_stack_mode && frame_log != nullptr) {
+        record_option_frame(card_id, side, n_options, frame_log);
+        return -1;
     }
     int choice = 0;
     if (policy_cb != nullptr && n_options > 1) {
@@ -118,10 +138,15 @@ CountryId choose_country(
     std::span<const CountryId> pool,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb,
-    std::vector<DecisionFrame>* frame_log
+    std::vector<DecisionFrame>* frame_log,
+    bool frame_stack_mode
 ) {
     const auto n_options = static_cast<int>(pool.size());
     if (n_options <= 0) {
+        return 0;
+    }
+    if (policy_cb == nullptr && frame_stack_mode && frame_log != nullptr) {
+        record_country_frame(card_id, side, pool, frame_log);
         return 0;
     }
     CountryId selected = 0;
@@ -150,10 +175,15 @@ CardId choose_card(
     std::span<const CardId> pool,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb,
-    std::vector<DecisionFrame>* frame_log
+    std::vector<DecisionFrame>* frame_log,
+    bool frame_stack_mode
 ) {
     const auto n_options = static_cast<int>(pool.size());
     if (n_options <= 0) {
+        return 0;
+    }
+    if (policy_cb == nullptr && frame_stack_mode && frame_log != nullptr) {
+        record_card_frame(card_id, side, pool, frame_log);
         return 0;
     }
     CardId selected = 0;
@@ -359,7 +389,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
     Side side,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr,
-    std::vector<DecisionFrame>* frame_log = nullptr
+    std::vector<DecisionFrame>* frame_log = nullptr,
+    bool frame_stack_mode = false
 ) {
     auto next = pub;
     bool force_game_over = false;
@@ -469,7 +500,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
 
         case 16: {
             // Warsaw Pact: 0 = remove US influence from 4 E.Europe, 1 = add USSR to 5 E.Europe
-            if (choose_option(next, 16, Side::USSR, 2, rng, policy_cb, frame_log) == 0) {
+            const auto choice = choose_option(next, 16, Side::USSR, 2, rng, policy_cb, frame_log, frame_stack_mode);
+            if (choice < 0) {
+                return {next, false, std::nullopt};
+            }
+            if (choice == 0) {
                 std::vector<CountryId> pool;
                 for (const auto cid : kEasternBlocIds) {
                     if (next.influence_of(Side::US, cid) > 0) {
@@ -480,7 +515,20 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     if (pool.empty()) {
                         break;
                     }
-                    const auto cid = choose_country(next, static_cast<CardId>(16), Side::USSR, pool, rng, policy_cb, frame_log);
+                    const auto cid = choose_country(
+                        next,
+                        static_cast<CardId>(16),
+                        Side::USSR,
+                        pool,
+                        rng,
+                        policy_cb,
+                        frame_log,
+                        frame_stack_mode
+                    );
+                    if (cid == 0) {
+                        annotate_latest_frame(frame_log, i, std::min<int>(4, i + static_cast<int>(pool.size())), 0);
+                        return {next, false, std::nullopt};
+                    }
                     remove_all_influence(next, Side::US, cid);
                     pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
                 }
@@ -490,7 +538,20 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     if (pool.empty()) {
                         break;
                     }
-                    const auto cid = choose_country(next, static_cast<CardId>(16), Side::USSR, pool, rng, policy_cb, frame_log);
+                    const auto cid = choose_country(
+                        next,
+                        static_cast<CardId>(16),
+                        Side::USSR,
+                        pool,
+                        rng,
+                        policy_cb,
+                        frame_log,
+                        frame_stack_mode
+                    );
+                    if (cid == 0) {
+                        annotate_latest_frame(frame_log, i, 5, 1);
+                        return {next, false, std::nullopt};
+                    }
                     add_influence(next, Side::USSR, cid, 1);
                 }
             }
@@ -610,7 +671,20 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 if (pool.empty()) {
                     break;
                 }
-                const auto cid = choose_country(next, static_cast<CardId>(28), Side::USSR, pool, rng, policy_cb, frame_log);
+                const auto cid = choose_country(
+                    next,
+                    static_cast<CardId>(28),
+                    Side::USSR,
+                    pool,
+                    rng,
+                    policy_cb,
+                    frame_log,
+                    frame_stack_mode
+                );
+                if (cid == 0) {
+                    annotate_latest_frame(frame_log, i, std::min<int>(2, i + static_cast<int>(pool.size())));
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, Side::US, cid, -2);
                 pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
@@ -851,7 +925,20 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             // South African Unrest: +2 to South Africa, +2 to chosen neighbor
             add_influence(next, Side::USSR, kSouthAfricaId, 2);
             static constexpr std::array<CountryId, 3> kSaNeighbors = {kBotswanaId, 69, kZimbabweId};
-            const auto neighbor = choose_country(next, 56, Side::USSR, kSaNeighbors, rng, policy_cb, frame_log);
+            const auto neighbor = choose_country(
+                next,
+                56,
+                Side::USSR,
+                kSaNeighbors,
+                rng,
+                policy_cb,
+                frame_log,
+                frame_stack_mode
+            );
+            if (neighbor == 0) {
+                annotate_latest_frame(frame_log, 0, 1);
+                return {next, false, std::nullopt};
+            }
             add_influence(next, Side::USSR, neighbor, 2);
             break;
         }
@@ -1049,7 +1136,20 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 if (pool.empty()) {
                     break;
                 }
-                const auto cid = choose_country(next, static_cast<CardId>(76), Side::USSR, pool, rng, policy_cb, frame_log);
+                const auto cid = choose_country(
+                    next,
+                    static_cast<CardId>(76),
+                    Side::USSR,
+                    pool,
+                    rng,
+                    policy_cb,
+                    frame_log,
+                    frame_stack_mode
+                );
+                if (cid == 0) {
+                    annotate_latest_frame(frame_log, i, 3);
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, Side::USSR, cid, 1);
             }
             break;
@@ -1364,7 +1464,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
     Side side,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb,
-    std::vector<DecisionFrame>* frame_log
+    std::vector<DecisionFrame>* frame_log,
+    bool frame_stack_mode
 ) {
     auto next = pub;
 
@@ -1476,7 +1577,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
         }
 
         case ActionMode::Event: {
-            auto [event_pub, over, winner] = apply_event(pub, action, side, rng, policy_cb, frame_log);
+            auto [event_pub, over, winner] = apply_event(pub, action, side, rng, policy_cb, frame_log, frame_stack_mode);
             return {event_pub, over, winner};
         }
     }
