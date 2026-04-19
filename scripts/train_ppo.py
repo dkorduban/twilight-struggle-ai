@@ -3634,6 +3634,13 @@ def main() -> None:
                             "jsd/card_mid_vs_bc": m_bc.card_jsd_mid,
                             "jsd/card_late_vs_bc": m_bc.card_jsd_late,
                         })
+                        print(
+                            f"  [jsd] iter={iteration} vs_bc: "
+                            f"card_jsd={m_bc.card_jsd:.4f} top1={m_bc.top1_card_agree:.3f} "
+                            f"val_mae={m_bc.value_mae:.4f} "
+                            f"(early={m_bc.card_jsd_early:.4f} mid={m_bc.card_jsd_mid:.4f} late={m_bc.card_jsd_late:.4f})",
+                            flush=True,
+                        )
             except Exception as _probe_err:
                 print(f"  [jsd] error (non-fatal): {_probe_err}", flush=True)
 
