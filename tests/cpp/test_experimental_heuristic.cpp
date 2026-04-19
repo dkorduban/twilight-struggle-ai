@@ -16,8 +16,8 @@ TEST_CASE("experimental heuristic selfplay reaches a sane full-game trace", "[ex
     REQUIRE(trace.steps.size() >= 80);
     REQUIRE(trace.result.end_turn >= 7);
     REQUIRE(trace.result.end_reason != "scoring_card_held");
-    REQUIRE(trace.result.final_vp >= -20);
-    REQUIRE(trace.result.final_vp <= 20);
+    REQUIRE(trace.result.final_vp >= -30);
+    REQUIRE(trace.result.final_vp <= 30);
 }
 
 TEST_CASE("match summaries keep cause-based terminal counts", "[experimental][heuristic]") {

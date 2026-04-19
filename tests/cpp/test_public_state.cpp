@@ -510,7 +510,7 @@ TEST_CASE("Missile Envy free ops keeps the event card as the country-select cont
     REQUIRE(gs.hands[to_index(Side::USSR)].test(kArabIsraeliWarId));
 }
 
-TEST_CASE("Terrorism routes discard choices through the policy callback", "[game_loop]") {
+TEST_CASE("Terrorism randomly discards without policy selection", "[game_loop]") {
     constexpr CardId kDuckAndCoverId = 4;
     constexpr CardId kSocialistGovernmentsId = 7;
     constexpr CardId kArabIsraeliWarId = 13;
@@ -522,15 +522,10 @@ TEST_CASE("Terrorism routes discard choices through the policy callback", "[game
     gs.hands[to_index(Side::US)].set(kSocialistGovernmentsId);
     gs.hands[to_index(Side::US)].set(kArabIsraeliWarId);
 
-    std::vector<CardId> chosen_cards;
+    int policy_calls = 0;
     PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
-        REQUIRE(decision.kind == DecisionKind::CardSelect);
-        REQUIRE(decision.source_card == static_cast<CardId>(95));
-        REQUIRE(decision.acting_side == Side::USSR);
-        REQUIRE((decision.n_options == 3 || decision.n_options == 2));
-        const auto choice = decision.n_options - 1;
-        chosen_cards.push_back(static_cast<CardId>(decision.eligible_ids[choice]));
-        return choice;
+        ++policy_calls;
+        return decision.n_options - 1;
     };
 
     const ActionEncoding action{
@@ -544,12 +539,13 @@ TEST_CASE("Terrorism routes discard choices through the policy callback", "[game
 
     REQUIRE_FALSE(over);
     REQUIRE_FALSE(winner.has_value());
-    REQUIRE(chosen_cards == std::vector<CardId>{kArabIsraeliWarId, kSocialistGovernmentsId});
-    REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kArabIsraeliWarId));
-    REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kSocialistGovernmentsId));
-    REQUIRE(gs.hands[to_index(Side::US)].test(kDuckAndCoverId));
-    REQUIRE(next.discard.test(kArabIsraeliWarId));
-    REQUIRE(next.discard.test(kSocialistGovernmentsId));
+    REQUIRE(policy_calls == 0);
+    REQUIRE(hand_count(gs.hands[to_index(Side::US)]) == 1);
+    const auto discarded_originals =
+        static_cast<int>(next.discard.test(kDuckAndCoverId)) +
+        static_cast<int>(next.discard.test(kSocialistGovernmentsId)) +
+        static_cast<int>(next.discard.test(kArabIsraeliWarId));
+    REQUIRE(discarded_originals == 2);
 }
 
 TEST_CASE("Card 14 routes repeated country picks through the policy callback", "[step]") {
