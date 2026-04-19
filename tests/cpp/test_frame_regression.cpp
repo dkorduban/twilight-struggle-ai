@@ -172,7 +172,7 @@ TEST_CASE("frame_regression Korean War records a CountryPick frame", "[frame_reg
 TEST_CASE("frame_regression Wargames records a SmallChoice frame", "[frame_regression]") {
     expect_first_frame_kind(
         {
-            .card_id = 73,
+            .card_id = 103,
             .actor = Side::USSR,
             .turn = 8,
             .vp = 8,
@@ -197,7 +197,7 @@ TEST_CASE("frame_regression Aldrich Ames Remix records a CardSelect frame", "[fr
 TEST_CASE("frame_regression Socialist Governments records a CountryPick frame", "[frame_regression]") {
     expect_first_frame_kind(
         {
-            .card_id = 6,
+            .card_id = 7,
             .actor = Side::USSR,
             .turn = 1,
             .influence = {{Side::US, 7, 2}, {Side::US, 8, 2}},
@@ -209,7 +209,7 @@ TEST_CASE("frame_regression Socialist Governments records a CountryPick frame", 
 TEST_CASE("frame_regression Independent Reds records a CountryPick frame", "[frame_regression]") {
     expect_first_frame_kind(
         {
-            .card_id = 9,
+            .card_id = 22,
             .actor = Side::US,
             .turn = 1,
             .influence = {{Side::USSR, 12, 1}, {Side::USSR, 13, 1}},
