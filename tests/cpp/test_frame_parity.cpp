@@ -876,11 +876,11 @@ struct FrameParityTest {
 
 }  // namespace
 
-TEST_CASE("FrameParity SingleGame_Seed0", "[frame_parity]") {
+TEST_CASE("frame_parity FrameParity SingleGame_Seed0", "[frame_parity]") {
     FrameParityTest::assert_seed(0);
 }
 
-TEST_CASE("FrameParity Seeds0To49", "[frame_parity]") {
+TEST_CASE("frame_parity FrameParity Seeds0To49", "[frame_parity]") {
     for (uint32_t seed = 0; seed < 50; ++seed) {
         DYNAMIC_SECTION("seed " << seed) {
             FrameParityTest::assert_seed(seed);
@@ -888,7 +888,7 @@ TEST_CASE("FrameParity Seeds0To49", "[frame_parity]") {
     }
 }
 
-TEST_CASE("DISABLED_FrameParity Bulk500Seeds", "[frame_parity][.]") {
+TEST_CASE("frame_parity DISABLED_FrameParity Bulk500Seeds", "[frame_parity][.]") {
     for (uint32_t seed = 0; seed < 500; ++seed) {
         DYNAMIC_SECTION("seed " << seed) {
             FrameParityTest::assert_seed(seed);
