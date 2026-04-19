@@ -237,6 +237,30 @@ WarResult apply_war_card(
     };
 }
 
+int apply_free_coup(
+    PublicState& pub,
+    Side side,
+    CountryId country_id,
+    int ops,
+    Pcg64Rng& rng,
+    bool defcon_immune
+) {
+    const auto opponent = other_side(side);
+    const auto net = coup_result(ops, country_spec(country_id).stability, rng);
+    if (net > 0) {
+        const auto removed = std::min(net, pub.influence_of(opponent, country_id));
+        pub.set_influence(opponent, country_id, pub.influence_of(opponent, country_id) - removed);
+        if (const auto excess = net - removed; excess > 0) {
+            pub.set_influence(side, country_id, pub.influence_of(side, country_id) + excess);
+        }
+    }
+    if (country_spec(country_id).is_battleground && !defcon_immune) {
+        pub.defcon = std::max(1, pub.defcon - 1);
+    }
+    pub.milops[to_index(side)] = std::max(pub.milops[to_index(side)], ops);
+    return net;
+}
+
 namespace {
 
 // Card-group constants used by event implementations below.
@@ -322,30 +346,6 @@ void gain_control(PublicState& pub, Side side, CountryId country_id) {
     if (pub.influence_of(side, country_id) < needed) {
         pub.set_influence(side, country_id, needed);
     }
-}
-
-int apply_free_coup(
-    PublicState& pub,
-    Side side,
-    CountryId country_id,
-    int ops,
-    Pcg64Rng& rng,
-    bool defcon_immune
-) {
-    const auto opponent = other_side(side);
-    const auto net = coup_result(ops, country_spec(country_id).stability, rng);
-    if (net > 0) {
-        const auto removed = std::min(net, pub.influence_of(opponent, country_id));
-        pub.set_influence(opponent, country_id, pub.influence_of(opponent, country_id) - removed);
-        if (const auto excess = net - removed; excess > 0) {
-            pub.set_influence(side, country_id, pub.influence_of(side, country_id) + excess);
-        }
-    }
-    if (country_spec(country_id).is_battleground && !defcon_immune) {
-        pub.defcon = std::max(1, pub.defcon - 1);
-    }
-    pub.milops[to_index(side)] = std::max(pub.milops[to_index(side)], ops);
-    return net;
 }
 
 void advance_space_track(PublicState& pub, Side side, int steps) {
