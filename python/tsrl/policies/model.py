@@ -66,8 +66,8 @@ _REGIONS = ["Europe", "Asia", "MiddleEast", "Africa", "CentralAmerica", "SouthAm
 
 # Per-region BG and non-BG country counts (same order as _REGIONS).
 # Used to convert mean-pooled control fractions back to counts for scoring tier computation.
-_REGION_BG_COUNTS:    list[float] = [7.0, 5.0, 6.0, 7.0, 3.0, 4.0, 4.0]
-_REGION_NONBG_COUNTS: list[float] = [16.0, 2.0, 4.0, 11.0, 7.0, 6.0, 3.0]
+_REGION_BG_COUNTS:    tuple[float, ...] = (7.0, 5.0, 6.0, 7.0, 3.0, 4.0, 4.0)
+_REGION_NONBG_COUNTS: tuple[float, ...] = (16.0, 2.0, 4.0, 11.0, 7.0, 6.0, 3.0)
 
 # ---------------------------------------------------------------------------
 # Static feature loaders
@@ -181,10 +181,10 @@ _REGION_BG_MASKS: list[torch.Tensor] = [
     _REGION_MASKS[i] & _IS_BG for i in range(len(_REGION_MASKS))
 ]
 _REGION_COUNTRY_COUNTS: list[int] = [int(m.sum().item()) for m in _REGION_MASKS]
-_REGION_BG_COUNTS: list[int] = [int(m.sum().item()) for m in _REGION_BG_MASKS]
-_REGION_NON_BG_COUNTS: list[int] = [
-    _REGION_COUNTRY_COUNTS[i] - _REGION_BG_COUNTS[i] for i in range(len(_REGION_MASKS))
-]
+_REGION_BG_COUNTS: tuple[float, ...] = tuple(float(m.sum().item()) for m in _REGION_BG_MASKS)
+_REGION_NON_BG_COUNTS: tuple[int, ...] = tuple(
+    _REGION_COUNTRY_COUNTS[i] - int(_REGION_BG_COUNTS[i]) for i in range(len(_REGION_MASKS))
+)
 
 
 def _build_country_adjacency(spec_path: str | None = None) -> torch.Tensor:
@@ -1127,8 +1127,8 @@ class ControlFeatCountryEncoder(nn.Module):
             region_scalars.append(ussr_non_bg)
             region_scalars.append(us_non_bg)
             # Explicit scoring tiers (0=none, 1/3=presence, 2/3=domination, 1=control)
-            n_bg_f: float = _REGION_BG_COUNTS[i]
-            n_nonbg_f: float = _REGION_NONBG_COUNTS[i]
+            n_bg_f: float = float(bg_mask.float().sum())
+            n_nonbg_f: float = float(non_bg_mask.float().sum())
             region_scalars.append(_compute_scoring_tier(ussr_bg, us_bg, ussr_non_bg, us_non_bg, n_bg_f, n_nonbg_f))
             region_scalars.append(_compute_scoring_tier(us_bg, ussr_bg, us_non_bg, ussr_non_bg, n_bg_f, n_nonbg_f))
 
@@ -1334,8 +1334,8 @@ class ControlFeatGNNEncoder(nn.Module):
             region_scalars.append(ussr_non_bg)
             region_scalars.append(us_non_bg)
             # Explicit scoring tiers (0=none, 1/3=presence, 2/3=domination, 1=control)
-            n_bg_f: float = _REGION_BG_COUNTS[i]
-            n_nonbg_f: float = _REGION_NONBG_COUNTS[i]
+            n_bg_f: float = float(bg_mask.float().sum())
+            n_nonbg_f: float = float(non_bg_mask.float().sum())
             region_scalars.append(_compute_scoring_tier(ussr_bg, us_bg, ussr_non_bg, us_non_bg, n_bg_f, n_nonbg_f))
             region_scalars.append(_compute_scoring_tier(us_bg, ussr_bg, us_non_bg, ussr_non_bg, n_bg_f, n_nonbg_f))
 
@@ -2000,10 +2000,14 @@ class TSControlFeatGNNCardAttnModel(nn.Module):
     No input/output shape change vs TSControlFeatGNNFiLMModel. ~10K extra params.
     """
 
+    __constants__ = ['_REGION_SCALAR_DIM', '_XATTN_DIM', '_NUM_XATTN_HEADS', '_SIDE_SCALAR_IDX', '_NUM_COUNTRIES', '_NUM_STRATEGIES', '_NUM_CARDS']
     _REGION_SCALAR_DIM = 42
     _SIDE_SCALAR_IDX = 10
     _XATTN_DIM = 32
     _NUM_XATTN_HEADS = 4
+    _NUM_COUNTRIES = NUM_COUNTRIES
+    _NUM_STRATEGIES = NUM_STRATEGIES
+    _NUM_CARDS = NUM_CARDS
 
     def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
         super().__init__()
@@ -2070,8 +2074,8 @@ class TSControlFeatGNNCardAttnModel(nn.Module):
         h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
 
         # Cross-attention: per-country features (B, 86, D_attn)
-        ussr_inf = influence[:, :NUM_COUNTRIES] / 10.0   # (B, 86)
-        us_inf   = influence[:, NUM_COUNTRIES:] / 10.0   # (B, 86)
+        ussr_inf = influence[:, :self._NUM_COUNTRIES] / 10.0   # (B, 86)
+        us_inf   = influence[:, self._NUM_COUNTRIES:] / 10.0   # (B, 86)
         static_c = self.country_static.unsqueeze(0).expand(B, -1, -1)  # (B, 86, 11)
         dyn_c    = torch.stack([ussr_inf, us_inf], dim=-1)              # (B, 86, 2)
         countries = torch.relu(
@@ -2086,7 +2090,7 @@ class TSControlFeatGNNCardAttnModel(nn.Module):
         attn_out, _ = self.cross_attn(card_emb, countries, countries)    # (B, 112, D_attn)
 
         # Pool over cards in hand (actor_known_in = first 112 cols)
-        hand_mask_f = cards[:, :NUM_CARDS].unsqueeze(-1)                  # (B, 112, 1)
+        hand_mask_f = cards[:, :self._NUM_CARDS].unsqueeze(-1)                  # (B, 112, 1)
         hand_n = hand_mask_f.sum(dim=1).clamp(min=1.0)                    # (B, 1)
         attn_pool = (attn_out * hand_mask_f).sum(dim=1) / hand_n          # (B, D_attn)
         h_cross = torch.relu(self.cross_attn_proj(attn_pool))             # (B, CARD_HIDDEN)
@@ -2107,7 +2111,7 @@ class TSControlFeatGNNCardAttnModel(nn.Module):
 
         card_logits  = self.card_head(hidden)
         mode_logits  = self.mode_head(hidden)
-        country_strategy_logits = self.strategy_heads(hidden).view(B, NUM_STRATEGIES, NUM_COUNTRIES)
+        country_strategy_logits = self.strategy_heads(hidden).view(B, self._NUM_STRATEGIES, self._NUM_COUNTRIES)
         strategy_logits = self.strategy_mixer(hidden)
         mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
         strategy_probs = torch.softmax(country_strategy_logits, dim=2)
@@ -2162,8 +2166,8 @@ class TSControlFeatGNNCardAttnGatedModel(TSControlFeatGNNCardAttnModel):
         h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
 
         # Card-to-country cross-attention (same as parent)
-        ussr_inf = influence[:, :NUM_COUNTRIES] / 10.0
-        us_inf   = influence[:, NUM_COUNTRIES:] / 10.0
+        ussr_inf = influence[:, :self._NUM_COUNTRIES] / 10.0
+        us_inf   = influence[:, self._NUM_COUNTRIES:] / 10.0
         static_c = self.country_static.unsqueeze(0).expand(B, -1, -1)
         dyn_c    = torch.stack([ussr_inf, us_inf], dim=-1)
         countries = torch.relu(
@@ -2171,7 +2175,7 @@ class TSControlFeatGNNCardAttnGatedModel(TSControlFeatGNNCardAttnModel):
         )
         card_emb = torch.relu(self.card_proj(self.card_static)).unsqueeze(0).expand(B, -1, -1)
         attn_out, _ = self.cross_attn(card_emb, countries, countries)
-        hand_mask_f = cards[:, :NUM_CARDS].unsqueeze(-1)
+        hand_mask_f = cards[:, :self._NUM_CARDS].unsqueeze(-1)
         hand_n = hand_mask_f.sum(dim=1).clamp(min=1.0)
         attn_pool = (attn_out * hand_mask_f).sum(dim=1) / hand_n
         h_card = h_card + torch.relu(self.cross_attn_proj(attn_pool))
@@ -2190,7 +2194,7 @@ class TSControlFeatGNNCardAttnGatedModel(TSControlFeatGNNCardAttnModel):
 
         card_logits  = self.card_head(hidden)
         mode_logits  = self.mode_head(hidden)
-        country_strategy_logits = self.strategy_heads(hidden).view(B, NUM_STRATEGIES, NUM_COUNTRIES)
+        country_strategy_logits = self.strategy_heads(hidden).view(B, self._NUM_STRATEGIES, self._NUM_COUNTRIES)
         strategy_logits = self.strategy_mixer(hidden)
         mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
         strategy_probs = torch.softmax(country_strategy_logits, dim=2)
