@@ -12,6 +12,16 @@
 
 namespace ts {
 
+void apply_ops_randomly_impl(
+    PublicState& pub,
+    Side side,
+    int ops,
+    CardId context_card_id,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr,
+    std::vector<DecisionFrame>* frame_log = nullptr
+);
+
 std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     GameState& gs,
     const ActionEncoding& action,

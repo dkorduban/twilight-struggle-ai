@@ -72,104 +72,6 @@ std::optional<CardId> draw_one(GameState& gs, Pcg64Rng& rng) {
     return card;
 }
 
-void apply_ops_randomly_impl(
-    PublicState& pub,
-    Side side,
-    int ops,
-    CardId context_card_id,
-    Pcg64Rng& rng,
-    const PolicyCallbackFn* policy_cb,
-    std::vector<DecisionFrame>* frame_log
-) {
-    auto accessible = accessible_countries(side, pub, ActionMode::Influence);
-    if (accessible.empty()) {
-        return;
-    }
-
-    const auto place_influence = [&]() {
-        for (int i = 0; i < ops; ++i) {
-            const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb, frame_log);
-            pub.set_influence(side, target, pub.influence_of(side, target) + 1);
-        }
-    };
-
-    const std::array<ActionMode, 4> modes = {
-        ActionMode::Influence,
-        ActionMode::Influence,
-        ActionMode::Coup,
-        ActionMode::Realign,
-    };
-    const auto mode = modes[static_cast<size_t>(
-        choose_option(pub, 0, side, static_cast<int>(modes.size()), rng, policy_cb, frame_log)
-    )];
-    const auto opponent = other_side(side);
-
-    if (mode == ActionMode::Influence) {
-        place_influence();
-        return;
-    }
-
-    if (mode == ActionMode::Coup && pub.defcon <= 2) {
-        place_influence();
-        return;
-    }
-
-    if (mode == ActionMode::Coup) {
-        auto targets = accessible;
-        targets.erase(
-            std::remove_if(
-                targets.begin(),
-                targets.end(),
-                [&pub](CountryId cid) { return is_defcon_restricted(cid, pub); }
-            ),
-            targets.end()
-        );
-        if (targets.empty()) {
-            place_influence();
-            return;
-        }
-
-        const auto target = choose_country(pub, context_card_id, side, targets, rng, policy_cb, frame_log);
-        const auto net = coup_result(ops, country_spec(target).stability, rng);
-        if (net > 0) {
-            const auto removed = std::min(net, pub.influence_of(opponent, target));
-            pub.set_influence(opponent, target, pub.influence_of(opponent, target) - removed);
-            if (const auto excess = net - removed; excess > 0) {
-                pub.set_influence(side, target, pub.influence_of(side, target) + excess);
-            }
-        }
-        if (country_spec(target).is_battleground && !(side == Side::US && pub.nuclear_subs_active)) {
-            pub.defcon = std::max(1, pub.defcon - 1);
-        }
-        pub.milops[to_index(side)] = std::max(pub.milops[to_index(side)], ops);
-        return;
-    }
-
-    for (int i = 0; i < std::min(ops, static_cast<int>(accessible.size())); ++i) {
-        const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb, frame_log);
-        const auto ussr_inf = pub.influence_of(Side::USSR, target);
-        const auto us_inf = pub.influence_of(Side::US, target);
-        auto count_adj = [&](Side player) {
-            int total = 0;
-            for (const auto neighbor : adjacency()[target]) {
-                if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
-                    continue;
-                }
-                if (controls_country(player, neighbor, pub)) {
-                    ++total;
-                }
-            }
-            return total;
-        };
-        const auto [ussr_total, us_total] = realign_result(ussr_inf, us_inf, count_adj(Side::USSR), count_adj(Side::US), rng);
-        if (ussr_total > us_total) {
-            pub.set_influence(Side::US, target, std::max(0, pub.influence_of(Side::US, target) - 1));
-        } else if (us_total > ussr_total) {
-            pub.set_influence(Side::USSR, target, std::max(0, pub.influence_of(Side::USSR, target) - 1));
-        }
-    }
-}
-
 std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     GameState& gs,
     CardId card_id,
@@ -736,6 +638,104 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
 }
 
 }  // namespace
+
+void apply_ops_randomly_impl(
+    PublicState& pub,
+    Side side,
+    int ops,
+    CardId context_card_id,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
+) {
+    auto accessible = accessible_countries(side, pub, ActionMode::Influence);
+    if (accessible.empty()) {
+        return;
+    }
+
+    const auto place_influence = [&]() {
+        for (int i = 0; i < ops; ++i) {
+            const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb, frame_log);
+            pub.set_influence(side, target, pub.influence_of(side, target) + 1);
+        }
+    };
+
+    const std::array<ActionMode, 4> modes = {
+        ActionMode::Influence,
+        ActionMode::Influence,
+        ActionMode::Coup,
+        ActionMode::Realign,
+    };
+    const auto mode = modes[static_cast<size_t>(
+        choose_option(pub, 0, side, static_cast<int>(modes.size()), rng, policy_cb, frame_log)
+    )];
+    const auto opponent = other_side(side);
+
+    if (mode == ActionMode::Influence) {
+        place_influence();
+        return;
+    }
+
+    if (mode == ActionMode::Coup && pub.defcon <= 2) {
+        place_influence();
+        return;
+    }
+
+    if (mode == ActionMode::Coup) {
+        auto targets = accessible;
+        targets.erase(
+            std::remove_if(
+                targets.begin(),
+                targets.end(),
+                [&pub](CountryId cid) { return is_defcon_restricted(cid, pub); }
+            ),
+            targets.end()
+        );
+        if (targets.empty()) {
+            place_influence();
+            return;
+        }
+
+        const auto target = choose_country(pub, context_card_id, side, targets, rng, policy_cb, frame_log);
+        const auto net = coup_result(ops, country_spec(target).stability, rng);
+        if (net > 0) {
+            const auto removed = std::min(net, pub.influence_of(opponent, target));
+            pub.set_influence(opponent, target, pub.influence_of(opponent, target) - removed);
+            if (const auto excess = net - removed; excess > 0) {
+                pub.set_influence(side, target, pub.influence_of(side, target) + excess);
+            }
+        }
+        if (country_spec(target).is_battleground && !(side == Side::US && pub.nuclear_subs_active)) {
+            pub.defcon = std::max(1, pub.defcon - 1);
+        }
+        pub.milops[to_index(side)] = std::max(pub.milops[to_index(side)], ops);
+        return;
+    }
+
+    for (int i = 0; i < std::min(ops, static_cast<int>(accessible.size())); ++i) {
+        const auto target = choose_country(pub, context_card_id, side, accessible, rng, policy_cb, frame_log);
+        const auto ussr_inf = pub.influence_of(Side::USSR, target);
+        const auto us_inf = pub.influence_of(Side::US, target);
+        auto count_adj = [&](Side player) {
+            int total = 0;
+            for (const auto neighbor : adjacency()[target]) {
+                if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
+                    continue;
+                }
+                if (controls_country(player, neighbor, pub)) {
+                    ++total;
+                }
+            }
+            return total;
+        };
+        const auto [ussr_total, us_total] = realign_result(ussr_inf, us_inf, count_adj(Side::USSR), count_adj(Side::US), rng);
+        if (ussr_total > us_total) {
+            pub.set_influence(Side::US, target, std::max(0, pub.influence_of(Side::US, target) - 1));
+        } else if (us_total > ussr_total) {
+            pub.set_influence(Side::USSR, target, std::max(0, pub.influence_of(Side::USSR, target) - 1));
+        }
+    }
+}
 
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar(
     GameState& gs,
