@@ -3746,9 +3746,12 @@ def main() -> None:
                         # Normalized over whichever opponents actually ran (some may error).
                         _PANEL_WEIGHTS: dict[str, float] = {"v55": 0.35, "v54": 0.25, "v44": 0.20, "v45": 0.15, "v14": 0.05}
                         # Heuristic is tracked for monitoring but excluded from weighted avg
-                        # (checkpoint selection should optimize model-vs-model; heuristic WR
-                        # is a regression detector, not a training target).
+                        # when model opponents are present (optimize model-vs-model; heuristic WR
+                        # is a regression detector). Exception: if heuristic is the ONLY panel
+                        # member, use its WR for checkpoint selection (otherwise avg is always 0).
                         _scoring_opps = {k: v for k, v in valid_opps.items() if k != "heuristic"}
+                        if not _scoring_opps and "heuristic" in valid_opps:
+                            _scoring_opps = {"heuristic": valid_opps["heuristic"]}
                         _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in _scoring_opps) if _scoring_opps else 1.0
                         avg_combined = sum(
                             v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in _scoring_opps.items()
