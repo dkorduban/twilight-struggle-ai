@@ -763,14 +763,6 @@ void mark_frame_event_played(PublicState& pub, CardId card_id, Side side) {
     }
 }
 
-std::bitset<kCountrySlots> country_bits(std::span<const CountryId> countries) {
-    std::bitset<kCountrySlots> bits;
-    for (const auto cid : countries) {
-        bits.set(static_cast<size_t>(cid));
-    }
-    return bits;
-}
-
 void push_country_frame(
     GameState& gs,
     CardId source_card,
@@ -835,6 +827,47 @@ uint16_t pack_destalinization_picks(CountryId first, CountryId second) {
 CountryId unpack_destalinization_pick(uint16_t packed, int slot) {
     const auto raw = static_cast<CountryId>((packed >> (slot * 8)) & 0xff);
     return raw == kInvalidCountryId ? kInvalidCountryId : raw;
+}
+
+constexpr uint16_t kWarsawAddInfluenceFlag = 1U << 14;
+
+int warsaw_eastern_bloc_index(CountryId country_id) {
+    for (int idx = 0; idx < static_cast<int>(kSetupEasternBlocIds.size()); ++idx) {
+        if (kSetupEasternBlocIds[static_cast<size_t>(idx)] == country_id) {
+            return idx;
+        }
+    }
+    return -1;
+}
+
+int warsaw_placed_count(uint16_t criteria_bits, CountryId country_id) {
+    const auto idx = warsaw_eastern_bloc_index(country_id);
+    if (idx < 0) {
+        return 0;
+    }
+    return static_cast<int>((criteria_bits >> (idx * 2)) & 0x3U);
+}
+
+uint16_t increment_warsaw_placed_count(uint16_t criteria_bits, CountryId country_id) {
+    const auto idx = warsaw_eastern_bloc_index(country_id);
+    if (idx < 0) {
+        return criteria_bits;
+    }
+    const auto shift = idx * 2;
+    const auto count = std::min(2, static_cast<int>((criteria_bits >> shift) & 0x3U) + 1);
+    criteria_bits &= static_cast<uint16_t>(~(0x3U << shift));
+    criteria_bits |= static_cast<uint16_t>(count << shift);
+    return criteria_bits;
+}
+
+std::bitset<kCountrySlots> warsaw_add_influence_bits(uint16_t criteria_bits) {
+    std::bitset<kCountrySlots> eligible;
+    for (const auto cid : kSetupEasternBlocIds) {
+        if (warsaw_placed_count(criteria_bits, cid) < 2) {
+            eligible.set(static_cast<size_t>(cid));
+        }
+    }
+    return eligible;
 }
 
 std::bitset<kCountrySlots> destalinization_source_bits(const PublicState& pub) {
@@ -1649,8 +1682,6 @@ void resume_card_83(GameState& gs, const DecisionFrame& frame, const FrameAction
 }
 
 void resume_warsaw_pact(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
-    constexpr uint16_t kAddInfluenceChoice = 1;
-
     if (frame.kind == FrameKind::SmallChoice) {
         if (action.option_index <= 0) {
             std::bitset<kCountrySlots> eligible;
@@ -1679,10 +1710,10 @@ void resume_warsaw_pact(GameState& gs, const DecisionFrame& frame, const FrameAc
             gs,
             frame.source_card,
             frame.acting_side,
-            country_bits(kSetupEasternBlocIds),
+            warsaw_add_influence_bits(kWarsawAddInfluenceFlag),
             0,
             5,
-            kAddInfluenceChoice
+            kWarsawAddInfluenceFlag
         );
         return;
     }
@@ -1691,9 +1722,11 @@ void resume_warsaw_pact(GameState& gs, const DecisionFrame& frame, const FrameAc
         return;
     }
 
+    auto next_criteria = frame.criteria_bits;
     if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
-        if ((frame.criteria_bits & kAddInfluenceChoice) != 0) {
+        if ((frame.criteria_bits & kWarsawAddInfluenceFlag) != 0) {
             add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+            next_criteria = increment_warsaw_placed_count(next_criteria, action.country_id);
         } else {
             gs.pub.set_influence(Side::US, action.country_id, 0);
         }
@@ -1703,8 +1736,10 @@ void resume_warsaw_pact(GameState& gs, const DecisionFrame& frame, const FrameAc
     const auto total_steps = std::max<int>(1, frame.total_steps);
     if (next_step < total_steps) {
         auto next_eligible = frame.eligible_countries;
-        if ((frame.criteria_bits & kAddInfluenceChoice) == 0) {
+        if ((frame.criteria_bits & kWarsawAddInfluenceFlag) == 0) {
             next_eligible.reset(static_cast<size_t>(action.country_id));
+        } else {
+            next_eligible = warsaw_add_influence_bits(next_criteria);
         }
         push_country_frame(
             gs,
@@ -1713,7 +1748,7 @@ void resume_warsaw_pact(GameState& gs, const DecisionFrame& frame, const FrameAc
             next_eligible,
             next_step,
             total_steps,
-            frame.criteria_bits
+            next_criteria
         );
         if (!gs.frame_stack.empty()) {
             return;

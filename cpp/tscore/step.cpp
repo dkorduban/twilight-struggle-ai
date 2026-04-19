@@ -277,6 +277,7 @@ namespace {
 
 // Card-group constants used by event implementations below.
 constexpr std::array<CardId, 5> kWarCardIds = {11, 13, 24, 39, 105};
+constexpr uint16_t kWarsawAddInfluenceFlag = 1U << 14;
 constexpr std::array<CountryId, 7> kEasternBlocIds = {3, 5, 9, 12, 13, 19, 83};
 constexpr std::array<CountryId, 12> kWesternEuropeIds = {1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18};
 constexpr CountryId kIndiaId = 21;
@@ -565,8 +566,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
                 }
             } else {
-                const std::vector<CountryId> pool(kEasternBlocIds.begin(), kEasternBlocIds.end());
+                std::array<int, kCountrySlots> placed_counts = {};
                 for (int i = 0; i < 5; ++i) {
+                    std::vector<CountryId> pool;
+                    for (const auto cid : kEasternBlocIds) {
+                        if (placed_counts[static_cast<size_t>(cid)] < 2) {
+                            pool.push_back(cid);
+                        }
+                    }
                     if (pool.empty()) {
                         break;
                     }
@@ -581,10 +588,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                         frame_stack_mode
                     );
                     if (cid == kInvalidCountryId) {
-                        annotate_latest_frame(frame_log, i, 5, 1);
+                        annotate_latest_frame(frame_log, i, 5, kWarsawAddInfluenceFlag);
                         return {next, false, std::nullopt};
                     }
                     add_influence(next, Side::USSR, cid, 1);
+                    ++placed_counts[static_cast<size_t>(cid)];
                 }
             }
             next.warsaw_pact_played = true;
