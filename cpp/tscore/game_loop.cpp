@@ -1047,6 +1047,58 @@ void resume_card_19(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_20(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    if (frame.kind == FrameKind::SmallChoice) {
+        if (action.option_index == 0) {
+            gs.pub.defcon = std::max(1, gs.pub.defcon - 1);
+            const auto card_player = other_side(frame.acting_side);
+            auto accessible = accessible_countries(card_player, gs.pub, ActionMode::Influence);
+            if (!accessible.empty()) {
+                std::bitset<kCountrySlots> eligible;
+                for (const auto cid : accessible) {
+                    eligible.set(static_cast<size_t>(cid));
+                }
+                push_country_frame(gs, frame.source_card, card_player, eligible, 0, 4);
+            }
+            if (gs.frame_stack.empty()) {
+                finish_frame_event(gs, frame.source_card, frame.acting_side);
+            }
+        } else {
+            const auto card_player = other_side(frame.acting_side);
+            const auto opponent = frame.acting_side;
+            auto my_roll = roll_d6(rng);
+            auto opp_roll = roll_d6(rng);
+            while (my_roll == opp_roll) {
+                my_roll = roll_d6(rng);
+                opp_roll = roll_d6(rng);
+            }
+            const auto winner = my_roll > opp_roll ? card_player : opponent;
+            if (winner == Side::USSR) {
+                gs.pub.vp += 2;
+            } else {
+                gs.pub.vp -= 2;
+            }
+            finish_frame_event(gs, frame.source_card, frame.acting_side);
+        }
+        return;
+    }
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, frame.acting_side, action.country_id, 1);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = static_cast<int>(frame.total_steps);
+    if (next_step < total_steps) {
+        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_23(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
     if (frame.kind != FrameKind::CountryPick) {
         return;
@@ -1103,6 +1155,39 @@ void resume_card_30(GameState& gs, const DecisionFrame& frame, const FrameAction
         if (!gs.frame_stack.empty()) {
             return;
         }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_37(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::US, action.country_id, 1);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = static_cast<int>(frame.total_steps);
+    if (next_step < total_steps) {
+        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_48(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::SmallChoice) {
+        return;
+    }
+    const auto winner = frame.acting_side;
+    const auto defcon_delta = action.option_index == 0 ? -1 : 1;
+    gs.pub.defcon = std::clamp(gs.pub.defcon + defcon_delta, 1, 5);
+    if (winner == Side::USSR) {
+        gs.pub.vp += 2;
+    } else {
+        gs.pub.vp -= 2;
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
@@ -1387,6 +1472,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
         case 19:
             resume_card_19(gs, frame, action);
             break;
+        case 20:
+            resume_card_20(gs, frame, action, rng);
+            break;
         case 23:
             resume_card_23(gs, frame, action);
             break;
@@ -1398,6 +1486,12 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 30:
             resume_card_30(gs, frame, action);
+            break;
+        case 37:
+            resume_card_37(gs, frame, action);
+            break;
+        case 48:
+            resume_card_48(gs, frame, action);
             break;
         case 49:
             resume_card_49(gs, frame, action);

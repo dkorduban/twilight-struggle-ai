@@ -574,17 +574,37 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
 
         case 20: {
             // Olympic Games: 0 = boycott (DEFCON -1, place 4 inf), 1 = compete (dice)
-            if (choose_option(next, 20, other_side(side), 2, rng, policy_cb, frame_log) == 0) {
+            // Option is made by the *opponent* of the card player
+            const auto option_side = other_side(side);
+            const auto choice = choose_option(next, 20, option_side, 2, rng, policy_cb, frame_log, frame_stack_mode);
+            if (choice < 0) {
+                return {next, false, std::nullopt};
+            }
+            if (choice == 0) {
+                // Boycott: DEFCON -1, then 4 inf for card player
                 next.defcon = std::max(1, next.defcon - 1);
                 const auto accessible = accessible_countries(side, next, ActionMode::Influence);
                 if (!accessible.empty()) {
                     for (int i = 0; i < 4; ++i) {
-                        const auto cid =
-                            choose_country(next, static_cast<CardId>(20), side, accessible, rng, policy_cb, frame_log);
+                        const auto cid = choose_country(
+                            next,
+                            static_cast<CardId>(20),
+                            side,
+                            accessible,
+                            rng,
+                            policy_cb,
+                            frame_log,
+                            frame_stack_mode
+                        );
+                        if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                            annotate_latest_frame(frame_log, i, 4);
+                            return {next, false, std::nullopt};
+                        }
                         add_influence(next, side, cid, 1);
                     }
                 }
             } else {
+                // Compete: dice decide winner, +2 VP
                 const auto opponent = other_side(side);
                 auto my_roll = roll_d6(rng);
                 auto opp_roll = roll_d6(rng);
@@ -592,7 +612,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     my_roll = roll_d6(rng);
                     opp_roll = roll_d6(rng);
                 }
-                apply_vp_delta(next, my_roll > opp_roll ? side : opponent, 2);
+                const auto winner = my_roll > opp_roll ? side : opponent;
+                if (winner == Side::USSR) {
+                    next.vp += 2;
+                } else {
+                    next.vp -= 2;
+                }
             }
             break;
         }
@@ -819,16 +844,38 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     }
                 }
                 for (int i = 0; i < 2 && !pool.empty(); ++i) {
-                    const auto cid = choose_country(next, static_cast<CardId>(37), Side::US, pool, rng, policy_cb, frame_log);
+                    const auto cid = choose_country(
+                        next,
+                        static_cast<CardId>(37),
+                        Side::US,
+                        pool,
+                        rng,
+                        policy_cb,
+                        frame_log,
+                        frame_stack_mode
+                    );
+                    if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                        annotate_latest_frame(frame_log, i, 2);
+                        return {next, false, std::nullopt};
+                    }
                     add_influence(next, Side::US, cid, 1);
                 }
             } else {
-                add_influence(
+                const auto cid = choose_country(
                     next,
+                    static_cast<CardId>(37),
                     Side::US,
-                    choose_country(next, static_cast<CardId>(37), Side::US, kWesternEuropeIds, rng, policy_cb, frame_log),
-                    1
+                    kWesternEuropeIds,
+                    rng,
+                    policy_cb,
+                    frame_log,
+                    frame_stack_mode
                 );
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, 0, 1);
+                    return {next, false, std::nullopt};
+                }
+                add_influence(next, Side::US, cid, 1);
             }
             break;
 
@@ -885,9 +932,17 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 side == Side::USSR ? (ussr_roll >= us_roll ? Side::USSR : Side::US)
                                    : (us_roll >= ussr_roll ? Side::US : Side::USSR);
             // Summit: winner chooses DEFCON direction. 0 = lower (-1), 1 = raise (+1)
-            const auto defcon_delta = choose_option(next, 48, winner, 2, rng, policy_cb, frame_log) == 0 ? -1 : 1;
+            const auto choice = choose_option(next, 48, winner, 2, rng, policy_cb, frame_log, frame_stack_mode);
+            if (choice < 0) {
+                return {next, false, std::nullopt};
+            }
+            const auto defcon_delta = choice == 0 ? -1 : 1;
             next.defcon = std::clamp(next.defcon + defcon_delta, 1, 5);
-            apply_vp_delta(next, winner, 2);
+            if (winner == Side::USSR) {
+                next.vp += 2;
+            } else {
+                next.vp -= 2;
+            }
             break;
         }
 
