@@ -5,18 +5,30 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "PPO v1 chain running (iter ~120/300). Benchmarking prev-run late checkpoints in background (PID=553511). Waiting for training completion then ppo_best.pt manual selection.",
+  "current_task": "Frame migration batches 2+3 in progress via Codex worktrees. PPO v1 running (~iter123+), PPO v2 running (iter10/200, rollout_wr=0.59).",
   "active_background": [
-    "PPO v1 chain: control_feat_gnn_card_attn, 300 iters, logging to results/ppo_gnn_card_attn_v1/train.log. rollout_wr ~0.475-0.575 at iter 118.",
-    "Benchmark prev-run checkpoints: PID=553511, output /tmp/bench_prev_run.txt (iter0200,0250,0280,0300 vs heuristic N=150/side)"
+    "PPO v1 chain: iter ~123+/300 (still running, panel bug means ppo_running_best stuck at iter10).",
+    "PPO v2 chain: iter 10/200, rollout_wr=0.590 (USSR=0.710, US=0.470), dense_reward_alpha=0.1, heuristic_floor=0.25.",
+    "Frame migration batch 2: cards 14, 30, 60, 71, 77 in Codex worktree (dispatched 2026-04-18)."
   ],
   "next_tasks": [
-    "CRITICAL: After PPO v1 finishes (iter300), ppo_best.pt is stuck at iter10 (avg=0.0 panel bug in running process). Manually benchmark iter0120,0200,0240,0280,0300 (scripted) vs heuristic N=150/side, copy best combined_wr to ppo_best.pt + ppo_best_scripted.pt before launching v2.",
-    "Launch PPO v2: scripts/restart_ppo_v2.sh after ppo_best.pt is properly set. Key improvements: dense_reward_alpha=0.1, heuristic_floor=0.25, all-8-panel eval.",
-    "ISMCTS shelved: delta=-0.225 vs greedy (0.250 vs 0.475). Value head miscalibrated for determinized states. Would need separate determinized-state value training to fix.",
+    "Frame migration batch 3: cards 20 (Olympic Games), 37 (Voice of America), 48 (Summit). Dispatch after batch 2 merges.",
+    "Frame migration batch 4: hand_ops.cpp cards 10, 26, 32, 46, 52, 95. Single-step card/country picks.",
+    "Frame migration batch 5: complex cards 33 (paired src+dst), 50 (OAS Founded - needs apply_free_coup exposed), 78, 84, 98.",
+    "PPO v1 completion: run select_best_checkpoint.py after iter300 (though v2 already started from iter300 prev-run checkpoint).",
+    "PPO v2 check at iter100: assess dense reward benefit vs v1 baseline (target: >0.41 combined vs heuristic).",
+    "ISMCTS shelved: delta=-0.225 vs greedy. Deferred.",
     "opp_unaccounted: deferred (breaking change to card features)"
   ],
-  "last_updated": "2026-04-19T07:30:00Z",
+  "last_updated": "2026-04-18T23:00:00Z",
+  "frame_migration_status": {
+    "done": [5, 7, 16, 19, 23, 28, 29, 49, 56, 59, 67, 75, 76, 68, 88, 101],
+    "batch2_in_progress": [14, 30, 60, 71, 77],
+    "batch3_pending": [20, 37, 48],
+    "batch4_pending_hand_ops": [10, 26, 32, 46, 52, 95],
+    "batch5_complex": [33, 50, 78, 84, 98],
+    "notes": "Card 50 needs apply_free_coup exposed in step.hpp. Card 33 needs paired src+dst frame pattern."
+  },
   "ismcts_verdict": {
     "result": "SHELVED",
     "delta_vs_greedy": -0.225,

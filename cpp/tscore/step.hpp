@@ -51,6 +51,15 @@ CardId choose_card(
     bool frame_stack_mode = false
 );
 
+int apply_free_coup(
+    PublicState& pub,
+    Side side,
+    CountryId country_id,
+    int ops,
+    Pcg64Rng& rng,
+    bool defcon_immune = false
+);
+
 WarResult apply_war_card(
     PublicState& next,
     Side attacker,
