@@ -453,14 +453,22 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 7: {
-            std::vector<CountryId> pool;
+            std::array<int, kCountrySlots> removed_counts = {};
+            int total_steps = 0;
             for (const auto cid : kWesternEuropeIds) {
-                if (!controls_country(Side::US, cid, next) && next.influence_of(Side::USSR, cid) < 2) {
-                    pool.push_back(cid);
-                }
+                total_steps += std::min(2, next.influence_of(Side::US, cid));
             }
-            const int total_steps = std::min<int>(3, static_cast<int>(pool.size()));
+            total_steps = std::min(3, total_steps);
             for (int i = 0; i < total_steps; ++i) {
+                std::vector<CountryId> pool;
+                for (const auto cid : kWesternEuropeIds) {
+                    if (next.influence_of(Side::US, cid) > 0 && removed_counts[static_cast<size_t>(cid)] < 2) {
+                        pool.push_back(cid);
+                    }
+                }
+                if (pool.empty()) {
+                    break;
+                }
                 const auto cid = choose_country(
                     next,
                     static_cast<CardId>(7),
@@ -475,8 +483,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     annotate_latest_frame(frame_log, i, total_steps);
                     return {next, false, std::nullopt};
                 }
-                add_influence(next, Side::USSR, cid, 1);
-                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
+                add_influence(next, Side::US, cid, -1);
+                ++removed_counts[static_cast<size_t>(cid)];
             }
             break;
         }

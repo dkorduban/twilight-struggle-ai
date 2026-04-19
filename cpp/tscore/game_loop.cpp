@@ -947,6 +947,28 @@ int packed_country_pick_count(uint16_t packed, CountryId country_id, int slots) 
     return count;
 }
 
+uint16_t remember_one_prior_pick(uint16_t criteria_bits, CountryId country_id, bool& reached_cap) {
+    const auto first = unpack_destalinization_pick(criteria_bits, 0);
+    const auto second = unpack_destalinization_pick(criteria_bits, 1);
+    reached_cap = false;
+
+    if (country_id == first) {
+        reached_cap = true;
+        return pack_destalinization_picks(second, kInvalidCountryId);
+    }
+    if (country_id == second) {
+        reached_cap = true;
+        return pack_destalinization_picks(first, kInvalidCountryId);
+    }
+    if (first == kInvalidCountryId) {
+        return pack_destalinization_picks(country_id, second);
+    }
+    if (second == kInvalidCountryId) {
+        return pack_destalinization_picks(first, country_id);
+    }
+    return criteria_bits;
+}
+
 std::bitset<kCountrySlots> liberation_theology_bits(uint16_t criteria_bits) {
     std::bitset<kCountrySlots> eligible;
     for (const auto cid : all_country_ids()) {
@@ -1700,22 +1722,33 @@ void resume_socialist_governments(GameState& gs, const DecisionFrame& frame, con
         return;
     }
 
+    bool reached_cap = false;
+    auto next_criteria = frame.criteria_bits;
     if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
-        add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+        add_frame_influence(gs.pub, Side::US, action.country_id, -1);
+        next_criteria = remember_one_prior_pick(frame.criteria_bits, action.country_id, reached_cap);
     }
 
     const auto next_step = static_cast<int>(frame.step_index) + 1;
     const auto total_steps = std::max<int>(1, frame.total_steps);
     if (next_step < total_steps) {
         auto next_eligible = frame.eligible_countries;
-        next_eligible.reset(static_cast<size_t>(action.country_id));
+        for (const auto cid : kSetupWesternEuropeIds) {
+            if (gs.pub.influence_of(Side::US, cid) <= 0) {
+                next_eligible.reset(static_cast<size_t>(cid));
+            }
+        }
+        if (reached_cap) {
+            next_eligible.reset(static_cast<size_t>(action.country_id));
+        }
         push_country_frame(
             gs,
             frame.source_card,
             frame.acting_side,
             next_eligible,
             next_step,
-            total_steps
+            total_steps,
+            next_criteria
         );
         if (!gs.frame_stack.empty()) {
             return;
