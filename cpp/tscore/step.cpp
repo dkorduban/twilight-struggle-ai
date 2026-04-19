@@ -1523,7 +1523,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 Region::SouthAmerica,
                 Region::Africa,
             };
-            const int idx = choose_option(next, 97, Side::US, 6, rng, policy_cb, frame_log);
+            const int idx = choose_option(next, 97, Side::US, 6, rng, policy_cb, frame_log, frame_stack_mode);
+            if (idx < 0) {
+                return {next, false, std::nullopt};
+            }
             next.chernobyl_blocked_region = kRegions[idx];
             break;
         }

@@ -1754,6 +1754,23 @@ void resume_card_95(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_97(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::SmallChoice) {
+        return;
+    }
+    static constexpr std::array<Region, 6> kRegions = {
+        Region::Europe,
+        Region::Asia,
+        Region::MiddleEast,
+        Region::CentralAmerica,
+        Region::SouthAmerica,
+        Region::Africa,
+    };
+    const auto idx = std::clamp(action.option_index, 0, 5);
+    gs.pub.chernobyl_blocked_region = kRegions[static_cast<size_t>(idx)];
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_98(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
     if (frame.kind != FrameKind::CardSelect ||
         action.card_id == 0 ||
@@ -1889,6 +1906,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 95:
             resume_card_95(gs, frame, action);
+            break;
+        case 97:
+            resume_card_97(gs, frame, action);
             break;
         case 98:
             resume_card_98(gs, frame, action);
