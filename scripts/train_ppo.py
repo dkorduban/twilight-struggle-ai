@@ -2760,7 +2760,13 @@ def _panel_eval_worker(
                 results[opp_name] = {"error": str(e)}
                 continue
         else:
-            opp_name = _Path(opp).stem.replace("_scripted", "")
+            _stem = _Path(opp).stem.replace("_scripted", "")
+            # De-collision: when the stem is generic (e.g. "ppo_best" for specialist
+            # checkpoints), prefix with the parent directory name.
+            if _stem in results or _stem in ("ppo_best",):
+                opp_name = f"{_Path(opp).parent.name}"
+            else:
+                opp_name = _stem
             try:
                 # Single call: our_script=model_a plays both sides (first half as USSR,
                 # second half as US). Count only our model's wins using result ordering.
@@ -3740,21 +3746,15 @@ def main() -> None:
                         panel_log[f"panel/{opp_name}_us_wr"] = stats["us_wr"]
                         panel_log[f"panel/{opp_name}_combined_wr"] = stats["combined_wr"]
                     if valid_opps:
-                        # Elo-weighted panel scoring: frontier opponents count more.
-                        # Weights calibrated to 5-opponent pool (Opus rec 2026-04-12):
-                        #   v55 (2124) > v54 (2108) > v44 (2106) > v45 (2102) > v14 (2015).
+                        # Uniform equal weight across all panel members (including heuristic).
                         # Normalized over whichever opponents actually ran (some may error).
-                        _PANEL_WEIGHTS: dict[str, float] = {"v55": 0.35, "v54": 0.25, "v44": 0.20, "v45": 0.15, "v14": 0.05}
-                        # Heuristic is tracked for monitoring but excluded from weighted avg
-                        # when model opponents are present (optimize model-vs-model; heuristic WR
-                        # is a regression detector). Exception: if heuristic is the ONLY panel
-                        # member, use its WR for checkpoint selection (otherwise avg is always 0).
-                        _scoring_opps = {k: v for k, v in valid_opps.items() if k != "heuristic"}
-                        if not _scoring_opps and "heuristic" in valid_opps:
-                            _scoring_opps = {"heuristic": valid_opps["heuristic"]}
-                        _wsum = sum(_PANEL_WEIGHTS.get(k, 0.25) for k in _scoring_opps) if _scoring_opps else 1.0
+                        # Default weight 1.0 so all opponents contribute equally unless
+                        # explicitly overridden.
+                        _PANEL_WEIGHTS: dict[str, float] = {}
+                        _scoring_opps = valid_opps
+                        _wsum = sum(_PANEL_WEIGHTS.get(k, 1.0) for k in _scoring_opps) if _scoring_opps else 1.0
                         avg_combined = sum(
-                            v["combined_wr"] * _PANEL_WEIGHTS.get(k, 0.25) for k, v in _scoring_opps.items()
+                            v["combined_wr"] * _PANEL_WEIGHTS.get(k, 1.0) for k, v in _scoring_opps.items()
                         ) / _wsum if _scoring_opps else 0.0
                         _panel_elapsed = time.time() - _panel_launch_time if _panel_launch_time > 0 else 0.0
                         panel_log["panel/avg_combined_wr"] = avg_combined
