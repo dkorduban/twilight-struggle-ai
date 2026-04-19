@@ -684,7 +684,9 @@ StepResult engine_step_toplevel(
         };
         cb_ptr = &adapter;
     }
+    gs.frame_stack_mode = !sub_policy;
     auto [new_pub, over, winner] = apply_action_live(gs, action, side, rng, cb_ptr, false, &gs.frame_stack);
+    gs.frame_stack_mode = false;
     (void)new_pub;
     return StepResult{
         .pushed_subframe = !gs.frame_stack.empty(),
