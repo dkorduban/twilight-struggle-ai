@@ -234,15 +234,24 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             maybe_add(82, Region::SouthAmerica);
             std::sort(regions.begin(), regions.end(), [](Region lhs, Region rhs) { return static_cast<int>(lhs) < static_cast<int>(rhs); });
             regions.erase(std::unique(regions.begin(), regions.end()), regions.end());
-            for (const auto region : regions) {
+            const int total_steps_36 = static_cast<int>(regions.size());
+            for (int i = 0; i < total_steps_36; ++i) {
                 std::vector<CountryId> pool;
                 for (const auto cid : all_country_ids()) {
-                    if (cid != 64 && cid != kUsaAnchorId && cid != kUssrAnchorId && country_spec(cid).region == region) {
+                    if (cid != 64 && cid != kUsaAnchorId && cid != kUssrAnchorId &&
+                        country_spec(cid).region == regions[static_cast<size_t>(i)]) {
                         pool.push_back(cid);
                     }
                 }
                 if (!pool.empty()) {
-                    const auto target = choose_country(pub, 36, Side::USSR, pool, rng, policy_cb, frame_log);
+                    const auto target = choose_country(pub, 36, Side::USSR, pool, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                    if (target == 0) {
+                        if (frame_log != nullptr && !frame_log->empty()) {
+                            frame_log->back().step_index = static_cast<uint8_t>(std::min(i, 255));
+                            frame_log->back().total_steps = static_cast<uint8_t>(std::max(1, std::min(total_steps_36, 255)));
+                        }
+                        return {pub, false, std::nullopt};
+                    }
                     pub.set_influence(Side::USSR, target, pub.influence_of(Side::USSR, target) + 1);
                 }
             }
@@ -324,10 +333,17 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             }
             const auto selections = std::min(discard_count, static_cast<int>(candidates.size()));
             for (int i = 0; i < selections; ++i) {
-                const auto chosen =
-                    (policy_cb != nullptr && candidates.size() > 1)
-                    ? choose_card(pub, 95, side, candidates, rng, policy_cb, frame_log)
-                    : candidates.front();
+                if (candidates.empty()) {
+                    break;
+                }
+                const auto chosen = choose_card(pub, 95, side, candidates, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                if (chosen == 0) {
+                    if (frame_log != nullptr && !frame_log->empty()) {
+                        frame_log->back().step_index = static_cast<uint8_t>(std::min(i, 255));
+                        frame_log->back().total_steps = static_cast<uint8_t>(std::max(1, std::min(selections, 255)));
+                    }
+                    return {pub, false, std::nullopt};
+                }
                 discard_from_hand(gs, opponent, chosen, pub);
                 candidates.erase(std::remove(candidates.begin(), candidates.end(), chosen), candidates.end());
             }
@@ -503,9 +519,24 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (candidates.size() >= 2) {
-                const auto first = choose_card(pub, 98, Side::US, candidates, rng, policy_cb, frame_log);
+                const auto first = choose_card(pub, 98, Side::US, candidates, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                if (first == 0) {
+                    if (frame_log != nullptr && !frame_log->empty()) {
+                        frame_log->back().step_index = 0;
+                        frame_log->back().total_steps = 2;
+                    }
+                    return {pub, false, std::nullopt};
+                }
                 candidates.erase(std::remove(candidates.begin(), candidates.end(), first), candidates.end());
-                const auto second = choose_card(pub, 98, Side::US, candidates, rng, policy_cb, frame_log);
+                const auto second = choose_card(pub, 98, Side::US, candidates, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                if (second == 0) {
+                    if (frame_log != nullptr && !frame_log->empty()) {
+                        frame_log->back().step_index = 1;
+                        frame_log->back().total_steps = 2;
+                        frame_log->back().criteria_bits = static_cast<uint16_t>(first);
+                    }
+                    return {pub, false, std::nullopt};
+                }
                 discard_from_hand(gs, Side::US, first, pub);
                 discard_from_hand(gs, Side::US, second, pub);
             } else {
