@@ -25,7 +25,8 @@ int choose_option(
     int n_options,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr,
-    std::vector<DecisionFrame>* frame_log = nullptr
+    std::vector<DecisionFrame>* frame_log = nullptr,
+    bool frame_stack_mode = false
 );
 
 CountryId choose_country(
@@ -35,7 +36,8 @@ CountryId choose_country(
     std::span<const CountryId> pool,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr,
-    std::vector<DecisionFrame>* frame_log = nullptr
+    std::vector<DecisionFrame>* frame_log = nullptr,
+    bool frame_stack_mode = false
 );
 
 CardId choose_card(
@@ -45,7 +47,8 @@ CardId choose_card(
     std::span<const CardId> pool,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr,
-    std::vector<DecisionFrame>* frame_log = nullptr
+    std::vector<DecisionFrame>* frame_log = nullptr,
+    bool frame_stack_mode = false
 );
 
 WarResult apply_war_card(
@@ -63,7 +66,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
     Side side,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr,
-    std::vector<DecisionFrame>* frame_log = nullptr
+    std::vector<DecisionFrame>* frame_log = nullptr,
+    bool frame_stack_mode = false
 );
 
 std::tuple<bool, std::optional<Side>> check_vp_win(const PublicState& pub);
