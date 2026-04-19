@@ -5,17 +5,19 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "Frame migration COMPLETE (Slices A-G, 79/79 parity), Tier-1+2 rules fixed, A/B done (combined=0.448, retrain gate NOT triggered). PPO v2 running on fixed engine (iter ~40/200).",
-  "current_strategy": "Engine correctness done. Now: let PPO v2 run; dispatch CountryAllocHead ablation (Python model); collect fresh AWR data on fixed engine for v3 warmstart. Elo ladder invalidated post-Tier-1 — freeze v14_e2 anchor after v2 eval.",
+  "current_task": "PPO v2 running (iter 60/200, rollout_wr=0.585). AWR fixed-engine pipeline running (73k rows collected, arch sweep Phase 1 in progress). PPO v3 launcher queued (waits for v2 lock release).",
+  "current_strategy": "PPO v2 training toward completion (~140 iters left). AWR pipeline will select best arch on fixed-engine data, train 30-epoch AWR model, produce warmstart for v3. PPO v3 auto-launches after v2 completes. CountryAllocHead and FiLM gated variants implemented but await benchmarking.",
   "active_background": [
-    "PPO v2 training — pid 588994, fixed engine, iter ~40/200, rollout_wr=0.57-0.67"
+    "PPO v2 — pid 588994, iter 60/200, rollout_wr=0.585",
+    "AWR fixed-engine pipeline — pid 637092, Phase 1 arch sweep running (control_feat_gnn_card_attn/country_attn_side/control_feat_gnn_side × 2 seeds)",
+    "PPO v3 launcher — pid 638519, waiting for PPO v2 lock release"
   ],
   "next_tasks": [
-    "CountryAllocHead model ablation — task #90 (Python-only, dispatch Codex)",
-    "Collect fresh AWR data on fixed engine — basis for v3 PPO warmstart",
-    "Freeze new Elo anchor v14_e2 after PPO v2 eval at iter 50",
+    "Wait for PPO v2 completion + AWR pipeline → auto-launch PPO v3",
+    "After PPO v2 completes: freeze Elo anchor v14_e2 (run Elo tournament on fixed engine)",
+    "After AWR pipeline Phase 1: review arch ranking on fixed-engine data",
     "Tier-3 rules fixes (cards 75/50) — deferred, low impact",
-    "PPO v3: fresh AWR warmstart on fixed engine (after v2 completes and fresh data collected)"
+    "CountryAllocHead ablation: run AWR training with country_alloc_head arch"
   ],
   "frame_migration_plan": {
     "design_decision_doc": "results/analysis/opus_analysis_20260419_062129_country_alloc_redesign.md",
@@ -34,16 +36,12 @@
     "parity_harness_status": "GREEN — 79/79 tests pass as of 2026-04-19"
   },
   "ppo_chain": {
-    "status": "RUNNING iter ~120/300. rollout_wr 0.475-0.575 (PFSP normal oscillation).",
-    "v319_sc_elo": 1962,
-    "best_baseline": "v56 6-mode (45.1% combined @ N=500)",
+    "status": "v2 RUNNING iter 60/200. rollout_wr 0.575-0.585 (recovering after Elo check killed). v3 auto-launches after v2 completes.",
+    "v2_iter60": {"USSR": 0.660, "US": 0.510, "combined": 0.585, "panel": 0.667},
+    "best_baseline": "gnn_card_attn_v1 post Tier-1+2 engine fixes (combined=0.448 @ N=200/side)",
     "restart_conditions": "Only restart chain on explicit user request or after architecture/engine change requiring fresh run",
-    "iter100_benchmark": {
-      "USSR": 0.485,
-      "US": 0.335,
-      "combined": 0.41,
-      "note": "Below warmstart 0.415, US regressed -5pp. Early oscillation expected. Check again at iter200."
-    }
+    "awr_fixed_engine_data": "data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet — 73,981 rows, 4 models (all named ppo_best_scripted, dedup fix added to collector)",
+    "v3_warmstart_source": "results/awr_sweep/fixed_engine_full.json best checkpoint (to be selected by pipeline)"
   },
   "ismcts_verdict": {
     "result": "SHELVED",
@@ -65,5 +63,11 @@
     "pattern": "Call mcp__codex__codex directly from main session — no subagent needed. General-purpose bg agents also inherit MCP. Custom agent types do NOT.",
     "reply_loop": "mcp__codex__codex-reply(threadId=...) up to 15 calls"
   },
-  "last_updated": "2026-04-19T00:35:00Z"
+  "new_models_implemented": {
+    "CountryAllocHead": "python/tsrl/policies/model.py:TSCountryAllocHeadModel — per-country per-ops score head + bounded_knapsack_dp decoder",
+    "FiLM_variants": ["country_attn_film_normal_init", "country_attn_film_zero_beta_bias", "country_attn_film_gated", "country_attn_film_normal_init_zero_beta"],
+    "gnn_card_attn_gated": "TSControlFeatGNNCardAttnGatedModel — combines GNN+card-attn+FiLM gate, val_adv_card_acc=0.5744 on v7 data"
+  },
+  "collect_awr_fix": "Fixed collect_awr_data.py: dedup stems auto-adds parent dir prefix when multiple models share same filename (avoids all models named ppo_best_scripted)",
+  "last_updated": "2026-04-19T04:30:00Z"
 }

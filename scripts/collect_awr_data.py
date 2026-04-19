@@ -434,10 +434,16 @@ def main() -> None:
 
     # Build name lookup (model_names overrides stem for explicit --models entries)
     explicit_names: list[str] = args.model_names or []
+    # Deduplicate stems by appending parent dir when multiple models share the same filename
+    stems = [Path(p).stem for p in model_paths]
+    has_dup_stems = len(set(stems)) < len(stems)
     def _model_name(idx: int, path: str) -> str:
         if idx < len(explicit_names):
             return explicit_names[idx]
-        return Path(path).stem
+        p = Path(path)
+        if has_dup_stems:
+            return f"{p.parent.name}_{p.stem}"
+        return p.stem
 
     for i, model_path in enumerate(model_paths):
         if args.games_per_model <= 0:
