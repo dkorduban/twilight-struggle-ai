@@ -319,3 +319,48 @@ TEST_CASE("frame_regression Aldrich Ames Remix discard records a CardSelect fram
         ExpectedFrameKind::CardSelect
     );
 }
+
+TEST_CASE("engine_step_subframe CIA Created resolves influence placement", "[frame_regression]") {
+#if TS_FRAME_REGRESSION_HAS_FRAME_API
+    GameState gs = make_action_round_state({
+        .card_id = 56,
+        .actor = Side::USSR,
+        .turn = 4,
+    });
+    gs.frame_stack_mode = true;
+
+    const ActionEncoding action{
+        .card_id = 56,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto south_africa_before = gs.pub.influence_of(Side::USSR, 71);
+    const auto top = engine_step_toplevel(gs, action, Side::USSR, rng);
+    REQUIRE(top.pushed_subframe);
+
+    const auto frame = engine_peek(gs);
+    REQUIRE(frame.has_value());
+    REQUIRE(frame->kind == FrameKind::CountryPick);
+    REQUIRE(frame->source_card == 56);
+
+    CountryId chosen = 0;
+    for (int raw = 1; raw < kCountrySlots; ++raw) {
+        if (frame->eligible_countries.test(static_cast<size_t>(raw))) {
+            chosen = static_cast<CountryId>(raw);
+            break;
+        }
+    }
+    REQUIRE(chosen != 0);
+
+    const auto chosen_before = gs.pub.influence_of(Side::USSR, chosen);
+    const auto sub = engine_step_subframe(gs, FrameAction{.country_id = chosen}, rng);
+    REQUIRE_FALSE(sub.pushed_subframe);
+    REQUIRE(gs.frame_stack.empty());
+    REQUIRE(gs.pub.influence_of(Side::USSR, 71) == south_africa_before + 2);
+    REQUIRE(gs.pub.influence_of(Side::USSR, chosen) == chosen_before + 2);
+#else
+    SUCCEED("DecisionFrame frame stack API is not available in this worktree");
+#endif
+}
