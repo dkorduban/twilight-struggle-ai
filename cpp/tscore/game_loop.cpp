@@ -829,6 +829,27 @@ CountryId unpack_destalinization_pick(uint16_t packed, int slot) {
     return raw == kInvalidCountryId ? kInvalidCountryId : raw;
 }
 
+int packed_country_pick_count(uint16_t packed, CountryId country_id, int slots) {
+    int count = 0;
+    for (int slot = 0; slot < slots; ++slot) {
+        if (unpack_destalinization_pick(packed, slot) == country_id) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::bitset<kCountrySlots> liberation_theology_bits(uint16_t criteria_bits) {
+    std::bitset<kCountrySlots> eligible;
+    for (const auto cid : all_country_ids()) {
+        if (country_spec(cid).region == Region::CentralAmerica &&
+            packed_country_pick_count(criteria_bits, cid, 2) < 2) {
+            eligible.set(static_cast<size_t>(cid));
+        }
+    }
+    return eligible;
+}
+
 constexpr uint16_t kWarsawAddInfluenceFlag = 1U << 14;
 
 int warsaw_eastern_bloc_index(CountryId country_id) {
@@ -1802,8 +1823,15 @@ void resume_liberation_theology(GameState& gs, const DecisionFrame& frame, const
         return;
     }
 
+    auto next_criteria = frame.criteria_bits;
     if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
         add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+        if (frame.step_index == 0) {
+            next_criteria = pack_destalinization_picks(action.country_id, kInvalidCountryId);
+        } else if (frame.step_index == 1) {
+            const auto first = unpack_destalinization_pick(frame.criteria_bits, 0);
+            next_criteria = pack_destalinization_picks(first, action.country_id);
+        }
     }
 
     const auto next_step = static_cast<int>(frame.step_index) + 1;
@@ -1813,9 +1841,10 @@ void resume_liberation_theology(GameState& gs, const DecisionFrame& frame, const
             gs,
             frame.source_card,
             frame.acting_side,
-            frame.eligible_countries,
+            liberation_theology_bits(next_criteria),
             next_step,
-            total_steps
+            total_steps,
+            next_criteria
         );
         return;
     }

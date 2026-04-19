@@ -1314,13 +1314,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 76: {
-            std::vector<CountryId> pool;
-            for (const auto cid : all_country_ids()) {
-                if (country_spec(cid).region == Region::CentralAmerica && next.influence_of(Side::USSR, cid) < 2) {
-                    pool.push_back(cid);
-                }
-            }
+            std::array<int, kCountrySlots> placed_counts = {};
             for (int i = 0; i < 3; ++i) {
+                std::vector<CountryId> pool;
+                for (const auto cid : all_country_ids()) {
+                    if (country_spec(cid).region == Region::CentralAmerica && placed_counts[static_cast<size_t>(cid)] < 2) {
+                        pool.push_back(cid);
+                    }
+                }
                 if (pool.empty()) {
                     break;
                 }
@@ -1339,6 +1340,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     return {next, false, std::nullopt};
                 }
                 add_influence(next, Side::USSR, cid, 1);
+                ++placed_counts[static_cast<size_t>(cid)];
             }
             break;
         }
