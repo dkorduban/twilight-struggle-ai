@@ -1444,11 +1444,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (int i = 0; i < 2; ++i) {
-                if (pool.empty()) {
-                    break;
+            const int total_steps = std::min<int>(2, static_cast<int>(pool.size()));
+            for (int i = 0; i < total_steps; ++i) {
+                const auto cid =
+                    choose_country(next, static_cast<CardId>(91), Side::US, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, total_steps);
+                    return {next, false, std::nullopt};
                 }
-                const auto cid = choose_country(next, static_cast<CardId>(91), Side::US, pool, rng, policy_cb, frame_log);
                 add_influence(next, Side::US, cid, -1);
                 pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }

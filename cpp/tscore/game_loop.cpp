@@ -701,6 +701,7 @@ namespace {
 constexpr CountryId kFrameFranceId = 7;
 constexpr CountryId kFrameUkId = 17;
 constexpr CountryId kFrameIsraelId = 30;
+constexpr CountryId kFrameLebanonId = 32;
 constexpr CountryId kFrameSouthAfricaId = 71;
 
 uint8_t frame_count(size_t value) {
@@ -1648,6 +1649,29 @@ void resume_card_50(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_91(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    gs.pub.set_influence(Side::US, kFrameLebanonId, 0);
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::US, action.country_id, -1);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = static_cast<int>(frame.total_steps);
+    if (next_step < total_steps) {
+        auto next_eligible = frame.eligible_countries;
+        next_eligible.reset(static_cast<size_t>(action.country_id));
+        if (next_eligible.any()) {
+            push_country_frame(gs, frame.source_card, frame.acting_side, next_eligible, next_step, total_steps);
+            if (!gs.frame_stack.empty()) {
+                return;
+            }
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_94(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
     if (frame.kind != FrameKind::CountryPick) {
         return;
@@ -1856,6 +1880,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 88:
             resume_card_88(gs, frame, action, rng);
+            break;
+        case 91:
+            resume_card_91(gs, frame, action);
             break;
         case 94:
             resume_card_94(gs, frame, action, rng);
