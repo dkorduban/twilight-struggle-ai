@@ -1595,14 +1595,27 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     pool.push_back(cid);
                 }
             }
-            for (int i = 0; i < 3; ++i) {
-                if (pool.empty()) {
-                    break;
-                }
-                const auto cid =
-                    (policy_cb != nullptr && pool.size() > 1)
-                    ? choose_country(next, static_cast<CardId>(102), Side::USSR, pool, rng, policy_cb, frame_log)
+            const int total_steps = std::min<int>(3, static_cast<int>(pool.size()));
+            for (int i = 0; i < total_steps; ++i) {
+                const bool should_choose =
+                    (frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) ||
+                    (policy_cb != nullptr && pool.size() > 1);
+                const auto cid = should_choose
+                    ? choose_country(
+                          next,
+                          static_cast<CardId>(102),
+                          Side::USSR,
+                          pool,
+                          rng,
+                          policy_cb,
+                          frame_log,
+                          frame_stack_mode
+                      )
                     : pool.front();
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, total_steps);
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, Side::US, cid, -1);
                 pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
