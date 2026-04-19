@@ -1,21 +1,34 @@
 {
   "goals": [
-    "1. Complete correct engine \u2014 fix all GAPs, all choices policy-driven",
-    "2. Full policy control \u2014 every rng decision routes through PolicyCallback",
+    "1. Complete correct engine — fix all GAPs, all choices policy-driven",
+    "2. Full policy control — every rng decision routes through PolicyCallback",
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "PPO v3 chain running (PID=529776, iter 113/300). Panel scoring fixed (equal 1/N weight, heuristic included). ISMCTS Dirichlet fix committed. Waiting for iter 120 panel eval.",
+  "current_task": "PPO v1 chain running (iter ~120/300). Benchmarking prev-run late checkpoints in background (PID=553511). Waiting for training completion then ppo_best.pt manual selection.",
   "active_background": [
-    "PPO v3 chain PID=529776: control_feat_gnn_card_attn, 300 iters, logging to results/ppo_gnn_card_attn_v1/train.log. rollout_wr ~0.47-0.55 at iter 70."
+    "PPO v1 chain: control_feat_gnn_card_attn, 300 iters, logging to results/ppo_gnn_card_attn_v1/train.log. rollout_wr ~0.475-0.575 at iter 118.",
+    "Benchmark prev-run checkpoints: PID=553511, output /tmp/bench_prev_run.txt (iter0200,0250,0280,0300 vs heuristic N=150/side)"
   ],
   "next_tasks": [
-    "PPO benchmark at iter 200: tscore.benchmark_batched vs heuristic N=200/side.",
-    "ISMCTS value-head calibration: investigate bias on determinized states (neutral after Dirichlet fix).",
-    "Next chain (v2): enable dense_reward_alpha=0.1, heuristic_floor=0.25, all 8-panel eval. Script: scripts/restart_ppo_v2.sh",
+    "CRITICAL: After PPO v1 finishes (iter300), ppo_best.pt is stuck at iter10 (avg=0.0 panel bug in running process). Manually benchmark iter0120,0200,0240,0280,0300 (scripted) vs heuristic N=150/side, copy best combined_wr to ppo_best.pt + ppo_best_scripted.pt before launching v2.",
+    "Launch PPO v2: scripts/restart_ppo_v2.sh after ppo_best.pt is properly set. Key improvements: dense_reward_alpha=0.1, heuristic_floor=0.25, all-8-panel eval.",
+    "ISMCTS shelved: delta=-0.225 vs greedy (0.250 vs 0.475). Value head miscalibrated for determinized states. Would need separate determinized-state value training to fix.",
     "opp_unaccounted: deferred (breaking change to card features)"
   ],
-  "last_updated": "2026-04-19T06:00:00Z",
+  "last_updated": "2026-04-19T07:30:00Z",
+  "ismcts_verdict": {
+    "result": "SHELVED",
+    "delta_vs_greedy": -0.225,
+    "ismcts_wr": 0.250,
+    "greedy_wr": 0.475,
+    "n_games": 40,
+    "n_det": 8,
+    "n_sim": 50,
+    "diagnosis": "Value head trained on partial-info states gives poor estimates on determinized states. Search on wrong value signal → worse than greedy policy.",
+    "fix_required": "Train separate value head on determinized states, or use heuristic rollouts in ISMCTS instead of value head. High effort, deferred."
+  },
+  "ppo_panel_bug_note": "Current v1 run started before avg_combined fix. panel=['heuristic'], avg=0.000 always. ppo_running_best stuck at iter10. Must manually select best checkpoint after run completes.",
   "awr_results_20260418": {
     "sweep_v2_winner": "control_feat_gnn_card_attn",
     "v2b_retrain_avg_8panel": 0.4066,
@@ -57,7 +70,7 @@
     "format": "Always Parquet (zstd). Never JSONL for large collections."
   },
   "ppo_chain": {
-    "status": "RUNNING iter ~113/300. rollout_wr recovering to 0.575 after 108-110 dip. iter100 combined=0.410.",
+    "status": "RUNNING iter ~120/300. rollout_wr 0.475-0.575 (PFSP normal oscillation).",
     "v319_sc_elo": 1962,
     "best_baseline": "v56 6-mode (45.1% combined @ N=500)",
     "restart_conditions": "Only restart chain on explicit user request or after architecture/engine change requiring fresh run",
@@ -76,18 +89,10 @@
     }
   },
   "frame_stack_migration": {
-    "slices_done": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7
-    ],
+    "slices_done": [1,2,3,4,5,6,7],
     "slice_4_5_status": "DONE. frame_stack_mode bool; choose_* push when true; resume dispatch for cards 16,28,56,76,5,68,88,101. 75/75 tests. Commits 843e497..af23459.",
     "slices_pending": [],
-    "slice_6_plan": "Add frame_log recording for Socialist Governments (6), Independent Reds (9), Wargames (73) \u2014 currently do not call choose_* helpers.",
+    "slice_6_plan": "Add frame_log recording for Socialist Governments (6), Independent Reds (9), Wargames (73) — currently do not call choose_* helpers.",
     "slice_7_plan": "Wire engine_step_toplevel to drive frame_stack loop instead of apply_action_live+policy_cb.",
     "slice_7_status": "DONE. engine_step_toplevel sets frame_stack_mode=true when no sub_policy. Commit a9f65db. 76/76 tests."
   },
@@ -100,14 +105,14 @@
     "E_mcts_batched_fast": "DEFERRED"
   },
   "pragmatic_heads": "ALL DONE (phases 1-4). Star Wars card 103 deck-choice low priority.",
-  "jsd_probe": "DONE \u2014 jsd_probe.py + probe set + train_ppo.py integration",
+  "jsd_probe": "DONE — jsd_probe.py + probe set + train_ppo.py integration",
   "concern_separation": {
-    "status": "BLOCKED \u2014 needs revised approach",
+    "status": "BLOCKED — needs revised approach",
     "issue": "Decode-level DEFCON safety checks in decode_helpers.hpp are POLICY-LEVEL safety nets, not duplicated rule logic. They must be preserved. Only consolidate rule QUERIES (is_card_defcon_blocked, nato_prerequisite_met, is_trap_blocked) into rule_queries.hpp without removing decode fallbacks.",
     "reverted_commit": "90f663e reverts 15 WIP commits (6902851..dc6d6aa)"
   },
   "codex_mcp_discovery": {
-    "pattern": "Call mcp__codex__codex directly from main session \u2014 no subagent needed. General-purpose bg agents also inherit MCP. Custom agent types do NOT.",
+    "pattern": "Call mcp__codex__codex directly from main session — no subagent needed. General-purpose bg agents also inherit MCP. Custom agent types do NOT.",
     "reply_loop": "mcp__codex__codex-reply(threadId=...) up to 15 calls"
   },
   "fixes_this_session": [
