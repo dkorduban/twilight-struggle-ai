@@ -1152,9 +1152,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         case 60: {
             next.defcon = std::min(5, next.defcon + 1);
             std::vector<CountryId> eligible;
-            const auto opponent = other_side(side);
             for (const auto cid : all_country_ids()) {
-                if (!controls_country(opponent, cid, next)) {
+                if (next.influence_of(side, cid) > 0) {
                     eligible.push_back(cid);
                 }
             }
