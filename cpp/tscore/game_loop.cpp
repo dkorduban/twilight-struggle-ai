@@ -2032,13 +2032,13 @@ void resume_card_20(GameState& gs, const DecisionFrame& frame, const FrameAction
         if (action.option_index == 0) {
             gs.pub.defcon = std::max(1, gs.pub.defcon - 1);
             const auto card_player = other_side(frame.acting_side);
-            auto accessible = accessible_countries(card_player, gs.pub, ActionMode::Influence);
+            auto accessible = budgeted_influence_targets(gs.pub, card_player, 4);
             if (!accessible.empty()) {
                 std::bitset<kCountrySlots> eligible;
                 for (const auto cid : accessible) {
                     eligible.set(static_cast<size_t>(cid));
                 }
-                push_country_frame(gs, frame.source_card, card_player, eligible, 0, 4);
+                push_country_frame(gs, frame.source_card, card_player, eligible, 0, 4, 4);
             }
             if (gs.frame_stack.empty()) {
                 finish_frame_event(gs, frame.source_card, frame.acting_side);
@@ -2065,13 +2065,28 @@ void resume_card_20(GameState& gs, const DecisionFrame& frame, const FrameAction
     if (frame.kind != FrameKind::CountryPick) {
         return;
     }
+    auto budget = frame.criteria_bits > 0
+        ? static_cast<int>(frame.criteria_bits)
+        : std::max(0, 4 - static_cast<int>(frame.step_index));
     if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        const auto opponent = other_side(frame.acting_side);
+        const auto cost = controls_country(opponent, action.country_id, gs.pub) ? 2 : 1;
+        if (cost > budget) {
+            return;
+        }
         add_frame_influence(gs.pub, frame.acting_side, action.country_id, 1);
+        budget -= cost;
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
-    constexpr int total_steps = 4;
-    if (next_step < total_steps) {
-        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+    if (budget > 0) {
+        auto accessible = budgeted_influence_targets(gs.pub, frame.acting_side, budget);
+        if (!accessible.empty()) {
+            std::bitset<kCountrySlots> eligible;
+            for (const auto cid : accessible) {
+                eligible.set(static_cast<size_t>(cid));
+            }
+            push_country_frame(gs, frame.source_card, frame.acting_side, eligible, next_step, 4, static_cast<uint16_t>(budget));
+        }
         if (!gs.frame_stack.empty()) {
             return;
         }

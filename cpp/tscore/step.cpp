@@ -618,25 +618,43 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             if (choice == 0) {
                 // Boycott: DEFCON -1, then 4 inf for card player
                 next.defcon = std::max(1, next.defcon - 1);
-                const auto accessible = accessible_countries(side, next, ActionMode::Influence);
-                if (!accessible.empty()) {
-                    for (int i = 0; i < 4; ++i) {
-                        const auto cid = choose_country(
-                            next,
-                            static_cast<CardId>(20),
-                            side,
-                            accessible,
-                            rng,
-                            policy_cb,
-                            frame_log,
-                            frame_stack_mode
-                        );
-                        if (cid == kInvalidCountryId && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
-                            annotate_latest_frame(frame_log, i, 4);
-                            return {next, false, std::nullopt};
-                        }
-                        add_influence(next, side, cid, 1);
+                int budget = 4;
+                int placements = 0;
+                while (budget > 0) {
+                    auto accessible = accessible_countries(side, next, ActionMode::Influence);
+                    const auto opponent = other_side(side);
+                    accessible.erase(
+                        std::remove_if(
+                            accessible.begin(),
+                            accessible.end(),
+                            [&](CountryId cid) { return (controls_country(opponent, cid, next) ? 2 : 1) > budget; }
+                        ),
+                        accessible.end()
+                    );
+                    if (accessible.empty()) {
+                        break;
                     }
+                    const auto cid = choose_country(
+                        next,
+                        static_cast<CardId>(20),
+                        side,
+                        accessible,
+                        rng,
+                        policy_cb,
+                        frame_log,
+                        frame_stack_mode
+                    );
+                    if (cid == kInvalidCountryId && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                        annotate_latest_frame(frame_log, placements, 4, static_cast<uint16_t>(budget));
+                        return {next, false, std::nullopt};
+                    }
+                    const auto cost = controls_country(opponent, cid, next) ? 2 : 1;
+                    if (cost > budget) {
+                        break;
+                    }
+                    add_influence(next, side, cid, 1);
+                    budget -= cost;
+                    ++placements;
                 }
             } else {
                 // Compete: dice decide winner, +2 VP
