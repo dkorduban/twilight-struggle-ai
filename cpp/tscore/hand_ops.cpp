@@ -525,42 +525,27 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
         }
 
         case 98: {
-            std::vector<CardId> candidates;
-            for (int raw = 1; raw <= kMaxCardId; ++raw) {
-                const auto candidate = static_cast<CardId>(raw);
-                if (
-                    gs.hands[to_index(Side::US)].test(candidate) &&
-                    candidate != kChinaCardId &&
-                    !card_spec(candidate).is_scoring
-                ) {
-                    candidates.push_back(candidate);
+            std::vector<CountryId> pool;
+            for (const auto cid : all_country_ids()) {
+                const auto region = country_spec(cid).region;
+                if ((region == Region::CentralAmerica || region == Region::SouthAmerica) &&
+                    pub.influence_of(Side::USSR, cid) > 0) {
+                    pool.push_back(cid);
                 }
             }
-            if (candidates.size() >= 2) {
-                const auto first = choose_card(pub, 98, Side::US, candidates, rng, policy_cb, frame_log, gs.frame_stack_mode);
-                if (first == 0) {
-                    if (frame_log != nullptr && !frame_log->empty()) {
-                        frame_log->back().step_index = 0;
-                        frame_log->back().total_steps = 2;
-                    }
+            const int total_steps_98 = std::min<int>(2, static_cast<int>(pool.size()));
+            for (int i = 0; i < 2; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid = choose_country(pub, 98, Side::USSR, pool, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                if (cid == kInvalidCountryId && gs.frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    frame_log->back().step_index = static_cast<uint8_t>(i);
+                    frame_log->back().total_steps = static_cast<uint8_t>(total_steps_98);
                     return {pub, false, std::nullopt};
                 }
-                candidates.erase(std::remove(candidates.begin(), candidates.end(), first), candidates.end());
-                const auto second = choose_card(pub, 98, Side::US, candidates, rng, policy_cb, frame_log, gs.frame_stack_mode);
-                if (second == 0) {
-                    if (frame_log != nullptr && !frame_log->empty()) {
-                        frame_log->back().step_index = 1;
-                        frame_log->back().total_steps = 2;
-                        frame_log->back().criteria_bits = static_cast<uint16_t>(first);
-                    }
-                    return {pub, false, std::nullopt};
-                }
-                discard_from_hand(gs, Side::US, first, pub);
-                discard_from_hand(gs, Side::US, second, pub);
-            } else {
-                for (const auto chosen : candidates) {
-                    discard_from_hand(gs, Side::US, chosen, pub);
-                }
+                pub.set_influence(Side::USSR, cid, pub.influence_of(Side::USSR, cid) * 2);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
             }
             break;
         }

@@ -1917,30 +1917,28 @@ void resume_card_97(GameState& gs, const DecisionFrame& frame, const FrameAction
 }
 
 void resume_card_98(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
-    if (frame.kind != FrameKind::CardSelect ||
-        action.card_id == 0 ||
-        !frame.eligible_cards.test(action.card_id)) {
-        finish_frame_event(gs, frame.source_card, frame.acting_side);
+    if (frame.kind != FrameKind::CountryPick) {
         return;
     }
-    if (frame.step_index == 0) {
-        // Push step-1 frame with criteria_bits = first chosen card
-        auto reduced = frame.eligible_cards;
-        reduced.reset(action.card_id);
-        const auto total_steps = static_cast<int>(frame.total_steps);
-        if (reduced.any()) {
-            push_card_frame(gs, frame.source_card, frame.acting_side, reduced, 1, total_steps,
-                            static_cast<uint16_t>(action.card_id));
-            if (!gs.frame_stack.empty()) {
-                return;
-            }
-        } else {
-            discard_frame_hand_card(gs, Side::US, action.card_id);
+    auto eligible = frame.eligible_countries;
+    for (const auto cid : all_country_ids()) {
+        const auto region = country_spec(cid).region;
+        if ((region != Region::CentralAmerica && region != Region::SouthAmerica) ||
+            gs.pub.influence_of(Side::USSR, cid) <= 0) {
+            eligible.reset(static_cast<size_t>(cid));
         }
-    } else {
-        const auto first = static_cast<CardId>(frame.criteria_bits);
-        discard_frame_hand_card(gs, Side::US, first);
-        discard_frame_hand_card(gs, Side::US, action.card_id);
+    }
+    if (eligible.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::USSR, action.country_id, gs.pub.influence_of(Side::USSR, action.country_id));
+        eligible.reset(static_cast<size_t>(action.country_id));
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = static_cast<int>(frame.total_steps);
+    if (next_step < total_steps) {
+        push_country_frame(gs, frame.source_card, frame.acting_side, eligible, next_step, total_steps);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }

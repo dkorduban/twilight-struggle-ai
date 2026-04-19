@@ -1550,9 +1550,31 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             next.ops_modifier[to_index(Side::US)] -= 1;
             break;
 
-        case 98:
-            next.vp += 2;
+        case 98: {
+            std::vector<CountryId> pool;
+            for (const auto cid : all_country_ids()) {
+                const auto region = country_spec(cid).region;
+                if ((region == Region::CentralAmerica || region == Region::SouthAmerica) &&
+                    next.influence_of(Side::USSR, cid) > 0) {
+                    pool.push_back(cid);
+                }
+            }
+            const int total_steps_98 = std::min<int>(2, static_cast<int>(pool.size()));
+            for (int i = 0; i < 2; ++i) {
+                if (pool.empty()) {
+                    break;
+                }
+                const auto cid =
+                    choose_country(next, static_cast<CardId>(98), Side::USSR, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (cid == kInvalidCountryId && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, total_steps_98);
+                    return {next, false, std::nullopt};
+                }
+                add_influence(next, Side::USSR, cid, next.influence_of(Side::USSR, cid));
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
+            }
             break;
+        }
 
         case 99:
             remove_all_influence(next, Side::USSR, 5);
