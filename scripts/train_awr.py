@@ -503,6 +503,8 @@ def main() -> None:
     parser.add_argument("--wandb-project", default="twilight-struggle-ai", help="W&B project")
     parser.add_argument("--crr-filter", action="store_true",
                         help="CRR-lite: train only on positive-advantage examples")
+    parser.add_argument("--patience", type=int, default=0,
+                        help="Early stopping: stop if val_adv_card_acc doesn't improve for N epochs (0=disabled)")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -574,6 +576,8 @@ def main() -> None:
     # Training loop
     t0 = time.time()
     best_val_loss = float("inf")
+    best_val_adv_card_acc = 0.0
+    patience_counter = 0
     best_metrics = {}
 
     for epoch in range(args.epochs):
@@ -597,6 +601,7 @@ def main() -> None:
         if wandb_run:
             wandb_run.log({f"awr/{k}": v for k, v in combined.items()}, step=epoch)
 
+        cur_adv_acc = val_metrics.get("val_adv_card_acc", 0.0)
         if val_metrics["val_policy_loss"] < best_val_loss:
             best_val_loss = val_metrics["val_policy_loss"]
             best_metrics = combined.copy()
@@ -611,6 +616,16 @@ def main() -> None:
                     "args": vars(args),
                     "metrics": best_metrics,
                 }, out_path)
+
+        if args.patience > 0:
+            if cur_adv_acc > best_val_adv_card_acc + 1e-5:
+                best_val_adv_card_acc = cur_adv_acc
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                if patience_counter >= args.patience:
+                    print(f"  [early stop] no improvement in val_adv_card_acc for {args.patience} epochs. Stopping.", flush=True)
+                    break
 
     total_time = time.time() - t0
 

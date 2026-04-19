@@ -43,32 +43,27 @@ print(best['model_type'])
 
 echo "[$(date -u)] Best arch: $BEST_ARCH. Training 30 epochs for warmstart..." | tee -a "$LOG"
 
-# Phase 2: Full training on best arch (30 epochs, 3 seeds, tau=1.0)
-FULL_JSON="results/awr_sweep/fixed_engine_full.json"
-PYTHONPATH=build-ninja/bindings nice -n 15 uv run python scripts/arch_sweep_awr.py \
+# Phase 2: Full training on best arch using train_awr.py (saves awr_best.pt)
+WARMSTART_CKPT_DIR="results/awr_sweep/fixed_engine_${BEST_ARCH}"
+mkdir -p "$WARMSTART_CKPT_DIR"
+PYTHONPATH=build-ninja/bindings nice -n 15 uv run python scripts/train_awr.py \
   --data "$DATA" \
-  --archs "$BEST_ARCH" \
-  --hidden-dims 256 \
-  --taus 1.0 \
-  --seeds 42 43 44 \
+  --model-type "$BEST_ARCH" \
+  --hidden-dim 256 \
+  --tau 1.0 \
+  --seed 42 \
   --epochs 30 \
+  --patience 5 \
   --device cuda \
-  --out "$FULL_JSON" \
+  --out-dir "$WARMSTART_CKPT_DIR" \
   2>&1 | tee -a "$LOG"
 
 echo "[$(date -u)] Full training complete." | tee -a "$LOG"
 
-# Find best checkpoint from full training
-BEST_CKPT=$(python3 -c "
-import json
-d = json.load(open('$FULL_JSON'))
-runs = d.get('runs', [])
-best = max(runs, key=lambda x: x.get('val_adv_card_acc', 0))
-print(best.get('checkpoint_path', ''))
-" 2>/dev/null)
+BEST_CKPT="$WARMSTART_CKPT_DIR/awr_best.pt"
 
-if [ -z "$BEST_CKPT" ] || [ ! -f "$BEST_CKPT" ]; then
-  echo "[$(date -u)] ERROR: Could not find best checkpoint in $FULL_JSON" | tee -a "$LOG"
+if [ ! -f "$BEST_CKPT" ]; then
+  echo "[$(date -u)] ERROR: Could not find checkpoint at $BEST_CKPT" | tee -a "$LOG"
   exit 1
 fi
 
