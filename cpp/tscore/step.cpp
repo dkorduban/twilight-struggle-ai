@@ -618,7 +618,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
                 const auto cid =
                     choose_country(next, static_cast<CardId>(23), Side::US, pool, rng, policy_cb, frame_log, frame_stack_mode);
-                if (cid == 0) {
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
                     annotate_latest_frame(frame_log, i, std::min<int>(7, i + static_cast<int>(pool.size())));
                     return {next, false, std::nullopt};
                 }
@@ -664,7 +664,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             if (!pool.empty()) {
                 const auto cid =
                     choose_country(next, static_cast<CardId>(19), Side::US, pool, rng, policy_cb, frame_log, frame_stack_mode);
-                if (cid == 0) {
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
                     annotate_latest_frame(frame_log, 0, 1);
                     return {next, false, std::nullopt};
                 }
@@ -720,7 +720,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
                 const auto cid =
                     choose_country(next, static_cast<CardId>(29), Side::US, pool, rng, policy_cb, frame_log, frame_stack_mode);
-                if (cid == 0) {
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
                     annotate_latest_frame(frame_log, i, std::min<int>(3, i + static_cast<int>(pool.size())));
                     return {next, false, std::nullopt};
                 }
@@ -1005,7 +1005,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     frame_log,
                     frame_stack_mode
                 );
-                if (cid == 0) {
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
                     annotate_latest_frame(frame_log, i, std::min<int>(2, i + static_cast<int>(eligible.size())));
                     return {next, false, std::nullopt};
                 }
@@ -1096,7 +1096,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
                 const auto cid =
                     choose_country(next, static_cast<CardId>(67), Side::US, pool, rng, policy_cb, frame_log, frame_stack_mode);
-                if (cid == 0) {
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
                     annotate_latest_frame(frame_log, i, std::min<int>(3, i + static_cast<int>(pool.size())));
                     return {next, false, std::nullopt};
                 }
@@ -1165,7 +1165,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
                 const auto cid =
                     choose_country(next, static_cast<CardId>(75), Side::US, pool, rng, policy_cb, frame_log, frame_stack_mode);
-                if (cid == 0) {
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
                     annotate_latest_frame(frame_log, i, std::min<int>(4, i + static_cast<int>(pool.size())));
                     return {next, false, std::nullopt};
                 }
