@@ -82,7 +82,7 @@ def export_checkpoint(checkpoint_path: Path, output_path: Path) -> None:
         example_inputs = (
             torch.zeros((1, 172), dtype=torch.float32),
             torch.zeros((1, 448), dtype=torch.float32),
-            torch.zeros((1, ckpt_scalar_dim), dtype=torch.float32),
+            torch.zeros((1, SCALAR_DIM), dtype=torch.float32),  # C++ sends SCALAR_DIM; models with region_encoder extend internally
         )
         scripted = torch.jit.trace(model, example_inputs, strict=False)
     output_path.parent.mkdir(parents=True, exist_ok=True)

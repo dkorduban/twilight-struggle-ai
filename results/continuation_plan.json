@@ -5,19 +5,21 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "PPO v3 running (iter 3/200, warmstart=control_feat_gnn_side AWR). PPO v2 COMPLETE (iter 200/200, last20_avg rollout_wr=0.523, ussr=0.698, us=0.348). Benchmarking v2 vs heuristic in background.",
-  "current_strategy": "PPO v2 training toward completion (~140 iters left). AWR pipeline will select best arch on fixed-engine data, train 30-epoch AWR model, produce warmstart for v3. PPO v3 auto-launches after v2 completes. CountryAllocHead and FiLM gated variants implemented but await benchmarking.",
+  "current_task": "PPO v3 running (iter ~50/200). AWR v4 training on BC-diverse data (v56 BC + us_bc + v2_iter150 + v2_diverse_awr). Elo tournament for v3 iter50 in progress.",
+  "current_strategy": "Build better v4 warmstart using v56 BC data (best US WR=0.325) to address USSR/US asymmetry. v4 AWR (65k rows, 4 models including BC specialists) training now. v4 PPO to launch after v3 shows its plateau (~iter 100). All side-conditioned model scripting bugs fixed.",
   "active_background": [
-    "PPO v3 — pid 642803 (launcher), training active, iter 3/200, warmstart=control_feat_gnn_side",
-    "PPO v2 benchmark — running in background (bench_best_vs_heuristic.txt)"
+    "PPO v3 — training active, iter ~50/200, rollout_wr ~0.43-0.56 (variable)",
+    "AWR v4 training — data: v4_bc_diverse (v56+us_bc+v2_iter150+awr_warmstart), PID 654983, out: results/awr_sweep/v4_bc_diverse_gnn_side/",
+    "Elo tournament v3 iter50 — run_elo_tournament.py PID 653292"
   ],
   "next_tasks": [
-    "Monitor PPO v3 (running, iter ~25/200, rollout_wr ~0.50)",
-    "AWR v2_diverse collection running (4 models × 300 games, ~72k rows) → v4 warmstart",
-    "V4 design: fix USSR/US asymmetry (primary), use US-wins-weighted AWR, check ppo_best.pt (US=0.388) vs gnn_side (US=0.230) as warmstart",
-    "After v3 ~iter50: benchmark vs heuristic to see if warmstart advantage holds",
-    "Tier-3 rules fixes (cards 75/50) — deferred",
-    "CountryAllocHead ablation: run AWR training with country_alloc_head arch"
+    "Check v3 iter50 Elo result when tournament completes",
+    "AWR v4 training completing: script and benchmark v4 warmstart → should beat v3 warmstart (0.314 combined)",
+    "V4 PPO: launch when v3 iter100 benchmarks available (or at iter ~120 if v3 plateaus)",
+    "Benchmark v4 AWR warmstart: target >0.350 combined (v56 BC data should improve US side)",
+    "CountryAllocHead AWR ablation: train on v4_bc_diverse data, compare vs gnn_side",
+    "Run parity harness tests (79 tests, last killed mid-run)",
+    "Tier-3 rules fixes (cards 75/50) — deferred"
   ],
   "frame_migration_plan": {
     "design_decision_doc": "results/analysis/opus_analysis_20260419_062129_country_alloc_redesign.md",
@@ -77,7 +79,14 @@
     "ppo_best_rollout_selected": {"ussr": 0.406, "us": 0.388, "combined": 0.397},
     "v56_bc_baseline": {"ussr": 0.558, "us": 0.325, "combined": 0.442},
     "v3_iter1_warmstart": {"ussr": 0.380, "us": 0.230, "combined": 0.305},
-    "note": "No v2 checkpoint beats v56 BC combined. USSR peaked at iter150 (0.585) but US hurt (0.270). v56 BC still best combined (0.442)."
+    "v2_diverse_awr_warmstart": {"ussr": 0.380, "us": 0.248, "combined": 0.314},
+    "note": "No v2 checkpoint beats v56 BC combined. USSR peaked at iter150 (0.585) but US hurt (0.270). v56 BC still best combined (0.442). v2_diverse AWR (0.314) slightly better than v3 warmstart but both well below BC."
   },
-  "last_updated": "2026-04-19T19:55:00Z"
+  "torchscript_fix": "Fixed TorchScript __constants__ for _SIDE_SCALAR_IDX in all side-conditioned models (commit bed9e17). CountryAttnEncoder dynamic getattr replaced with stacked region_masks buffer. All models in MODEL_REGISTRY now scriptable.",
+  "awr_datasets": {
+    "fixed_engine_v1": "data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet — 73,981 rows, 4 models (single-bucket, all ppo_best_scripted)",
+    "v2_diverse_v1": "data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet — 69,783 rows, 4 diverse v2 checkpoints",
+    "v4_bc_diverse_v1": "data/awr_eval/v4_bc_diverse_v1/awr_v4_bc_diverse.parquet — 65,519 rows, includes v56 BC and us_bc specialist"
+  },
+  "last_updated": "2026-04-19T21:25:00Z"
 }

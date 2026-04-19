@@ -627,21 +627,17 @@ def main():
                 print(f"Warning: could not save to SQL match_cache: {e}", flush=True)
 
     # ---------------------------------------------------------------------------
-    # Compute BayesElo: combined + bipartite per-side
+    # Compute BayesElo: bipartite per-side (PRIMARY) + derived combined
     # ---------------------------------------------------------------------------
-    print("\nFitting BayesElo (combined) ...", flush=True)
-    elos = bayeselo_fit(matches, anchor=args.anchor, anchor_elo=args.anchor_elo)
-    cis = bayeselo_ci95(matches, elos, anchor=args.anchor)
-
     # Bipartite per-side fit: 2N nodes ({name}_USSR, {name}_US), single anchor.
-    # This is the mathematically correct formulation: USSR nodes only play US nodes,
-    # so the graph is bipartite and requires exactly one anchor (not one per side).
+    # This is the primary rating system. Each model gets two ratings (USSR, US).
+    # Combined Elo is derived from bipartite via P(win) = 0.5*P_ussr + 0.5*P_us.
     bipartite_mlist = _bipartite_matches(matches)
     bipartite_anchor = f"{args.anchor}_USSR"
     elos_bipartite: dict[str, float] = {}
 
     if len(bipartite_mlist) >= 2:
-        print(f"Fitting BayesElo (bipartite per-side, anchor={bipartite_anchor}={args.anchor_elo}) ...", flush=True)
+        print(f"\nFitting BayesElo (bipartite per-side, anchor={bipartite_anchor}={args.anchor_elo}) ...", flush=True)
         elos_bipartite = bayeselo_fit_mm(bipartite_mlist, anchor=bipartite_anchor, anchor_elo=args.anchor_elo)
     else:
         print("  (skipping bipartite BayesElo: insufficient matches)", flush=True)
@@ -649,31 +645,58 @@ def main():
     def _belo(name: str, side: str) -> float | None:
         return elos_bipartite.get(f"{name}_{side}")
 
-    # Sort by combined Elo descending
+    def _sigma(delta_elo: float) -> float:
+        x = -delta_elo / 400.0
+        x = max(-300, min(300, x))
+        return 1.0 / (1.0 + 10.0 ** x)
+
+    # Derive combined Elo from bipartite: for each model, compute expected WR vs
+    # the anchor using P(win) = 0.5 * P(win as USSR) + 0.5 * P(win as US), then
+    # invert to a single Elo number on the anchor's scale.
+    anchor_ussr = _belo(args.anchor, "USSR")
+    anchor_us = _belo(args.anchor, "US")
+
+    # Also fit the old independent combined Elo for the residual comparison
+    print("Fitting BayesElo (combined, for residual comparison) ...", flush=True)
+    elos_combined_indep = bayeselo_fit(matches, anchor=args.anchor, anchor_elo=args.anchor_elo)
+    cis = bayeselo_ci95(matches, elos_combined_indep, anchor=args.anchor)
+
+    # Build derived combined Elo from bipartite
+    names = sorted({m.player_a for m in matches} | {m.player_b for m in matches})
+    elos: dict[str, float] = {}
+    for name in names:
+        eu, es = _belo(name, "USSR"), _belo(name, "US")
+        if eu is not None and es is not None and anchor_ussr is not None and anchor_us is not None:
+            # P(name beats anchor) = 0.5 * sigma(name_USSR - anchor_US) + 0.5 * sigma(name_US - anchor_USSR)
+            p_win = 0.5 * _sigma(eu - anchor_us) + 0.5 * _sigma(es - anchor_ussr)
+            p_win = max(1e-10, min(1 - 1e-10, p_win))
+            # Invert to Elo difference: p = sigma(delta) => delta = 400 * log10(p/(1-p))
+            delta = 400.0 * math.log10(p_win / (1.0 - p_win))
+            elos[name] = args.anchor_elo + delta
+        elif name in elos_combined_indep:
+            elos[name] = elos_combined_indep[name]  # fallback
+
+    # Sort by derived combined Elo descending
     ranked = sorted(elos.items(), key=lambda x: -x[1])
 
-    # Print table
-    print(f"\n{'Model':<20} {'Elo':>6}  {'USSR*':>7}  {'US*':>7}  {'Gap':>5}  {'95% CI':>20}  {'vs anchor':>10}")
-    print(f"  (* bipartite per-side, single anchor: {bipartite_anchor}={args.anchor_elo:.0f})")
+    # Print table — bipartite is primary, combined is derived
+    print(f"\n{'Model':<20} {'USSR':>6}  {'US':>6}  {'Gap':>5}  {'Comb*':>6}  {'95% CI':>20}  {'vs anchor':>10}")
+    print(f"  (bipartite per-side = PRIMARY, anchor: {bipartite_anchor}={args.anchor_elo:.0f})")
+    print(f"  (* combined = derived from P(win) = 0.5·P_ussr + 0.5·P_us)")
     print("-" * 88)
     for name, elo in ranked:
-        lo, hi = cis[name]
+        lo, hi = cis.get(name, (0, 0))
         diff = elo - args.anchor_elo
         ussr_e = _belo(name, "USSR")
         us_e = _belo(name, "US")
         ussr_str = f"{ussr_e:>5.0f}" if ussr_e is not None else "  n/a"
         us_str = f"{us_e:>5.0f}" if us_e is not None else "  n/a"
         gap_str = f"{ussr_e - us_e:>+.0f}" if (ussr_e is not None and us_e is not None) else "  n/a"
-        print(f"{name:<20} {elo:>6.0f}  {ussr_str}  {us_str}  {gap_str}  [{lo:>6.0f}, {hi:>6.0f}]  {diff:>+.0f}")
+        print(f"{name:<20} {ussr_str}  {us_str}  {gap_str}  {elo:>6.0f}  [{lo:>6.0f}, {hi:>6.0f}]  {diff:>+.0f}")
 
     # ---------------------------------------------------------------------------
     # WR residual table: observed vs bipartite-predicted vs combined-predicted
     # ---------------------------------------------------------------------------
-    def _sigma(delta_elo: float) -> float:
-        x = -delta_elo / 400.0
-        x = max(-300, min(300, x))
-        return 1.0 / (1.0 + 10.0 ** x)
-
     def _bipartite_wr(name_a: str, name_b: str) -> float | None:
         ua, va = _belo(name_a, "USSR"), _belo(name_a, "US")
         ub, vb = _belo(name_b, "USSR"), _belo(name_b, "US")
@@ -688,7 +711,7 @@ def main():
         na, nb = entry["model_a"], entry["model_b"]
         obs = entry["wr_a"]
         bip = _bipartite_wr(na, nb)
-        comb = _sigma(elos.get(na, 0.0) - elos.get(nb, 0.0)) if na in elos and nb in elos else None
+        comb = _sigma(elos_combined_indep.get(na, 0.0) - elos_combined_indep.get(nb, 0.0)) if na in elos_combined_indep and nb in elos_combined_indep else None
         bip_str = f"{bip:>7.3f}" if bip is not None else "    n/a"
         comb_str = f"{comb:>8.3f}" if comb is not None else "     n/a"
         bip_err = obs - bip if bip is not None else None
@@ -706,13 +729,13 @@ def main():
         print(f"  (bipartite RMSE {'<' if bip_sq_err < comb_sq_err else '>='} combined RMSE "
               f"→ bipartite model {'better' if bip_sq_err < comb_sq_err else 'not better'} fit)")
 
-    # Save results
+    # Save results — bipartite per-side is primary, combined is derived
     ratings_out = {
         name: {
-            "elo": round(elo, 1),
+            "elo": round(elo, 1),  # derived combined
             "elo_ussr": round(_belo(name, "USSR"), 1) if _belo(name, "USSR") is not None else None,
             "elo_us": round(_belo(name, "US"), 1) if _belo(name, "US") is not None else None,
-            "ci95": [round(cis[name][0], 1), round(cis[name][1], 1)],
+            "ci95": [round(cis.get(name, (0, 0))[0], 1), round(cis.get(name, (0, 0))[1], 1)],
             "delta_vs_anchor": round(elo - args.anchor_elo, 1),
         }
         for name, elo in ranked
