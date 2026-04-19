@@ -12,6 +12,8 @@
 
 namespace ts {
 
+inline constexpr CountryId kInvalidCountryId = static_cast<CountryId>(255);
+
 struct WarResult {
     bool success = false;
     int die_roll = 0;

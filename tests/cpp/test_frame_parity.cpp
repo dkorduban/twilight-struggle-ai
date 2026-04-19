@@ -382,7 +382,7 @@ FrameAction deterministic_frame_action(const DecisionFrame& frame) {
         case FrameKind::NoradInfluence:
         case FrameKind::SetupPlacement:
             return FrameAction{
-                .country_id = static_cast<CountryId>(first_set_bit(frame.eligible_countries, 1, "eligible_countries")),
+                .country_id = static_cast<CountryId>(first_set_bit(frame.eligible_countries, 0, "eligible_countries")),
             };
 
         case FrameKind::CardSelect:
@@ -533,11 +533,11 @@ std::tuple<bool, std::optional<Side>> apply_top_level_for_test(
         return {over, winner};
     }
 
-    auto result = engine_step_toplevel(gs, action, side, rng, sub_policy);
+    auto result = engine_step_toplevel(gs, action, side, rng);
     int subframe_steps = 0;
     for (auto frame = engine_peek(gs); frame.has_value(); frame = engine_peek(gs)) {
         REQUIRE(subframe_steps < 512);
-        result = engine_step_subframe(gs, deterministic_frame_action(*frame), rng);
+        result = engine_step_subframe(gs, sub_policy(gs, *frame), rng);
         ++subframe_steps;
     }
     return {result.game_over || gs.game_over, result.winner.has_value() ? result.winner : gs.winner};

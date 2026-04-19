@@ -834,98 +834,46 @@ void complete_parent_frame_if_ready(GameState& gs, const DecisionFrame& frame) {
     }
 }
 
-void apply_frame_ops_randomly_impl(
-    PublicState& pub,
-    Side side,
-    int ops,
-    Pcg64Rng& rng
-) {
-    auto accessible = accessible_countries(side, pub, ActionMode::Influence);
-    if (accessible.empty()) {
-        return;
-    }
-
-    const auto place_influence = [&]() {
-        for (int i = 0; i < ops; ++i) {
-            const auto target = accessible[rng.choice_index(accessible.size())];
-            pub.set_influence(side, target, pub.influence_of(side, target) + 1);
-        }
-    };
-
-    constexpr std::array<ActionMode, 4> kModes = {
-        ActionMode::Influence,
-        ActionMode::Influence,
-        ActionMode::Coup,
-        ActionMode::Realign,
-    };
-    const auto mode = kModes[rng.choice_index(kModes.size())];
-    const auto opponent = other_side(side);
-
-    if (mode == ActionMode::Influence) {
-        place_influence();
-        return;
-    }
-
-    if (mode == ActionMode::Coup && pub.defcon <= 2) {
-        place_influence();
-        return;
-    }
-
-    if (mode == ActionMode::Coup) {
-        auto targets = accessible;
-        targets.erase(
-            std::remove_if(
-                targets.begin(),
-                targets.end(),
-                [&pub](CountryId cid) { return is_defcon_restricted(cid, pub); }
-            ),
-            targets.end()
-        );
-        if (targets.empty()) {
-            place_influence();
-            return;
+PolicyCallbackFn frame_first_legal_policy_callback() {
+    return [](const PublicState&, const EventDecision& decision) -> int {
+        if (decision.kind == DecisionKind::SmallChoice) {
+            return 0;
         }
 
-        const auto target = targets[rng.choice_index(targets.size())];
-        const auto net = coup_result(ops, country_spec(target).stability, rng);
-        if (net > 0) {
-            const auto removed = std::min(net, pub.influence_of(opponent, target));
-            pub.set_influence(opponent, target, pub.influence_of(opponent, target) - removed);
-            if (const auto excess = net - removed; excess > 0) {
-                pub.set_influence(side, target, pub.influence_of(side, target) + excess);
+        int best_index = 0;
+        int best_id = decision.eligible_ids[0];
+        for (int idx = 1; idx < decision.n_options; ++idx) {
+            if (decision.eligible_ids[idx] < best_id) {
+                best_id = decision.eligible_ids[idx];
+                best_index = idx;
             }
         }
-        if (country_spec(target).is_battleground && !(side == Side::US && pub.nuclear_subs_active)) {
-            pub.defcon = std::max(1, pub.defcon - 1);
-        }
-        pub.milops[to_index(side)] = std::max(pub.milops[to_index(side)], ops);
-        return;
-    }
+        return best_index;
+    };
+}
 
-    for (int i = 0; i < std::min(ops, static_cast<int>(accessible.size())); ++i) {
-        const auto target = accessible[rng.choice_index(accessible.size())];
-        const auto ussr_inf = pub.influence_of(Side::USSR, target);
-        const auto us_inf = pub.influence_of(Side::US, target);
-        auto count_adj = [&](Side player) {
-            int total = 0;
-            for (const auto neighbor : adjacency()[target]) {
-                if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
-                    continue;
-                }
-                if (controls_country(player, neighbor, pub)) {
-                    ++total;
-                }
+std::optional<CardId> draw_one_frame(GameState& gs, Pcg64Rng& rng) {
+    if (gs.deck.empty()) {
+        std::vector<CardId> reshuffled;
+        for (int raw = 1; raw <= kMaxCardId; ++raw) {
+            const auto candidate = static_cast<CardId>(raw);
+            if (gs.pub.discard.test(candidate) && !gs.pub.removed.test(candidate)) {
+                reshuffled.push_back(candidate);
             }
-            return total;
-        };
-        const auto [ussr_total, us_total] =
-            realign_result(ussr_inf, us_inf, count_adj(Side::USSR), count_adj(Side::US), rng);
-        if (ussr_total > us_total) {
-            pub.set_influence(Side::US, target, std::max(0, pub.influence_of(Side::US, target) - 1));
-        } else if (us_total > ussr_total) {
-            pub.set_influence(Side::USSR, target, std::max(0, pub.influence_of(Side::USSR, target) - 1));
         }
+        if (reshuffled.empty()) {
+            return std::nullopt;
+        }
+        shuffle_with_numpy_rng(reshuffled, rng);
+        gs.deck = std::move(reshuffled);
+        gs.pub.discard.reset();
     }
+    if (gs.deck.empty()) {
+        return std::nullopt;
+    }
+    const auto card = gs.deck.back();
+    gs.deck.pop_back();
+    return card;
 }
 
 void resolve_frame_selected_event(
@@ -942,8 +890,11 @@ void resolve_frame_selected_event(
         .mode = ActionMode::Event,
         .targets = {},
     };
+    const auto previous_frame_stack_mode = gs.frame_stack_mode;
+    gs.frame_stack_mode = true;
     auto [event_pub, over, winner] =
         apply_action_live(gs, action, event_side, rng, nullptr, false, &gs.frame_stack);
+    gs.frame_stack_mode = previous_frame_stack_mode;
     (void)event_pub;
     if (over) {
         mark_frame_event_played(gs.pub, parent_card, parent_side);
@@ -1026,7 +977,16 @@ void resume_card_68(GameState& gs, const DecisionFrame& frame, const FrameAction
     }
 
     gs.hands[to_index(Side::USSR)].reset(action.card_id);
-    apply_frame_ops_randomly_impl(gs.pub, Side::US, effective_ops(action.card_id, gs.pub, Side::US), rng);
+    const auto policy_cb = frame_first_legal_policy_callback();
+    apply_ops_randomly_impl(
+        gs.pub,
+        Side::US,
+        effective_ops(action.card_id, gs.pub, Side::US),
+        frame.source_card,
+        rng,
+        &policy_cb,
+        nullptr
+    );
     gs.hands[to_index(Side::USSR)].set(action.card_id);
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
@@ -1123,13 +1083,14 @@ void resume_card_52(GameState& gs, const DecisionFrame& frame, const FrameAction
     if (frame.eligible_cards.test(static_cast<size_t>(action.card_id))) {
         const auto opponent = other_side(frame.acting_side);
         gs.hands[to_index(opponent)].reset(action.card_id);
+        const auto policy_cb = frame_first_legal_policy_callback();
         apply_ops_randomly_impl(
             gs.pub,
             frame.acting_side,
             effective_ops(action.card_id, gs.pub, frame.acting_side),
             frame.source_card,
             rng,
-            nullptr,
+            &policy_cb,
             nullptr
         );
         gs.hands[to_index(opponent)].set(action.card_id);
@@ -1287,6 +1248,28 @@ void resume_card_30(GameState& gs, const DecisionFrame& frame, const FrameAction
             return;
         }
     }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_32(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    if (frame.kind != FrameKind::CardSelect ||
+        action.card_id == 0 ||
+        !frame.eligible_cards.test(action.card_id)) {
+        return;
+    }
+
+    const auto ops = effective_ops(action.card_id, gs.pub, frame.acting_side);
+    discard_frame_hand_card(gs, frame.acting_side, action.card_id);
+    const auto policy_cb = frame_first_legal_policy_callback();
+    apply_ops_randomly_impl(
+        gs.pub,
+        frame.acting_side,
+        ops,
+        frame.source_card,
+        rng,
+        &policy_cb,
+        nullptr
+    );
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
@@ -1451,6 +1434,66 @@ void resume_card_77(GameState& gs, const DecisionFrame& frame, const FrameAction
         push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
         if (!gs.frame_stack.empty()) {
             return;
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_78(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    if (frame.kind == FrameKind::SmallChoice) {
+        const auto discard_count = std::clamp(action.option_index, 0, std::max(0, static_cast<int>(frame.eligible_n) - 1));
+        if (discard_count <= 0) {
+            finish_frame_event(gs, frame.source_card, frame.acting_side);
+            return;
+        }
+
+        std::vector<CardId> discardable;
+        for (int raw = 1; raw <= kMaxCardId; ++raw) {
+            const auto candidate = static_cast<CardId>(raw);
+            if (
+                gs.hands[to_index(Side::US)].test(candidate) &&
+                candidate != kChinaCardId &&
+                !card_spec(candidate).is_scoring
+            ) {
+                discardable.push_back(candidate);
+            }
+        }
+        if (discardable.size() > 4) {
+            discardable.resize(4);
+        }
+        CardSet eligible;
+        for (const auto card_id : discardable) {
+            eligible.set(card_id);
+        }
+        push_card_frame(gs, frame.source_card, frame.acting_side, eligible, 0, discard_count, discard_count);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+        finish_frame_event(gs, frame.source_card, frame.acting_side);
+        return;
+    }
+
+    if (frame.kind != FrameKind::CardSelect) {
+        return;
+    }
+    if (frame.eligible_cards.test(action.card_id)) {
+        discard_frame_hand_card(gs, Side::US, action.card_id);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = static_cast<int>(frame.total_steps);
+    if (next_step < total_steps) {
+        auto reduced = frame.eligible_cards;
+        reduced.reset(action.card_id);
+        if (reduced.any()) {
+            push_card_frame(gs, frame.source_card, frame.acting_side, reduced, next_step, total_steps, frame.criteria_bits);
+            if (!gs.frame_stack.empty()) {
+                return;
+            }
+        }
+    }
+    for (int i = 0; i < total_steps; ++i) {
+        if (const auto drawn = draw_one_frame(gs, rng); drawn.has_value()) {
+            gs.hands[to_index(Side::US)].set(*drawn);
         }
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);
@@ -1941,6 +1984,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
         case 30:
             resume_card_30(gs, frame, action);
             break;
+        case 32:
+            resume_card_32(gs, frame, action, rng);
+            break;
         case 37:
             resume_card_37(gs, frame, action);
             break;
@@ -1985,6 +2031,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 77:
             resume_card_77(gs, frame, action);
+            break;
+        case 78:
+            resume_card_78(gs, frame, action, rng);
             break;
         case 83:
             resume_card_83(gs, frame, action, rng);

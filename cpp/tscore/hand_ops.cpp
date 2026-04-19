@@ -187,7 +187,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             const auto accessible = accessible_countries(Side::US, pub, ActionMode::Influence);
             if (!accessible.empty()) {
                 const auto target = choose_country(pub, 26, Side::US, accessible, rng, policy_cb, frame_log, gs.frame_stack_mode);
-                if (target == 0 && gs.frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                if (target == kInvalidCountryId && gs.frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
                     return {pub, false, std::nullopt};
                 }
                 pub.set_influence(Side::US, target, pub.influence_of(Side::US, target) + 1);
@@ -210,7 +210,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!eligible.empty()) {
-                const auto chosen = choose_card(pub, 32, side, eligible, rng, policy_cb, frame_log);
+                const auto chosen = choose_card(pub, 32, side, eligible, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                if (chosen == 0) {
+                    return {pub, false, std::nullopt};
+                }
                 const auto ops = effective_ops(chosen, pub, side);
                 discard_from_hand(gs, side, chosen, pub);
                 apply_ops_randomly_impl(pub, side, ops, static_cast<CardId>(32), rng, policy_cb, frame_log);
@@ -245,7 +248,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
                 if (!pool.empty()) {
                     const auto target = choose_country(pub, 36, Side::USSR, pool, rng, policy_cb, frame_log, gs.frame_stack_mode);
-                    if (target == 0) {
+                    if (target == kInvalidCountryId) {
                         if (frame_log != nullptr && !frame_log->empty()) {
                             frame_log->back().step_index = static_cast<uint8_t>(std::min(i, 255));
                             frame_log->back().total_steps = static_cast<uint8_t>(std::max(1, std::min(total_steps_36, 255)));
@@ -404,12 +407,25 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 Side::US,
                 static_cast<int>(discardable.size()) + 1,
                 rng,
-                policy_cb
+                policy_cb,
+                frame_log,
+                gs.frame_stack_mode
             );
+            if (discard_count < 0) {
+                return {pub, false, std::nullopt};
+            }
             std::vector<CardId> chosen_discards;
             chosen_discards.reserve(static_cast<size_t>(discard_count));
             for (int i = 0; i < discard_count; ++i) {
-                const auto chosen = choose_card(pub, 78, Side::US, discardable, rng, policy_cb, frame_log);
+                const auto chosen = choose_card(pub, 78, Side::US, discardable, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                if (chosen == 0) {
+                    if (frame_log != nullptr && !frame_log->empty()) {
+                        frame_log->back().step_index = static_cast<uint8_t>(std::min(i, 255));
+                        frame_log->back().total_steps = static_cast<uint8_t>(std::max(1, std::min(discard_count, 255)));
+                        frame_log->back().criteria_bits = static_cast<uint16_t>(discard_count);
+                    }
+                    return {pub, false, std::nullopt};
+                }
                 chosen_discards.push_back(chosen);
                 discardable.erase(std::remove(discardable.begin(), discardable.end(), chosen), discardable.end());
             }
@@ -445,14 +461,16 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
                 if (!drawn.empty()) {
                     pub = gs.pub;
-                    const auto keep_count = choose_option(
-                        pub,
-                        static_cast<CardId>(84),
-                        Side::US,
-                        static_cast<int>(drawn.size()) + 1,
-                        rng,
-                        policy_cb
-                    );
+                    const auto keep_count = (gs.frame_stack_mode && policy_cb == nullptr)
+                        ? 0
+                        : choose_option(
+                              pub,
+                              static_cast<CardId>(84),
+                              Side::US,
+                              static_cast<int>(drawn.size()) + 1,
+                              rng,
+                              policy_cb
+                          );
                     std::vector<CardId> kept_cards;
                     kept_cards.reserve(static_cast<size_t>(keep_count));
                     for (int i = 0; i < keep_count; ++i) {
