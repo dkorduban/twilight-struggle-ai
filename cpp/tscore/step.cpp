@@ -316,6 +316,9 @@ CountryId resolve_event_country_choice(
     std::vector<DecisionFrame>* frame_log,
     bool frame_stack_mode = false
 ) {
+    if (policy_cb != nullptr) {
+        return choose_country(pub, card_id, side, pool, rng, policy_cb, frame_log, frame_stack_mode);
+    }
     if (policy_cb == nullptr && frame_stack_mode && frame_log != nullptr) {
         return choose_country(pub, card_id, side, pool, rng, policy_cb, frame_log, frame_stack_mode);
     }
