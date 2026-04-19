@@ -1264,6 +1264,16 @@ void resume_card_37(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_39(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        apply_war_card(gs.pub, frame.acting_side, action.country_id, 3, 3, rng);
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_48(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
     if (frame.kind != FrameKind::SmallChoice) {
         return;
@@ -1788,6 +1798,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 37:
             resume_card_37(gs, frame, action);
+            break;
+        case 39:
+            resume_card_39(gs, frame, action, rng);
             break;
         case 46:
             resume_card_46(gs, frame, action);
