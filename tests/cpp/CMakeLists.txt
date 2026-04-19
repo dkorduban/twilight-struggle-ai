@@ -20,6 +20,7 @@ FetchContent_MakeAvailable(Catch2)
 
 add_executable(test_tscore
     test_decode_helpers.cpp
+    test_frame_parity.cpp
     test_frame_regression.cpp
     test_ismcts_regression.cpp
     test_observation.cpp
