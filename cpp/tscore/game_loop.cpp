@@ -1024,7 +1024,7 @@ void resume_card_14(GameState& gs, const DecisionFrame& frame, const FrameAction
         add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = std::max<int>(1, frame.total_steps);
+    const auto total_steps = static_cast<int>(frame.total_steps);
     if (next_step < total_steps) {
         auto next_eligible = frame.eligible_countries;
         next_eligible.reset(static_cast<size_t>(action.country_id));
@@ -1097,7 +1097,7 @@ void resume_card_30(GameState& gs, const DecisionFrame& frame, const FrameAction
         add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = std::max<int>(1, frame.total_steps);
+    const auto total_steps = static_cast<int>(frame.total_steps);
     if (next_step < total_steps) {
         push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
         if (!gs.frame_stack.empty()) {
@@ -1144,7 +1144,7 @@ void resume_card_60(GameState& gs, const DecisionFrame& frame, const FrameAction
         add_frame_influence(gs.pub, frame.acting_side, action.country_id, 1);
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = std::max<int>(1, frame.total_steps);
+    const auto total_steps = static_cast<int>(frame.total_steps);
     if (next_step < total_steps) {
         push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
         if (!gs.frame_stack.empty()) {
@@ -1182,7 +1182,7 @@ void resume_card_71(GameState& gs, const DecisionFrame& frame, const FrameAction
         add_frame_influence(gs.pub, Side::US, action.country_id, 1);
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = std::max<int>(1, frame.total_steps);
+    const auto total_steps = static_cast<int>(frame.total_steps);
     if (next_step < total_steps) {
         push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
         if (!gs.frame_stack.empty()) {
@@ -1220,7 +1220,7 @@ void resume_card_77(GameState& gs, const DecisionFrame& frame, const FrameAction
         add_frame_influence(gs.pub, frame.acting_side, action.country_id, 1);
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = std::max<int>(1, frame.total_steps);
+    const auto total_steps = static_cast<int>(frame.total_steps);
     if (next_step < total_steps) {
         push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
         if (!gs.frame_stack.empty()) {

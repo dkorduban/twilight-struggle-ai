@@ -1232,11 +1232,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             const Side acting = next.china_held_by;
             if (next.china_held_by == Side::USSR) {
                 next.china_held_by = Side::US;
-                next.china_playable = true;
             } else {
                 next.china_held_by = Side::USSR;
-                next.china_playable = true;
             }
+            next.china_playable = true;
             for (int i = 0; i < 4 && !pool.empty(); ++i) {
                 const auto cid =
                     choose_country(next, static_cast<CardId>(77), acting, pool, rng, policy_cb, frame_log, frame_stack_mode);
