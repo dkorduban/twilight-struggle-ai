@@ -329,12 +329,16 @@ TEST_CASE("frame_regression Aldrich Ames Remix discard records a CardSelect fram
     );
 }
 
-TEST_CASE("engine_step_subframe Socialist Governments resolves influence placements", "[frame_regression]") {
+TEST_CASE("engine_step_subframe Socialist Governments resolves influence removals", "[frame_regression]") {
 #if TS_FRAME_REGRESSION_HAS_FRAME_API
     GameState gs = make_action_round_state({
         .card_id = 7,
         .actor = Side::USSR,
         .turn = 1,
+        .influence = {
+            {Side::US, 1, 2},
+            {Side::US, 2, 1},
+        },
     });
     gs.frame_stack_mode = true;
 
@@ -359,10 +363,10 @@ TEST_CASE("engine_step_subframe Socialist Governments resolves influence placeme
 
         const auto chosen = first_eligible_country(*frame);
         REQUIRE(chosen != 0);
-        const auto before = gs.pub.influence_of(Side::USSR, chosen);
+        const auto before = gs.pub.influence_of(Side::US, chosen);
 
         const auto sub = engine_step_subframe(gs, FrameAction{.country_id = chosen}, rng);
-        REQUIRE(gs.pub.influence_of(Side::USSR, chosen) == before + 1);
+        REQUIRE(gs.pub.influence_of(Side::US, chosen) == before - 1);
         if (step < 2) {
             REQUIRE(sub.pushed_subframe);
         } else {
