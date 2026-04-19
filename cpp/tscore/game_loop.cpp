@@ -712,6 +712,17 @@ void add_frame_influence(PublicState& pub, Side side, CountryId country_id, int 
     pub.set_influence(side, country_id, std::max(0, pub.influence_of(side, country_id) + delta));
 }
 
+uint16_t aldrich_ames_region_key(CountryId country_id) {
+    const auto region = country_spec(country_id).region;
+    if (region == Region::CentralAmerica) {
+        return 0;
+    }
+    if (region == Region::SouthAmerica) {
+        return 1;
+    }
+    return 2;
+}
+
 void mark_frame_event_played(PublicState& pub, CardId card_id, Side side) {
     if (pub.discard.test(card_id) || pub.removed.test(card_id)) {
         return;
@@ -1423,6 +1434,48 @@ void resume_card_77(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_83(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (!frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        finish_frame_event(gs, frame.source_card, frame.acting_side);
+        return;
+    }
+
+    if (frame.step_index == 0) {
+        const auto first_region = aldrich_ames_region_key(action.country_id);
+        apply_free_coup(gs.pub, Side::USSR, action.country_id, 3, rng, false);
+
+        std::bitset<kCountrySlots> second_eligible;
+        for (const auto cid : all_country_ids()) {
+            if (frame.eligible_countries.test(static_cast<size_t>(cid)) &&
+                aldrich_ames_region_key(cid) != first_region) {
+                second_eligible.set(static_cast<size_t>(cid));
+            }
+        }
+        if (second_eligible.any()) {
+            const auto total_steps = static_cast<int>(frame.total_steps);
+            push_country_frame(
+                gs,
+                frame.source_card,
+                frame.acting_side,
+                second_eligible,
+                1,
+                total_steps,
+                first_region
+            );
+            if (!gs.frame_stack.empty()) {
+                return;
+            }
+        }
+    } else {
+        apply_free_coup(gs.pub, Side::USSR, action.country_id, 3, rng, false);
+    }
+
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_warsaw_pact(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
     constexpr uint16_t kAddInfluenceChoice = 1;
 
@@ -1910,6 +1963,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 77:
             resume_card_77(gs, frame, action);
+            break;
+        case 83:
+            resume_card_83(gs, frame, action, rng);
             break;
         case 68:
             resume_card_68(gs, frame, action, rng);

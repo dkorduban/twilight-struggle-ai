@@ -1377,7 +1377,20 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             if (!pool.empty()) {
-                const auto first = choose_country(next, static_cast<CardId>(83), Side::USSR, pool, rng, policy_cb, frame_log);
+                const auto first = choose_country(
+                    next,
+                    static_cast<CardId>(83),
+                    Side::USSR,
+                    pool,
+                    rng,
+                    policy_cb,
+                    frame_log,
+                    frame_stack_mode
+                );
+                if (first == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, 0, 2);
+                    return {next, false, std::nullopt};
+                }
                 const auto first_region = region_key(first);
                 apply_free_coup(next, Side::USSR, first, 3, rng, false);
                 std::vector<CountryId> second_pool;
@@ -1387,10 +1400,24 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     }
                 }
                 if (!second_pool.empty()) {
+                    const auto second = choose_country(
+                        next,
+                        static_cast<CardId>(83),
+                        Side::USSR,
+                        second_pool,
+                        rng,
+                        policy_cb,
+                        frame_log,
+                        frame_stack_mode
+                    );
+                    if (second == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                        annotate_latest_frame(frame_log, 1, 2, static_cast<uint16_t>(first_region));
+                        return {next, false, std::nullopt};
+                    }
                     apply_free_coup(
                         next,
                         Side::USSR,
-                        choose_country(next, static_cast<CardId>(83), Side::USSR, second_pool, rng, policy_cb, frame_log),
+                        second,
                         3,
                         rng,
                         false
