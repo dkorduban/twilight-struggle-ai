@@ -970,6 +970,26 @@ void discard_frame_hand_card(GameState& gs, Side side, CardId card_id) {
     discard_frame_card(gs.pub, card_id);
 }
 
+void discard_random_terrorism_cards(GameState& gs, Side acting_side, Pcg64Rng& rng) {
+    const auto opponent = other_side(acting_side);
+    const auto discard_count = opponent == Side::US && gs.pub.iran_hostage_crisis_active ? 2 : 1;
+    std::vector<CardId> candidates;
+    for (int raw = 1; raw <= kMaxCardId; ++raw) {
+        const auto candidate = static_cast<CardId>(raw);
+        if (gs.hands[to_index(opponent)].test(candidate) && candidate != kChinaCardId) {
+            candidates.push_back(candidate);
+        }
+    }
+
+    const auto selections = std::min(discard_count, static_cast<int>(candidates.size()));
+    for (int i = 0; i < selections; ++i) {
+        const auto chosen_index = rng.choice_index(candidates.size());
+        const auto chosen = candidates[chosen_index];
+        discard_frame_hand_card(gs, opponent, chosen);
+        candidates.erase(candidates.begin() + static_cast<std::vector<CardId>::difference_type>(chosen_index));
+    }
+}
+
 void tag_new_frames_with_parent(GameState& gs, size_t first_new_frame, CardId parent_card) {
     for (size_t idx = first_new_frame; idx < gs.frame_stack.size(); ++idx) {
         gs.frame_stack[idx].parent_card = parent_card;
@@ -2075,27 +2095,9 @@ void resume_card_36(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
-void resume_card_95(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
-    if (frame.kind != FrameKind::CardSelect ||
-        action.card_id == 0 ||
-        !frame.eligible_cards.test(action.card_id)) {
-        finish_frame_event(gs, frame.source_card, frame.acting_side);
-        return;
-    }
-    const auto opponent = other_side(frame.acting_side);
-    discard_frame_hand_card(gs, opponent, action.card_id);
-    const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = static_cast<int>(frame.total_steps);
-    if (next_step < total_steps) {
-        auto reduced = frame.eligible_cards;
-        reduced.reset(action.card_id);
-        if (reduced.any()) {
-            push_card_frame(gs, frame.source_card, frame.acting_side, reduced, next_step, total_steps);
-            if (!gs.frame_stack.empty()) {
-                return;
-            }
-        }
-    }
+void resume_card_95(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    (void)action;
+    discard_random_terrorism_cards(gs, frame.acting_side, rng);
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
@@ -2260,7 +2262,7 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             resume_card_94(gs, frame, action, rng);
             break;
         case 95:
-            resume_card_95(gs, frame, action);
+            resume_card_95(gs, frame, action, rng);
             break;
         case 97:
             resume_card_97(gs, frame, action);

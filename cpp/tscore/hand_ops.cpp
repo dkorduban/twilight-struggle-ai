@@ -339,16 +339,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 if (candidates.empty()) {
                     break;
                 }
-                const auto chosen = choose_card(pub, 95, side, candidates, rng, policy_cb, frame_log, gs.frame_stack_mode);
-                if (chosen == 0) {
-                    if (frame_log != nullptr && !frame_log->empty()) {
-                        frame_log->back().step_index = static_cast<uint8_t>(std::min(i, 255));
-                        frame_log->back().total_steps = static_cast<uint8_t>(std::max(1, std::min(selections, 255)));
-                    }
-                    return {pub, false, std::nullopt};
-                }
+                const auto chosen_index = rng.choice_index(candidates.size());
+                const auto chosen = candidates[chosen_index];
                 discard_from_hand(gs, opponent, chosen, pub);
-                candidates.erase(std::remove(candidates.begin(), candidates.end(), chosen), candidates.end());
+                candidates.erase(candidates.begin() + static_cast<std::vector<CardId>::difference_type>(chosen_index));
             }
             break;
         }
