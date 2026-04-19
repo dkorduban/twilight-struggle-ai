@@ -5,94 +5,39 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "Frame migration batches 2+3 in progress via Codex worktrees. PPO v1 running (~iter123+), PPO v2 running (iter10/200, rollout_wr=0.59).",
+  "current_task": "Frame migration COMPLETE (Slices A-G, 79/79 parity), Tier-1+2 rules fixed, A/B done (combined=0.448, retrain gate NOT triggered). PPO v2 running on fixed engine (iter ~40/200).",
+  "current_strategy": "Engine correctness done. Now: let PPO v2 run; dispatch CountryAllocHead ablation (Python model); collect fresh AWR data on fixed engine for v3 warmstart. Elo ladder invalidated post-Tier-1 — freeze v14_e2 anchor after v2 eval.",
   "active_background": [
-    "PPO v1 chain: iter ~123+/300 (still running, panel bug means ppo_running_best stuck at iter10).",
-    "PPO v2 chain: iter 10/200, rollout_wr=0.590 (USSR=0.710, US=0.470), dense_reward_alpha=0.1, heuristic_floor=0.25.",
-    "Frame migration batch 2: cards 14, 30, 60, 71, 77 in Codex worktree (dispatched 2026-04-18)."
+    "PPO v2 training — pid 588994, fixed engine, iter ~40/200, rollout_wr=0.57-0.67"
   ],
   "next_tasks": [
-    "Frame migration batch 3: cards 20 (Olympic Games), 37 (Voice of America), 48 (Summit). Dispatch after batch 2 merges.",
-    "Frame migration batch 4: hand_ops.cpp cards 10, 26, 32, 46, 52, 95. Single-step card/country picks.",
-    "Frame migration batch 5: complex cards 33 (paired src+dst), 50 (OAS Founded - needs apply_free_coup exposed), 78, 84, 98.",
-    "PPO v1 completion: run select_best_checkpoint.py after iter300 (though v2 already started from iter300 prev-run checkpoint).",
-    "PPO v2 check at iter100: assess dense reward benefit vs v1 baseline (target: >0.41 combined vs heuristic).",
-    "ISMCTS shelved: delta=-0.225 vs greedy. Deferred.",
-    "opp_unaccounted: deferred (breaking change to card features)"
+    "CountryAllocHead model ablation — task #90 (Python-only, dispatch Codex)",
+    "Collect fresh AWR data on fixed engine — basis for v3 PPO warmstart",
+    "Freeze new Elo anchor v14_e2 after PPO v2 eval at iter 50",
+    "Tier-3 rules fixes (cards 75/50) — deferred, low impact",
+    "PPO v3: fresh AWR warmstart on fixed engine (after v2 completes and fresh data collected)"
   ],
-  "last_updated": "2026-04-18T23:00:00Z",
-  "frame_migration_status": {
-    "done": [5, 7, 16, 19, 23, 28, 29, 49, 56, 59, 67, 75, 76, 68, 88, 101],
-    "batch2_in_progress": [14, 30, 60, 71, 77],
-    "batch3_pending": [20, 37, 48],
-    "batch4_pending_hand_ops": [10, 26, 32, 46, 52, 95],
-    "batch5_complex": [33, 50, 78, 84, 98],
-    "notes": "Card 50 needs apply_free_coup exposed in step.hpp. Card 33 needs paired src+dst frame pattern."
-  },
-  "ismcts_verdict": {
-    "result": "SHELVED",
-    "delta_vs_greedy": -0.225,
-    "ismcts_wr": 0.250,
-    "greedy_wr": 0.475,
-    "n_games": 40,
-    "n_det": 8,
-    "n_sim": 50,
-    "diagnosis": "Value head trained on partial-info states gives poor estimates on determinized states. Search on wrong value signal → worse than greedy policy.",
-    "fix_required": "Train separate value head on determinized states, or use heuristic rollouts in ISMCTS instead of value head. High effort, deferred."
-  },
-  "ppo_panel_bug_note": "Current v1 run started before avg_combined fix. panel=['heuristic'], avg=0.000 always. ppo_running_best stuck at iter10. Must manually select best checkpoint after run completes.",
-  "awr_results_20260418": {
-    "sweep_v2_winner": "control_feat_gnn_card_attn",
-    "v2b_retrain_avg_8panel": 0.4066,
-    "v2b_val_adv": 0.5758,
-    "warmstart_checkpoint": "results/awr_sweep/ppo_warmstart_control_feat_gnn_card_attn/ppo_best.pt",
-    "restart_script": "scripts/restart_ppo_from_warmstart.sh",
-    "gated_comparison_v7": {
-      "control_feat_gnn_card_attn": {
-        "peak_val_adv": 0.576,
-        "final_val_adv": 0.571,
-        "epochs": 30,
-        "status": "DONE",
-        "benchmark_N200": {
-          "USSR": 0.445,
-          "US": 0.385,
-          "combined": 0.415
-        }
-      },
-      "gnn_card_attn_gated": {
-        "final_val_adv": 0.572,
-        "epochs": 30,
-        "status": "DONE",
-        "benchmark_N200": {
-          "USSR": 0.445,
-          "US": 0.335,
-          "combined": 0.39
-        }
-      },
-      "winner": "control_feat_gnn_card_attn",
-      "decision": "control_feat wins by 2.5pp combined at N=200 vs heuristic. val_adv near-identical (0.571 vs 0.572); benchmark was decisive."
-    }
-  },
-  "awr_iteration_plan_20260418": {
-    "panel_v7": "ussr_only_v5, us_only_v5, v44, v55, v56, v54, v20 + heuristic (28 pairs, 1.48M rows). Distinct --model-names for specialists (naming collision fixed).",
-    "training": "30 epochs (standard going forward). PYTHONUNBUFFERED=1. batch_size=4096, num_workers=8.",
-    "evaluation": "After training: export to TorchScript, benchmark vs all 7 panel models + heuristic (N=200/side). val_adv_card_acc alone is insufficient.",
-    "mini_ppo": "After best arch identified via AWR+benchmark: 10-15 PPO iterations warm-started from best checkpoint.",
-    "dense_rewards": "Design: r_shaped = delta_vp * alpha * anneal(step). Implement in collect_selfplay_rows_jsonl.cpp. StepTrace already has vp_before/vp_after.",
-    "format": "Always Parquet (zstd). Never JSONL for large collections."
+  "frame_migration_plan": {
+    "design_decision_doc": "results/analysis/opus_analysis_20260419_062129_country_alloc_redesign.md",
+    "migration_audit_doc": "results/analysis/opus_analysis_20260419_060610_frame_migration_plan.md",
+    "rules_audit_doc": "results/analysis/opus_analysis_20260419_071025_frame_rules_audit.md",
+    "rules_fix_plan_doc": "results/analysis/opus_analysis_20260419_083500_rules_fix_plan.md",
+    "keep_frameaction_scalar": true,
+    "dormant_framekinds_to_activate": ["ForcedDiscard", "CancelChoice", "NoradInfluence", "FreeOpsInfluence", "DeferredOps"],
+    "dormant_framekinds_consider_deleting": ["SetupPlacement", "Headline"],
+    "unmigrated_cards": [32, 43, 45, 47, 52, 68, 78, 84],
+    "already_migrated_confirmed": [5, 7, 10, 14, 16, 19, 20, 23, 24, 26, 28, 29, 30, 33, 36, 37, 39, 46, 48, 49, 50, 52, 56, 59, 60, 67, 68, 71, 75, 76, 77, 83, 88, 90, 91, 94, 95, 97, 98, 101, 102, 105],
+    "apply_ops_randomly_impl_silent_divergence": "Cards 52/68 partially migrated — their CardSelect visible but nested ops uses apply_frame_ops_randomly_impl (random RNG) instead of surfacing frames. Slice E fixes.",
+    "tier1_rules_fixed": [30, 33, 77, 98],
+    "tier2_rules_done": [16, 76, 95, 60, 28],
+    "tier3_rules_deferred": [75, 50],
+    "parity_harness_status": "GREEN — 79/79 tests pass as of 2026-04-19"
   },
   "ppo_chain": {
     "status": "RUNNING iter ~120/300. rollout_wr 0.475-0.575 (PFSP normal oscillation).",
     "v319_sc_elo": 1962,
     "best_baseline": "v56 6-mode (45.1% combined @ N=500)",
     "restart_conditions": "Only restart chain on explicit user request or after architecture/engine change requiring fresh run",
-    "iter30_elo": 1891,
-    "iter38_benchmark": {
-      "combined": 37.0,
-      "ussr": 45.0,
-      "us": 29.0
-    },
-    "note": "v3 chain: wait for AWR gated_vs_parent comparison. Warmstart checkpoint: results/awr_sweep/ppo_warmstart_control_feat_gnn_card_attn/ppo_best.pt (control_feat arch). See findings_log.json for v1+v2 history.",
     "iter100_benchmark": {
       "USSR": 0.485,
       "US": 0.335,
@@ -100,15 +45,12 @@
       "note": "Below warmstart 0.415, US regressed -5pp. Early oscillation expected. Check again at iter200."
     }
   },
-  "frame_stack_migration": {
-    "slices_done": [1,2,3,4,5,6,7],
-    "slice_4_5_status": "DONE. frame_stack_mode bool; choose_* push when true; resume dispatch for cards 16,28,56,76,5,68,88,101. 75/75 tests. Commits 843e497..af23459.",
-    "slices_pending": [],
-    "slice_6_plan": "Add frame_log recording for Socialist Governments (6), Independent Reds (9), Wargames (73) — currently do not call choose_* helpers.",
-    "slice_7_plan": "Wire engine_step_toplevel to drive frame_stack loop instead of apply_action_live+policy_cb.",
-    "slice_7_status": "DONE. engine_step_toplevel sets frame_stack_mode=true when no sub_policy. Commit a9f65db. 76/76 tests."
+  "ismcts_verdict": {
+    "result": "SHELVED",
+    "delta_vs_greedy": -0.225,
+    "diagnosis": "Value head trained on partial-info states gives poor estimates on determinized states.",
+    "fix_required": "Train separate value head on determinized states, or use heuristic rollouts. High effort, deferred."
   },
-  "gap_tracker": "ALL DONE (GAP-001 through GAP-043). GAP-044/45/46 WONTFIX (promo cards).",
   "architecture_tasks": {
     "A_decode_unification": "DONE",
     "B_search_support": "DONE",
@@ -116,23 +58,12 @@
     "D_game_loop_engine_split": "DONE",
     "E_mcts_batched_fast": "DEFERRED"
   },
+  "gap_tracker": "ALL DONE (GAP-001 through GAP-043). GAP-044/45/46 WONTFIX (promo cards).",
   "pragmatic_heads": "ALL DONE (phases 1-4). Star Wars card 103 deck-choice low priority.",
   "jsd_probe": "DONE — jsd_probe.py + probe set + train_ppo.py integration",
-  "concern_separation": {
-    "status": "BLOCKED — needs revised approach",
-    "issue": "Decode-level DEFCON safety checks in decode_helpers.hpp are POLICY-LEVEL safety nets, not duplicated rule logic. They must be preserved. Only consolidate rule QUERIES (is_card_defcon_blocked, nato_prerequisite_met, is_trap_blocked) into rule_queries.hpp without removing decode fallbacks.",
-    "reverted_commit": "90f663e reverts 15 WIP commits (6902851..dc6d6aa)"
-  },
   "codex_mcp_discovery": {
     "pattern": "Call mcp__codex__codex directly from main session — no subagent needed. General-purpose bg agents also inherit MCP. Custom agent types do NOT.",
     "reply_loop": "mcp__codex__codex-reply(threadId=...) up to 15 calls"
   },
-  "fixes_this_session": [
-    "Frame stack Slice 7: engine_step_toplevel sets frame_stack_mode=true when no sub_policy. Commit a9f65db.",
-    "ISMCTS Dirichlet noise fix: eval benchmarks no longer apply dir noise. Commit 122279b.",
-    "Panel checkpoint selection: heuristic WR used when sole panel member. Commit 628047f.",
-    "Panel scoring: uniform equal 1/N weight for all members including heuristic. Commit a469fe7+b48dd04.",
-    "Panel naming collision: ppo_best_scripted.pt uses parent dir name. Commit a469fe7.",
-    "restart_ppo_v2.sh: next chain script with dense_reward_alpha=0.1, heuristic_floor=0.25, all-8-panel eval."
-  ]
+  "last_updated": "2026-04-19T00:35:00Z"
 }
