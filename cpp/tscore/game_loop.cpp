@@ -703,6 +703,7 @@ constexpr CountryId kFrameUkId = 17;
 constexpr CountryId kFrameIsraelId = 30;
 constexpr CountryId kFrameLebanonId = 32;
 constexpr CountryId kFrameSouthAfricaId = 71;
+constexpr std::array<CountryId, 3> kFrameSuezTargets = {kFrameFranceId, kFrameUkId, kFrameIsraelId};
 
 uint8_t frame_count(size_t value) {
     return static_cast<uint8_t>(std::min<size_t>(value, 255));
@@ -844,6 +845,45 @@ std::bitset<kCountrySlots> liberation_theology_bits(uint16_t criteria_bits) {
     for (const auto cid : all_country_ids()) {
         if (country_spec(cid).region == Region::CentralAmerica &&
             packed_country_pick_count(criteria_bits, cid, 2) < 2) {
+            eligible.set(static_cast<size_t>(cid));
+        }
+    }
+    return eligible;
+}
+
+int suez_target_index(CountryId country_id) {
+    for (int idx = 0; idx < static_cast<int>(kFrameSuezTargets.size()); ++idx) {
+        if (kFrameSuezTargets[static_cast<size_t>(idx)] == country_id) {
+            return idx;
+        }
+    }
+    return -1;
+}
+
+int suez_removed_count(uint16_t criteria_bits, CountryId country_id) {
+    const auto idx = suez_target_index(country_id);
+    if (idx < 0) {
+        return 0;
+    }
+    return static_cast<int>((criteria_bits >> (idx * 2)) & 0x3U);
+}
+
+uint16_t increment_suez_removed_count(uint16_t criteria_bits, CountryId country_id) {
+    const auto idx = suez_target_index(country_id);
+    if (idx < 0) {
+        return criteria_bits;
+    }
+    const auto shift = idx * 2;
+    const auto count = std::min(2, static_cast<int>((criteria_bits >> shift) & 0x3U) + 1);
+    criteria_bits &= static_cast<uint16_t>(~(0x3U << shift));
+    criteria_bits |= static_cast<uint16_t>(count << shift);
+    return criteria_bits;
+}
+
+std::bitset<kCountrySlots> suez_crisis_bits(const PublicState& pub, uint16_t criteria_bits) {
+    std::bitset<kCountrySlots> eligible;
+    for (const auto cid : kFrameSuezTargets) {
+        if (pub.influence_of(Side::US, cid) > 0 && suez_removed_count(criteria_bits, cid) < 2) {
             eligible.set(static_cast<size_t>(cid));
         }
     }
@@ -1805,22 +1845,25 @@ void resume_suez_crisis(GameState& gs, const DecisionFrame& frame, const FrameAc
         return;
     }
 
-    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
-        add_frame_influence(gs.pub, Side::US, action.country_id, -2);
+    auto next_criteria = frame.criteria_bits;
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id)) &&
+        gs.pub.influence_of(Side::US, action.country_id) > 0) {
+        add_frame_influence(gs.pub, Side::US, action.country_id, -1);
+        next_criteria = increment_suez_removed_count(next_criteria, action.country_id);
     }
 
     const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = std::max<int>(1, frame.total_steps);
+    constexpr int total_steps = 4;
     if (next_step < total_steps) {
-        auto next_eligible = frame.eligible_countries;
-        next_eligible.reset(static_cast<size_t>(action.country_id));
+        auto next_eligible = suez_crisis_bits(gs.pub, next_criteria);
         push_country_frame(
             gs,
             frame.source_card,
             frame.acting_side,
             next_eligible,
             next_step,
-            total_steps
+            total_steps,
+            next_criteria
         );
         if (!gs.frame_stack.empty()) {
             return;

@@ -742,8 +742,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 28: {
-            std::vector<CountryId> pool = {kFranceId, kUkId, kIsraelId};
-            for (int i = 0; i < 2; ++i) {
+            std::array<int, kCountrySlots> removed_counts = {};
+            for (int i = 0; i < 4; ++i) {
+                std::vector<CountryId> pool;
+                for (const auto cid : {kFranceId, kUkId, kIsraelId}) {
+                    if (next.influence_of(Side::US, cid) > 0 && removed_counts[static_cast<size_t>(cid)] < 2) {
+                        pool.push_back(cid);
+                    }
+                }
                 if (pool.empty()) {
                     break;
                 }
@@ -758,11 +764,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     frame_stack_mode
                 );
                 if (cid == kInvalidCountryId) {
-                    annotate_latest_frame(frame_log, i, std::min<int>(2, i + static_cast<int>(pool.size())));
+                    annotate_latest_frame(frame_log, i, 4);
                     return {next, false, std::nullopt};
                 }
-                add_influence(next, Side::US, cid, -2);
-                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
+                add_influence(next, Side::US, cid, -1);
+                ++removed_counts[static_cast<size_t>(cid)];
             }
             break;
         }
