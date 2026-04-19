@@ -1047,14 +1047,23 @@ void resume_card_46(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
-void resume_card_52(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+void resume_card_52(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
     if (frame.kind != FrameKind::CardSelect) {
         return;
     }
     if (frame.eligible_cards.test(static_cast<size_t>(action.card_id))) {
         const auto opponent = other_side(frame.acting_side);
         gs.hands[to_index(opponent)].reset(action.card_id);
-        gs.hands[to_index(frame.acting_side)].set(action.card_id);
+        apply_ops_randomly_impl(
+            gs.pub,
+            frame.acting_side,
+            effective_ops(action.card_id, gs.pub, frame.acting_side),
+            frame.source_card,
+            rng,
+            nullptr,
+            nullptr
+        );
+        gs.hands[to_index(opponent)].set(action.card_id);
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
@@ -1498,6 +1507,40 @@ void resume_liberation_theology(GameState& gs, const DecisionFrame& frame, const
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_50(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = static_cast<int>(frame.total_steps);
+    if (frame.step_index == 0) {
+        if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+            add_frame_influence(gs.pub, frame.acting_side, action.country_id, 2);
+        }
+        if (next_step < total_steps) {
+            push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+            if (!gs.frame_stack.empty()) {
+                return;
+            }
+        }
+    } else {
+        if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+            apply_free_coup(gs.pub, frame.acting_side, action.country_id, 2, rng, false);
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_94(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        apply_free_coup(gs.pub, Side::USSR, action.country_id, 2, rng, false);
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
     switch (frame.source_card) {
         case 5:
@@ -1548,8 +1591,11 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
         case 49:
             resume_card_49(gs, frame, action);
             break;
+        case 50:
+            resume_card_50(gs, frame, action, rng);
+            break;
         case 52:
-            resume_card_52(gs, frame, action);
+            resume_card_52(gs, frame, action, rng);
             break;
         case 56:
             resume_south_african_unrest(gs, frame, action);
@@ -1580,6 +1626,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 88:
             resume_card_88(gs, frame, action, rng);
+            break;
+        case 94:
+            resume_card_94(gs, frame, action, rng);
             break;
         case 101:
             resume_card_101(gs, frame, action);

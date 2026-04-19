@@ -968,9 +968,17 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 }
             }
             if (!pool.empty()) {
-                const auto inf_target = choose_country(next, 50, side, pool, rng, policy_cb, frame_log);
+                const auto inf_target = choose_country(next, 50, side, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (inf_target == 0) {
+                    annotate_latest_frame(frame_log, 0, 2);
+                    return {next, false, std::nullopt};
+                }
                 add_influence(next, side, inf_target, 2);
-                const auto coup_target = choose_country(next, 50, side, pool, rng, policy_cb, frame_log);
+                const auto coup_target = choose_country(next, 50, side, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (coup_target == 0) {
+                    annotate_latest_frame(frame_log, 1, 2);
+                    return {next, false, std::nullopt};
+                }
                 apply_free_coup(next, side, coup_target, 2, rng, false);
             }
             break;
@@ -1459,7 +1467,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             // Junta: remove US from Nicaragua, free coup on Cuba/Chile/Nicaragua
             remove_all_influence(next, Side::US, kNicaraguaId);
             static constexpr std::array<CountryId, 3> kJuntaTargets = {38, 41, 45};  // Cuba, Chile, Nicaragua
-            const auto target = choose_country(next, 94, Side::USSR, kJuntaTargets, rng, policy_cb, frame_log);
+            const auto target = choose_country(next, 94, Side::USSR, kJuntaTargets, rng, policy_cb, frame_log, frame_stack_mode);
+            if (target == 0) {
+                annotate_latest_frame(frame_log, 0, 1);
+                return {next, false, std::nullopt};
+            }
             apply_free_coup(next, Side::USSR, target, 2, rng, false);
             break;
         }
