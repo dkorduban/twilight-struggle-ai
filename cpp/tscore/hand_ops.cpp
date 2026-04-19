@@ -40,6 +40,12 @@ void card_played(PublicState& pub, CardId card_id, Side side) {
 
 void discard_from_hand(GameState& gs, Side side, CardId card_id, PublicState& pub) {
     gs.hands[to_index(side)].reset(card_id);
+    if (card_id == kChinaCardId) {
+        card_played(pub, card_id, side);
+        gs.ussr_holds_china = pub.china_held_by == Side::USSR;
+        gs.us_holds_china = pub.china_held_by == Side::US;
+        return;
+    }
     const auto& spec = card_spec(card_id);
     if (spec.starred) {
         pub.removed.set(card_id);
@@ -108,6 +114,78 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
     );
     gs.pub = new_pub;
     return {new_pub, over, winner};
+}
+
+uint8_t frame_count(size_t value) {
+    return static_cast<uint8_t>(std::min<size_t>(value, 255));
+}
+
+void push_option_frame(
+    std::vector<DecisionFrame>* frame_log,
+    FrameKind kind,
+    CardId source_card,
+    Side acting_side,
+    int n_options,
+    int step_index,
+    int total_steps
+) {
+    if (frame_log == nullptr || n_options <= 0) {
+        return;
+    }
+    DecisionFrame frame;
+    frame.kind = kind;
+    frame.source_card = source_card;
+    frame.acting_side = acting_side;
+    frame.step_index = frame_count(static_cast<size_t>(std::max(0, step_index)));
+    frame.total_steps = frame_count(static_cast<size_t>(std::max(1, total_steps)));
+    frame.stack_depth = frame_count(frame_log->size());
+    frame.eligible_n = frame_count(static_cast<size_t>(n_options));
+    frame_log->push_back(frame);
+}
+
+void push_card_frame(
+    std::vector<DecisionFrame>* frame_log,
+    FrameKind kind,
+    CardId source_card,
+    Side acting_side,
+    std::span<const CardId> eligible_cards,
+    int step_index,
+    int total_steps
+) {
+    if (frame_log == nullptr || eligible_cards.empty()) {
+        return;
+    }
+    DecisionFrame frame;
+    frame.kind = kind;
+    frame.source_card = source_card;
+    frame.acting_side = acting_side;
+    frame.step_index = frame_count(static_cast<size_t>(std::max(0, step_index)));
+    frame.total_steps = frame_count(static_cast<size_t>(std::max(1, total_steps)));
+    frame.stack_depth = frame_count(frame_log->size());
+    for (const auto card_id : eligible_cards) {
+        frame.eligible_cards.set(card_id);
+    }
+    frame.eligible_n = frame_count(eligible_cards.size());
+    frame_log->push_back(frame);
+}
+
+std::vector<CardId> cmc_cancel_cards(const GameState& gs, Side side) {
+    std::vector<CardId> eligible;
+    if (gs.pub.china_held_by == side) {
+        eligible.push_back(kChinaCardId);
+    }
+    for (int raw = 1; raw <= kMaxCardId; ++raw) {
+        const auto candidate = static_cast<CardId>(raw);
+        if (
+            gs.hands[to_index(side)].test(candidate) &&
+            candidate != kChinaCardId &&
+            !card_spec(candidate).is_scoring &&
+            card_spec(candidate).ops >= 3
+        ) {
+            eligible.push_back(candidate);
+        }
+    }
+    return eligible;
 }
 
 std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
@@ -772,6 +850,11 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_a
     const PolicyCallbackFn* policy_cb,
     std::vector<DecisionFrame>* frame_log
 ) {
+    auto* effective_frame_log = frame_log;
+    if (gs.frame_stack_mode && policy_cb == nullptr && effective_frame_log == nullptr) {
+        effective_frame_log = &gs.frame_stack;
+    }
+
     bool trapped = false;
     bool bear_trap = false;
     if (side == Side::USSR && gs.pub.bear_trap_active) {
@@ -804,7 +887,13 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_a
         return std::tuple{pub, over, winner};
     }
 
-    const auto chosen = choose_card(pub, bear_trap ? 47 : 45, side, eligible, rng, policy_cb, frame_log);
+    const auto source_card = static_cast<CardId>(bear_trap ? 47 : 45);
+    if (gs.frame_stack_mode && policy_cb == nullptr && effective_frame_log != nullptr) {
+        push_card_frame(effective_frame_log, FrameKind::ForcedDiscard, source_card, side, eligible, 0, 1);
+        return std::tuple{gs.pub, false, std::nullopt};
+    }
+
+    const auto chosen = choose_card(pub, source_card, side, eligible, rng, policy_cb, effective_frame_log);
     discard_from_hand(gs, side, chosen, pub);
     if (roll_d6(rng) <= 4) {
         if (bear_trap) {
@@ -825,32 +914,31 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_cuban_
     const PolicyCallbackFn* policy_cb,
     std::vector<DecisionFrame>* frame_log
 ) {
+    auto* effective_frame_log = frame_log;
+    if (gs.frame_stack_mode && policy_cb == nullptr && effective_frame_log == nullptr) {
+        effective_frame_log = &gs.frame_stack;
+    }
+
     if (!gs.pub.cuban_missile_crisis_active) {
         return std::nullopt;
     }
 
-    std::vector<CardId> eligible;
-    for (int raw = 1; raw <= kMaxCardId; ++raw) {
-        const auto candidate = static_cast<CardId>(raw);
-        if (
-            gs.hands[to_index(side)].test(candidate) &&
-            candidate != kChinaCardId &&
-            !card_spec(candidate).is_scoring &&
-            effective_ops(candidate, gs.pub, side) >= 2
-        ) {
-            eligible.push_back(candidate);
-        }
-    }
+    const auto eligible = cmc_cancel_cards(gs, side);
     if (eligible.empty()) {
         return std::nullopt;
     }
 
-    if (choose_option(gs.pub, static_cast<CardId>(43), side, 2, rng, policy_cb, frame_log) == 0) {
+    if (gs.frame_stack_mode && policy_cb == nullptr && effective_frame_log != nullptr) {
+        push_option_frame(effective_frame_log, FrameKind::CancelChoice, 43, side, 2, 0, 2);
+        return std::tuple{gs.pub, false, std::nullopt};
+    }
+
+    if (choose_option(gs.pub, static_cast<CardId>(43), side, 2, rng, policy_cb, effective_frame_log) == 0) {
         return std::nullopt;
     }
 
     auto pub = gs.pub;
-    const auto chosen = choose_card(pub, static_cast<CardId>(43), side, eligible, rng, policy_cb, frame_log);
+    const auto chosen = choose_card(pub, static_cast<CardId>(43), side, eligible, rng, policy_cb, effective_frame_log);
     discard_from_hand(gs, side, chosen, pub);
     pub.cuban_missile_crisis_active = false;
     gs.pub = pub;

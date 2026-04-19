@@ -267,13 +267,13 @@ TEST_CASE("Cuban Missile Crisis battleground coup loses immediately", "[step]") 
     REQUIRE(next.defcon == 1);
 }
 
-TEST_CASE("Cuban Missile Crisis can be cancelled by discarding a 2-op card", "[game_loop]") {
-    constexpr CardId kArabIsraeliWarId = 13;
+TEST_CASE("Cuban Missile Crisis can be cancelled by discarding a 3-op card", "[game_loop]") {
+    constexpr CardId kDuckAndCoverId = 4;
 
     GameState gs;
     gs.pub = PublicState{};
     gs.pub.cuban_missile_crisis_active = true;
-    gs.hands[to_index(Side::US)].set(kArabIsraeliWarId);
+    gs.hands[to_index(Side::US)].set(kDuckAndCoverId);
 
     PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
         if (decision.kind == DecisionKind::SmallChoice) {
@@ -284,7 +284,7 @@ TEST_CASE("Cuban Missile Crisis can be cancelled by discarding a 2-op card", "[g
         if (decision.kind == DecisionKind::CardSelect) {
             REQUIRE(decision.source_card == static_cast<CardId>(43));
             REQUIRE(decision.n_options == 1);
-            REQUIRE(decision.eligible_ids[0] == static_cast<int>(kArabIsraeliWarId));
+            REQUIRE(decision.eligible_ids[0] == static_cast<int>(kDuckAndCoverId));
             return 0;
         }
         return 0;
@@ -295,12 +295,12 @@ TEST_CASE("Cuban Missile Crisis can be cancelled by discarding a 2-op card", "[g
 
     REQUIRE(result.has_value());
     REQUIRE_FALSE(gs.pub.cuban_missile_crisis_active);
-    REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kArabIsraeliWarId));
-    REQUIRE(gs.pub.discard.test(kArabIsraeliWarId));
+    REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kDuckAndCoverId));
+    REQUIRE(gs.pub.discard.test(kDuckAndCoverId));
 }
 
 TEST_CASE("Extra action rounds resolve Cuban Missile Crisis cancellation before actions", "[game_loop]") {
-    constexpr CardId kArabIsraeliWarId = 13;
+    constexpr CardId kDuckAndCoverId = 4;
 
     const PolicyFn no_action_policy = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
         return std::nullopt;
@@ -313,7 +313,7 @@ TEST_CASE("Extra action rounds resolve Cuban Missile Crisis cancellation before 
         gs.pub.turn = 1;
         gs.pub.ar = ars_for_turn(gs.pub.turn);
         gs.pub.cuban_missile_crisis_active = true;
-        gs.hands[to_index(Side::US)].set(kArabIsraeliWarId);
+        gs.hands[to_index(Side::US)].set(kDuckAndCoverId);
 
         Pcg64Rng rng(seed);
         const auto result = run_extra_action_round_live(gs, Side::US, no_action_policy, rng);
@@ -321,13 +321,13 @@ TEST_CASE("Extra action rounds resolve Cuban Missile Crisis cancellation before 
 
         if (!gs.pub.cuban_missile_crisis_active) {
             cancelled = true;
-            REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kArabIsraeliWarId));
-            REQUIRE(gs.pub.discard.test(kArabIsraeliWarId));
+            REQUIRE_FALSE(gs.hands[to_index(Side::US)].test(kDuckAndCoverId));
+            REQUIRE(gs.pub.discard.test(kDuckAndCoverId));
             break;
         }
 
-        REQUIRE(gs.hands[to_index(Side::US)].test(kArabIsraeliWarId));
-        REQUIRE_FALSE(gs.pub.discard.test(kArabIsraeliWarId));
+        REQUIRE(gs.hands[to_index(Side::US)].test(kDuckAndCoverId));
+        REQUIRE_FALSE(gs.pub.discard.test(kDuckAndCoverId));
     }
 
     REQUIRE(cancelled);
