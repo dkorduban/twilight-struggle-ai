@@ -1387,6 +1387,8 @@ PYBIND11_MODULE(tscore, m) {
             config.n_determinizations = n_determinizations;
             config.max_pending_per_det = max_pending_per_det;
             config.mcts_config.n_simulations = n_simulations;
+            config.mcts_config.dir_alpha = 0.0f;
+            config.mcts_config.dir_epsilon = 0.0f;
             return ts::play_ismcts_matchup_pooled(
                 n_games,
                 model,
@@ -1436,6 +1438,8 @@ PYBIND11_MODULE(tscore, m) {
             config.n_determinizations = n_determinizations;
             config.max_pending_per_det = max_pending_per_det;
             config.mcts_config.n_simulations = n_simulations;
+            config.mcts_config.dir_alpha = 0.0f;
+            config.mcts_config.dir_epsilon = 0.0f;
             return ts::play_ismcts_vs_model_pooled(
                 n_games,
                 search_model,
@@ -1482,6 +1486,8 @@ PYBIND11_MODULE(tscore, m) {
             config.n_determinizations = n_determinizations;
             config.max_pending_per_det = max_pending_per_det;
             config.mcts_config.n_simulations = n_simulations;
+            config.mcts_config.dir_alpha = 0.0f;
+            config.mcts_config.dir_epsilon = 0.0f;
 
             const uint32_t base_seed = seed.value_or(std::random_device{}());
             const int half = n_games / 2;
