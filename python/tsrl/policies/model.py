@@ -45,6 +45,7 @@ from tsrl.constants import (
     SCALAR_DIM,
     SMALL_CHOICE_MAX,  # re-exported for backward compat
 )
+from tsrl.policies.dp_decoder import bounded_knapsack_dp
 
 INFLUENCE_HIDDEN = 128
 CARD_HIDDEN = 128
@@ -327,6 +328,77 @@ class _ResidualBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + torch.relu(self.linear(self.ln(x)))
+
+
+class CountryAllocHead(nn.Module):
+    """Per-country per-ops-count score head plus DP decoder.
+
+    Scores ``score[c, k]`` represent the value of allocating ``k`` ops to
+    country ``c``. The existing DP decoder consumes marginal gains, so this
+    head differences adjacent allocation values before decoding.
+    """
+
+    def __init__(self, hidden_dim: int, max_ops: int = 4) -> None:
+        super().__init__()
+        if max_ops < 1:
+            raise ValueError("max_ops must be >= 1")
+        self.max_ops = int(max_ops)
+        self.score_head = nn.Linear(hidden_dim, self.max_ops + 1)
+
+    def _budget_tensor(
+        self,
+        budget: int | torch.Tensor,
+        batch_size: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        if isinstance(budget, torch.Tensor):
+            budget_t = budget.to(device=device, dtype=torch.long)
+            if budget_t.ndim == 0:
+                budget_t = budget_t.expand(batch_size)
+            elif budget_t.shape != (batch_size,):
+                raise ValueError(
+                    f"budget tensor must have shape ({batch_size},), "
+                    f"got {tuple(budget_t.shape)}"
+                )
+            return budget_t.clamp_min(0)
+        return torch.full(
+            (batch_size,),
+            int(budget),
+            device=device,
+            dtype=torch.long,
+        ).clamp_min(0)
+
+    def forward(self, country_features: torch.Tensor, budget: int | torch.Tensor) -> torch.Tensor:
+        """Decode the optimal allocation counts for a fixed ops budget.
+
+        Parameters
+        ----------
+        country_features:
+            Float tensor of shape ``(B, n_countries, hidden_dim)``.
+        budget:
+            Integer ops budget, or a length-B tensor of per-sample budgets.
+
+        Returns
+        -------
+        Tensor of shape ``(B, n_countries)`` with decoded allocation counts.
+        """
+        allocation_scores = self.score_head(country_features)  # (B, C, max_ops + 1)
+        marginal_scores = allocation_scores[:, :, 1:] - allocation_scores[:, :, :-1]
+        batch_size, country_count, _ = marginal_scores.shape
+        budget_t = self._budget_tensor(budget, batch_size, country_features.device)
+        legal_mask = torch.ones(
+            batch_size,
+            country_count,
+            device=country_features.device,
+            dtype=torch.bool,
+        )
+        cap = torch.full(
+            (batch_size, country_count),
+            self.max_ops,
+            device=country_features.device,
+            dtype=torch.long,
+        )
+        return bounded_knapsack_dp(marginal_scores, budget_t, legal_mask, cap=cap)
 
 
 def _make_trunk_and_heads(
@@ -913,6 +985,85 @@ class TSDirectCountryModel(nn.Module):
             "country_strategy_logits": country_strategy_logits,
             "strategy_logits": strategy_logits,
             "value": value,
+        }
+
+
+class TSCountryAllocHeadModel(nn.Module):
+    """TSBaseline-style model with a joint country allocation head.
+
+    The country branch predicts per-country allocation values, decodes a fixed
+    max-ops allocation with ``bounded_knapsack_dp``, and exposes normalized
+    decoded counts as ``country_logits`` for compatibility with existing
+    country-probability consumers.
+    """
+
+    def __init__(
+        self,
+        dropout: float = 0.1,
+        hidden_dim: int = TRUNK_HIDDEN,
+        max_ops: int = 4,
+    ) -> None:
+        super().__init__()
+
+        self.influence_encoder = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
+        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.country_feature_proj = nn.Linear(hidden_dim, NUM_COUNTRIES * hidden_dim)
+        self.country_head = CountryAllocHead(hidden_dim, max_ops=max_ops)
+
+        self.value_branch = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+        country_budget: int | torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        h_inf = torch.relu(self.influence_encoder(influence))
+        h_card = torch.relu(self.card_encoder(cards))
+        h_scalar = torch.relu(self.scalar_encoder(scalars))
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+
+        batch_size = hidden.shape[0]
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_features = self.country_feature_proj(hidden).view(
+            batch_size, NUM_COUNTRIES, -1
+        )
+        budget = self.country_head.max_ops if country_budget is None else country_budget
+        country_allocations = self.country_head(country_features, budget=budget)
+        denom = country_allocations.sum(dim=1, keepdim=True).clamp_min(1.0)
+        country_logits = country_allocations / denom
+        country_strategy_logits = country_logits.unsqueeze(1)
+        strategy_logits = torch.zeros(
+            batch_size, 1, device=hidden.device, dtype=hidden.dtype
+        )
+        value = torch.tanh(self.value_head(torch.relu(self.value_branch(hidden))))
+        small_choice_logits = self.small_choice_head(hidden)
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "country_allocations": country_allocations,
+            "value": value,
+            "small_choice_logits": small_choice_logits,
         }
 
 
