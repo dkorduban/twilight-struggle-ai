@@ -1325,7 +1325,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         case 77: {
             std::vector<CountryId> pool;
             for (const auto cid : all_country_ids()) {
-                if (cid != 64 && cid != kUsaAnchorId && cid != kUssrAnchorId) {
+                if (country_spec(cid).region == Region::Asia) {
                     pool.push_back(cid);
                 }
             }

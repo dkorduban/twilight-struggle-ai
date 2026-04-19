@@ -1427,13 +1427,19 @@ void resume_card_77(GameState& gs, const DecisionFrame& frame, const FrameAction
     if (frame.kind != FrameKind::CountryPick) {
         return;
     }
-    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+    auto asia_eligible = frame.eligible_countries;
+    for (const auto cid : all_country_ids()) {
+        if (country_spec(cid).region != Region::Asia) {
+            asia_eligible.reset(static_cast<size_t>(cid));
+        }
+    }
+    if (asia_eligible.test(static_cast<size_t>(action.country_id))) {
         add_frame_influence(gs.pub, frame.acting_side, action.country_id, 1);
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
     const auto total_steps = static_cast<int>(frame.total_steps);
     if (next_step < total_steps) {
-        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+        push_country_frame(gs, frame.source_card, frame.acting_side, asia_eligible, next_step, total_steps);
         if (!gs.frame_stack.empty()) {
             return;
         }
