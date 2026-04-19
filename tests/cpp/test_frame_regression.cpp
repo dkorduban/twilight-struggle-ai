@@ -119,6 +119,15 @@ void expect_first_frame_kind(const FrameScenario& scenario, ExpectedFrameKind ex
     REQUIRE(frames.front().kind == to_frame_kind(expected));
 }
 
+CountryId first_eligible_country(const DecisionFrame& frame) {
+    for (int raw = 1; raw < kCountrySlots; ++raw) {
+        if (frame.eligible_countries.test(static_cast<size_t>(raw))) {
+            return static_cast<CountryId>(raw);
+        }
+    }
+    return 0;
+}
+
 #else
 
 void expect_first_frame_kind(const FrameScenario& scenario, ExpectedFrameKind expected) {
@@ -318,6 +327,54 @@ TEST_CASE("frame_regression Aldrich Ames Remix discard records a CardSelect fram
         },
         ExpectedFrameKind::CardSelect
     );
+}
+
+TEST_CASE("engine_step_subframe Socialist Governments resolves influence placements", "[frame_regression]") {
+#if TS_FRAME_REGRESSION_HAS_FRAME_API
+    GameState gs = make_action_round_state({
+        .card_id = 7,
+        .actor = Side::USSR,
+        .turn = 1,
+    });
+    gs.frame_stack_mode = true;
+
+    const ActionEncoding action{
+        .card_id = 7,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto top = engine_step_toplevel(gs, action, Side::USSR, rng);
+    REQUIRE(top.pushed_subframe);
+
+    for (int step = 0; step < 3; ++step) {
+        const auto frame = engine_peek(gs);
+        REQUIRE(frame.has_value());
+        REQUIRE(frame->kind == FrameKind::CountryPick);
+        REQUIRE(frame->source_card == 7);
+        REQUIRE(frame->acting_side == Side::USSR);
+        REQUIRE(frame->step_index == step);
+        REQUIRE(frame->total_steps == 3);
+
+        const auto chosen = first_eligible_country(*frame);
+        REQUIRE(chosen != 0);
+        const auto before = gs.pub.influence_of(Side::USSR, chosen);
+
+        const auto sub = engine_step_subframe(gs, FrameAction{.country_id = chosen}, rng);
+        REQUIRE(gs.pub.influence_of(Side::USSR, chosen) == before + 1);
+        if (step < 2) {
+            REQUIRE(sub.pushed_subframe);
+        } else {
+            REQUIRE_FALSE(sub.pushed_subframe);
+        }
+    }
+
+    REQUIRE(gs.frame_stack.empty());
+    REQUIRE(gs.pub.discard.test(7));
+#else
+    SUCCEED("DecisionFrame frame stack API is not available in this worktree");
+#endif
 }
 
 TEST_CASE("engine_step_subframe CIA Created resolves influence placement", "[frame_regression]") {

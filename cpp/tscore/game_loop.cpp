@@ -949,6 +949,36 @@ void resume_card_5(GameState& gs, const DecisionFrame& frame, const FrameAction&
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_socialist_governments(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+    }
+
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = std::max<int>(1, frame.total_steps);
+    if (next_step < total_steps) {
+        auto next_eligible = frame.eligible_countries;
+        next_eligible.reset(static_cast<size_t>(action.country_id));
+        push_country_frame(
+            gs,
+            frame.source_card,
+            frame.acting_side,
+            next_eligible,
+            next_step,
+            total_steps
+        );
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_68(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
     if (frame.kind != FrameKind::CardSelect ||
         action.card_id == 0 ||
@@ -1128,6 +1158,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
     switch (frame.source_card) {
         case 5:
             resume_card_5(gs, frame, action, rng);
+            break;
+        case 7:
+            resume_socialist_governments(gs, frame, action);
             break;
         case 16:
             resume_warsaw_pact(gs, frame, action);
