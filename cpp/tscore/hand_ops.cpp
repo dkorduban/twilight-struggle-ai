@@ -222,7 +222,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
         case 5: {
             auto hand = hand_to_vector(gs.hands[to_index(Side::USSR)]);
             if (!hand.empty()) {
-                const auto target = choose_card(pub, 5, Side::USSR, hand, rng, policy_cb, frame_log);
+                const auto target = choose_card(pub, 5, Side::USSR, hand, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                if (target == 0) {
+                    return {pub, false, std::nullopt};
+                }
                 gs.hands[to_index(Side::USSR)].reset(target);
                 if (card_spec(target).starred) {
                     pub.removed.set(target);
@@ -429,7 +432,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = choose_card(pub, 68, Side::US, candidates, rng, policy_cb, frame_log);
+                const auto chosen =
+                    choose_card(pub, 68, Side::US, candidates, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                if (chosen == 0) {
+                    return {pub, false, std::nullopt};
+                }
                 gs.hands[to_index(Side::USSR)].reset(chosen);
                 apply_ops_randomly_impl(
                     pub,
@@ -549,7 +556,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     discarded.end()
                 );
                 if (!discarded.empty()) {
-                    const auto chosen = choose_card(pub, 88, side, discarded, rng, policy_cb, frame_log);
+                    const auto chosen =
+                        choose_card(pub, 88, side, discarded, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                    if (chosen == 0) {
+                        return {pub, false, std::nullopt};
+                    }
                     pub.discard.reset(chosen);
                     gs.pub = pub;
                     auto [event_pub, over, winner] = fire_event_with_state(gs, chosen, side, rng, policy_cb, frame_log);
@@ -599,7 +610,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
             }
             if (!candidates.empty()) {
-                const auto chosen = choose_card(pub, 101, Side::US, candidates, rng, policy_cb, frame_log);
+                const auto chosen =
+                    choose_card(pub, 101, Side::US, candidates, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                if (chosen == 0) {
+                    return {pub, false, std::nullopt};
+                }
                 discard_from_hand(gs, Side::US, chosen, pub);
             }
             break;
