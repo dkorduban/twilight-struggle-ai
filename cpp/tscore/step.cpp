@@ -1362,7 +1362,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 75: {
-            std::vector<CountryId> pool;
+            std::array<int, kCountrySlots> removed_counts = {};
+            int total_steps = 0;
             for (const auto cid : all_country_ids()) {
                 if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
                     continue;
@@ -1370,22 +1371,33 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 if (country_spec(cid).region == Region::Europe) {
                     continue;
                 }
-                if (next.influence_of(Side::USSR, cid) >= 1) {
-                    pool.push_back(cid);
-                }
+                total_steps += std::min(2, next.influence_of(Side::USSR, cid));
             }
-            for (int i = 0; i < 4; ++i) {
+            total_steps = std::min(4, total_steps);
+            for (int i = 0; i < total_steps; ++i) {
+                std::vector<CountryId> pool;
+                for (const auto cid : all_country_ids()) {
+                    if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
+                        continue;
+                    }
+                    if (country_spec(cid).region == Region::Europe) {
+                        continue;
+                    }
+                    if (next.influence_of(Side::USSR, cid) >= 1 && removed_counts[static_cast<size_t>(cid)] < 2) {
+                        pool.push_back(cid);
+                    }
+                }
                 if (pool.empty()) {
                     break;
                 }
                 const auto cid =
                     choose_country(next, static_cast<CardId>(75), Side::US, pool, rng, policy_cb, frame_log, frame_stack_mode);
                 if (cid == kInvalidCountryId && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
-                    annotate_latest_frame(frame_log, i, std::min<int>(4, i + static_cast<int>(pool.size())));
+                    annotate_latest_frame(frame_log, i, total_steps);
                     return {next, false, std::nullopt};
                 }
                 add_influence(next, Side::USSR, cid, -1);
-                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
+                ++removed_counts[static_cast<size_t>(cid)];
             }
             break;
         }

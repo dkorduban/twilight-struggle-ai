@@ -2405,15 +2405,25 @@ void resume_card_75(GameState& gs, const DecisionFrame& frame, const FrameAction
     if (frame.kind != FrameKind::CountryPick) {
         return;
     }
+    bool reached_cap = false;
+    auto next_criteria = frame.criteria_bits;
     if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
         add_frame_influence(gs.pub, Side::USSR, action.country_id, -1);
+        next_criteria = remember_one_prior_pick(frame.criteria_bits, action.country_id, reached_cap);
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
     const auto total_steps = std::max<int>(1, frame.total_steps);
     if (next_step < total_steps) {
         auto next_eligible = frame.eligible_countries;
-        next_eligible.reset(static_cast<size_t>(action.country_id));
-        push_country_frame(gs, frame.source_card, frame.acting_side, next_eligible, next_step, total_steps);
+        for (const auto cid : all_country_ids()) {
+            if (gs.pub.influence_of(Side::USSR, cid) <= 0) {
+                next_eligible.reset(static_cast<size_t>(cid));
+            }
+        }
+        if (reached_cap) {
+            next_eligible.reset(static_cast<size_t>(action.country_id));
+        }
+        push_country_frame(gs, frame.source_card, frame.acting_side, next_eligible, next_step, total_steps, next_criteria);
         if (!gs.frame_stack.empty()) {
             return;
         }
