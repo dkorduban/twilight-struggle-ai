@@ -195,7 +195,15 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
         .mode = ActionMode::Event,
         .targets = {},
     };
-    auto [new_pub, over, winner] = apply_action(gs.pub, action, event_side, rng, policy_cb, frame_log);
+    auto [new_pub, over, winner] = apply_action(
+        gs.pub,
+        action,
+        event_side,
+        rng,
+        policy_cb,
+        frame_log,
+        gs.frame_stack_mode
+    );
     gs.pub = new_pub;
     return {new_pub, over, winner};
 }
@@ -802,27 +810,40 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     const PolicyCallbackFn* policy_cb,
     std::vector<DecisionFrame>* frame_log
 ) {
+    auto* effective_frame_log = frame_log;
+    if (gs.frame_stack_mode && policy_cb == nullptr && effective_frame_log == nullptr) {
+        effective_frame_log = &gs.frame_stack;
+    }
+
     if (action.mode != ActionMode::Event && action.mode != ActionMode::Space) {
         const auto owner = card_spec(action.card_id).side;
         if (owner == other_side(side)) {
             if (action.mode == ActionMode::EventFirst) {
                 auto [event_pub, event_over, event_winner] =
-                    fire_event_with_state(gs, action.card_id, owner, rng, policy_cb, frame_log);
+                    fire_event_with_state(gs, action.card_id, owner, rng, policy_cb, effective_frame_log);
                 gs.pub = event_pub;
                 if (event_over) {
                     return {event_pub, true, event_winner};
                 }
-                return execute_deferred_ops(gs, action.card_id, side, rng, policy_cb, action.targets, frame_log);
+                return execute_deferred_ops(gs, action.card_id, side, rng, policy_cb, action.targets, effective_frame_log);
             }
 
-            auto [ops_pub, ops_over, ops_winner] = apply_action(gs.pub, action, side, rng, policy_cb, frame_log);
+            auto [ops_pub, ops_over, ops_winner] = apply_action(
+                gs.pub,
+                action,
+                side,
+                rng,
+                policy_cb,
+                effective_frame_log,
+                gs.frame_stack_mode
+            );
             gs.pub = ops_pub;
             if (ops_over) {
                 return {ops_pub, true, ops_winner};
             }
 
             auto [event_pub, event_over, event_winner] =
-                fire_event_with_state(gs, action.card_id, owner, rng, policy_cb, frame_log);
+                fire_event_with_state(gs, action.card_id, owner, rng, policy_cb, effective_frame_log);
             gs.pub = event_pub;
             if (event_over) {
                 return {event_pub, true, event_winner};
@@ -833,10 +854,18 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     }
 
     if (action.mode == ActionMode::Event && is_cat_c_card(action.card_id)) {
-        return apply_hand_event(gs, action.card_id, side, rng, policy_cb, frame_log);
+        return apply_hand_event(gs, action.card_id, side, rng, policy_cb, effective_frame_log);
     }
 
-    auto [new_pub, over, winner] = apply_action(gs.pub, action, side, rng, policy_cb, frame_log);
+    auto [new_pub, over, winner] = apply_action(
+        gs.pub,
+        action,
+        side,
+        rng,
+        policy_cb,
+        effective_frame_log,
+        gs.frame_stack_mode
+    );
     gs.pub = new_pub;
     if (!over && action.mode == ActionMode::Space) {
         const auto opponent = other_side(side);
