@@ -169,6 +169,35 @@ void push_card_frame(
     frame_log->push_back(frame);
 }
 
+void annotate_latest_frame(
+    std::vector<DecisionFrame>* frame_log,
+    int step_index,
+    int total_steps,
+    uint16_t criteria_bits = 0
+) {
+    if (frame_log == nullptr || frame_log->empty()) {
+        return;
+    }
+    auto& frame = frame_log->back();
+    frame.step_index = frame_count(static_cast<size_t>(std::max(0, step_index)));
+    frame.total_steps = frame_count(static_cast<size_t>(std::max(1, total_steps)));
+    frame.criteria_bits = criteria_bits;
+}
+
+void set_latest_frame_eligible_cards(
+    std::vector<DecisionFrame>* frame_log,
+    std::span<const CardId> eligible_cards
+) {
+    if (frame_log == nullptr || frame_log->empty()) {
+        return;
+    }
+    auto& frame = frame_log->back();
+    frame.eligible_cards.reset();
+    for (const auto card_id : eligible_cards) {
+        frame.eligible_cards.set(card_id);
+    }
+}
+
 std::vector<CardId> cmc_cancel_cards(const GameState& gs, Side side) {
     std::vector<CardId> eligible;
     if (gs.pub.china_held_by == side) {
@@ -486,18 +515,31 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             if (discard_count < 0) {
                 return {pub, false, std::nullopt};
             }
+            annotate_latest_frame(
+                frame_log,
+                0,
+                discard_count + 1,
+                static_cast<uint16_t>(discard_count)
+            );
             std::vector<CardId> chosen_discards;
             chosen_discards.reserve(static_cast<size_t>(discard_count));
             for (int i = 0; i < discard_count; ++i) {
                 const auto chosen = choose_card(pub, 78, Side::US, discardable, rng, policy_cb, frame_log, gs.frame_stack_mode);
                 if (chosen == 0) {
-                    if (frame_log != nullptr && !frame_log->empty()) {
-                        frame_log->back().step_index = static_cast<uint8_t>(std::min(i, 255));
-                        frame_log->back().total_steps = static_cast<uint8_t>(std::max(1, std::min(discard_count, 255)));
-                        frame_log->back().criteria_bits = static_cast<uint16_t>(discard_count);
-                    }
+                    annotate_latest_frame(
+                        frame_log,
+                        i + 1,
+                        discard_count + 1,
+                        static_cast<uint16_t>(discard_count)
+                    );
                     return {pub, false, std::nullopt};
                 }
+                annotate_latest_frame(
+                    frame_log,
+                    i + 1,
+                    discard_count + 1,
+                    static_cast<uint16_t>(discard_count)
+                );
                 chosen_discards.push_back(chosen);
                 discardable.erase(std::remove(discardable.begin(), discardable.end(), chosen), discardable.end());
             }
@@ -533,20 +575,46 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 }
                 if (!drawn.empty()) {
                     pub = gs.pub;
-                    const auto keep_count = (gs.frame_stack_mode && policy_cb == nullptr)
-                        ? 0
-                        : choose_option(
-                              pub,
-                              static_cast<CardId>(84),
-                              Side::US,
-                              static_cast<int>(drawn.size()) + 1,
-                              rng,
-                              policy_cb
-                          );
+                    const auto keep_count = choose_option(
+                        pub,
+                        static_cast<CardId>(84),
+                        Side::US,
+                        static_cast<int>(drawn.size()) + 1,
+                        rng,
+                        policy_cb,
+                        frame_log,
+                        gs.frame_stack_mode
+                    );
+                    set_latest_frame_eligible_cards(frame_log, drawn);
+                    if (keep_count < 0) {
+                        return {pub, false, std::nullopt};
+                    }
+                    annotate_latest_frame(
+                        frame_log,
+                        0,
+                        keep_count + 1,
+                        static_cast<uint16_t>(keep_count)
+                    );
                     std::vector<CardId> kept_cards;
                     kept_cards.reserve(static_cast<size_t>(keep_count));
                     for (int i = 0; i < keep_count; ++i) {
-                        const auto kept_card = choose_card(pub, 84, Side::US, drawn, rng, policy_cb, frame_log);
+                        const auto kept_card =
+                            choose_card(pub, 84, Side::US, drawn, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                        if (kept_card == 0) {
+                            annotate_latest_frame(
+                                frame_log,
+                                i + 1,
+                                keep_count + 1,
+                                static_cast<uint16_t>(keep_count)
+                            );
+                            return {pub, false, std::nullopt};
+                        }
+                        annotate_latest_frame(
+                            frame_log,
+                            i + 1,
+                            keep_count + 1,
+                            static_cast<uint16_t>(keep_count)
+                        );
                         kept_cards.push_back(kept_card);
                         drawn.erase(std::remove(drawn.begin(), drawn.end(), kept_card), drawn.end());
                     }

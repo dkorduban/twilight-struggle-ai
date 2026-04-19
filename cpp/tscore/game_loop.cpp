@@ -1918,7 +1918,7 @@ void resume_card_78(GameState& gs, const DecisionFrame& frame, const FrameAction
         for (const auto card_id : discardable) {
             eligible.set(card_id);
         }
-        push_card_frame(gs, frame.source_card, frame.acting_side, eligible, 0, discard_count, discard_count);
+        push_card_frame(gs, frame.source_card, frame.acting_side, eligible, 1, discard_count + 1, discard_count);
         if (!gs.frame_stack.empty()) {
             return;
         }
@@ -1934,6 +1934,7 @@ void resume_card_78(GameState& gs, const DecisionFrame& frame, const FrameAction
     }
     const auto next_step = static_cast<int>(frame.step_index) + 1;
     const auto total_steps = static_cast<int>(frame.total_steps);
+    const auto discard_count = static_cast<int>(frame.criteria_bits);
     if (next_step < total_steps) {
         auto reduced = frame.eligible_cards;
         reduced.reset(action.card_id);
@@ -1944,9 +1945,68 @@ void resume_card_78(GameState& gs, const DecisionFrame& frame, const FrameAction
             }
         }
     }
-    for (int i = 0; i < total_steps; ++i) {
+    for (int i = 0; i < discard_count; ++i) {
         if (const auto drawn = draw_one_frame(gs, rng); drawn.has_value()) {
             gs.hands[to_index(Side::US)].set(*drawn);
+        }
+    }
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
+void resume_card_84(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind == FrameKind::SmallChoice) {
+        const auto max_keep_count = std::max(0, static_cast<int>(frame.eligible_n) - 1);
+        const auto keep_count = std::clamp(action.option_index, 0, max_keep_count);
+        if (keep_count <= 0) {
+            for (int raw = 1; raw <= kMaxCardId; ++raw) {
+                const auto card_id = static_cast<CardId>(raw);
+                if (frame.eligible_cards.test(card_id)) {
+                    discard_frame_card(gs.pub, card_id);
+                }
+            }
+            finish_frame_event(gs, frame.source_card, frame.acting_side);
+            return;
+        }
+
+        push_card_frame(
+            gs,
+            frame.source_card,
+            frame.acting_side,
+            frame.eligible_cards,
+            1,
+            keep_count + 1,
+            static_cast<uint16_t>(keep_count)
+        );
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+        finish_frame_event(gs, frame.source_card, frame.acting_side);
+        return;
+    }
+
+    if (frame.kind != FrameKind::CardSelect) {
+        return;
+    }
+
+    auto remaining = frame.eligible_cards;
+    if (frame.eligible_cards.test(action.card_id)) {
+        gs.hands[to_index(Side::US)].set(action.card_id);
+        remaining.reset(action.card_id);
+    }
+
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = static_cast<int>(frame.total_steps);
+    if (next_step < total_steps && remaining.any()) {
+        push_card_frame(gs, frame.source_card, frame.acting_side, remaining, next_step, total_steps, frame.criteria_bits);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+
+    for (int raw = 1; raw <= kMaxCardId; ++raw) {
+        const auto card_id = static_cast<CardId>(raw);
+        if (remaining.test(card_id)) {
+            discard_frame_card(gs.pub, card_id);
         }
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);
@@ -2527,6 +2587,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 83:
             resume_card_83(gs, frame, action, rng);
+            break;
+        case 84:
+            resume_card_84(gs, frame, action);
             break;
         case 68:
             resume_card_68(gs, frame, action, rng);
