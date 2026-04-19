@@ -588,15 +588,17 @@ class CountryAttnEncoder(nn.Module):
     Output: (B, INFLUENCE_HIDDEN=128)
     """
 
+    __constants__ = ['_EMBED_DIM', '_NUM_HEADS', '_NUM_REGIONS', '_NUM_COUNTRIES']
     _EMBED_DIM = 64
     _NUM_HEADS = 4
     _NUM_REGIONS = 7
+    _NUM_COUNTRIES = NUM_COUNTRIES
 
     def __init__(self) -> None:
         super().__init__()
         self.register_buffer("country_static", _COUNTRY_FEATS.clone())  # (86, 11)
-        for i, mask in enumerate(_REGION_MASKS):
-            self.register_buffer(f"region_mask_{i}", mask.clone())
+        # Stack all region masks into one buffer (7, 86) — avoids dynamic getattr in TorchScript
+        self.register_buffer("region_masks", torch.stack([m.clone() for m in _REGION_MASKS]))
 
         # per-country input: ussr_inf/10, us_inf/10, 11 static features = 13
         self.country_proj = nn.Linear(_COUNTRY_FEAT_DIM + 2, self._EMBED_DIM)
@@ -607,13 +609,10 @@ class CountryAttnEncoder(nn.Module):
             (1 + self._NUM_REGIONS) * self._EMBED_DIM, INFLUENCE_HIDDEN
         )
 
-    def _region_mask(self, i: int) -> torch.Tensor:
-        return getattr(self, f"region_mask_{i}")
-
     def forward(self, influence: torch.Tensor) -> torch.Tensor:
         B = influence.shape[0]
-        ussr_inf = influence[:, :NUM_COUNTRIES] / 10.0
-        us_inf = influence[:, NUM_COUNTRIES:] / 10.0
+        ussr_inf = influence[:, :self._NUM_COUNTRIES] / 10.0
+        us_inf = influence[:, self._NUM_COUNTRIES:] / 10.0
         static = self.country_static.unsqueeze(0).expand(B, -1, -1)
         dyn = torch.stack([ussr_inf, us_inf], dim=-1)
         per_country_feats = torch.cat([dyn, static], dim=-1)  # (B, 86, 13)
@@ -638,7 +637,7 @@ class CountryAttnEncoder(nn.Module):
         global_pool = attn_out.mean(dim=1)  # (B, D)
         region_pools = []
         for i in range(self._NUM_REGIONS):
-            mask = self._region_mask(i)  # (86,) bool
+            mask = self.region_masks[i]  # (86,) bool
             region_pools.append(_masked_mean_pool(attn_out, mask))
 
         concat = torch.cat([global_pool] + region_pools, dim=-1)  # (B, 8*D)
@@ -1591,6 +1590,7 @@ class TSControlFeatGNNSideModel(nn.Module):
     Input/output contract: same as TSBaselineModel.
     """
 
+    __constants__ = ['_REGION_SCALAR_DIM', '_SIDE_SCALAR_IDX']
     _REGION_SCALAR_DIM = 42
     _SIDE_SCALAR_IDX = 10  # index into scalars tensor where side is encoded
 
@@ -1740,6 +1740,7 @@ class TSCountryAttnSideModel(nn.Module):
     This isolates the adjacency message-passing vs self-attention question.
     """
 
+    __constants__ = ['_REGION_SCALAR_DIM', '_SIDE_SCALAR_IDX']
     _REGION_SCALAR_DIM = 42
     _SIDE_SCALAR_IDX = 10
 
@@ -1850,6 +1851,7 @@ class TSControlFeatGNNFiLMModel(nn.Module):
     Input/output contract: identical to TSControlFeatGNNSideModel.
     """
 
+    __constants__ = ['_REGION_SCALAR_DIM', '_SIDE_SCALAR_IDX']
     _REGION_SCALAR_DIM = 42
     _SIDE_SCALAR_IDX = 10
 
@@ -1950,6 +1952,7 @@ class TSCountryAttnFiLMModel(nn.Module):
     Input/output contract: identical to TSCountryAttnSideModel.
     """
 
+    __constants__ = ['_REGION_SCALAR_DIM', '_SIDE_SCALAR_IDX']
     _REGION_SCALAR_DIM = 42
     _SIDE_SCALAR_IDX = 10
 
@@ -2379,6 +2382,7 @@ class TSCountryAttnSidePolicyModel(nn.Module):
     Value heads are already per-side (inherited from TSCountryAttnSideModel).
     """
 
+    __constants__ = ['_REGION_SCALAR_DIM', '_SIDE_SCALAR_IDX']
     _REGION_SCALAR_DIM = 42
     _SIDE_SCALAR_IDX = 10
 
