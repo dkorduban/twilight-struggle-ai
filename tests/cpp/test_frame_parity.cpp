@@ -507,8 +507,9 @@ void run_deterministic_setup(GameState& gs) {
     for (const auto side : {Side::USSR, Side::US}) {
         gs.pub.phasing = side;
         const auto side_idx = to_index(side);
-        const auto& targets = side == Side::USSR ? kSetupEasternBlocIds : kSetupWesternEuropeIds;
-        const auto target = *std::min_element(targets.begin(), targets.end());
+        const auto target = side == Side::USSR
+            ? *std::min_element(kSetupEasternBlocIds.begin(), kSetupEasternBlocIds.end())
+            : *std::min_element(kSetupWesternEuropeIds.begin(), kSetupWesternEuropeIds.end());
         while (gs.setup_influence_remaining[static_cast<size_t>(side_idx)] > 0) {
             gs.pub.set_influence(side, target, gs.pub.influence_of(side, target) + 1);
             --gs.setup_influence_remaining[static_cast<size_t>(side_idx)];
@@ -534,7 +535,7 @@ std::tuple<bool, std::optional<Side>> apply_top_level_for_test(
 
     auto result = engine_step_toplevel(gs, action, side, rng, sub_policy);
     int subframe_steps = 0;
-    while (auto frame = engine_peek(gs); frame.has_value()) {
+    for (auto frame = engine_peek(gs); frame.has_value(); frame = engine_peek(gs)) {
         REQUIRE(subframe_steps < 512);
         result = engine_step_subframe(gs, deterministic_frame_action(*frame), rng);
         ++subframe_steps;
