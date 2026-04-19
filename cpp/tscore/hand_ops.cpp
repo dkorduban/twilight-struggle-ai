@@ -205,6 +205,19 @@ void set_latest_frame_budget(std::vector<DecisionFrame>* frame_log, int budget) 
     frame_log->back().budget_remaining = static_cast<int16_t>(budget);
 }
 
+std::vector<ActionMode> deferred_ops_modes(std::span<const ActionEncoding> ops_actions) {
+    std::vector<ActionMode> modes;
+    for (const auto& action : ops_actions) {
+        if (std::find(modes.begin(), modes.end(), action.mode) == modes.end()) {
+            modes.push_back(action.mode);
+        }
+    }
+    std::sort(modes.begin(), modes.end(), [](ActionMode lhs, ActionMode rhs) {
+        return static_cast<int>(lhs) < static_cast<int>(rhs);
+    });
+    return modes;
+}
+
 std::vector<CardId> cmc_cancel_cards(const GameState& gs, Side side) {
     std::vector<CardId> eligible;
     if (gs.pub.china_held_by == side) {
@@ -797,6 +810,21 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
         }
     }
     if (ops_actions.empty()) {
+        return {gs.pub, false, std::nullopt};
+    }
+
+    if (gs.frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+        const auto modes = deferred_ops_modes(ops_actions);
+        push_option_frame(
+            frame_log,
+            FrameKind::DeferredOps,
+            card_id,
+            side,
+            static_cast<int>(modes.size()),
+            0,
+            1
+        );
+        set_latest_frame_budget(frame_log, effective_ops(card_id, gs.pub, side));
         return {gs.pub, false, std::nullopt};
     }
 

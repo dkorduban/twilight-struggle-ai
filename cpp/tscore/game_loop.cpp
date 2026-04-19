@@ -1315,6 +1315,238 @@ void apply_frame_ops_realign(GameState& gs, CountryId target, Pcg64Rng& rng) {
     }
 }
 
+std::vector<ActionMode> deferred_ops_modes(const PublicState& pub, CardId source_card, Side side) {
+    CardSet hand;
+    hand.set(static_cast<int>(source_card));
+
+    std::vector<ActionMode> modes;
+    for (const auto& candidate : enumerate_actions(hand, pub, side, false)) {
+        if (
+            candidate.card_id != source_card ||
+            candidate.mode == ActionMode::EventFirst ||
+            candidate.mode == ActionMode::Event ||
+            candidate.mode == ActionMode::Space
+        ) {
+            continue;
+        }
+        if (std::find(modes.begin(), modes.end(), candidate.mode) == modes.end()) {
+            modes.push_back(candidate.mode);
+        }
+    }
+    std::sort(modes.begin(), modes.end(), [](ActionMode lhs, ActionMode rhs) {
+        return static_cast<int>(lhs) < static_cast<int>(rhs);
+    });
+    return modes;
+}
+
+std::bitset<kCountrySlots> deferred_country_bits(
+    const PublicState& pub,
+    Side side,
+    CardId source_card,
+    ActionMode mode,
+    int budget
+) {
+    std::bitset<kCountrySlots> eligible;
+    auto countries = legal_countries(source_card, mode, pub, side);
+    if (mode == ActionMode::Influence) {
+        const auto opponent = other_side(side);
+        countries.erase(
+            std::remove_if(
+                countries.begin(),
+                countries.end(),
+                [&](CountryId cid) { return (controls_country(opponent, cid, pub) ? 2 : 1) > budget; }
+            ),
+            countries.end()
+        );
+    }
+    for (const auto cid : countries) {
+        eligible.set(static_cast<size_t>(cid));
+    }
+    return eligible;
+}
+
+bool push_deferred_ops_country_frame(
+    GameState& gs,
+    CardId source_card,
+    Side acting_side,
+    ActionMode mode,
+    const std::bitset<kCountrySlots>& eligible,
+    int step_index,
+    int total_steps,
+    int budget_remaining
+) {
+    if (eligible.none()) {
+        return false;
+    }
+    DecisionFrame frame;
+    frame.kind = FrameKind::DeferredOps;
+    frame.source_card = source_card;
+    frame.acting_side = acting_side;
+    frame.step_index = frame_count(static_cast<size_t>(std::max(0, step_index)));
+    frame.total_steps = frame_count(static_cast<size_t>(std::max(1, total_steps)));
+    frame.budget_remaining = static_cast<int16_t>(budget_remaining);
+    frame.stack_depth = frame_count(gs.frame_stack.size());
+    frame.eligible_countries = eligible;
+    frame.eligible_n = frame_count(eligible.count());
+    frame.criteria_bits = static_cast<uint16_t>(mode);
+    gs.frame_stack.push_back(frame);
+    return true;
+}
+
+void finish_deferred_ops(GameState& gs) {
+    const auto [over, winner] = check_vp_win(gs.pub);
+    gs.game_over = over;
+    gs.winner = winner;
+}
+
+std::optional<CountryId> deferred_country_action(const DecisionFrame& frame, const FrameAction& action) {
+    if (
+        action.country_id < kCountrySlots &&
+        frame.eligible_countries.test(static_cast<size_t>(action.country_id))
+    ) {
+        return action.country_id;
+    }
+
+    if (action.option_index < 0) {
+        return std::nullopt;
+    }
+    int seen = 0;
+    for (int raw = 0; raw < static_cast<int>(frame.eligible_countries.size()); ++raw) {
+        if (!frame.eligible_countries.test(static_cast<size_t>(raw))) {
+            continue;
+        }
+        if (seen == action.option_index) {
+            return static_cast<CountryId>(raw);
+        }
+        ++seen;
+    }
+    return std::nullopt;
+}
+
+bool push_deferred_ops_for_mode(
+    GameState& gs,
+    CardId source_card,
+    Side acting_side,
+    ActionMode mode,
+    int budget_remaining,
+    int step_index,
+    int total_steps
+) {
+    const auto eligible = deferred_country_bits(gs.pub, acting_side, source_card, mode, budget_remaining);
+    return push_deferred_ops_country_frame(
+        gs,
+        source_card,
+        acting_side,
+        mode,
+        eligible,
+        step_index,
+        total_steps,
+        budget_remaining
+    );
+}
+
+void resume_deferred_ops(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    if (frame.kind != FrameKind::DeferredOps) {
+        return;
+    }
+
+    auto budget = std::max(0, static_cast<int>(frame.budget_remaining));
+    if (budget <= 0) {
+        budget = effective_ops(frame.source_card, gs.pub, frame.acting_side);
+    }
+
+    if (frame.eligible_countries.none()) {
+        const auto modes = deferred_ops_modes(gs.pub, frame.source_card, frame.acting_side);
+        if (modes.empty()) {
+            finish_deferred_ops(gs);
+            return;
+        }
+        const auto mode_index =
+            std::clamp(action.option_index, 0, static_cast<int>(modes.size()) - 1);
+        const auto mode = modes[static_cast<size_t>(mode_index)];
+        const auto country_steps = mode == ActionMode::Coup
+            ? 1
+            : (mode == ActionMode::Realign
+                ? std::min(budget, static_cast<int>(deferred_country_bits(
+                      gs.pub,
+                      frame.acting_side,
+                      frame.source_card,
+                      mode,
+                      budget
+                  ).count()))
+                : budget);
+        if (!push_deferred_ops_for_mode(gs, frame.source_card, frame.acting_side, mode, budget, 1, country_steps + 1)) {
+            finish_deferred_ops(gs);
+        }
+        return;
+    }
+
+    const auto selected = deferred_country_action(frame, action);
+    if (!selected.has_value()) {
+        return;
+    }
+
+    const auto mode = static_cast<ActionMode>(frame.criteria_bits);
+    if (mode == ActionMode::Influence) {
+        const auto opponent = other_side(frame.acting_side);
+        const auto cost = controls_country(opponent, *selected, gs.pub) ? 2 : 1;
+        if (cost > budget) {
+            return;
+        }
+        add_frame_influence(gs.pub, frame.acting_side, *selected, 1);
+        budget -= cost;
+        const auto next_step = static_cast<int>(frame.step_index) + 1;
+        if (budget > 0 && push_deferred_ops_for_mode(
+            gs,
+            frame.source_card,
+            frame.acting_side,
+            mode,
+            budget,
+            next_step,
+            std::max<int>(next_step + 1, frame.total_steps)
+        )) {
+            return;
+        }
+        finish_deferred_ops(gs);
+        return;
+    }
+
+    const ActionEncoding ops_action{
+        .card_id = frame.source_card,
+        .mode = mode,
+        .targets = {*selected},
+    };
+    auto [new_pub, over, winner] = apply_action(gs.pub, ops_action, frame.acting_side, rng);
+    gs.pub = new_pub;
+    if (over) {
+        gs.game_over = true;
+        gs.winner = winner;
+        return;
+    }
+
+    if (mode == ActionMode::Realign) {
+        const auto next_step = static_cast<int>(frame.step_index) + 1;
+        const auto total_steps = std::max<int>(1, frame.total_steps);
+        if (next_step < total_steps) {
+            push_deferred_ops_country_frame(
+                gs,
+                frame.source_card,
+                frame.acting_side,
+                mode,
+                frame.eligible_countries,
+                next_step,
+                total_steps,
+                budget
+            );
+            if (!gs.frame_stack.empty()) {
+                return;
+            }
+        }
+    }
+
+    finish_deferred_ops(gs);
+}
+
 void resume_ops_randomly(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
     constexpr uint16_t kInfluenceModeA = 0;
     constexpr uint16_t kInfluenceModeB = 1;
@@ -2804,13 +3036,16 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
     }
 }
 
-bool resume_noncard_subframe(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+bool resume_noncard_subframe(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
     switch (frame.kind) {
         case FrameKind::NoradInfluence:
             resume_norad_influence(gs, frame, action);
             return true;
         case FrameKind::FreeOpsInfluence:
             resume_free_ops_influence(gs, frame, action);
+            return true;
+        case FrameKind::DeferredOps:
+            resume_deferred_ops(gs, frame, action, rng);
             return true;
         default:
             return false;
@@ -2830,7 +3065,7 @@ StepResult engine_step_subframe(GameState& gs, const FrameAction& action, Pcg64R
     }
     const auto frame = gs.frame_stack.back();
     gs.frame_stack.pop_back();
-    if (!resume_noncard_subframe(gs, frame, action)) {
+    if (!resume_noncard_subframe(gs, frame, action, rng)) {
         resume_card_subframe(gs, frame, action, rng);
     }
     complete_parent_frame_if_ready(gs, frame);
