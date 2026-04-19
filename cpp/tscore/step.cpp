@@ -1422,11 +1422,14 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             }
             const int base = 4;
             const int bonus = (next.space[to_index(Side::USSR)] > next.space[to_index(Side::US)]) ? 2 : 0;
-            for (int i = 0; i < (base + bonus); ++i) {
-                if (pool.empty()) {
-                    break;
+            const int total_steps = pool.empty() ? 0 : base + bonus;
+            for (int i = 0; i < total_steps; ++i) {
+                const auto cid =
+                    choose_country(next, static_cast<CardId>(90), Side::USSR, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (cid == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, total_steps);
+                    return {next, false, std::nullopt};
                 }
-                const auto cid = choose_country(next, static_cast<CardId>(90), Side::USSR, pool, rng, policy_cb, frame_log);
                 add_influence(next, Side::USSR, cid, 1);
             }
             next.defcon = std::min(5, next.defcon + 1);

@@ -1672,6 +1672,25 @@ void resume_card_91(GameState& gs, const DecisionFrame& frame, const FrameAction
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
 
+void resume_card_90(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind != FrameKind::CountryPick) {
+        return;
+    }
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        add_frame_influence(gs.pub, Side::USSR, action.country_id, 1);
+    }
+    const auto next_step = static_cast<int>(frame.step_index) + 1;
+    const auto total_steps = static_cast<int>(frame.total_steps);
+    if (next_step < total_steps) {
+        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+    }
+    gs.pub.defcon = std::min(5, gs.pub.defcon + 1);
+    finish_frame_event(gs, frame.source_card, frame.acting_side);
+}
+
 void resume_card_94(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
     if (frame.kind != FrameKind::CountryPick) {
         return;
@@ -1897,6 +1916,9 @@ void resume_card_subframe(GameState& gs, const DecisionFrame& frame, const Frame
             break;
         case 88:
             resume_card_88(gs, frame, action, rng);
+            break;
+        case 90:
+            resume_card_90(gs, frame, action);
             break;
         case 91:
             resume_card_91(gs, frame, action);
