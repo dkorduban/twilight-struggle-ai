@@ -1337,6 +1337,40 @@ void apply_frame_ops_realign(GameState& gs, CountryId target, Pcg64Rng& rng) {
     }
 }
 
+void apply_free_realign_roll(PublicState& pub, CountryId target, Pcg64Rng& rng) {
+    const auto ussr_inf = pub.influence_of(Side::USSR, target);
+    const auto us_inf = pub.influence_of(Side::US, target);
+    auto count_adj = [&](Side player) {
+        int total = 0;
+        for (const auto neighbor : adjacency()[target]) {
+            if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
+                continue;
+            }
+            if (controls_country(player, neighbor, pub)) {
+                ++total;
+            }
+        }
+        return total;
+    };
+    const auto& graph = adjacency();
+    const auto ussr_anchor =
+        std::find(graph[target].begin(), graph[target].end(), kUssrAnchorId) != graph[target].end() ? 1 : 0;
+    const auto us_anchor =
+        std::find(graph[target].begin(), graph[target].end(), kUsaAnchorId) != graph[target].end() ? 1 : 0;
+    const auto [ussr_total, us_total] = realign_result(
+        ussr_inf,
+        us_inf,
+        count_adj(Side::USSR) + ussr_anchor,
+        count_adj(Side::US) + us_anchor,
+        rng
+    );
+    if (ussr_total > us_total) {
+        pub.set_influence(Side::US, target, std::max(0, pub.influence_of(Side::US, target) - (ussr_total - us_total)));
+    } else if (us_total > ussr_total) {
+        pub.set_influence(Side::USSR, target, std::max(0, pub.influence_of(Side::USSR, target) - (us_total - ussr_total)));
+    }
+}
+
 std::vector<ActionMode> deferred_ops_modes(const PublicState& pub, CardId source_card, Side side) {
     CardSet hand;
     hand.set(static_cast<int>(source_card));
@@ -2762,24 +2796,47 @@ void resume_card_33(GameState& gs, const DecisionFrame& frame, const FrameAction
 }
 
 void resume_card_50(GameState& gs, const DecisionFrame& frame, const FrameAction& action, Pcg64Rng& rng) {
+    constexpr uint16_t kInfluenceOnly = 0;
+    constexpr uint16_t kCoup = 1;
+    constexpr uint16_t kRealign = 2;
+
+    if (frame.kind == FrameKind::SmallChoice) {
+        const auto mode = static_cast<uint16_t>(
+            std::clamp(action.option_index, 0, std::max(0, static_cast<int>(frame.eligible_n) - 1))
+        );
+        if (mode == kInfluenceOnly) {
+            finish_frame_event(gs, frame.source_card, frame.acting_side);
+            return;
+        }
+        push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, 2, 3, mode);
+        if (!gs.frame_stack.empty()) {
+            return;
+        }
+        finish_frame_event(gs, frame.source_card, frame.acting_side);
+        return;
+    }
+
     if (frame.kind != FrameKind::CountryPick) {
         return;
     }
-    const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = static_cast<int>(frame.total_steps);
     if (frame.step_index == 0) {
         if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
             add_frame_influence(gs.pub, frame.acting_side, action.country_id, 2);
         }
-        if (next_step < total_steps) {
-            push_country_frame(gs, frame.source_card, frame.acting_side, frame.eligible_countries, next_step, total_steps);
-            if (!gs.frame_stack.empty()) {
-                return;
-            }
+        push_option_frame(gs, frame.source_card, frame.acting_side, 3, 1, 3);
+        if (!gs.frame_stack.empty()) {
+            gs.frame_stack.back().eligible_countries = frame.eligible_countries;
+            return;
         }
-    } else {
-        if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        finish_frame_event(gs, frame.source_card, frame.acting_side);
+        return;
+    }
+
+    if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
+        if (frame.criteria_bits == kCoup) {
             apply_free_coup(gs.pub, frame.acting_side, action.country_id, 2, rng, false);
+        } else if (frame.criteria_bits == kRealign) {
+            apply_free_realign_roll(gs.pub, action.country_id, rng);
         }
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);

@@ -318,6 +318,38 @@ const T& sample_one(std::span<const T> values, Pcg64Rng& rng) {
     return values[rng.choice_index(values.size())];
 }
 
+void apply_free_realign_roll(PublicState& pub, CountryId target, Pcg64Rng& rng) {
+    const auto& graph = adjacency();
+    const auto ussr_inf = pub.influence_of(Side::USSR, target);
+    const auto us_inf = pub.influence_of(Side::US, target);
+    auto count_adj = [&](Side player) {
+        int total = 0;
+        for (const auto neighbor : graph[target]) {
+            if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
+                continue;
+            }
+            if (controls_country(player, neighbor, pub)) {
+                ++total;
+            }
+        }
+        return total;
+    };
+    const auto ussr_anchor = std::find(graph[target].begin(), graph[target].end(), kUssrAnchorId) != graph[target].end() ? 1 : 0;
+    const auto us_anchor = std::find(graph[target].begin(), graph[target].end(), kUsaAnchorId) != graph[target].end() ? 1 : 0;
+    const auto [ussr_total, us_total] = realign_result(
+        ussr_inf,
+        us_inf,
+        count_adj(Side::USSR) + ussr_anchor,
+        count_adj(Side::US) + us_anchor,
+        rng
+    );
+    if (ussr_total > us_total) {
+        pub.set_influence(Side::US, target, std::max(0, pub.influence_of(Side::US, target) - (ussr_total - us_total)));
+    } else if (us_total > ussr_total) {
+        pub.set_influence(Side::USSR, target, std::max(0, pub.influence_of(Side::USSR, target) - (us_total - ussr_total)));
+    }
+}
+
 CountryId resolve_event_country_choice(
     const PublicState& pub,
     const ActionEncoding& action,
@@ -1049,7 +1081,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 50: {
-            // OAS Founded: +2 influence and free coup in Central/South America
+            // Junta: +2 influence, then optional coup or realignment in Central/South America.
             std::vector<CountryId> pool;
             for (const auto cid : all_country_ids()) {
                 const auto region = country_spec(cid).region;
@@ -1060,16 +1092,30 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             if (!pool.empty()) {
                 const auto inf_target = choose_country(next, 50, side, pool, rng, policy_cb, frame_log, frame_stack_mode);
                 if (inf_target == kInvalidCountryId) {
-                    annotate_latest_frame(frame_log, 0, 2);
+                    annotate_latest_frame(frame_log, 0, 3);
                     return {next, false, std::nullopt};
                 }
                 add_influence(next, side, inf_target, 2);
-                const auto coup_target = choose_country(next, 50, side, pool, rng, policy_cb, frame_log, frame_stack_mode);
-                if (coup_target == kInvalidCountryId) {
-                    annotate_latest_frame(frame_log, 1, 2);
+
+                const auto mode = choose_option(next, 50, side, 3, rng, policy_cb, frame_log, frame_stack_mode);
+                if (mode < 0) {
+                    annotate_latest_frame(frame_log, 1, 3);
                     return {next, false, std::nullopt};
                 }
-                apply_free_coup(next, side, coup_target, 2, rng, false);
+                if (mode == 0) {
+                    break;
+                }
+
+                const auto action_target = choose_country(next, 50, side, pool, rng, policy_cb, frame_log, frame_stack_mode);
+                if (action_target == kInvalidCountryId) {
+                    annotate_latest_frame(frame_log, 2, 3, static_cast<uint16_t>(mode));
+                    return {next, false, std::nullopt};
+                }
+                if (mode == 1) {
+                    apply_free_coup(next, side, action_target, 2, rng, false);
+                } else {
+                    apply_free_realign_roll(next, action_target, rng);
+                }
             }
             break;
         }
