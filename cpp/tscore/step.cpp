@@ -1576,8 +1576,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         case 105: {
             static constexpr std::array<CountryId, 2> kTargets = {kIranId, kIraqId};
             const auto target = resolve_event_country_choice(
-                next, action, 105, side, std::span<const CountryId>(kTargets), rng, policy_cb, frame_log
+                next, action, 105, side, std::span<const CountryId>(kTargets), rng, policy_cb, frame_log, frame_stack_mode
             );
+            if (target == 0 && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                annotate_latest_frame(frame_log, 0, 1);
+                return {next, false, std::nullopt};
+            }
             apply_war_card(next, side, target, 2, 2, rng);
             break;
         }
