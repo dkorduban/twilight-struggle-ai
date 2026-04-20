@@ -1,0 +1,87 @@
+No panel_eval_history.json for country_attn_v13 — skipping candidate tournament
+=== ELO incremental placement: country_attn_v13 ===
+Exporting checkpoints to TorchScript ...
+  country_attn_v13: already TorchScript, using directly
+Loaded 5369 match results from SQL match_cache
+
+Match schedule (15 total, 5 new, 10 reused from prior run):
+  v56 vs v54  [reuse]
+  v56 vs v44  [reuse]
+  v56 vs v20  [reuse]
+  v56 vs v55  [reuse]
+  v56 vs country_attn_v13
+  v54 vs v44  [reuse]
+  v54 vs v20  [reuse]
+  v54 vs v55  [reuse]
+  v54 vs country_attn_v13
+  v44 vs v20  [reuse]
+  v44 vs v55  [reuse]
+  v44 vs country_attn_v13
+  v20 vs v55  [reuse]
+  v20 vs country_attn_v13
+  v55 vs country_attn_v13
+  [reuse] v56 240(152u/88s) - 249(155u/94s) v54  draws=11  WR=0.491
+  [reuse] v56 243(157u/86s) - 243(158u/85s) v44  draws=14  WR=0.500
+  [reuse] v56 247(159u/88s) - 245(159u/86s) v20  draws=8  WR=0.502
+  [reuse] v56 246(162u/84s) - 246(160u/86s) v55  draws=8  WR=0.500
+
+[new 1/5] v56 vs country_attn_v13 (200 games = 100/side, seed=88000) ...
+  v56: 95(69u/26s)  country_attn_v13: 100(72u/28s)  draws: 5  WR(v56)=0.487  t=11.9s
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 196(128u/68s) - 184(123u/61s) v20  draws=20  WR=0.515
+  [reuse] v54 229(149u/80s) - 268(169u/99s) v55  draws=3  WR=0.461
+
+[new 2/5] v54 vs country_attn_v13 (200 games = 100/side, seed=88200) ...
+  v54: 95(65u/30s)  country_attn_v13: 101(68u/33s)  draws: 4  WR(v54)=0.485  t=11.5s
+  [reuse] v44 213(134u/79s) - 169(111u/58s) v20  draws=18  WR=0.555
+  [reuse] v44 238(149u/89s) - 252(158u/94s) v55  draws=10  WR=0.486
+
+[new 3/5] v44 vs country_attn_v13 (200 games = 100/side, seed=88400) ...
+  v44: 99(67u/32s)  country_attn_v13: 98(67u/31s)  draws: 3  WR(v44)=0.502  t=11.8s
+  [reuse] v20 255(150u/105s) - 237(141u/96s) v55  draws=8  WR=0.518
+
+[new 4/5] v20 vs country_attn_v13 (200 games = 100/side, seed=88600) ...
+  v20: 102(70u/32s)  country_attn_v13: 93(66u/27s)  draws: 5  WR(v20)=0.522  t=11.6s
+
+[new 5/5] v55 vs country_attn_v13 (200 games = 100/side, seed=88800) ...
+  v55: 95(66u/29s)  country_attn_v13: 97(66u/31s)  draws: 8  WR(v55)=0.495  t=16.1s
+
+Fitting BayesElo (bipartite per-side, anchor=v56_USSR=1900.0) ...
+Fitting BayesElo (combined, for residual comparison) ...
+
+Model                  USSR      US    Gap   Comb*                95% CI   vs anchor
+  (bipartite per-side = PRIMARY, anchor: v56_USSR=1900)
+  (* combined = derived from P(win) = 0.5·P_ussr + 0.5·P_us)
+----------------------------------------------------------------------------------------
+v54                   1890   1805  +85    1907  [  1892,   1922]  +7
+v55                   1889   1802  +86    1906  [  1891,   1921]  +6
+country_attn_v13      1937   1747  +190    1902  [  1881,   1924]  +2
+v56                   1900   1779  +121    1900  [  1900,   1900]  +0
+v44                   1877   1796  +81    1898  [  1882,   1913]  -2
+v20                   1884   1789  +95    1897  [  1882,   1913]  -3
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v56            vs v54              0.491    0.489     0.490    +0.002     +0.001
+v56            vs v44              0.500    0.504     0.504    -0.004     -0.004
+v56            vs v20              0.502    0.504     0.504    -0.002     -0.002
+v56            vs v55              0.500    0.492     0.492    +0.008     +0.008
+v56            vs country_attn_v13   0.487    0.497     0.496    -0.009     -0.009
+v54            vs v44              0.574    0.515     0.514    +0.059     +0.060
+v54            vs v20              0.515    0.515     0.514    -0.000     +0.001
+v54            vs v55              0.461    0.502     0.502    -0.041     -0.041
+v54            vs country_attn_v13   0.485    0.506     0.506    -0.021     -0.021
+v44            vs v20              0.555    0.501     0.501    +0.054     +0.054
+v44            vs v55              0.486    0.488     0.488    -0.002     -0.002
+v44            vs country_attn_v13   0.502    0.493     0.493    +0.009     +0.010
+v20            vs v55              0.518    0.487     0.487    +0.031     +0.031
+v20            vs country_attn_v13   0.522    0.493     0.492    +0.030     +0.030
+v55            vs country_attn_v13   0.495    0.504     0.505    -0.009     -0.010
+------------------------------------------------------------------------------------
+                                              RMSE    0.0268     0.0270
+  (bipartite RMSE < combined RMSE → bipartite model better fit)
+
+Saved to results/logs/elo/elo_country_attn_v13_incremental.json
+[sql] Tournament logged: incremental_20260420T125722Z_country_attn_v13_v20 → results/metadata.sqlite3
+[confirm] Merged $VERSION into results/elo/elo_full_ladder.json: elo=1902
+Done. country_attn_v13: elo=1902 elo_ussr=1937 elo_us=1747

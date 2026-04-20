@@ -1,0 +1,391 @@
+[ppo_train_dynamic] starting at 2026-04-13T21:29:55Z
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: dkorduban (korduban-ai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run f4ceba56
+wandb: Tracking run with wandb version 0.25.1
+wandb: Run data is saved locally in /home/dkord/code/twilight-struggle-ai/wandb/run-20260413_142958-f4ceba56
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run ppo_v129_sc
+wandb: ⭐️ View project at https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: 🚀 View run at https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/f4ceba56
+Loading checkpoint: data/checkpoints/ppo_v128_sc_league/ppo_best.pt
+[smoke test] Smoke test passed: 10 games completed
+  --reset-optimizer: skipping optimizer state restore, starting fresh Adam.
+
+Starting PPO training: 30 iterations × 200 games/iter, side=both
+Device: cuda, lr=2e-05, clip=0.12, ent=0.01, vf=0.5
+League training enabled (pool: data/checkpoints/ppo_v129_sc_league, save-every=10)
+  Saved to league pool: data/checkpoints/ppo_v129_sc_league/iter_0001.pt
+  [league] self: self | ussr_pool: ['v48_scripted', 'iter_0001'] | us_pool: ['heuristic', 'v49_scripted']
+  [pfsp]
+    [ussr] v48_scripted: WR_ussr=0.95(n=60) WR_us=?(n=0) pfsp=0.190
+    [ussr] iter_0001: WR_ussr=?(n=0) WR_us=?(n=0) pfsp=1.000
+    [us] heuristic: WR_ussr=0.10(n=152) WR_us=0.03(n=106) pfsp=0.110
+    [us] v49_scripted: WR_ussr=?(n=0) WR_us=0.95(n=40) pfsp=0.190
+[Glasnost] resolving SALT bonus with random ops placeholder
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,72.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.100,1.150]
+  [diag] card_logits nan=0 range=[-56.98,27.44]
+  [diag] values nan=0 range=[-0.4774,0.7760]
+[iter   1/30] steps= 8437 rollout_wr=0.580 (ussr=0.710 us=0.450) pl=-0.0279 vl=0.1688 ent=3.517 clip=0.177 kl=0.0056 t=10.8s (rollout=9.3s update=1.5s)
+  [league] self: self | ussr_pool: ['iter_0001', 'iter_0001'] | us_pool: ['iter_0001', 'iter_0001']
+  [pfsp]
+    [ussr] iter_0001: WR_ussr=0.45(n=40) WR_us=?(n=0) pfsp=0.990
+    [us] iter_0001: WR_ussr=0.45(n=40) WR_us=?(n=0) pfsp=1.000
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,85.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.200]
+  [diag] card_logits nan=0 range=[-62.23,29.21]
+  [diag] values nan=0 range=[-0.4974,0.5225]
+[iter   2/30] steps=12633 rollout_wr=0.525 (ussr=0.680 us=0.370) pl=-0.0209 vl=0.1364 ent=3.319 clip=0.113 kl=0.0030 t=11.9s (rollout=11.1s update=0.9s)
+  [league] self: self | ussr_pool: ['iter_0001', 'iter_0001'] | us_pool: ['iter_0001', 'iter_0001']
+  [pfsp]
+    [ussr] iter_0001: WR_ussr=0.59(n=120) WR_us=0.38(n=80) pfsp=0.966
+    [us] iter_0001: WR_ussr=0.59(n=120) WR_us=0.38(n=80) pfsp=0.938
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,85.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.050,1.100]
+  [diag] card_logits nan=0 range=[-56.01,27.12]
+  [diag] values nan=0 range=[-0.4563,0.4266]
+[iter   3/30] steps=12697 rollout_wr=0.505 (ussr=0.630 us=0.380) pl=-0.0202 vl=0.1344 ent=3.302 clip=0.107 kl=0.0030 t=10.5s (rollout=9.7s update=0.8s)
+  [league] self: self | ussr_pool: ['v20_scripted', 'iter_0001'] | us_pool: ['v18_scripted', 'v18_scripted']
+  [pfsp]
+    [ussr] v20_scripted: WR_ussr=0.93(n=60) WR_us=0.97(n=60) pfsp=0.249
+    [ussr] iter_0001: WR_ussr=0.59(n=200) WR_us=0.38(n=160) pfsp=0.964
+    [us] v18_scripted: WR_ussr=?(n=0) WR_us=0.95(n=40) pfsp=0.190
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,67.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.050,1.250]
+  [diag] card_logits nan=0 range=[-56.15,29.17]
+  [diag] values nan=0 range=[-0.4480,0.7172]
+[iter   4/30] steps= 6889 rollout_wr=0.800 (ussr=0.750 us=0.850) pl=-0.0154 vl=0.1877 ent=3.281 clip=0.086 kl=0.0023 t=6.6s (rollout=6.0s update=0.5s)
+  [league] self: self | ussr_pool: ['v22_scripted', 'iter_0001'] | us_pool: ['v16_scripted', 'v45_scripted']
+  [pfsp]
+    [ussr] v22_scripted: WR_ussr=0.95(n=100) WR_us=0.91(n=130) pfsp=0.190
+    [ussr] iter_0001: WR_ussr=0.59(n=240) WR_us=0.38(n=160) pfsp=0.966
+    [us] v16_scripted: WR_ussr=?(n=0) WR_us=0.91(n=100) pfsp=0.328
+    [us] v45_scripted: WR_ussr=0.96(n=100) WR_us=0.94(n=102) pfsp=0.221
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,79.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.400]
+  [diag] card_logits nan=0 range=[-54.84,27.02]
+  [diag] values nan=0 range=[-0.4156,0.7333]
+[iter   5/30] steps= 6512 rollout_wr=0.820 (ussr=0.790 us=0.850) pl=-0.0173 vl=0.1762 ent=3.393 clip=0.093 kl=0.0027 t=6.1s (rollout=5.6s update=0.5s)
+  [league] self: self | ussr_pool: ['iter_0001', 'iter_0001'] | us_pool: ['v18_scripted', 'v15_scripted']
+  [pfsp]
+    [ussr] iter_0001: WR_ussr=0.61(n=280) WR_us=0.38(n=160) pfsp=0.951
+    [us] v18_scripted: WR_ussr=?(n=0) WR_us=0.94(n=120) pfsp=0.220
+    [us] v15_scripted: WR_ussr=?(n=0) WR_us=0.97(n=60) pfsp=0.129
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,86.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-60.16,27.13]
+  [diag] values nan=0 range=[-0.3760,0.8190]
+[iter   6/30] steps= 8888 rollout_wr=0.730 (ussr=0.610 us=0.850) pl=-0.0158 vl=0.1508 ent=2.997 clip=0.090 kl=0.0027 t=7.9s (rollout=7.2s update=0.6s)
+  [league] self: self | ussr_pool: ['v21_scripted', 'v48_scripted'] | us_pool: ['iter_0001', 'iter_0001']
+  [pfsp]
+    [ussr] v21_scripted: WR_ussr=0.97(n=60) WR_us=0.93(n=60) pfsp=0.129
+    [ussr] v48_scripted: WR_ussr=0.96(n=100) WR_us=?(n=0) pfsp=0.154
+    [us] iter_0001: WR_ussr=0.61(n=360) WR_us=0.38(n=160) pfsp=0.944
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,71.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-55.50,24.79]
+  [diag] values nan=0 range=[-0.3828,0.7561]
+[iter   7/30] steps= 8364 rollout_wr=0.625 (ussr=0.880 us=0.370) pl=-0.0200 vl=0.1581 ent=3.780 clip=0.101 kl=0.0029 t=7.9s (rollout=7.3s update=0.6s)
+  [league] self: self | ussr_pool: ['v20_scripted', 'iter_0001'] | us_pool: ['v20_scripted', 'iter_0001']
+  [pfsp]
+    [ussr] v20_scripted: WR_ussr=0.93(n=100) WR_us=0.97(n=60) pfsp=0.260
+    [ussr] iter_0001: WR_ussr=0.61(n=360) WR_us=0.38(n=240) pfsp=0.951
+    [us] v20_scripted: WR_ussr=0.93(n=100) WR_us=0.97(n=60) pfsp=0.129
+    [us] iter_0001: WR_ussr=0.61(n=360) WR_us=0.38(n=240) pfsp=0.942
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,78.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.100]
+  [diag] card_logits nan=0 range=[-55.68,25.46]
+  [diag] values nan=0 range=[-0.4084,0.7452]
+[iter   8/30] steps= 8516 rollout_wr=0.695 (ussr=0.720 us=0.670) pl=-0.0243 vl=0.1636 ent=3.448 clip=0.093 kl=0.0027 t=7.5s (rollout=6.9s update=0.5s)
+  [league] self: self | ussr_pool: ['iter_0001', 'iter_0001'] | us_pool: ['v49_scripted', 'iter_0001']
+  [pfsp]
+    [ussr] iter_0001: WR_ussr=0.61(n=400) WR_us=0.40(n=280) pfsp=0.954
+    [us] v49_scripted: WR_ussr=?(n=0) WR_us=0.93(n=80) pfsp=0.277
+    [us] iter_0001: WR_ussr=0.61(n=400) WR_us=0.40(n=280) pfsp=0.957
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,115.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.150,1.100]
+  [diag] card_logits nan=0 range=[-56.94,25.53]
+  [diag] values nan=0 range=[-0.4142,0.7201]
+[iter   9/30] steps=10394 rollout_wr=0.640 (ussr=0.640 us=0.640) pl=-0.0217 vl=0.1506 ent=3.277 clip=0.110 kl=0.0029 t=8.9s (rollout=8.2s update=0.7s)
+  Saved to league pool: data/checkpoints/ppo_v129_sc_league/iter_0010.pt
+  [league] self: self | ussr_pool: ['iter_0010', 'iter_0010'] | us_pool: ['v58_scripted', 'v45_scripted']
+  [pfsp]
+    [ussr] iter_0010: WR_ussr=?(n=0) WR_us=?(n=0) pfsp=1.000
+    [us] v58_scripted: WR_ussr=0.96(n=134) WR_us=0.96(n=80) pfsp=0.144
+    [us] v45_scripted: WR_ussr=0.96(n=100) WR_us=0.94(n=142) pfsp=0.237
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,70.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.150,1.300]
+  [diag] card_logits nan=0 range=[-60.55,28.90]
+  [diag] values nan=0 range=[-0.2821,0.8271]
+[iter  10/30] steps= 8615 rollout_wr=0.770 (ussr=0.700 us=0.840) pl=-0.0180 vl=0.1495 ent=3.151 clip=0.084 kl=0.0026 t=7.7s (rollout=7.2s update=0.5s)
+  [probe] iter=10 card_jsd=0.0003 top1=0.984 val_mae=0.0326
+  [confirm] launched incremental Elo check for iter 10
+  [panel eval] launched pid=880245 iter=10 panel=['v55', 'v54', 'v44', 'v45', 'v14']
+  [league] self: self | ussr_pool: ['iter_0010', 'iter_0010'] | us_pool: ['heuristic', 'v15_scripted']
+  [pfsp]
+    [ussr] iter_0010: WR_ussr=0.69(n=80) WR_us=?(n=0) pfsp=0.859
+    [us] heuristic: WR_ussr=0.10(n=152) WR_us=0.03(n=146) pfsp=0.107
+    [us] v15_scripted: WR_ussr=?(n=0) WR_us=0.97(n=100) pfsp=0.116
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,80.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.050]
+  [diag] card_logits nan=0 range=[-56.13,24.52]
+  [diag] values nan=0 range=[-0.3692,0.8047]
+[iter  11/30] steps=10180 rollout_wr=0.570 (ussr=0.630 us=0.510) pl=-0.0172 vl=0.1492 ent=3.194 clip=0.095 kl=0.0028 t=10.6s (rollout=10.0s update=0.6s)
+  [panel eval iter 10] avg=0.478 elapsed=11s: v55=0.467 | v54=0.500 | v44=0.450 | v45=0.500 | v14=0.483
+  [panel eval] NEW HIGH-WATER MARK iter=10 avg_wr=0.4775 → ppo_running_best.pt (provenance: ppo_iter0010.pt)
+  [league] self: self | ussr_pool: ['iter_0010', 'iter_0010'] | us_pool: ['v58_scripted', 'v49_scripted']
+  [pfsp]
+    [ussr] iter_0010: WR_ussr=0.67(n=160) WR_us=?(n=0) pfsp=0.886
+    [us] v58_scripted: WR_ussr=0.96(n=134) WR_us=0.95(n=120) pfsp=0.190
+    [us] v49_scripted: WR_ussr=?(n=0) WR_us=0.92(n=120) pfsp=0.306
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,76.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.000,1.250]
+  [diag] card_logits nan=0 range=[-58.25,26.29]
+  [diag] values nan=0 range=[-0.4016,0.7188]
+[iter  12/30] steps= 8722 rollout_wr=0.755 (ussr=0.660 us=0.850) pl=-0.0158 vl=0.1546 ent=3.183 clip=0.095 kl=0.0030 t=8.2s (rollout=7.4s update=0.8s)
+  [league] self: self | ussr_pool: ['v20_scripted', 'v48_scripted'] | us_pool: ['v45_scripted', 'iter_0010']
+  [pfsp]
+    [ussr] v20_scripted: WR_ussr=0.93(n=140) WR_us=0.95(n=100) pfsp=0.265
+    [ussr] v48_scripted: WR_ussr=0.97(n=140) WR_us=?(n=0) pfsp=0.111
+    [us] v45_scripted: WR_ussr=0.96(n=100) WR_us=0.93(n=182) pfsp=0.246
+    [us] iter_0010: WR_ussr=0.65(n=240) WR_us=?(n=0) pfsp=1.000
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,80.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.100,1.200]
+  [diag] card_logits nan=0 range=[-53.65,26.53]
+  [diag] values nan=0 range=[-0.4998,0.8091]
+[iter  13/30] steps= 6504 rollout_wr=0.760 (ussr=0.860 us=0.660) pl=-0.0233 vl=0.1755 ent=3.702 clip=0.070 kl=0.0021 t=8.8s (rollout=8.3s update=0.6s)
+  [league] self: self | ussr_pool: ['iter_0010', 'v58_scripted'] | us_pool: ['iter_0001', 'v18_scripted']
+  [pfsp]
+    [ussr] iter_0010: WR_ussr=0.65(n=240) WR_us=0.47(n=40) pfsp=0.905
+    [ussr] v58_scripted: WR_ussr=0.96(n=134) WR_us=0.95(n=160) pfsp=0.171
+    [us] iter_0001: WR_ussr=0.61(n=480) WR_us=0.41(n=320) pfsp=0.969
+    [us] v18_scripted: WR_ussr=?(n=0) WR_us=0.94(n=160) pfsp=0.212
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,72.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-55.34,26.05]
+  [diag] values nan=0 range=[-0.4027,0.7582]
+[iter  14/30] steps= 8913 rollout_wr=0.705 (ussr=0.810 us=0.600) pl=-0.0190 vl=0.1450 ent=3.397 clip=0.091 kl=0.0027 t=8.2s (rollout=7.6s update=0.6s)
+  [league] self: self | ussr_pool: ['iter_0010', 'v58_scripted'] | us_pool: ['v16_scripted', 'v18_scripted']
+  [pfsp]
+    [ussr] iter_0010: WR_ussr=0.66(n=280) WR_us=0.47(n=40) pfsp=0.901
+    [ussr] v58_scripted: WR_ussr=0.96(n=174) WR_us=0.95(n=160) pfsp=0.154
+    [us] v16_scripted: WR_ussr=?(n=0) WR_us=0.94(n=140) pfsp=0.241
+    [us] v18_scripted: WR_ussr=?(n=0) WR_us=0.94(n=200) pfsp=0.226
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,76.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.050]
+  [diag] card_logits nan=0 range=[-59.94,30.46]
+  [diag] values nan=0 range=[-0.3084,0.8459]
+[iter  15/30] steps= 6831 rollout_wr=0.785 (ussr=0.750 us=0.820) pl=-0.0149 vl=0.1719 ent=3.298 clip=0.065 kl=0.0019 t=6.8s (rollout=6.3s update=0.5s)
+  [league] self: self | ussr_pool: ['v58_scripted', 'v20_scripted'] | us_pool: ['v16_scripted', 'v49_scripted']
+  [pfsp]
+    [ussr] v58_scripted: WR_ussr=0.95(n=214) WR_us=0.95(n=160) pfsp=0.178
+    [ussr] v20_scripted: WR_ussr=0.93(n=180) WR_us=0.95(n=100) pfsp=0.268
+    [us] v16_scripted: WR_ussr=?(n=0) WR_us=0.94(n=180) pfsp=0.230
+    [us] v49_scripted: WR_ussr=?(n=0) WR_us=0.93(n=160) pfsp=0.277
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,82.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.050,1.300]
+  [diag] card_logits nan=0 range=[-55.43,28.38]
+  [diag] values nan=0 range=[-0.2900,0.8315]
+[iter  16/30] steps= 4488 rollout_wr=0.880 (ussr=0.910 us=0.850) pl=-0.0224 vl=0.1715 ent=3.614 clip=0.061 kl=0.0018 t=5.5s (rollout=5.1s update=0.4s)
+  [league] self: self | ussr_pool: ['v48_scripted', 'iter_0001'] | us_pool: ['v45_scripted', 'iter_0010']
+  [pfsp]
+    [ussr] v48_scripted: WR_ussr=0.96(n=180) WR_us=?(n=0) pfsp=0.150
+    [ussr] iter_0001: WR_ussr=0.61(n=480) WR_us=0.41(n=360) pfsp=0.955
+    [us] v45_scripted: WR_ussr=0.96(n=100) WR_us=0.94(n=222) pfsp=0.221
+    [us] iter_0010: WR_ussr=0.65(n=320) WR_us=0.47(n=40) pfsp=0.997
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,76.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.350]
+  [diag] card_logits nan=0 range=[-55.04,29.05]
+  [diag] values nan=0 range=[-0.3612,0.8372]
+[iter  17/30] steps= 8436 rollout_wr=0.670 (ussr=0.790 us=0.550) pl=-0.0174 vl=0.1570 ent=3.379 clip=0.084 kl=0.0024 t=8.5s (rollout=7.9s update=0.6s)
+  [league] self: self | ussr_pool: ['v22_scripted', 'v45_scripted'] | us_pool: ['iter_0010', 'v15_scripted']
+  [pfsp]
+    [ussr] v22_scripted: WR_ussr=0.94(n=140) WR_us=0.91(n=130) pfsp=0.216
+    [ussr] v45_scripted: WR_ussr=0.96(n=100) WR_us=0.93(n=262) pfsp=0.154
+    [us] iter_0010: WR_ussr=0.65(n=320) WR_us=0.40(n=80) pfsp=0.960
+    [us] v15_scripted: WR_ussr=?(n=0) WR_us=0.97(n=140) pfsp=0.111
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,73.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-58.30,27.57]
+  [diag] values nan=0 range=[-0.3992,0.8889]
+[iter  18/30] steps= 6537 rollout_wr=0.785 (ussr=0.910 us=0.660) pl=-0.0150 vl=0.1578 ent=3.598 clip=0.067 kl=0.0019 t=6.8s (rollout=6.0s update=0.7s)
+  [league] self: self | ussr_pool: ['heuristic', 'v21_scripted'] | us_pool: ['v16_scripted', 'v45_scripted']
+  [pfsp]
+    [ussr] heuristic: WR_ussr=0.10(n=152) WR_us=0.04(n=186) pfsp=0.356
+    [ussr] v21_scripted: WR_ussr=0.94(n=100) WR_us=0.93(n=60) pfsp=0.226
+    [us] v16_scripted: WR_ussr=?(n=0) WR_us=0.94(n=220) pfsp=0.238
+    [us] v45_scripted: WR_ussr=0.96(n=140) WR_us=0.93(n=262) pfsp=0.269
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,87.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.100,1.000]
+  [diag] card_logits nan=0 range=[-53.04,30.41]
+  [diag] values nan=0 range=[-0.4142,0.8259]
+[iter  19/30] steps= 6668 rollout_wr=0.705 (ussr=0.520 us=0.890) pl=-0.0128 vl=0.1917 ent=3.414 clip=0.082 kl=0.0024 t=8.4s (rollout=7.8s update=0.6s)
+  Saved to league pool: data/checkpoints/ppo_v129_sc_league/iter_0020.pt
+  [league] self: self | ussr_pool: ['v21_scripted', 'v55_scripted'] | us_pool: ['v58_scripted', 'iter_0001']
+  [pfsp]
+    [ussr] v21_scripted: WR_ussr=0.93(n=140) WR_us=0.93(n=60) pfsp=0.265
+    [ussr] v55_scripted: WR_ussr=0.96(n=110) WR_us=?(n=0) pfsp=0.140
+    [us] v58_scripted: WR_ussr=0.96(n=254) WR_us=0.95(n=160) pfsp=0.190
+    [us] iter_0001: WR_ussr=0.62(n=520) WR_us=0.41(n=360) pfsp=0.968
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,72.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-53.59,31.37]
+  [diag] values nan=0 range=[-0.4388,0.7383]
+[iter  20/30] steps= 6784 rollout_wr=0.775 (ussr=0.910 us=0.640) pl=-0.0162 vl=0.1529 ent=3.637 clip=0.086 kl=0.0023 t=7.9s (rollout=7.2s update=0.6s)
+  [probe] iter=20 card_jsd=0.0002 top1=0.992 val_mae=0.0155
+  [confirm] launched incremental Elo check for iter 20
+  [panel eval] launched pid=880485 iter=20 panel=['v55', 'v54', 'v44', 'v45', 'v14']
+  [league] self: self | ussr_pool: ['v21_scripted', 'iter_0020'] | us_pool: ['iter_0020', 'iter_0010']
+  [pfsp]
+    [ussr] v21_scripted: WR_ussr=0.93(n=180) WR_us=0.93(n=60) pfsp=0.249
+    [ussr] iter_0020: WR_ussr=?(n=0) WR_us=?(n=0) pfsp=1.000
+    [us] iter_0020: WR_ussr=?(n=0) WR_us=?(n=0) pfsp=1.000
+    [us] iter_0010: WR_ussr=0.65(n=320) WR_us=0.42(n=120) pfsp=0.972
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,82.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-61.81,22.53]
+  [diag] values nan=0 range=[-0.3939,0.7103]
+[iter  21/30] steps=10544 rollout_wr=0.630 (ussr=0.780 us=0.480) pl=-0.0231 vl=0.1541 ent=3.445 clip=0.131 kl=0.0038 t=11.3s (rollout=10.6s update=0.7s)
+  [panel eval iter 20] avg=0.501 elapsed=12s: v55=0.500 | v54=0.500 | v44=0.500 | v45=0.500 | v14=0.517
+  [panel eval] NEW HIGH-WATER MARK iter=20 avg_wr=0.5008 → ppo_running_best.pt (provenance: ppo_iter0020.pt)
+  [league] self: self | ussr_pool: ['iter_0010', 'iter_0001'] | us_pool: ['heuristic', 'v16_scripted']
+  [pfsp]
+    [ussr] iter_0010: WR_ussr=0.65(n=320) WR_us=0.41(n=160) pfsp=0.910
+    [ussr] iter_0001: WR_ussr=0.62(n=520) WR_us=0.41(n=400) pfsp=0.947
+    [us] heuristic: WR_ussr=0.10(n=192) WR_us=0.04(n=186) pfsp=0.145
+    [us] v16_scripted: WR_ussr=?(n=0) WR_us=0.93(n=260) pfsp=0.244
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,86.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.150]
+  [diag] card_logits nan=0 range=[-55.11,25.40]
+  [diag] values nan=0 range=[-0.4036,0.7381]
+[iter  22/30] steps=10313 rollout_wr=0.560 (ussr=0.680 us=0.440) pl=-0.0204 vl=0.1423 ent=3.199 clip=0.120 kl=0.0037 t=11.8s (rollout=11.0s update=0.8s)
+  [league] self: self | ussr_pool: ['heuristic', 'v20_scripted'] | us_pool: ['iter_0020', 'iter_0010']
+  [pfsp]
+    [ussr] heuristic: WR_ussr=0.10(n=192) WR_us=0.04(n=226) pfsp=0.373
+    [ussr] v20_scripted: WR_ussr=0.94(n=220) WR_us=0.95(n=100) pfsp=0.238
+    [us] iter_0020: WR_ussr=0.57(n=40) WR_us=0.55(n=40) pfsp=0.990
+    [us] iter_0010: WR_ussr=0.66(n=360) WR_us=0.41(n=160) pfsp=0.969
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,78.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.200,1.250]
+  [diag] card_logits nan=0 range=[-55.43,25.73]
+  [diag] values nan=0 range=[-0.4693,0.6237]
+[iter  23/30] steps= 9933 rollout_wr=0.510 (ussr=0.550 us=0.470) pl=-0.0188 vl=0.1703 ent=3.464 clip=0.085 kl=0.0025 t=11.5s (rollout=10.8s update=0.7s)
+  [league] self: self | ussr_pool: ['iter_0010', 'heuristic'] | us_pool: ['iter_0010', 'iter_0020']
+  [pfsp]
+    [ussr] iter_0010: WR_ussr=0.66(n=360) WR_us=0.44(n=200) pfsp=0.903
+    [ussr] heuristic: WR_ussr=0.11(n=232) WR_us=0.04(n=226) pfsp=0.398
+    [us] iter_0010: WR_ussr=0.66(n=360) WR_us=0.44(n=200) pfsp=0.986
+    [us] iter_0020: WR_ussr=0.57(n=40) WR_us=0.47(n=80) pfsp=0.997
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,80.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.250,1.000]
+  [diag] card_logits nan=0 range=[-57.16,28.26]
+  [diag] values nan=0 range=[-0.5289,0.4252]
+[iter  24/30] steps=12530 rollout_wr=0.475 (ussr=0.400 us=0.550) pl=-0.0182 vl=0.1486 ent=3.245 clip=0.115 kl=0.0036 t=13.6s (rollout=12.7s update=0.9s)
+  [league] self: self | ussr_pool: ['iter_0010', 'v20_scripted'] | us_pool: ['v49_scripted', 'iter_0010']
+  [pfsp]
+    [ussr] iter_0010: WR_ussr=0.65(n=400) WR_us=0.46(n=240) pfsp=0.910
+    [ussr] v20_scripted: WR_ussr=0.94(n=260) WR_us=0.95(n=100) pfsp=0.231
+    [us] v49_scripted: WR_ussr=?(n=0) WR_us=0.94(n=200) pfsp=0.243
+    [us] iter_0010: WR_ussr=0.65(n=400) WR_us=0.46(n=240) pfsp=0.993
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,91.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-55.26,28.67]
+  [diag] values nan=0 range=[-0.5241,0.6296]
+[iter  25/30] steps= 8732 rollout_wr=0.690 (ussr=0.770 us=0.610) pl=-0.0160 vl=0.1652 ent=3.362 clip=0.081 kl=0.0024 t=9.2s (rollout=8.5s update=0.7s)
+  [league] self: self | ussr_pool: ['iter_0020', 'iter_0020'] | us_pool: ['v58_scripted', 'v20_scripted']
+  [pfsp]
+    [ussr] iter_0020: WR_ussr=0.57(n=40) WR_us=0.49(n=120) pfsp=0.978
+    [us] v58_scripted: WR_ussr=0.96(n=254) WR_us=0.95(n=200) pfsp=0.172
+    [us] v20_scripted: WR_ussr=0.94(n=300) WR_us=0.95(n=100) pfsp=0.190
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,83.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.100]
+  [diag] card_logits nan=0 range=[-59.22,28.52]
+  [diag] values nan=0 range=[-0.4311,0.6839]
+[iter  26/30] steps= 8183 rollout_wr=0.785 (ussr=0.720 us=0.850) pl=-0.0158 vl=0.1665 ent=3.140 clip=0.064 kl=0.0019 t=9.7s (rollout=9.0s update=0.7s)
+  [league] self: self | ussr_pool: ['iter_0020', 'iter_0001'] | us_pool: ['v15_scripted', 'v58_scripted']
+  [pfsp]
+    [ussr] iter_0020: WR_ussr=0.68(n=120) WR_us=0.49(n=120) pfsp=0.877
+    [ussr] iter_0001: WR_ussr=0.62(n=560) WR_us=0.41(n=400) pfsp=0.944
+    [us] v15_scripted: WR_ussr=?(n=0) WR_us=0.97(n=180) pfsp=0.108
+    [us] v58_scripted: WR_ussr=0.96(n=254) WR_us=0.95(n=240) pfsp=0.205
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,81.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.150]
+  [diag] card_logits nan=0 range=[-57.08,26.79]
+  [diag] values nan=0 range=[-0.3738,0.8187]
+[iter  27/30] steps= 8892 rollout_wr=0.730 (ussr=0.630 us=0.830) pl=-0.0181 vl=0.1496 ent=3.023 clip=0.089 kl=0.0027 t=9.9s (rollout=9.2s update=0.7s)
+  [league] self: self | ussr_pool: ['v19_scripted', 'iter_0020'] | us_pool: ['iter_0010', 'v21_scripted']
+  [pfsp]
+    [ussr] v19_scripted: WR_ussr=0.95(n=120) WR_us=?(n=0) pfsp=0.190
+    [ussr] iter_0020: WR_ussr=0.66(n=160) WR_us=0.49(n=120) pfsp=0.894
+    [us] iter_0010: WR_ussr=0.65(n=440) WR_us=0.45(n=280) pfsp=0.989
+    [us] v21_scripted: WR_ussr=0.94(n=220) WR_us=0.93(n=60) pfsp=0.249
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,98.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-51.80,28.13]
+  [diag] values nan=0 range=[-0.3905,0.7339]
+[iter  28/30] steps= 8739 rollout_wr=0.700 (ussr=0.750 us=0.650) pl=-0.0161 vl=0.1570 ent=3.301 clip=0.100 kl=0.0031 t=10.1s (rollout=9.4s update=0.7s)
+  [league] self: self | ussr_pool: ['heuristic', 'iter_0010'] | us_pool: ['iter_0001', 'v58_scripted']
+  [pfsp]
+    [ussr] heuristic: WR_ussr=0.11(n=272) WR_us=0.04(n=226) pfsp=0.393
+    [ussr] iter_0010: WR_ussr=0.65(n=440) WR_us=0.45(n=320) pfsp=0.913
+    [us] iter_0001: WR_ussr=0.62(n=600) WR_us=0.41(n=400) pfsp=0.964
+    [us] v58_scripted: WR_ussr=0.96(n=254) WR_us=0.94(n=280) pfsp=0.216
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,85.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.200,1.100]
+  [diag] card_logits nan=0 range=[-54.35,29.61]
+  [diag] values nan=0 range=[-0.4317,0.7495]
+[iter  29/30] steps=10261 rollout_wr=0.605 (ussr=0.520 us=0.690) pl=-0.0265 vl=0.1499 ent=3.309 clip=0.128 kl=0.0047 t=12.0s (rollout=11.2s update=0.8s)
+  Saved to league pool: data/checkpoints/ppo_v129_sc_league/iter_0030.pt
+  [league] self: self | ussr_pool: ['iter_0001', 'iter_0020'] | us_pool: ['iter_0001', 'v21_scripted']
+  [pfsp]
+    [ussr] iter_0001: WR_ussr=0.62(n=600) WR_us=0.42(n=440) pfsp=0.939
+    [ussr] iter_0020: WR_ussr=0.67(n=200) WR_us=0.49(n=120) pfsp=0.884
+    [us] iter_0001: WR_ussr=0.62(n=600) WR_us=0.42(n=440) pfsp=0.972
+    [us] v21_scripted: WR_ussr=0.94(n=220) WR_us=0.96(n=100) pfsp=0.154
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,81.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.150,1.100]
+  [diag] card_logits nan=0 range=[-55.70,28.75]
+  [diag] values nan=0 range=[-0.3809,0.6759]
+[iter  30/30] steps=11005 rollout_wr=0.630 (ussr=0.630 us=0.630) pl=-0.0192 vl=0.1431 ent=3.066 clip=0.083 kl=0.0023 t=10.2s (rollout=9.4s update=0.8s)
+  [probe] iter=30 card_jsd=0.0002 top1=0.990 val_mae=0.0103
+  [confirm] launched incremental Elo check for iter 30
+  [panel eval] launched pid=880736 iter=30 panel=['v55', 'v54', 'v44', 'v45', 'v14']
+wandb: updating run metadata
+wandb: uploading history steps 27-29, summary, console lines 322-344
+wandb: uploading output.log; uploading wandb-summary.json; uploading config.yaml
+wandb: 
+wandb: Run history:
+wandb:               approx_kl █▃▃▂▃▃▃▃▃▃▃▃▂▃▁▁▂▁▂▂▅▄▂▄▂▁▃▃▆▂
+wandb:           clip_fraction █▄▄▂▃▃▃▃▄▂▃▃▂▃▁▁▂▁▂▂▅▅▂▄▂▁▃▃▅▂
+wandb: core_scalar_weight_norm ▁▁▂▂▂▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▆▆▇▇▇▇▇██
+wandb:                ent_coef ███▇▇▇▇▆▆▆▆▅▅▅▅▄▄▄▄▃▃▃▃▂▂▂▂▁▁▁
+wandb:                 entropy ▆▄▄▄▅▁█▅▄▂▃▃▇▅▄▇▄▆▅▇▅▃▅▃▄▂▁▄▄▂
+wandb:             iter_time_s ▆▇▅▂▁▃▃▃▄▃▅▃▄▃▂▁▄▂▃▃▆▆▆█▄▅▅▅▇▅
+wandb:                 n_steps ▄██▃▃▅▄▄▆▅▆▅▃▅▃▁▄▃▃▃▆▆▆█▅▄▅▅▆▇
+wandb:  new_scalar_weight_norm ███████▇▇▆▆▆▆▅▅▅▅▅▄▄▄▄▃▃▂▂▁▁▁▁
+wandb:   panel/avg_combined_wr ▁█
+wandb:     panel/eval_time_sec ▁█
+wandb:                    +186 ...
+wandb: 
+wandb: Run summary:
+wandb:               approx_kl 0.0023
+wandb:           clip_fraction 0.0832
+wandb: core_scalar_weight_norm 4.34015
+wandb:                ent_coef 0.003
+wandb:                 entropy 3.06579
+wandb:             iter_time_s 10.20719
+wandb:                 n_steps 11005
+wandb:  new_scalar_weight_norm 3.60489
+wandb:   panel/avg_combined_wr 0.50083
+wandb:     panel/eval_time_sec 11.55625
+wandb:                    +186 ...
+wandb: 
+wandb: 🚀 View run ppo_v129_sc at: https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/f4ceba56
+wandb: ⭐️ View project at: https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260413_142958-f4ceba56/logs
+
+Training complete in 4.7 minutes
+Checkpoints in: data/checkpoints/ppo_v129_sc_league
+[ppo_train_dynamic] finished at 2026-04-13T21:34:49Z

@@ -1,0 +1,185 @@
+=== ELO incremental placement: v147_sc ===
+Exporting checkpoints to TorchScript ...
+Loaded 2818 match results from SQL match_cache
+
+Match schedule (36 total, 9 new, 27 reused from prior run):
+  v55 vs v54  [reuse]
+  v55 vs v44  [reuse]
+  v55 vs v45  [reuse]
+  v55 vs v14  [reuse]
+  v55 vs v141_sc  [reuse]
+  v55 vs v12  [reuse]
+  v55 vs v46  [reuse]
+  v55 vs v147_sc
+  v54 vs v44  [reuse]
+  v54 vs v45  [reuse]
+  v54 vs v14  [reuse]
+  v54 vs v141_sc  [reuse]
+  v54 vs v12  [reuse]
+  v54 vs v46  [reuse]
+  v54 vs v147_sc
+  v44 vs v45  [reuse]
+  v44 vs v14  [reuse]
+  v44 vs v141_sc  [reuse]
+  v44 vs v12  [reuse]
+  v44 vs v46  [reuse]
+  v44 vs v147_sc
+  v45 vs v14  [reuse]
+  v45 vs v141_sc  [reuse]
+  v45 vs v12  [reuse]
+  v45 vs v46  [reuse]
+  v45 vs v147_sc
+  v14 vs v141_sc  [reuse]
+  v14 vs v12  [reuse]
+  v14 vs v46  [reuse]
+  v14 vs v147_sc
+  v141_sc vs v12
+  v141_sc vs v46  [reuse]
+  v141_sc vs v147_sc
+  v12 vs v46  [reuse]
+  v12 vs v147_sc
+  v46 vs v147_sc
+  [reuse] v55 209(115u/94s) - 181(102u/79s) v54  draws=10  WR=0.535
+  [reuse] v55 201(119u/82s) - 178(110u/68s) v44  draws=21  WR=0.529
+  [reuse] v55 206(136u/70s) - 180(123u/57s) v45  draws=14  WR=0.532
+  [reuse] v55 255(150u/105s) - 128(88u/40s) v14  draws=17  WR=0.659
+  [reuse] v55 148(79u/69s) - 47(31u/16s) v141_sc  draws=5  WR=0.752
+  [reuse] v55 250(144u/106s) - 141(93u/48s) v12  draws=9  WR=0.636
+  [reuse] v55 201(114u/87s) - 184(107u/77s) v46  draws=15  WR=0.521
+
+[new 1/9] v55 vs v147_sc (200 games = 100/side, seed=88000) ...
+  v55: 144(81u/63s)  v147_sc: 55(36u/19s)  draws: 1  WR(v55)=0.723  t=9.4s
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 194(125u/69s) - 183(121u/62s) v45  draws=23  WR=0.514
+  [reuse] v54 254(154u/100s) - 131(95u/36s) v14  draws=15  WR=0.654
+  [reuse] v54 159(95u/64s) - 40(35u/5s) v141_sc  draws=1  WR=0.797
+  [reuse] v54 242(146u/96s) - 150(103u/47s) v12  draws=8  WR=0.615
+  [reuse] v54 181(113u/68s) - 200(120u/80s) v46  draws=19  WR=0.476
+
+[new 2/9] v54 vs v147_sc (200 games = 100/side, seed=88200) ...
+  v54: 150(85u/65s)  v147_sc: 46(34u/12s)  draws: 4  WR(v54)=0.760  t=8.9s
+  [reuse] v44 194(130u/64s) - 192(130u/62s) v45  draws=14  WR=0.502
+  [reuse] v44 239(147u/92s) - 147(100u/47s) v14  draws=14  WR=0.615
+  [reuse] v44 140(76u/64s) - 58(35u/23s) v141_sc  draws=2  WR=0.705
+  [reuse] v44 247(151u/96s) - 137(95u/42s) v12  draws=16  WR=0.637
+  [reuse] v44 190(102u/88s) - 190(101u/89s) v46  draws=20  WR=0.500
+
+[new 3/9] v44 vs v147_sc (200 games = 100/side, seed=88400) ...
+  v44: 151(86u/65s)  v147_sc: 48(34u/14s)  draws: 1  WR(v44)=0.757  t=9.3s
+  [reuse] v45 226(147u/79s) - 162(115u/47s) v14  draws=12  WR=0.580
+  [reuse] v45 140(83u/57s) - 57(41u/16s) v141_sc  draws=3  WR=0.708
+  [reuse] v45 234(142u/92s) - 151(100u/51s) v12  draws=15  WR=0.604
+  [reuse] v45 189(130u/59s) - 194(137u/57s) v46  draws=17  WR=0.494
+
+[new 4/9] v45 vs v147_sc (200 games = 100/side, seed=88600) ...
+Assuming unrestricted shared filesystem usage.
+host: balsa-tree
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 20
+Rules claiming more threads will be scaled down.
+Provided resources: gpu=Resource("gpu", 1)
+Job stats:
+job                  count
+-----------------  -------
+ppo_train_dynamic        1
+total                    1
+
+Select jobs to execute...
+Execute 1 jobs...
+
+[Mon Apr 13 15:35:03 2026]
+localrule ppo_train_dynamic:
+    input: data/checkpoints/ppo_v147_sc_league/ppo_best.pt
+    output: data/checkpoints/ppo_v148_sc_league/ppo_final.pt
+    log: results/logs/ppo/ppo_v148_sc.log
+    jobid: 0
+    reason: Missing output files: data/checkpoints/ppo_v148_sc_league/ppo_final.pt
+    resources: tmpdir=/tmp, gpu=1
+  v45: 147(86u/61s)  v147_sc: 48(34u/14s)  draws: 5  WR(v45)=0.748  t=9.4s
+  [reuse] v14 106(65u/41s) - 89(59u/30s) v141_sc  draws=5  WR=0.542
+  [reuse] v14 209(104u/105s) - 177(88u/89s) v12  draws=14  WR=0.540
+  [reuse] v14 139(97u/42s) - 246(151u/95s) v46  draws=15  WR=0.366
+
+[new 5/9] v14 vs v147_sc (200 games = 100/side, seed=88800) ...
+  v14: 125(79u/46s)  v147_sc: 71(52u/19s)  draws: 4  WR(v14)=0.635  t=10.0s
+
+[new 6/9] v141_sc vs v12 (200 games = 100/side, seed=89000) ...
+  v141_sc: 88(64u/24s)  v12: 106(71u/35s)  draws: 6  WR(v141_sc)=0.455  t=9.5s
+  [reuse] v141_sc 52(36u/16s) - 140(79u/61s) v46  draws=8  WR=0.280
+
+[new 7/9] v141_sc vs v147_sc (200 games = 100/side, seed=89200) ...
+  v141_sc: 105(71u/34s)  v147_sc: 87(63u/24s)  draws: 8  WR(v141_sc)=0.545  t=9.7s
+  [reuse] v12 139(99u/40s) - 247(151u/96s) v46  draws=14  WR=0.365
+
+[new 8/9] v12 vs v147_sc (200 games = 100/side, seed=89400) ...
+  v12: 113(82u/31s)  v147_sc: 86(68u/18s)  draws: 1  WR(v12)=0.568  t=9.5s
+
+[new 9/9] v46 vs v147_sc (200 games = 100/side, seed=89600) ...
+  v46: 162(87u/75s)  v147_sc: 37(25u/12s)  draws: 1  WR(v46)=0.812  t=9.4s
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v55                    2124   2111   2055  +56  [  2110,   2137]  +109
+v54                    2117   2118   2035  +83  [  2103,   2130]  +102
+v46                    2114   2110   2035  +74  [  2101,   2128]  +99
+v44                    2099   2087   2024  +63  [  2085,   2112]  +84
+v45                    2096   2135   1977  +157  [  2083,   2110]  +81
+v14                    2015   2015   1919  +96  [  2015,   2015]  +0
+v12                    2006   2007   1907  +100  [  1992,   2020]  -9
+v141_sc                1945   1949   1829  +120  [  1926,   1963]  -70
+v147_sc                1917   1930   1781  +149  [  1898,   1935]  -98
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v55            vs v54              0.535    0.509     0.510    +0.026     +0.025
+v55            vs v44              0.529    0.538     0.536    -0.009     -0.008
+v55            vs v45              0.532    0.535     0.540    -0.003     -0.007
+v55            vs v14              0.659    0.654     0.652    +0.005     +0.007
+v55            vs v141_sc          0.752    0.742     0.737    +0.011     +0.016
+v55            vs v12              0.636    0.666     0.663    -0.030     -0.027
+v55            vs v46              0.521    0.514     0.514    +0.007     +0.007
+v55            vs v147_sc          0.723    0.771     0.767    -0.049     -0.045
+v54            vs v44              0.574    0.528     0.526    +0.045     +0.048
+v54            vs v45              0.514    0.526     0.530    -0.012     -0.016
+v54            vs v14              0.654    0.643     0.642    +0.010     +0.011
+v54            vs v141_sc          0.797    0.731     0.729    +0.067     +0.069
+v54            vs v12              0.615    0.656     0.654    -0.041     -0.039
+v54            vs v46              0.476    0.505     0.504    -0.029     -0.028
+v54            vs v147_sc          0.760    0.760     0.760    -0.000     +0.000
+v44            vs v45              0.502    0.499     0.503    +0.003     -0.001
+v44            vs v14              0.615    0.619     0.618    -0.004     -0.003
+v44            vs v141_sc          0.705    0.711     0.708    -0.006     -0.003
+v44            vs v12              0.637    0.632     0.630    +0.006     +0.007
+v44            vs v46              0.500    0.477     0.478    +0.023     +0.022
+v44            vs v147_sc          0.757    0.743     0.740    +0.015     +0.017
+v45            vs v14              0.580    0.611     0.615    -0.031     -0.035
+v45            vs v141_sc          0.708    0.697     0.705    +0.010     +0.003
+v45            vs v12              0.604    0.623     0.627    -0.019     -0.023
+v45            vs v46              0.494    0.479     0.474    +0.015     +0.019
+v45            vs v147_sc          0.748    0.726     0.738    +0.021     +0.010
+v14            vs v141_sc          0.542    0.601     0.599    -0.059     -0.057
+v14            vs v12              0.540    0.514     0.513    +0.026     +0.027
+v14            vs v46              0.366    0.360     0.361    +0.006     +0.005
+v14            vs v147_sc          0.635    0.639     0.638    -0.004     -0.003
+v141_sc        vs v12              0.455    0.412     0.413    +0.043     +0.042
+v141_sc        vs v46              0.280    0.272     0.274    +0.008     +0.006
+v141_sc        vs v147_sc          0.545    0.541     0.541    +0.004     +0.004
+v12            vs v46              0.365    0.348     0.349    +0.017     +0.016
+v12            vs v147_sc          0.568    0.626     0.626    -0.059     -0.058
+v46            vs v147_sc          0.812    0.758     0.757    +0.054     +0.055
+------------------------------------------------------------------------------------
+                                              RMSE    0.0285     0.0284
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/logs/elo/elo_v147_sc_incremental.json
+[sql] Tournament logged: incremental_20260413T223555Z_v12_v14 → results/metadata.sqlite3
+[confirm] Merged $VERSION into results/elo/elo_full_ladder.json: elo=1916
+[Mon Apr 13 15:38:00 2026]
+Finished jobid: 0 (Rule: ppo_train_dynamic)
+1 of 1 steps (100%) done
+Complete log(s): /home/dkord/code/twilight-struggle-ai/.snakemake/log/2026-04-13T153503.516267.snakemake.log

@@ -1,0 +1,84 @@
+Assuming unrestricted shared filesystem usage.
+host: balsa-tree
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 20
+Rules claiming more threads will be scaled down.
+Provided resources: gpu=Resource("gpu", 1)
+Job stats:
+job                  count
+-----------------  -------
+ppo_train_dynamic        1
+total                    1
+
+Select jobs to execute...
+Execute 1 jobs...
+
+[Tue Apr 14 15:19:37 2026]
+localrule ppo_train_dynamic:
+    input: data/checkpoints/scripted_for_elo/v267_sc_scripted.pt
+    output: data/checkpoints/ppo_v290_sc_league/ppo_final.pt
+    log: results/logs/ppo/ppo_v290_sc.log
+    jobid: 0
+    reason: Missing output files: data/checkpoints/ppo_v290_sc_league/ppo_final.pt
+    resources: tmpdir=/tmp, gpu=1
+RuleException:
+CalledProcessError in file "/home/dkord/code/twilight-struggle-ai/Snakefile.ppo", line 240:
+Command 'set -euo pipefail;  
+        if [ -z "data/checkpoints/ppo_v290_sc_league/snakemake_train_config.yaml" ]; then
+            echo "[ppo_train_dynamic] missing --config train_config=..." >&2
+            exit 1
+        fi
+        mkdir -p "data/checkpoints/ppo_v290_sc_league" "$(dirname "results/logs/ppo/ppo_v290_sc.log")"
+        echo "[ppo_train_dynamic] starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v290_sc.log"
+        CKPT_ARG=""
+        if [ -n "data/checkpoints/scripted_for_elo/v267_sc_scripted.pt" ]; then CKPT_ARG="--checkpoint data/checkpoints/scripted_for_elo/v267_sc_scripted.pt"; fi
+        uv run python scripts/train_ppo.py             $CKPT_ARG             --out-dir "data/checkpoints/ppo_v290_sc_league"             --n-iterations 30 --games-per-iter 200 --lr 5e-5 --clip-eps 0.12 --ent-coef 0.01 --ent-coef-final 0.003 --global-ent-decay-start 0 --global-ent-decay-end 300 --max-kl 0.03 --reset-optimizer --league data/checkpoints/ppo_v290_sc_league --league-save-every 10 --league-mix-k 6 --ussr-league-fixtures data/checkpoints/scripted_for_elo/v267_sc_scripted.pt data/checkpoints/scripted_for_elo/v266_sc_scripted.pt data/checkpoints/scripted_for_elo/v265_sc_scripted.pt data/checkpoints/scripted_for_elo/v264_sc_scripted.pt data/checkpoints/scripted_for_elo/v263_sc_scripted.pt data/checkpoints/scripted_for_elo/v262_sc_scripted.pt data/checkpoints/scripted_for_elo/v205_sc_scripted.pt data/checkpoints/scripted_for_elo/v206_sc_scripted.pt __heuristic__ --us-league-fixtures data/checkpoints/scripted_for_elo/v267_sc_scripted.pt data/checkpoints/scripted_for_elo/v263_sc_scripted.pt data/checkpoints/scripted_for_elo/v264_sc_scripted.pt data/checkpoints/scripted_for_elo/v266_sc_scripted.pt data/checkpoints/scripted_for_elo/v262_sc_scripted.pt data/checkpoints/scripted_for_elo/v265_sc_scripted.pt data/checkpoints/scripted_for_elo/v209_sc_scripted.pt data/checkpoints/scripted_for_elo/v210_sc_scripted.pt __heuristic__ --league-fixtures data/checkpoints/scripted_for_elo/v267_sc_scripted.pt data/checkpoints/scripted_for_elo/v266_sc_scripted.pt data/checkpoints/scripted_for_elo/v265_sc_scripted.pt data/checkpoints/scripted_for_elo/v264_sc_scripted.pt data/checkpoints/scripted_for_elo/v263_sc_scripted.pt data/checkpoints/scripted_for_elo/v262_sc_scripted.pt data/checkpoints/scripted_for_elo/v205_sc_scripted.pt data/checkpoints/scripted_for_elo/v206_sc_scripted.pt data/checkpoints/scripted_for_elo/v209_sc_scripted.pt data/checkpoints/scripted_for_elo/v210_sc_scripted.pt __heuristic__ --league-recency-tau 50 --league-fixture-fadeout 999 --pfsp-exponent 0.5 --eval-every 10 --eval-panel  --probe-set data/probe_positions.parquet --probe-every 10 --rollout-workers 1 --device cuda --wandb --wandb-run-name ppo_v290_sc --upgo --skip-smoke-test             >> "results/logs/ppo/ppo_v290_sc.log" 2>&1
+        echo "[ppo_train_dynamic] finished at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v290_sc.log"' returned non-zero exit status 1.
+[Tue Apr 14 15:19:43 2026]
+Error in rule ppo_train_dynamic:
+    message: None
+    jobid: 0
+    input: data/checkpoints/scripted_for_elo/v267_sc_scripted.pt
+    output: data/checkpoints/ppo_v290_sc_league/ppo_final.pt
+    log: results/logs/ppo/ppo_v290_sc.log (check log file(s) for error details)
+    shell:
+        
+        if [ -z "data/checkpoints/ppo_v290_sc_league/snakemake_train_config.yaml" ]; then
+            echo "[ppo_train_dynamic] missing --config train_config=..." >&2
+            exit 1
+        fi
+        mkdir -p "data/checkpoints/ppo_v290_sc_league" "$(dirname "results/logs/ppo/ppo_v290_sc.log")"
+        echo "[ppo_train_dynamic] starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v290_sc.log"
+        CKPT_ARG=""
+        if [ -n "data/checkpoints/scripted_for_elo/v267_sc_scripted.pt" ]; then CKPT_ARG="--checkpoint data/checkpoints/scripted_for_elo/v267_sc_scripted.pt"; fi
+        uv run python scripts/train_ppo.py             $CKPT_ARG             --out-dir "data/checkpoints/ppo_v290_sc_league"             --n-iterations 30 --games-per-iter 200 --lr 5e-5 --clip-eps 0.12 --ent-coef 0.01 --ent-coef-final 0.003 --global-ent-decay-start 0 --global-ent-decay-end 300 --max-kl 0.03 --reset-optimizer --league data/checkpoints/ppo_v290_sc_league --league-save-every 10 --league-mix-k 6 --ussr-league-fixtures data/checkpoints/scripted_for_elo/v267_sc_scripted.pt data/checkpoints/scripted_for_elo/v266_sc_scripted.pt data/checkpoints/scripted_for_elo/v265_sc_scripted.pt data/checkpoints/scripted_for_elo/v264_sc_scripted.pt data/checkpoints/scripted_for_elo/v263_sc_scripted.pt data/checkpoints/scripted_for_elo/v262_sc_scripted.pt data/checkpoints/scripted_for_elo/v205_sc_scripted.pt data/checkpoints/scripted_for_elo/v206_sc_scripted.pt __heuristic__ --us-league-fixtures data/checkpoints/scripted_for_elo/v267_sc_scripted.pt data/checkpoints/scripted_for_elo/v263_sc_scripted.pt data/checkpoints/scripted_for_elo/v264_sc_scripted.pt data/checkpoints/scripted_for_elo/v266_sc_scripted.pt data/checkpoints/scripted_for_elo/v262_sc_scripted.pt data/checkpoints/scripted_for_elo/v265_sc_scripted.pt data/checkpoints/scripted_for_elo/v209_sc_scripted.pt data/checkpoints/scripted_for_elo/v210_sc_scripted.pt __heuristic__ --league-fixtures data/checkpoints/scripted_for_elo/v267_sc_scripted.pt data/checkpoints/scripted_for_elo/v266_sc_scripted.pt data/checkpoints/scripted_for_elo/v265_sc_scripted.pt data/checkpoints/scripted_for_elo/v264_sc_scripted.pt data/checkpoints/scripted_for_elo/v263_sc_scripted.pt data/checkpoints/scripted_for_elo/v262_sc_scripted.pt data/checkpoints/scripted_for_elo/v205_sc_scripted.pt data/checkpoints/scripted_for_elo/v206_sc_scripted.pt data/checkpoints/scripted_for_elo/v209_sc_scripted.pt data/checkpoints/scripted_for_elo/v210_sc_scripted.pt __heuristic__ --league-recency-tau 50 --league-fixture-fadeout 999 --pfsp-exponent 0.5 --eval-every 10 --eval-panel  --probe-set data/probe_positions.parquet --probe-every 10 --rollout-workers 1 --device cuda --wandb --wandb-run-name ppo_v290_sc --upgo --skip-smoke-test             >> "results/logs/ppo/ppo_v290_sc.log" 2>&1
+        echo "[ppo_train_dynamic] finished at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v290_sc.log"
+        
+        (command exited with non-zero exit code)
+Shutting down, this might take some time.
+Exiting because a job execution failed. Look below for error messages
+[Tue Apr 14 15:19:43 2026]
+Error in rule ppo_train_dynamic:
+    message: None
+    jobid: 0
+    input: data/checkpoints/scripted_for_elo/v267_sc_scripted.pt
+    output: data/checkpoints/ppo_v290_sc_league/ppo_final.pt
+    log: results/logs/ppo/ppo_v290_sc.log (check log file(s) for error details)
+    shell:
+        
+        if [ -z "data/checkpoints/ppo_v290_sc_league/snakemake_train_config.yaml" ]; then
+            echo "[ppo_train_dynamic] missing --config train_config=..." >&2
+            exit 1
+        fi
+        mkdir -p "data/checkpoints/ppo_v290_sc_league" "$(dirname "results/logs/ppo/ppo_v290_sc.log")"
+        echo "[ppo_train_dynamic] starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v290_sc.log"
+        CKPT_ARG=""
+        if [ -n "data/checkpoints/scripted_for_elo/v267_sc_scripted.pt" ]; then CKPT_ARG="--checkpoint data/checkpoints/scripted_for_elo/v267_sc_scripted.pt"; fi
+        uv run python scripts/train_ppo.py             $CKPT_ARG             --out-dir "data/checkpoints/ppo_v290_sc_league"             --n-iterations 30 --games-per-iter 200 --lr 5e-5 --clip-eps 0.12 --ent-coef 0.01 --ent-coef-final 0.003 --global-ent-decay-start 0 --global-ent-decay-end 300 --max-kl 0.03 --reset-optimizer --league data/checkpoints/ppo_v290_sc_league --league-save-every 10 --league-mix-k 6 --ussr-league-fixtures data/checkpoints/scripted_for_elo/v267_sc_scripted.pt data/checkpoints/scripted_for_elo/v266_sc_scripted.pt data/checkpoints/scripted_for_elo/v265_sc_scripted.pt data/checkpoints/scripted_for_elo/v264_sc_scripted.pt data/checkpoints/scripted_for_elo/v263_sc_scripted.pt data/checkpoints/scripted_for_elo/v262_sc_scripted.pt data/checkpoints/scripted_for_elo/v205_sc_scripted.pt data/checkpoints/scripted_for_elo/v206_sc_scripted.pt __heuristic__ --us-league-fixtures data/checkpoints/scripted_for_elo/v267_sc_scripted.pt data/checkpoints/scripted_for_elo/v263_sc_scripted.pt data/checkpoints/scripted_for_elo/v264_sc_scripted.pt data/checkpoints/scripted_for_elo/v266_sc_scripted.pt data/checkpoints/scripted_for_elo/v262_sc_scripted.pt data/checkpoints/scripted_for_elo/v265_sc_scripted.pt data/checkpoints/scripted_for_elo/v209_sc_scripted.pt data/checkpoints/scripted_for_elo/v210_sc_scripted.pt __heuristic__ --league-fixtures data/checkpoints/scripted_for_elo/v267_sc_scripted.pt data/checkpoints/scripted_for_elo/v266_sc_scripted.pt data/checkpoints/scripted_for_elo/v265_sc_scripted.pt data/checkpoints/scripted_for_elo/v264_sc_scripted.pt data/checkpoints/scripted_for_elo/v263_sc_scripted.pt data/checkpoints/scripted_for_elo/v262_sc_scripted.pt data/checkpoints/scripted_for_elo/v205_sc_scripted.pt data/checkpoints/scripted_for_elo/v206_sc_scripted.pt data/checkpoints/scripted_for_elo/v209_sc_scripted.pt data/checkpoints/scripted_for_elo/v210_sc_scripted.pt __heuristic__ --league-recency-tau 50 --league-fixture-fadeout 999 --pfsp-exponent 0.5 --eval-every 10 --eval-panel  --probe-set data/probe_positions.parquet --probe-every 10 --rollout-workers 1 --device cuda --wandb --wandb-run-name ppo_v290_sc --upgo --skip-smoke-test             >> "results/logs/ppo/ppo_v290_sc.log" 2>&1
+        echo "[ppo_train_dynamic] finished at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v290_sc.log"
+        
+        (command exited with non-zero exit code)
+Complete log(s): /home/dkord/code/twilight-struggle-ai/.snakemake/log/2026-04-14T151937.846713.snakemake.log
+WorkflowError:
+At least one job did not complete successfully.

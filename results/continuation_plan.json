@@ -10,7 +10,7 @@
   "current_best_practical": {
     "checkpoint": "results/ppo_country_attn_v13/ppo_iter0020_scripted.pt",
     "combined": 0.427,
-    "note": "v13 seed=42000 (v6 exact seed), sync panel. Gap vs v6 explained by async panel giving ~2.5 extra gradient iters."
+    "note": "v13 seed=42000 (v6 exact seed), sync panel."
   },
   "v56_baseline": {
     "combined": 0.441,
@@ -19,64 +19,45 @@
   },
   "investigation_conclusion": {
     "status": "COMPLETE 2026-04-20",
-    "finding": "v6 seed=42000. Seed variance ~10pp at iter20. Training always peaks at iter20 (PFSP echo chamber). Current code practical ceiling ~0.427. v6=0.459 due to async panel giving extra iters.",
-    "failed_interventions": [
-      "dense reward (v9): value head destabilization",
-      "pfsp-exponent=0.5 (v10): US collapse feedback loop",
-      "val-calib-coef=0.1 (v11): biases value head to mean return",
-      "wrong seed (v12): 10pp gap",
-      "pool trimming (v8): worse",
-      "v6_iter20 warmstart (v7,v8,v9,us_overfit): all failed"
-    ],
+    "finding": "v6 seed=42000. Seed variance ~10pp at iter20. Training peaks at iter20 (PFSP echo chamber). Practical ceiling ~0.427.",
     "do_not_run": "More vN PPO experiments without fundamentally new intervention"
   },
-  "infrastructure_status": {
-    "dirichlet_noise": "COMPLETE - mcts.cpp:628 calls apply_root_dirichlet_noise(), --dir-alpha/--dir-epsilon in collect_mcts_games_jsonl (not selfplay_rows_collector)",
-    "jsd_probe": "COMPLETE - jsd_probe.py, 996-position probe set, train_ppo.py integrated",
-    "elo_ladder": "Running - results/elo/elo_full_ladder.json",
-    "mcts_selfplay_collector": "COMPLETE - build-ninja/cpp/tools/ts_collect_mcts_games_jsonl"
-  },
   "pivot1_mcts_selfplay": {
-    "status": "COMPLETE 2026-04-20 07:25 UTC",
-    "data": "data/selfplay_mcts_dir/mcts_dir_1000g.parquet (converting from JSONL)",
-    "ussr_games": 500,
-    "us_games": 500,
-    "rows": 105290,
-    "model": "results/ppo_country_attn_v6/ppo_iter0020_scripted.pt",
-    "config": "n-sim=50, dir-alpha=0.3, dir-epsilon=0.25, nash-temperatures"
+    "status": "COMPLETE 2026-04-20",
+    "data": "data/selfplay_mcts_dir/mcts_dir_1000g.parquet",
+    "config": "n-sim=50, dir-alpha=0.3, dir-epsilon=0.25, nash-temperatures, 500g each side"
   },
   "pivot2_gnn_ppo": {
     "status": "IN PROGRESS 2026-04-20",
-    "step1_bc": {
-      "status": "RUNNING pid=998967",
-      "script": "scripts/train_baseline.py",
-      "model_type": "control_feat_gnn_side",
-      "data": "data/nash_bc_combined (2.7M rows)",
-      "epochs": 30,
-      "lr": 0.0012,
-      "seed": 42000,
-      "out_dir": "results/bc_gnn_side_v1",
-      "eta": "~2026-04-20 08:08 UTC"
+    "v14_post_mortem": {
+      "result": "FAILED combined=0.192 @ iter20 (USSR=0.336, US=0.048)",
+      "root_cause": "BC warm-start from heuristic-only data too weak. GNN PPO v14 started at ~0.192 vs v56 PPO warm-start starting at ~0.441. PPO can't recover 25pp in 20 iters.",
+      "lesson": "For new architectures, BC warm-start MUST use data from a strong learned model, not just heuristic games."
     },
-    "step2_ppo": {
-      "status": "PENDING - waiting for BC checkpoint",
-      "note": "After BC completes, launch PPO with control_feat_gnn_side warm-start from results/bc_gnn_side_v1/best.pt",
-      "recipe": "same as v13 but with control_feat_gnn_side architecture: seed=42000, 20 iters, v56-warmstart-compatible architecture"
+    "v15_plan": {
+      "status": "BC v2 RUNNING - pid=1024046 eta ~2026-04-20 09:09 UTC",
+      "bc_data": "data/gnn_warmstart_v15_combined: 334K v13_iter20 games + 2.7M heuristic nash = 3M rows",
+      "bc_script": "results/bc_gnn_side_v2/ (30 epochs, lr=0.0012, seed=42000)",
+      "ppo_launch": "results/launch_gnn_ppo_v15.sh (monitor will auto-fire)",
+      "expected_improvement": "+4-8pp vs country_attn_side based on AWR sweep results"
+    },
+    "v15_collection_details": {
+      "v13_data": "data/selfplay/gnn_warmstart_v13/v13_3000g.parquet (334K rows, 3000 games learned-vs-heuristic with v13_iter20)",
+      "collection_method": "ts_collect_mcts_games_jsonl n-sim=1 (batched, fast), nash-temperatures"
     }
   },
   "next_tasks": [
-    "PIVOT 2 STEP 2 (after BC): PPO training with control_feat_gnn_side. Launch from results/bc_gnn_side_v1/best.pt. Expected +4-8pp from GNN adjacency modeling.",
-    "MCTS data integration: after parquet conversion, add data/selfplay_mcts_dir/mcts_dir_1000g.parquet to future BC/training runs as supplementary data.",
-    "Benchmark GNN PPO at iter20 (same protocol: 500g/side, seeds 50000/50500).",
-    "If GNN PPO combined > 0.427 (+3pp threshold): update record; commit; investigate further.",
-    "Fix running_best selector: replace 30-game panel with 200g heuristic-only mini-bench (standalone, not blocking training).",
-    "If any PIVOT improves combined WR >3pp vs current_best_practical (0.427): new record; continue that direction"
+    "GNN PPO v15 (PENDING - BC v2 running, ETA 09:09 UTC, monitor auto-launches)",
+    "Bench GNN PPO v15 at iter20 (same protocol: 500g/side, seeds 50000/50500). Target: >0.427 to beat country_attn_side",
+    "If v15 combined > 0.427 + 3pp = 0.457: match record range; update current_best_practical",
+    "Fix running_best selector: replace 30-game panel with 200g heuristic-only mini-bench",
+    "PIVOT 3: Try adding MCTS data (data/selfplay_mcts_dir/) to training mix for v16 if v15 beats v13"
   ],
   "key_lessons": {
-    "panel_unreliability": "30-game panel has SE=0.091. Even 0.291-bench model can show panel=0.533 by luck. Never use panel as sole running_best selector. Always bench 500g/side.",
-    "pfsp_echo_chamber": "PFSP always gravitates to self-play (near-50% WR). External fixtures get starved even with heuristic-floor=0.15. Model peaks at iter20 then declines.",
-    "opus_template_danger": "Opus-generated commands may add flags not in original recipe. Always diff against known-good command. Key culprits: val-calib-coef, pfsp-exponent, league-mix-k.",
-    "seed_matters": "PPO has ~10pp seed variance at iter20. v6 seed=42000 is known good. For replication experiments, always use seed=42000.",
-    "selfplay_vs_mcts_collector": "collect_selfplay_rows_jsonl = direct policy (fast, no search). collect_mcts_games_jsonl = MCTS + Dirichlet noise (slower, better exploration). Both output same JSONL schema. For PPO rollouts, use selfplay. For exploration data, use MCTS."
+    "bc_warmstart_quality": "BC warm-start quality = bottleneck for new architectures. v14 (heuristic BC) = 0.192. Always use games from best learned model for BC warm-start. v13 selfplay → BC → GNN PPO is the right sequence.",
+    "mcts_collection_speed": "collect_mcts_games_jsonl with n-sim=1 (direct policy, batched) is ~100x faster than collect_selfplay_rows_jsonl for learned models (batch vs sequential inference).",
+    "panel_unreliability": "30-game panel SE≈0.091. Never use as sole running_best selector. Always bench 500g/side.",
+    "pfsp_echo_chamber": "PFSP peaks at iter20. External fixtures starved even with heuristic-floor=0.15.",
+    "seed_matters": "PPO ~10pp seed variance at iter20. Always use seed=42000."
   }
 }

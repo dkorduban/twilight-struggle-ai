@@ -1,0 +1,45 @@
+No panel_eval_history.json for v66_sc — skipping confirmation tournament
+=== ELO incremental placement: v66_sc ===
+Exporting checkpoints to TorchScript ...
+  heuristic: built-in heuristic (no export needed)
+Loaded 1545 match results from cache results/matches/
+
+Match schedule (6 total, 0 new, 6 reused from prior run):
+  heuristic vs v55  [reuse]
+  heuristic vs v14  [reuse]
+  heuristic vs v66_sc  [reuse]
+  v55 vs v14  [reuse]
+  v55 vs v66_sc  [reuse]
+  v14 vs v66_sc  [reuse]
+  [reuse] heuristic 37(26u/11s) - 362(189u/173s) v55  draws=1  WR=0.094
+  [reuse] heuristic 64(32u/32s) - 329(164u/165s) v14  draws=7  WR=0.169
+  [reuse] heuristic 105(95u/10s) - 288(190u/98s) v66_sc  draws=7  WR=0.271
+  [reuse] v55 255(150u/105s) - 128(88u/40s) v14  draws=17  WR=0.659
+  [reuse] v55 243(142u/101s) - 148(95u/53s) v66_sc  draws=9  WR=0.619
+  [reuse] v14 217(134u/83s) - 175(111u/64s) v66_sc  draws=8  WR=0.552
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v55                    2111   2152   2081  +71  [  2088,   2134]  +96
+v14                    2015   2015   2010  +5  [  2015,   2015]  +0
+v66_sc                 1982   2079   1881  +198  [  1960,   2004]  -33
+heuristic              1760   1801   1671  +130  [  1734,   1786]  -255
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+heuristic      vs v55              0.094    0.113     0.117    -0.019     -0.023
+heuristic      vs v14              0.169    0.176     0.187    -0.007     -0.018
+heuristic      vs v66_sc           0.271    0.237     0.218    +0.035     +0.053
+v55            vs v14              0.659    0.643     0.634    +0.015     +0.024
+v55            vs v66_sc           0.619    0.664     0.677    -0.046     -0.058
+v14            vs v66_sc           0.552    0.543     0.547    +0.010     +0.005
+------------------------------------------------------------------------------------
+                                              RMSE    0.0258     0.0360
+  (bipartite RMSE < combined RMSE → bipartite model better fit)
+
+Saved to results/elo/elo_full_ladder.json
+Done. v66_sc: elo=1982 elo_ussr=2079 elo_us=1881

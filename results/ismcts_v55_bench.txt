@@ -1,0 +1,15 @@
+v55 ISMCTS benchmark
+  model       = data/checkpoints/scripted_for_elo/v55_scripted.pt
+  pool_size   = 16
+  pend/det    = 8
+  device      = cpu
+  intra_threads = 4
+  games/side  = 100  (total 2*100 per config)
+
+  config   opponent  ussr_wr  us_wr   comb  time(s)  games/s   sims/s
+---------------------------------------------------------------------
+    4x50       self    0.580  0.970  0.775    202.3    0.989   4210.2
+    4x50  heuristic    0.060  0.130  0.095    369.3    0.542   4432.6
+    2x50       self    0.440  0.950  0.695    111.3    1.797   3854.9
+    2x50  heuristic    0.110  0.140  0.125    266.0    0.752   3356.5
+    4x25       self    0.570  0.970  0.770    107.6    1.859   3864.4

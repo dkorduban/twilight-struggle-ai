@@ -1,0 +1,17 @@
+Collecting from 4 models, 300 games each vs heuristic
+Expected: ~72000 rows
+
+[1/4] gnn_card_attn_v2.iter0100_scripted (300 games)... 17,778 rows, adv=[-1.83, 1.67], 50.9s
+[2/4] gnn_card_attn_v2.iter0150_scripted (300 games)... 16,674 rows, adv=[-1.72, 1.82], 45.4s
+[3/4] gnn_card_attn_v2.iter0200_scripted (300 games)... 16,696 rows, adv=[-1.83, 1.70], 46.3s
+[4/4] ppo_best_scripted (300 games)... 18,635 rows, adv=[-1.72, 1.84], 52.5s
+
+Saved 69,783 rows to data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet (5.1 MB)
+Total time: 196s (3.3 min)
+
+Column shapes:
+  influence: fixed_size_list<item: float>[172]
+  cards: fixed_size_list<item: float>[448]
+  scalars: fixed_size_list<item: float>[32]
+  card_mask: fixed_size_list<item: bool>[111]
+  mode_mask: fixed_size_list<item: bool>[6]

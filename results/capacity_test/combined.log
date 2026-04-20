@@ -1,0 +1,321 @@
+[2026-04-16T23:11:59Z] Starting capacity test: USSR-only PPO from v56 (no league, no EMA)
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: dkorduban (korduban-ai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run ddc4b18b
+wandb: Tracking run with wandb version 0.25.1
+wandb: Run data is saved locally in /home/dkord/code/twilight-struggle-ai/wandb/run-20260416_161202-ddc4b18b
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Resuming run capacity_ussr_only_v3
+wandb: ⭐️ View project at https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: 🚀 View run at https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/ddc4b18b
+Loading checkpoint: data/checkpoints/ppo_v56_league/ppo_best_6mode.pt
+[smoke test] Smoke test passed: 10 games completed
+  --reset-optimizer: skipping optimizer state restore, starting fresh Adam.
+
+Starting PPO training: 20 iterations × 200 games/iter, side=ussr
+Device: cuda, lr=5e-05, clip=0.12, ent=0.01, vf=0.5
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,48.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.050,1.000]
+  [diag] card_logits nan=0 range=[-13.23,12.97]
+  [diag] values nan=0 range=[-0.8552,0.8605]
+[iter   1/20] steps=12706 rollout_wr=0.330 (ussr=0.330 us=0.000) pl=-0.0061 vl=0.1098 ent=3.736 clip=0.342 kl=0.0137 ep=3/4 t=31.6s (rollout=27.0s update=4.6s)
+wandb: WARNING Tried to log to step 1 that is less than the current step 8. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,47.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-14.45,13.51]
+  [diag] values nan=0 range=[-0.9561,0.7802]
+[iter   2/20] steps=12852 rollout_wr=0.360 (ussr=0.360 us=0.000) pl=-0.0084 vl=0.0928 ent=3.634 clip=0.277 kl=0.0098 ep=4/4 t=32.9s (rollout=27.8s update=5.1s)
+wandb: WARNING Tried to log to step 2 that is less than the current step 8. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,51.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.250,1.000]
+  [diag] card_logits nan=0 range=[-14.00,13.61]
+  [diag] values nan=0 range=[-0.9822,0.7767]
+[iter   3/20] steps=12860 rollout_wr=0.345 (ussr=0.345 us=0.000) pl=-0.0113 vl=0.0981 ent=3.590 clip=0.222 kl=0.0068 t=31.9s (rollout=26.9s update=5.1s)
+wandb: WARNING Tried to log to step 3 that is less than the current step 8. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,50.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.000,1.100]
+  [diag] card_logits nan=0 range=[-16.17,13.99]
+  [diag] values nan=0 range=[-0.9894,0.8341]
+[iter   4/20] steps=12567 rollout_wr=0.420 (ussr=0.420 us=0.000) pl=-0.0105 vl=0.1056 ent=3.585 clip=0.161 kl=0.0046 t=32.6s (rollout=27.5s update=5.1s)
+wandb: WARNING Tried to log to step 4 that is less than the current step 8. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,49.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.150,1.150]
+  [diag] card_logits nan=0 range=[-15.81,14.70]
+  [diag] values nan=0 range=[-0.9930,0.8780]
+[iter   5/20] steps=12359 rollout_wr=0.385 (ussr=0.385 us=0.000) pl=-0.0033 vl=0.0990 ent=3.634 clip=0.195 kl=0.0063 t=34.1s (rollout=29.1s update=5.0s)
+wandb: WARNING Tried to log to step 5 that is less than the current step 8. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,52.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.000,1.000]
+  [diag] card_logits nan=0 range=[-15.98,13.73]
+  [diag] values nan=0 range=[-0.9889,0.9031]
+[iter   6/20] steps=12423 rollout_wr=0.445 (ussr=0.445 us=0.000) pl=-0.0180 vl=0.1215 ent=3.534 clip=0.157 kl=0.0045 t=36.1s (rollout=31.1s update=4.9s)
+wandb: WARNING Tried to log to step 6 that is less than the current step 8. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,56.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.150,1.050]
+  [diag] card_logits nan=0 range=[-15.88,14.81]
+  [diag] values nan=0 range=[-0.9771,0.8806]
+[iter   7/20] steps=12871 rollout_wr=0.400 (ussr=0.400 us=0.000) pl=-0.0161 vl=0.1051 ent=3.543 clip=0.136 kl=0.0037 t=36.9s (rollout=31.8s update=5.1s)
+wandb: WARNING Tried to log to step 7 that is less than the current step 8. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,49.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.150,1.200]
+  [diag] card_logits nan=0 range=[-15.96,15.04]
+  [diag] values nan=0 range=[-0.9795,0.8510]
+[iter   8/20] steps=12426 rollout_wr=0.410 (ussr=0.410 us=0.000) pl=-0.0135 vl=0.1045 ent=3.494 clip=0.145 kl=0.0040 t=35.5s (rollout=30.5s update=5.0s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,49.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.200,1.150]
+  [diag] card_logits nan=0 range=[-16.39,14.92]
+  [diag] values nan=0 range=[-0.9688,0.8806]
+[iter   9/20] steps=12639 rollout_wr=0.365 (ussr=0.365 us=0.000) pl=-0.0094 vl=0.0974 ent=3.542 clip=0.132 kl=0.0036 t=33.4s (rollout=28.4s update=5.1s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,46.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.150]
+  [diag] card_logits nan=0 range=[-16.01,16.39]
+  [diag] values nan=0 range=[-0.9719,0.8460]
+[iter  10/20] steps=12589 rollout_wr=0.430 (ussr=0.430 us=0.000) pl=-0.0124 vl=0.0971 ent=3.465 clip=0.128 kl=0.0037 t=33.6s (rollout=28.6s update=5.0s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,46.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.100,1.000]
+  [diag] card_logits nan=0 range=[-16.46,14.75]
+  [diag] values nan=0 range=[-0.9699,0.8898]
+[iter  11/20] steps=12518 rollout_wr=0.405 (ussr=0.405 us=0.000) pl=-0.0019 vl=0.1078 ent=3.464 clip=0.108 kl=0.0028 t=32.2s (rollout=27.2s update=5.0s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,45.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.000,1.000]
+  [diag] card_logits nan=0 range=[-17.10,15.57]
+  [diag] values nan=0 range=[-0.9709,0.8211]
+[iter  12/20] steps=12194 rollout_wr=0.485 (ussr=0.485 us=0.000) pl=-0.0104 vl=0.1149 ent=3.436 clip=0.070 kl=0.0021 t=31.3s (rollout=26.4s update=4.9s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,52.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.200,1.100]
+  [diag] card_logits nan=0 range=[-16.06,15.80]
+  [diag] values nan=0 range=[-0.9711,0.8806]
+[iter  13/20] steps=12125 rollout_wr=0.495 (ussr=0.495 us=0.000) pl=-0.0114 vl=0.1109 ent=3.491 clip=0.088 kl=0.0026 t=31.8s (rollout=27.1s update=4.7s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,52.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-16.03,14.84]
+  [diag] values nan=0 range=[-0.9596,0.9365]
+[iter  14/20] steps=12271 rollout_wr=0.460 (ussr=0.460 us=0.000) pl=-0.0080 vl=0.1222 ent=3.425 clip=0.048 kl=0.0014 t=32.8s (rollout=27.9s update=4.9s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,48.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.050,1.100]
+  [diag] card_logits nan=0 range=[-17.01,15.53]
+  [diag] values nan=0 range=[-0.9742,0.9301]
+[iter  15/20] steps=12501 rollout_wr=0.510 (ussr=0.510 us=0.000) pl=-0.0091 vl=0.1011 ent=3.413 clip=0.059 kl=0.0018 t=32.3s (rollout=27.4s update=4.9s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,48.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.200]
+  [diag] card_logits nan=0 range=[-16.64,14.55]
+  [diag] values nan=0 range=[-0.9690,0.9204]
+[iter  16/20] steps=12721 rollout_wr=0.490 (ussr=0.490 us=0.000) pl=-0.0113 vl=0.1040 ent=3.417 clip=0.032 kl=0.0011 t=33.0s (rollout=28.1s update=4.9s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,50.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.100]
+  [diag] card_logits nan=0 range=[-16.72,14.86]
+  [diag] values nan=0 range=[-0.9732,0.9731]
+[iter  17/20] steps=12493 rollout_wr=0.475 (ussr=0.475 us=0.000) pl=-0.0065 vl=0.1116 ent=3.335 clip=0.036 kl=0.0011 t=32.3s (rollout=27.4s update=4.9s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,50.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.050]
+  [diag] card_logits nan=0 range=[-17.55,15.33]
+  [diag] values nan=0 range=[-0.9700,0.9319]
+[iter  18/20] steps=12531 rollout_wr=0.585 (ussr=0.585 us=0.000) pl=-0.0050 vl=0.1231 ent=3.406 clip=0.029 kl=0.0010 t=29.7s (rollout=24.8s update=4.9s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,47.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.100,1.100]
+  [diag] card_logits nan=0 range=[-16.28,15.01]
+  [diag] values nan=0 range=[-0.9722,0.9326]
+[iter  19/20] steps=12229 rollout_wr=0.485 (ussr=0.485 us=0.000) pl=-0.0049 vl=0.1104 ent=3.392 clip=0.035 kl=0.0011 t=29.2s (rollout=24.5s update=4.7s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,53.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.350]
+  [diag] card_logits nan=0 range=[-16.62,15.56]
+  [diag] values nan=0 range=[-0.9581,0.8940]
+[iter  20/20] steps=12120 rollout_wr=0.505 (ussr=0.505 us=0.000) pl=-0.0040 vl=0.1071 ent=3.395 clip=0.015 kl=0.0008 t=29.1s (rollout=24.5s update=4.6s)
+  [jsd] iter=20 prev_iter=10 card_jsd=0.0033 top1=0.939 val_mae=0.0442
+  [confirm] launched incremental Elo check for iter 20
+ppo_best.pt ← ppo_final.pt (panel eval did not run; consider --eval-panel)
+wandb: updating run metadata; uploading artifact run-ddc4b18b-chartsrollout_wr_table-vbRWQg
+wandb: uploading artifact run-ddc4b18b-chartsrollout_wr_table-vbRWQg
+wandb: uploading wandb-summary.json; uploading config.yaml; uploading media/table/charts/rollout_wr_table_19_091ca0168e3f19cab92e.table.json; uploading output.log
+wandb: uploading history steps 18-19, summary, console lines 108-118
+wandb: 
+wandb: Run history:
+wandb:               approx_kl █▇▇▅▄▅▂▃▂▂▂▂▁
+wandb:           clip_fraction █▇▇▆▄▅▃▃▂▂▂▂▁
+wandb: core_scalar_weight_norm ▄▄█▇▅▅▄▄▂▂▁▁▁
+wandb:                ent_coef ▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:                 entropy ▆█▅▅▄▆▄▄▄▁▃▃▃
+wandb:             iter_time_s █▆▆▄▃▄▅▅▅▅▂▁▁
+wandb:  jsd/card_early_vs_prev ▁
+wandb:   jsd/card_late_vs_prev ▁
+wandb:    jsd/card_mid_vs_prev ▁
+wandb:        jsd/card_vs_prev ▁
+wandb:                    +117 ...
+wandb: 
+wandb: Run summary:
+wandb:               approx_kl 0.00076
+wandb:           clip_fraction 0.01464
+wandb: core_scalar_weight_norm 4.03729
+wandb:                ent_coef 0.01
+wandb:                 entropy 3.39537
+wandb:             iter_time_s 29.10299
+wandb:  jsd/card_early_vs_prev 0.00328
+wandb:   jsd/card_late_vs_prev 0.00304
+wandb:    jsd/card_mid_vs_prev 0.00361
+wandb:        jsd/card_vs_prev 0.00331
+wandb:                    +150 ...
+wandb: 
+wandb: 🚀 View run capacity_ussr_only_v3 at: https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/ddc4b18b
+wandb: ⭐️ View project at: https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: Synced 5 W&B file(s), 20 media file(s), 40 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260416_161202-ddc4b18b/logs
+
+Training complete in 11.1 minutes
+Checkpoints in: results/capacity_test/ppo_ussr_only
+[2026-04-16T23:23:22Z] USSR-only done. Starting US-only PPO from v56
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: dkorduban (korduban-ai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run 18a78eb5
+wandb: Tracking run with wandb version 0.25.1
+wandb: Run data is saved locally in /home/dkord/code/twilight-struggle-ai/wandb/run-20260416_162324-18a78eb5
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run capacity_us_only_v3
+wandb: ⭐️ View project at https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: 🚀 View run at https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/18a78eb5
+Loading checkpoint: data/checkpoints/ppo_v56_league/ppo_best_6mode.pt
+[smoke test] Smoke test passed: 10 games completed
+  --reset-optimizer: skipping optimizer state restore, starting fresh Adam.
+
+Starting PPO training: 20 iterations × 200 games/iter, side=us
+Device: cuda, lr=5e-05, clip=0.12, ent=0.01, vf=0.5
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,42.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.050]
+  [diag] card_logits nan=0 range=[-15.81,11.85]
+  [diag] values nan=0 range=[-0.9786,0.8493]
+[iter   1/20] steps=11427 rollout_wr=0.190 (ussr=0.000 us=0.190) pl=-0.0142 vl=0.0990 ent=3.775 clip=0.291 kl=0.0095 t=29.2s (rollout=24.0s update=5.2s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,41.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.850,1.000]
+  [diag] card_logits nan=0 range=[-15.98,13.25]
+  [diag] values nan=0 range=[-0.9883,0.7679]
+[iter   2/20] steps=12047 rollout_wr=0.180 (ussr=0.000 us=0.180) pl=-0.0132 vl=0.0921 ent=3.724 clip=0.178 kl=0.0050 t=28.0s (rollout=23.3s update=4.7s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,43.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.200]
+  [diag] card_logits nan=0 range=[-16.23,11.08]
+  [diag] values nan=0 range=[-0.9923,0.7267]
+[iter   3/20] steps=11902 rollout_wr=0.175 (ussr=0.000 us=0.175) pl=-0.0137 vl=0.0751 ent=3.720 clip=0.168 kl=0.0047 t=28.4s (rollout=23.8s update=4.6s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,42.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.100]
+  [diag] card_logits nan=0 range=[-15.14,13.72]
+  [diag] values nan=0 range=[-0.9878,0.7793]
+[iter   4/20] steps=12279 rollout_wr=0.310 (ussr=0.000 us=0.310) pl=-0.0159 vl=0.0807 ent=3.645 clip=0.177 kl=0.0049 t=29.0s (rollout=24.3s update=4.7s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,42.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.050]
+  [diag] card_logits nan=0 range=[-15.44,11.41]
+  [diag] values nan=0 range=[-0.9889,0.9266]
+[iter   5/20] steps=12422 rollout_wr=0.160 (ussr=0.000 us=0.160) pl=-0.0093 vl=0.0811 ent=3.711 clip=0.202 kl=0.0056 t=31.8s (rollout=26.7s update=5.1s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,45.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.150]
+  [diag] card_logits nan=0 range=[-16.02,11.68]
+  [diag] values nan=0 range=[-0.9878,0.8351]
+[iter   6/20] steps=12500 rollout_wr=0.315 (ussr=0.000 us=0.315) pl=-0.0190 vl=0.0799 ent=3.662 clip=0.186 kl=0.0050 t=33.3s (rollout=28.4s update=5.0s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,40.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.200]
+  [diag] card_logits nan=0 range=[-17.14,11.14]
+  [diag] values nan=0 range=[-0.9866,0.9163]
+[iter   7/20] steps=12191 rollout_wr=0.280 (ussr=0.000 us=0.280) pl=-0.0157 vl=0.0944 ent=3.700 clip=0.134 kl=0.0035 t=29.1s (rollout=24.2s update=4.8s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,40.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.350]
+  [diag] card_logits nan=0 range=[-16.88,15.02]
+  [diag] values nan=0 range=[-0.9817,0.9114]
+[iter   8/20] steps=12633 rollout_wr=0.285 (ussr=0.000 us=0.285) pl=-0.0202 vl=0.0843 ent=3.644 clip=0.149 kl=0.0039 t=29.9s (rollout=25.1s update=4.9s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,47.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.300]
+  [diag] card_logits nan=0 range=[-16.39,12.91]
+  [diag] values nan=0 range=[-0.9743,0.9253]
+[iter   9/20] steps=12408 rollout_wr=0.260 (ussr=0.000 us=0.260) pl=-0.0036 vl=0.0800 ent=3.667 clip=0.124 kl=0.0032 t=30.7s (rollout=25.7s update=5.0s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,43.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.200]
+  [diag] card_logits nan=0 range=[-17.07,11.71]
+  [diag] values nan=0 range=[-0.9670,0.9592]
+[iter  10/20] steps=12392 rollout_wr=0.330 (ussr=0.000 us=0.330) pl=-0.0233 vl=0.0892 ent=3.629 clip=0.118 kl=0.0033 t=30.9s (rollout=25.9s update=5.0s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,43.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.100]
+  [diag] card_logits nan=0 range=[-16.96,14.71]
+  [diag] values nan=0 range=[-0.9757,0.9571]
+[iter  11/20] steps=12662 rollout_wr=0.325 (ussr=0.000 us=0.325) pl=-0.0076 vl=0.0867 ent=3.642 clip=0.106 kl=0.0028 t=31.9s (rollout=26.9s update=5.0s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,44.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.350]
+  [diag] card_logits nan=0 range=[-18.83,12.21]
+  [diag] values nan=0 range=[-0.9721,0.9700]
+[iter  12/20] steps=12972 rollout_wr=0.340 (ussr=0.000 us=0.340) pl=-0.0126 vl=0.1063 ent=3.576 clip=0.084 kl=0.0023 t=32.4s (rollout=27.3s update=5.1s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,42.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.100]
+  [diag] card_logits nan=0 range=[-17.10,11.94]
+  [diag] values nan=0 range=[-0.9683,0.9298]
+[iter  13/20] steps=12557 rollout_wr=0.355 (ussr=0.000 us=0.355) pl=-0.0086 vl=0.0982 ent=3.624 clip=0.080 kl=0.0021 t=31.7s (rollout=26.6s update=5.1s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,46.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.350,1.100]
+  [diag] card_logits nan=0 range=[-17.19,13.05]
+  [diag] values nan=0 range=[-0.9667,0.9348]
+[iter  14/20] steps=12521 rollout_wr=0.325 (ussr=0.000 us=0.325) pl=-0.0145 vl=0.0809 ent=3.602 clip=0.077 kl=0.0020 t=30.8s (rollout=25.9s update=4.9s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,41.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-17.89,11.95]
+  [diag] values nan=0 range=[-0.9709,0.9477]
+[iter  15/20] steps=12329 rollout_wr=0.345 (ussr=0.000 us=0.345) pl=-0.0114 vl=0.0901 ent=3.589 clip=0.067 kl=0.0019 t=30.9s (rollout=26.0s update=5.0s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,50.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.150]
+  [diag] card_logits nan=0 range=[-18.90,11.66]
+  [diag] values nan=0 range=[-0.9754,0.9734]
+[iter  16/20] steps=13301 rollout_wr=0.380 (ussr=0.000 us=0.380) pl=-0.0098 vl=0.0888 ent=3.560 clip=0.040 kl=0.0013 t=33.1s (rollout=27.8s update=5.3s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,46.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.050]
+  [diag] card_logits nan=0 range=[-17.85,12.40]
+  [diag] values nan=0 range=[-0.9868,0.9488]
+[iter  17/20] steps=12410 rollout_wr=0.315 (ussr=0.000 us=0.315) pl=-0.0072 vl=0.0913 ent=3.587 clip=0.032 kl=0.0011 t=30.6s (rollout=25.7s update=4.9s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,44.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.100,1.000]
+  [diag] card_logits nan=0 range=[-18.88,13.02]
+  [diag] values nan=0 range=[-0.9574,0.9589]
+[iter  18/20] steps=13036 rollout_wr=0.400 (ussr=0.000 us=0.400) pl=-0.0067 vl=0.1046 ent=3.554 clip=0.045 kl=0.0013 t=32.8s (rollout=27.6s update=5.1s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,44.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.100,1.400]
+  [diag] card_logits nan=0 range=[-17.35,12.41]
+  [diag] values nan=0 range=[-0.9749,0.9311]
+[iter  19/20] steps=13043 rollout_wr=0.320 (ussr=0.000 us=0.320) pl=-0.0083 vl=0.0897 ent=3.600 clip=0.019 kl=0.0008 t=33.1s (rollout=28.0s update=5.2s)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,51.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-17.50,12.31]
+  [diag] values nan=0 range=[-0.9793,0.9676]
+[iter  20/20] steps=13029 rollout_wr=0.365 (ussr=0.000 us=0.365) pl=-0.0072 vl=0.0888 ent=3.592 clip=0.020 kl=0.0007 t=32.9s (rollout=27.8s update=5.1s)
+  [jsd] iter=20 prev_iter=10 card_jsd=0.0038 top1=0.921 val_mae=0.0467
+  [confirm] launched incremental Elo check for iter 20
+ppo_best.pt ← ppo_final.pt (panel eval did not run; consider --eval-panel)
+wandb: updating run metadata; uploading artifact run-18a78eb5-chartsrollout_wr_table-wySUHQ
+wandb: uploading artifact run-18a78eb5-chartsrollout_wr_table-wySUHQ
+wandb: uploading config.yaml; uploading media/table/charts/rollout_wr_table_19_7946913d0691e05fe936.table.json; uploading output.log; uploading wandb-summary.json
+wandb: 
+wandb: Run history:
+wandb:               approx_kl █▄▄▄▅▄▃▄▃▃▃▂▂▂▂▁▁▁▁▁
+wandb:           clip_fraction █▅▅▅▆▅▄▄▄▄▃▃▃▂▂▂▁▂▁▁
+wandb: core_scalar_weight_norm █▇▆▇▆▅▅▅▅▅▅▄▄▃▂▂▁▁▁▁
+wandb:                ent_coef ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:                 entropy █▆▆▄▆▄▆▄▅▃▄▂▃▃▂▁▂▁▂▂
+wandb:             iter_time_s ▃▁▂▂▆█▂▄▅▅▆▇▆▅▅█▄▇█▇
+wandb:  jsd/card_early_vs_prev ▁
+wandb:   jsd/card_late_vs_prev ▁
+wandb:    jsd/card_mid_vs_prev ▁
+wandb:        jsd/card_vs_prev ▁
+wandb:                    +117 ...
+wandb: 
+wandb: Run summary:
+wandb:               approx_kl 0.00073
+wandb:           clip_fraction 0.0198
+wandb: core_scalar_weight_norm 4.03195
+wandb:                ent_coef 0.01
+wandb:                 entropy 3.59235
+wandb:             iter_time_s 32.9228
+wandb:  jsd/card_early_vs_prev 0.00351
+wandb:   jsd/card_late_vs_prev 0.00361
+wandb:    jsd/card_mid_vs_prev 0.00423
+wandb:        jsd/card_vs_prev 0.00378
+wandb:                    +117 ...
+wandb: 
+wandb: 🚀 View run capacity_us_only_v3 at: https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/18a78eb5
+wandb: ⭐️ View project at: https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: Synced 5 W&B file(s), 20 media file(s), 40 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260416_162324-18a78eb5/logs
+
+Training complete in 10.6 minutes
+Checkpoints in: results/capacity_test/ppo_us_only
+[2026-04-16T23:34:07Z] Both capacity test PPO runs complete

@@ -1,0 +1,89 @@
+[ppo_train_dynamic] starting at 2026-04-17T14:12:24Z
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: dkorduban (korduban-ai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run 3ee9a8a9
+wandb: Tracking run with wandb version 0.25.1
+wandb: Run data is saved locally in /home/dkord/code/twilight-struggle-ai/wandb/run-20260417_071227-3ee9a8a9
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run ppo_v313_sc
+wandb: ⭐️ View project at https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: 🚀 View run at https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/3ee9a8a9
+Loading checkpoint: data/checkpoints/ppo_v312_sc_league/ppo_best.pt
+  --reset-optimizer: skipping optimizer state restore, starting fresh Adam.
+  EMA enabled: decay=0.995
+
+Starting PPO training: 50 iterations × 200 games/iter, side=both
+Device: cuda, lr=5e-05, clip=0.12, ent=0.01, vf=0.5
+League training enabled (pool: data/checkpoints/ppo_v313_sc_league, save-every=10)
+  Saved to league pool: data/checkpoints/ppo_v313_sc_league/iter_0001.pt
+  [league] self: self | ussr_pool: ['v57_scripted', 'v22_scripted'] | us_pool: ['heuristic', 'v58_scripted']
+  [pfsp]
+    [ussr] v57_scripted: WR=0.64(n=300) sym=0.925 ucb=0.080 → pfsp=1.006
+    [ussr] v22_scripted: WR=0.66(n=196) sym=0.900 ucb=0.099 → pfsp=0.999
+    [us] heuristic: WR=0.31(n=539) sym=0.858 ucb=0.060 → pfsp=0.918
+    [us] v58_scripted: WR=0.39(n=236) sym=0.948 ucb=0.090 → pfsp=1.038
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,46.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.000,1.150]
+  [diag] card_logits nan=0 range=[-20.65,15.36]
+  [diag] values nan=0 range=[-0.9494,0.9342]
+[iter   1/50] steps=12154 rollout_wr=0.505 (ussr=0.660 us=0.350 panel=0.505) pl=-0.0292 vl=0.1042 ent=3.484 clip=0.272 kl=0.0089 t=43.0s (rollout=31.3s update=11.7s)
+  [league] self: self | ussr_pool: ['v56_scripted', 'heuristic'] | us_pool: ['iter_0001', 'v55_scripted']
+  [pfsp]
+    [ussr] v56_scripted: WR=0.67(n=176) sym=0.884 ucb=0.105 → pfsp=0.989
+    [ussr] heuristic: WR=0.46(n=688) sym=0.992 ucb=0.053 → pfsp=1.046
+    [us] iter_0001: WR=?(n=0) pfsp=1.000 (< MIN_GAMES)
+    [us] v55_scripted: WR=0.42(n=212) sym=0.971 ucb=0.095 → pfsp=1.066
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,46.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.150]
+  [diag] card_logits nan=0 range=[-21.47,17.10]
+  [diag] values nan=0 range=[-0.9688,0.9068]
+[iter   2/50] steps=12553 rollout_wr=0.540 (ussr=0.730 us=0.350 panel=0.606) pl=-0.0256 vl=0.0990 ent=3.351 clip=0.242 kl=0.0089 t=44.9s (rollout=33.5s update=11.4s)
+  [league] self: self | ussr_pool: ['iter_0001', 'iter_0001'] | us_pool: ['iter_0001', 'v54_scripted']
+  [pfsp]
+    [ussr] iter_0001: WR=?(n=0) pfsp=1.000 (< MIN_GAMES)
+    [us] iter_0001: WR=0.28(n=40) sym=0.797 ucb=0.220 → pfsp=1.017
+    [us] v54_scripted: WR=0.40(n=200) sym=0.960 ucb=0.098 → pfsp=1.058
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,40.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-1.100,1.000]
+  [diag] card_logits nan=0 range=[-21.07,16.05]
+  [diag] values nan=0 range=[-0.9290,0.9517]
+[iter 3] KL divergence 11194.1043 > 0.0300, stopping early
+ppo_best.pt ← ppo_final.pt (panel eval did not run; consider --eval-panel)
+wandb: updating run metadata
+wandb: uploading output.log; uploading wandb-summary.json; uploading config.yaml
+wandb: uploading history steps 1-1, summary, console lines 35-43
+wandb: 
+wandb: Run history:
+wandb:               approx_kl ▁█
+wandb:           clip_fraction █▁
+wandb: core_scalar_weight_norm █▁
+wandb:                ent_coef █▁
+wandb:                 entropy █▁
+wandb:             iter_time_s ▁█
+wandb:        kl_early_stopped ▁▁
+wandb:                      lr █▁
+wandb:        meta/iter_time_s ▁█
+wandb:                 n_steps ▁█
+wandb:                    +159 ...
+wandb: 
+wandb: Run summary:
+wandb:               approx_kl 0.0089
+wandb:           clip_fraction 0.24245
+wandb: core_scalar_weight_norm 4.06927
+wandb:                ent_coef 0.00995
+wandb:                 entropy 3.3513
+wandb:             iter_time_s 44.87941
+wandb:        kl_early_stopped 0
+wandb:                      lr 5e-05
+wandb:        meta/iter_time_s 44.87941
+wandb:                 n_steps 12553
+wandb:                    +159 ...
+wandb: 
+wandb: 🚀 View run ppo_v313_sc at: https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/3ee9a8a9
+wandb: ⭐️ View project at: https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: Synced 5 W&B file(s), 2 media file(s), 4 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260417_071227-3ee9a8a9/logs
+
+Training complete in 2.2 minutes
+Checkpoints in: data/checkpoints/ppo_v313_sc_league
+[ppo_train_dynamic] finished at 2026-04-17T14:15:00Z

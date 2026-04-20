@@ -1,0 +1,4 @@
+2026-04-11T23:11:39.355002 LAUNCH v66_sc PPO training
+  command: PYTHONPATH=build-ninja/bindings WANDB_API_KEY=$(cat .wandb-api-key.txt) nice -n 10 uv run python scripts/train_ppo.py --checkpoint data/checkpoints/ppo_v65_league/ppo_best.pt --out-dir data/checkpoints/ppo_v66_sc_league --n-iterations 80 --games-per-iter 100 --league data/checkpoints/ppo_v65_league --league-save-every 10 --league-mix-k 4 --experiment ppo_v66_sc_league
+  rationale: First PPO run with working SmallChoice training (sc_loss non-zero). Fixed bug in rollout_model_vs_model_batched.
+  hypothesis: SmallChoice training should improve event decision quality, potentially +2-5pp Elo vs v65_sc.

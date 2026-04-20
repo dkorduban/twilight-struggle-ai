@@ -1,0 +1,241 @@
+=== ELO incremental placement: v83_sc ===
+Exporting checkpoints to TorchScript ...
+Loaded 2598 match results from SQL match_cache
+
+Match schedule (36 total, 8 new, 28 reused from prior run):
+  v55 vs v54  [reuse]
+  v55 vs v44  [reuse]
+  v55 vs v45  [reuse]
+  v55 vs v14  [reuse]
+  v55 vs v52  [reuse]
+  v55 vs v74_sc  [reuse]
+  v55 vs v46  [reuse]
+  v55 vs v83_sc
+  v54 vs v44  [reuse]
+  v54 vs v45  [reuse]
+  v54 vs v14  [reuse]
+  v54 vs v52  [reuse]
+  v54 vs v74_sc  [reuse]
+  v54 vs v46  [reuse]
+  v54 vs v83_sc
+  v44 vs v45  [reuse]
+  v44 vs v14  [reuse]
+  v44 vs v52  [reuse]
+  v44 vs v74_sc  [reuse]
+  v44 vs v46  [reuse]
+  v44 vs v83_sc
+  v45 vs v14  [reuse]
+  v45 vs v52  [reuse]
+  v45 vs v74_sc  [reuse]
+  v45 vs v46  [reuse]
+  v45 vs v83_sc
+  v14 vs v52  [reuse]
+  v14 vs v74_sc  [reuse]
+  v14 vs v46  [reuse]
+  v14 vs v83_sc
+  v52 vs v74_sc  [reuse]
+  v52 vs v46  [reuse]
+  v52 vs v83_sc
+  v74_sc vs v46  [reuse]
+  v74_sc vs v83_sc
+  v46 vs v83_sc
+  [reuse] v55 209(115u/94s) - 181(102u/79s) v54  draws=10  WR=0.535
+  [reuse] v55 201(119u/82s) - 178(110u/68s) v44  draws=21  WR=0.529
+  [reuse] v55 206(136u/70s) - 180(123u/57s) v45  draws=14  WR=0.532
+  [reuse] v55 255(150u/105s) - 128(88u/40s) v14  draws=17  WR=0.659
+  [reuse] v55 262(144u/118s) - 129(79u/50s) v52  draws=9  WR=0.666
+  [reuse] v55 118(65u/53s) - 76(45u/31s) v74_sc  draws=6  WR=0.605
+  [reuse] v55 201(114u/87s) - 184(107u/77s) v46  draws=15  WR=0.521
+
+[new 1/8] v55 vs v83_sc (200 games = 100/side, seed=88000) ...
+  v55: 131(70u/61s)  v83_sc: 65(38u/27s)  draws: 4  WR(v55)=0.665  t=9.3s
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 194(125u/69s) - 183(121u/62s) v45  draws=23  WR=0.514
+  [reuse] v54 254(154u/100s) - 131(95u/36s) v14  draws=15  WR=0.654
+  [reuse] v54 256(144u/112s) - 130(83u/47s) v52  draws=14  WR=0.657
+  [reuse] v54 119(71u/48s) - 75(49u/26s) v74_sc  draws=6  WR=0.610
+  [reuse] v54 181(113u/68s) - 200(120u/80s) v46  draws=19  WR=0.476
+
+[new 2/8] v54 vs v83_sc (200 games = 100/side, seed=88200) ...
+Assuming unrestricted shared filesystem usage.
+host: balsa-tree
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 20
+Rules claiming more threads will be scaled down.
+Provided resources: gpu=Resource("gpu", 1)
+Job stats:
+job                  count
+-----------------  -------
+ppo_train_dynamic        1
+total                    1
+
+Select jobs to execute...
+Execute 1 jobs...
+
+[Mon Apr 13 09:12:46 2026]
+localrule ppo_train_dynamic:
+    input: data/checkpoints/ppo_v83_sc_league/ppo_best.pt
+    output: data/checkpoints/ppo_v84_sc_league/ppo_final.pt
+    log: results/logs/ppo/ppo_v84_sc.log
+    jobid: 0
+    reason: Missing output files: data/checkpoints/ppo_v84_sc_league/ppo_final.pt
+    resources: tmpdir=/tmp, gpu=1
+  v54: 138(76u/62s)  v83_sc: 57(38u/19s)  draws: 5  WR(v54)=0.703  t=9.5s
+  [reuse] v44 194(130u/64s) - 192(130u/62s) v45  draws=14  WR=0.502
+  [reuse] v44 239(147u/92s) - 147(100u/47s) v14  draws=14  WR=0.615
+  [reuse] v44 250(141u/109s) - 139(82u/57s) v52  draws=11  WR=0.639
+  [reuse] v44 112(60u/52s) - 77(43u/34s) v74_sc  draws=11  WR=0.588
+  [reuse] v44 190(102u/88s) - 190(101u/89s) v46  draws=20  WR=0.500
+
+[new 3/8] v44 vs v83_sc (200 games = 100/side, seed=88400) ...
+  v44: 128(71u/57s)  v83_sc: 67(42u/25s)  draws: 5  WR(v44)=0.652  t=9.9s
+  [reuse] v45 226(147u/79s) - 162(115u/47s) v14  draws=12  WR=0.580
+  [reuse] v45 249(155u/94s) - 131(95u/36s) v52  draws=20  WR=0.647
+  [reuse] v45 114(61u/53s) - 84(47u/37s) v74_sc  draws=2  WR=0.575
+  [reuse] v45 189(130u/59s) - 194(137u/57s) v46  draws=17  WR=0.494
+
+[new 4/8] v45 vs v83_sc (200 games = 100/side, seed=88600) ...
+  v45: 141(80u/61s)  v83_sc: 54(37u/17s)  draws: 5  WR(v45)=0.718  t=9.4s
+  [reuse] v14 198(120u/78s) - 181(115u/66s) v52  draws=21  WR=0.521
+  [reuse] v14 97(63u/34s) - 99(64u/35s) v74_sc  draws=4  WR=0.495
+  [reuse] v14 139(97u/42s) - 246(151u/95s) v46  draws=15  WR=0.366
+
+[new 5/8] v14 vs v83_sc (200 games = 100/side, seed=88800) ...
+  v14: 123(70u/53s)  v83_sc: 72(46u/26s)  draws: 5  WR(v14)=0.627  t=9.6s
+  [reuse] v52 188(107u/81s) - 191(112u/79s) v74_sc  draws=21  WR=0.496
+  [reuse] v52 136(90u/46s) - 249(145u/104s) v46  draws=15  WR=0.359
+
+[new 6/8] v52 vs v83_sc (200 games = 100/side, seed=89000) ...
+  v52: 92(56u/36s)  v83_sc: 101(61u/40s)  draws: 7  WR(v52)=0.477  t=9.8s
+  [reuse] v74_sc 152(93u/59s) - 226(130u/96s) v46  draws=22  WR=0.407
+
+[new 7/8] v74_sc vs v83_sc (200 games = 100/side, seed=89200) ...
+  v74_sc: 81(55u/26s)  v83_sc: 112(72u/40s)  draws: 7  WR(v74_sc)=0.422  t=9.6s
+
+[new 8/8] v46 vs v83_sc (200 games = 100/side, seed=89400) ...
+  v46: 129(71u/58s)  v83_sc: 68(42u/26s)  draws: 3  WR(v46)=0.652  t=9.5s
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v55                    2120   2087   2035  +52  [  2107,   2133]  +105
+v54                    2113   2090   2017  +73  [  2099,   2126]  +98
+v46                    2103   2080   2006  +74  [  2090,   2116]  +88
+v45                    2096   2119   1958  +162  [  2083,   2109]  +81
+v44                    2092   2057   2005  +51  [  2079,   2105]  +77
+v74_sc                 2015   1978   1924  +54  [  1999,   2031]  +0
+v14                    2015   2015   1882  +133  [  2015,   2015]  +0
+v52                    1995   1964   1895  +68  [  1982,   2008]  -20
+v83_sc                 1984   1949   1887  +62  [  1966,   2002]  -31
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v55            vs v54              0.535    0.510     0.511    +0.025     +0.024
+v55            vs v44              0.529    0.542     0.541    -0.013     -0.012
+v55            vs v45              0.532    0.530     0.535    +0.003     -0.002
+v55            vs v14              0.659    0.647     0.647    +0.012     +0.012
+v55            vs v52              0.666    0.676     0.673    -0.010     -0.007
+v55            vs v74_sc           0.605    0.650     0.647    -0.045     -0.042
+v55            vs v46              0.521    0.525     0.524    -0.004     -0.003
+v55            vs v83_sc           0.665    0.691     0.686    -0.026     -0.021
+v54            vs v44              0.574    0.532     0.530    +0.042     +0.044
+v54            vs v45              0.514    0.520     0.524    -0.006     -0.010
+v54            vs v14              0.654    0.636     0.637    +0.018     +0.017
+v54            vs v52              0.657    0.666     0.664    -0.008     -0.006
+v54            vs v74_sc           0.610    0.640     0.637    -0.030     -0.027
+v54            vs v46              0.476    0.515     0.514    -0.038     -0.037
+v54            vs v83_sc           0.703    0.681     0.677    +0.022     +0.025
+v44            vs v45              0.502    0.490     0.494    +0.012     +0.009
+v44            vs v14              0.615    0.609     0.609    +0.006     +0.006
+v44            vs v52              0.639    0.638     0.636    +0.001     +0.003
+v44            vs v74_sc           0.588    0.611     0.609    -0.023     -0.021
+v44            vs v46              0.500    0.483     0.484    +0.017     +0.016
+v44            vs v83_sc           0.652    0.654     0.650    -0.001     +0.002
+v45            vs v14              0.580    0.607     0.615    -0.027     -0.035
+v45            vs v52              0.647    0.638     0.642    +0.010     +0.006
+v45            vs v74_sc           0.575    0.613     0.615    -0.038     -0.040
+v45            vs v46              0.494    0.494     0.490    +0.000     +0.004
+v45            vs v83_sc           0.718    0.652     0.656    +0.065     +0.062
+v14            vs v52              0.521    0.525     0.529    -0.004     -0.008
+v14            vs v74_sc           0.495    0.497     0.500    -0.002     -0.005
+v14            vs v46              0.366    0.377     0.376    -0.011     -0.009
+v14            vs v83_sc           0.627    0.541     0.544    +0.087     +0.083
+v52            vs v74_sc           0.496    0.470     0.471    +0.026     +0.026
+v52            vs v46              0.359    0.348     0.349    +0.011     +0.010
+v52            vs v83_sc           0.477    0.516     0.515    -0.039     -0.038
+v74_sc         vs v46              0.407    0.374     0.376    +0.033     +0.032
+v74_sc         vs v83_sc           0.422    0.546     0.545    -0.124     -0.122
+v46            vs v83_sc           0.652    0.668     0.665    -0.015     -0.013
+------------------------------------------------------------------------------------
+                                              RMSE    0.0345     0.0337
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/logs/elo/elo_v83_sc_incremental.json
+[sql] Tournament logged: incremental_20260413T161347Z_v14_v44 → results/metadata.sqlite3
+[confirm] Merged $VERSION into results/elo/elo_full_ladder.json: elo=1984
+RuleException:
+CalledProcessError in file "/home/dkord/code/twilight-struggle-ai/Snakefile.ppo", line 233:
+Command 'set -euo pipefail;  
+        if [ -z "data/checkpoints/ppo_v84_sc_league/snakemake_train_config.yaml" ]; then
+            echo "[ppo_train_dynamic] missing --config train_config=..." >&2
+            exit 1
+        fi
+        mkdir -p "data/checkpoints/ppo_v84_sc_league" "$(dirname "results/logs/ppo/ppo_v84_sc.log")"
+        echo "[ppo_train_dynamic] starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v84_sc.log"
+        CKPT_ARG=""
+        if [ -n "data/checkpoints/ppo_v83_sc_league/ppo_best.pt" ]; then CKPT_ARG="--checkpoint data/checkpoints/ppo_v83_sc_league/ppo_best.pt"; fi
+        uv run python scripts/train_ppo.py             $CKPT_ARG             --out-dir "data/checkpoints/ppo_v84_sc_league"             --n-iterations 30 --games-per-iter 200 --lr 2e-5 --clip-eps 0.12 --ent-coef 0.01 --ent-coef-final 0.003 --global-ent-decay-start 114 --global-ent-decay-end 144 --max-kl 0.3 --reset-optimizer --league data/checkpoints/ppo_v84_sc_league --league-save-every 10 --league-mix-k 6 --ussr-league-fixtures data/checkpoints/scripted_for_elo/v55_scripted.pt data/checkpoints/scripted_for_elo/v48_scripted.pt data/checkpoints/scripted_for_elo/v19_scripted.pt data/checkpoints/scripted_for_elo/v21_scripted.pt data/checkpoints/scripted_for_elo/v22_scripted.pt data/checkpoints/scripted_for_elo/v20_scripted.pt data/checkpoints/scripted_for_elo/v58_scripted.pt data/checkpoints/scripted_for_elo/v45_scripted.pt __heuristic__ --us-league-fixtures data/checkpoints/scripted_for_elo/v45_scripted.pt data/checkpoints/scripted_for_elo/v15_scripted.pt data/checkpoints/scripted_for_elo/v58_scripted.pt data/checkpoints/scripted_for_elo/v18_scripted.pt data/checkpoints/scripted_for_elo/v20_scripted.pt data/checkpoints/scripted_for_elo/v16_scripted.pt data/checkpoints/scripted_for_elo/v21_scripted.pt data/checkpoints/scripted_for_elo/v49_scripted.pt __heuristic__ --league-fixtures data/checkpoints/scripted_for_elo/v55_scripted.pt data/checkpoints/scripted_for_elo/v48_scripted.pt data/checkpoints/scripted_for_elo/v19_scripted.pt data/checkpoints/scripted_for_elo/v21_scripted.pt data/checkpoints/scripted_for_elo/v22_scripted.pt data/checkpoints/scripted_for_elo/v20_scripted.pt data/checkpoints/scripted_for_elo/v58_scripted.pt data/checkpoints/scripted_for_elo/v45_scripted.pt data/checkpoints/scripted_for_elo/v15_scripted.pt data/checkpoints/scripted_for_elo/v18_scripted.pt data/checkpoints/scripted_for_elo/v16_scripted.pt data/checkpoints/scripted_for_elo/v49_scripted.pt __heuristic__ --league-recency-tau 50 --league-fixture-fadeout 999 --pfsp-exponent 1.5 --eval-every 10 --eval-panel data/checkpoints/scripted_for_elo/v55_scripted.pt data/checkpoints/scripted_for_elo/v54_scripted.pt data/checkpoints/scripted_for_elo/v44_scripted.pt data/checkpoints/scripted_for_elo/v45_scripted.pt data/checkpoints/scripted_for_elo/v14_scripted.pt --probe-set data/probe_positions.parquet --probe-every 10 --rollout-workers 1 --device cuda --wandb --wandb-run-name ppo_v84_sc --upgo             >> "results/logs/ppo/ppo_v84_sc.log" 2>&1
+        echo "[ppo_train_dynamic] finished at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v84_sc.log"' returned non-zero exit status 1.
+[Mon Apr 13 09:15:09 2026]
+Error in rule ppo_train_dynamic:
+    message: None
+    jobid: 0
+    input: data/checkpoints/ppo_v83_sc_league/ppo_best.pt
+    output: data/checkpoints/ppo_v84_sc_league/ppo_final.pt
+    log: results/logs/ppo/ppo_v84_sc.log (check log file(s) for error details)
+    shell:
+        
+        if [ -z "data/checkpoints/ppo_v84_sc_league/snakemake_train_config.yaml" ]; then
+            echo "[ppo_train_dynamic] missing --config train_config=..." >&2
+            exit 1
+        fi
+        mkdir -p "data/checkpoints/ppo_v84_sc_league" "$(dirname "results/logs/ppo/ppo_v84_sc.log")"
+        echo "[ppo_train_dynamic] starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v84_sc.log"
+        CKPT_ARG=""
+        if [ -n "data/checkpoints/ppo_v83_sc_league/ppo_best.pt" ]; then CKPT_ARG="--checkpoint data/checkpoints/ppo_v83_sc_league/ppo_best.pt"; fi
+        uv run python scripts/train_ppo.py             $CKPT_ARG             --out-dir "data/checkpoints/ppo_v84_sc_league"             --n-iterations 30 --games-per-iter 200 --lr 2e-5 --clip-eps 0.12 --ent-coef 0.01 --ent-coef-final 0.003 --global-ent-decay-start 114 --global-ent-decay-end 144 --max-kl 0.3 --reset-optimizer --league data/checkpoints/ppo_v84_sc_league --league-save-every 10 --league-mix-k 6 --ussr-league-fixtures data/checkpoints/scripted_for_elo/v55_scripted.pt data/checkpoints/scripted_for_elo/v48_scripted.pt data/checkpoints/scripted_for_elo/v19_scripted.pt data/checkpoints/scripted_for_elo/v21_scripted.pt data/checkpoints/scripted_for_elo/v22_scripted.pt data/checkpoints/scripted_for_elo/v20_scripted.pt data/checkpoints/scripted_for_elo/v58_scripted.pt data/checkpoints/scripted_for_elo/v45_scripted.pt __heuristic__ --us-league-fixtures data/checkpoints/scripted_for_elo/v45_scripted.pt data/checkpoints/scripted_for_elo/v15_scripted.pt data/checkpoints/scripted_for_elo/v58_scripted.pt data/checkpoints/scripted_for_elo/v18_scripted.pt data/checkpoints/scripted_for_elo/v20_scripted.pt data/checkpoints/scripted_for_elo/v16_scripted.pt data/checkpoints/scripted_for_elo/v21_scripted.pt data/checkpoints/scripted_for_elo/v49_scripted.pt __heuristic__ --league-fixtures data/checkpoints/scripted_for_elo/v55_scripted.pt data/checkpoints/scripted_for_elo/v48_scripted.pt data/checkpoints/scripted_for_elo/v19_scripted.pt data/checkpoints/scripted_for_elo/v21_scripted.pt data/checkpoints/scripted_for_elo/v22_scripted.pt data/checkpoints/scripted_for_elo/v20_scripted.pt data/checkpoints/scripted_for_elo/v58_scripted.pt data/checkpoints/scripted_for_elo/v45_scripted.pt data/checkpoints/scripted_for_elo/v15_scripted.pt data/checkpoints/scripted_for_elo/v18_scripted.pt data/checkpoints/scripted_for_elo/v16_scripted.pt data/checkpoints/scripted_for_elo/v49_scripted.pt __heuristic__ --league-recency-tau 50 --league-fixture-fadeout 999 --pfsp-exponent 1.5 --eval-every 10 --eval-panel data/checkpoints/scripted_for_elo/v55_scripted.pt data/checkpoints/scripted_for_elo/v54_scripted.pt data/checkpoints/scripted_for_elo/v44_scripted.pt data/checkpoints/scripted_for_elo/v45_scripted.pt data/checkpoints/scripted_for_elo/v14_scripted.pt --probe-set data/probe_positions.parquet --probe-every 10 --rollout-workers 1 --device cuda --wandb --wandb-run-name ppo_v84_sc --upgo             >> "results/logs/ppo/ppo_v84_sc.log" 2>&1
+        echo "[ppo_train_dynamic] finished at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v84_sc.log"
+        
+        (command exited with non-zero exit code)
+Removing output files of failed job ppo_train_dynamic since they might be corrupted:
+data/checkpoints/ppo_v84_sc_league/ppo_final.pt
+Shutting down, this might take some time.
+Exiting because a job execution failed. Look below for error messages
+[Mon Apr 13 09:15:09 2026]
+Error in rule ppo_train_dynamic:
+    message: None
+    jobid: 0
+    input: data/checkpoints/ppo_v83_sc_league/ppo_best.pt
+    output: data/checkpoints/ppo_v84_sc_league/ppo_final.pt
+    log: results/logs/ppo/ppo_v84_sc.log (check log file(s) for error details)
+    shell:
+        
+        if [ -z "data/checkpoints/ppo_v84_sc_league/snakemake_train_config.yaml" ]; then
+            echo "[ppo_train_dynamic] missing --config train_config=..." >&2
+            exit 1
+        fi
+        mkdir -p "data/checkpoints/ppo_v84_sc_league" "$(dirname "results/logs/ppo/ppo_v84_sc.log")"
+        echo "[ppo_train_dynamic] starting at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v84_sc.log"
+        CKPT_ARG=""
+        if [ -n "data/checkpoints/ppo_v83_sc_league/ppo_best.pt" ]; then CKPT_ARG="--checkpoint data/checkpoints/ppo_v83_sc_league/ppo_best.pt"; fi
+        uv run python scripts/train_ppo.py             $CKPT_ARG             --out-dir "data/checkpoints/ppo_v84_sc_league"             --n-iterations 30 --games-per-iter 200 --lr 2e-5 --clip-eps 0.12 --ent-coef 0.01 --ent-coef-final 0.003 --global-ent-decay-start 114 --global-ent-decay-end 144 --max-kl 0.3 --reset-optimizer --league data/checkpoints/ppo_v84_sc_league --league-save-every 10 --league-mix-k 6 --ussr-league-fixtures data/checkpoints/scripted_for_elo/v55_scripted.pt data/checkpoints/scripted_for_elo/v48_scripted.pt data/checkpoints/scripted_for_elo/v19_scripted.pt data/checkpoints/scripted_for_elo/v21_scripted.pt data/checkpoints/scripted_for_elo/v22_scripted.pt data/checkpoints/scripted_for_elo/v20_scripted.pt data/checkpoints/scripted_for_elo/v58_scripted.pt data/checkpoints/scripted_for_elo/v45_scripted.pt __heuristic__ --us-league-fixtures data/checkpoints/scripted_for_elo/v45_scripted.pt data/checkpoints/scripted_for_elo/v15_scripted.pt data/checkpoints/scripted_for_elo/v58_scripted.pt data/checkpoints/scripted_for_elo/v18_scripted.pt data/checkpoints/scripted_for_elo/v20_scripted.pt data/checkpoints/scripted_for_elo/v16_scripted.pt data/checkpoints/scripted_for_elo/v21_scripted.pt data/checkpoints/scripted_for_elo/v49_scripted.pt __heuristic__ --league-fixtures data/checkpoints/scripted_for_elo/v55_scripted.pt data/checkpoints/scripted_for_elo/v48_scripted.pt data/checkpoints/scripted_for_elo/v19_scripted.pt data/checkpoints/scripted_for_elo/v21_scripted.pt data/checkpoints/scripted_for_elo/v22_scripted.pt data/checkpoints/scripted_for_elo/v20_scripted.pt data/checkpoints/scripted_for_elo/v58_scripted.pt data/checkpoints/scripted_for_elo/v45_scripted.pt data/checkpoints/scripted_for_elo/v15_scripted.pt data/checkpoints/scripted_for_elo/v18_scripted.pt data/checkpoints/scripted_for_elo/v16_scripted.pt data/checkpoints/scripted_for_elo/v49_scripted.pt __heuristic__ --league-recency-tau 50 --league-fixture-fadeout 999 --pfsp-exponent 1.5 --eval-every 10 --eval-panel data/checkpoints/scripted_for_elo/v55_scripted.pt data/checkpoints/scripted_for_elo/v54_scripted.pt data/checkpoints/scripted_for_elo/v44_scripted.pt data/checkpoints/scripted_for_elo/v45_scripted.pt data/checkpoints/scripted_for_elo/v14_scripted.pt --probe-set data/probe_positions.parquet --probe-every 10 --rollout-workers 1 --device cuda --wandb --wandb-run-name ppo_v84_sc --upgo             >> "results/logs/ppo/ppo_v84_sc.log" 2>&1
+        echo "[ppo_train_dynamic] finished at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "results/logs/ppo/ppo_v84_sc.log"
+        
+        (command exited with non-zero exit code)
+Complete log(s): /home/dkord/code/twilight-struggle-ai/.snakemake/log/2026-04-13T091246.107409.snakemake.log
+WorkflowError:
+At least one job did not complete successfully.

@@ -1,0 +1,74 @@
+=== ELO incremental placement: gnn_side_v14 ===
+Exporting checkpoints to TorchScript ...
+Loaded 5453 match results from SQL match_cache
+
+Match schedule (15 total, 0 new, 15 reused from prior run):
+  v56 vs v54  [reuse]
+  v56 vs v44  [reuse]
+  v56 vs v20  [reuse]
+  v56 vs v55  [reuse]
+  v56 vs gnn_side_v14  [reuse]
+  v54 vs v44  [reuse]
+  v54 vs v20  [reuse]
+  v54 vs v55  [reuse]
+  v54 vs gnn_side_v14  [reuse]
+  v44 vs v20  [reuse]
+  v44 vs v55  [reuse]
+  v44 vs gnn_side_v14  [reuse]
+  v20 vs v55  [reuse]
+  v20 vs gnn_side_v14  [reuse]
+  v55 vs gnn_side_v14  [reuse]
+  [reuse] v56 240(152u/88s) - 249(155u/94s) v54  draws=11  WR=0.491
+  [reuse] v56 243(157u/86s) - 243(158u/85s) v44  draws=14  WR=0.500
+  [reuse] v56 247(159u/88s) - 245(159u/86s) v20  draws=8  WR=0.502
+  [reuse] v56 246(162u/84s) - 246(160u/86s) v55  draws=8  WR=0.500
+  [reuse] v56 168(97u/71s) - 32(29u/3s) gnn_side_v14  draws=0  WR=0.840
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 196(128u/68s) - 184(123u/61s) v20  draws=20  WR=0.515
+  [reuse] v54 229(149u/80s) - 268(169u/99s) v55  draws=3  WR=0.461
+  [reuse] v54 169(96u/73s) - 27(23u/4s) gnn_side_v14  draws=4  WR=0.855
+  [reuse] v44 213(134u/79s) - 169(111u/58s) v20  draws=18  WR=0.555
+  [reuse] v44 238(149u/89s) - 252(158u/94s) v55  draws=10  WR=0.486
+  [reuse] v44 160(90u/70s) - 39(29u/10s) gnn_side_v14  draws=1  WR=0.802
+  [reuse] v20 255(150u/105s) - 237(141u/96s) v55  draws=8  WR=0.518
+  [reuse] v20 169(95u/74s) - 31(26u/5s) gnn_side_v14  draws=0  WR=0.845
+  [reuse] v55 170(95u/75s) - 29(25u/4s) gnn_side_v14  draws=1  WR=0.853
+
+Fitting BayesElo (bipartite per-side, anchor=v56_USSR=1900.0) ...
+Fitting BayesElo (combined, for residual comparison) ...
+
+Model                  USSR      US    Gap   Comb*                95% CI   vs anchor
+  (bipartite per-side = PRIMARY, anchor: v56_USSR=1900)
+  (* combined = derived from P(win) = 0.5·P_ussr + 0.5·P_us)
+----------------------------------------------------------------------------------------
+v54                   1892   1805  +87    1909  [  1893,   1925]  +9
+v55                   1890   1802  +87    1906  [  1892,   1921]  +6
+v56                   1900   1779  +121    1900  [  1900,   1900]  +0
+v20                   1881   1787  +93    1895  [  1879,   1911]  -5
+v44                   1873   1792  +80    1894  [  1879,   1910]  -6
+gnn_side_v14          1617   1383  +234    1619  [  1582,   1641]  -281
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v56            vs v54              0.491    0.487     0.487    +0.004     +0.004
+v56            vs v44              0.500    0.509     0.508    -0.009     -0.008
+v56            vs v20              0.502    0.507     0.507    -0.005     -0.005
+v56            vs v55              0.500    0.491     0.491    +0.009     +0.009
+v56            vs gnn_side_v14     0.840    0.834     0.840    +0.006     -0.000
+v54            vs v44              0.574    0.522     0.521    +0.052     +0.053
+v54            vs v20              0.515    0.520     0.520    -0.005     -0.005
+v54            vs v55              0.461    0.504     0.503    -0.043     -0.042
+v54            vs gnn_side_v14     0.855    0.848     0.847    +0.007     +0.008
+v44            vs v20              0.555    0.498     0.499    +0.057     +0.056
+v44            vs v55              0.486    0.482     0.483    +0.004     +0.003
+v44            vs gnn_side_v14     0.802    0.838     0.836    -0.036     -0.033
+v20            vs v55              0.518    0.484     0.484    +0.034     +0.034
+v20            vs gnn_side_v14     0.845    0.836     0.837    +0.009     +0.008
+v55            vs gnn_side_v14     0.853    0.846     0.845    +0.006     +0.007
+------------------------------------------------------------------------------------
+                                              RMSE    0.0266     0.0264
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/logs/elo/elo_gnn_side_v14_incremental.json
+[sql] Tournament logged: incremental_20260420T152421Z_gnn_side_v14_v20 → results/metadata.sqlite3
+[confirm] Merged $VERSION into results/elo/elo_full_ladder.json: elo=1619

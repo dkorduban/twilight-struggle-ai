@@ -1,0 +1,9 @@
+[Tue Apr  7 16:02:09 PDT 2026] Waiting for PPO v2b to finish (iter 200)...
+[Tue Apr  7 16:40:41 PDT 2026] v2b training done. Starting PPO v3 with league training...
+[Tue Apr  7 16:40:41 PDT 2026] PPO v3 launched with PID 2318271
+[Tue Apr  7 16:40:41 PDT 2026] Log: /home/dkord/code/twilight-struggle-ai/results/ppo_v3_league.log
+[Tue Apr  7 16:40:41 PDT 2026] Key changes vs v2b:
+  - League training: 50% latest, 30% random past, 20% heuristic anchor
+  - VP reward shaping: --vp-reward-coef 0.1 (denser gradient signal)
+  - Entropy scheduling: 0.01 → 0.001 (encourages convergence)
+  - Learning rate: 3e-5 (vs 5e-5 in v2b, more conservative)

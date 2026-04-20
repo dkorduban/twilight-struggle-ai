@@ -1,0 +1,79 @@
+[Sun Apr 19 11:19:40 UTC 2026] awr_fixed_engine_pipeline.sh started
+[Sun Apr 19 11:19:40 UTC 2026] Waiting for data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet ...
+[Sun Apr 19 11:19:40 UTC 2026] Data ready: 5562929
+ bytes
+[Sun Apr 19 11:19:41 UTC 2026] Phase 1: arch sweep on fixed-engine data
+=== AWR Architecture Sweep ===
+Data: data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet
+Archs×dims: 3, Taus: [1.0], Seeds: [42, 43]
+Total runs: 6
+Epochs: 10, LR: 0.0003
+
+Loading dataset (once for all experiments)...
+  Loaded 73,981 rows from data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet
+  Per-model advantage normalization: 1 models
+  Loaded in 0.7s — train=66,583 val=7,398
+
+[1/6] control_feat_gnn_card_attn_h256_tau1.0_s42...
+  → card=0.574 adv_card=0.575 pl=3.801 (103s)
+[2/6] control_feat_gnn_card_attn_h256_tau1.0_s43...
+  → card=0.572 adv_card=0.576 pl=3.798 (97s)
+  → control_feat_gnn_card_attn_h256 tau=1.0: adv_card=0.576 ± 0.000
+[3/6] country_attn_side_h256_tau1.0_s42...
+  → card=0.573 adv_card=0.575 pl=3.796 (304s)
+[4/6] country_attn_side_h256_tau1.0_s43...
+  → card=0.572 adv_card=0.577 pl=3.773 (297s)
+  → country_attn_side_h256 tau=1.0: adv_card=0.576 ± 0.001
+[5/6] control_feat_gnn_side_h256_tau1.0_s42...
+  → card=0.579 adv_card=0.584 pl=3.779 (24s)
+[6/6] control_feat_gnn_side_h256_tau1.0_s43...
+  → card=0.570 adv_card=0.578 pl=3.789 (21s)
+  → control_feat_gnn_side_h256 tau=1.0: adv_card=0.581 ± 0.003
+
+==========================================================================================
+Architecture                           tau Seeds  Card%  AdvCard% AdvCard±  PolicyL
+==========================================================================================
+control_feat_gnn_side_h256               1     2  57.5%     58.1% ± 0.003    3.784
+country_attn_side_h256                   1     2  57.2%     57.6% ± 0.001    3.784
+control_feat_gnn_card_attn_h256          1     2  57.3%     57.6% ± 0.000    3.799
+==========================================================================================
+
+Top-3 by val_adv_card_acc:
+  control_feat_gnn_side_h256_tau1: 58.089%
+  country_attn_side_h256_tau1: 57.637%
+  control_feat_gnn_card_attn_h256_tau1: 57.571%
+
+Results saved to results/awr_sweep/fixed_engine_arch_sweep.json
+[Sun Apr 19 11:33:52 UTC 2026] Arch sweep complete. Finding best arch...
+[Sun Apr 19 11:33:52 UTC 2026] Best arch: control_feat_gnn_side. Training 30 epochs for warmstart...
+=== AWR Architecture Sweep ===
+Data: data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet
+Archs×dims: 1, Taus: [1.0], Seeds: [42, 43, 44]
+Total runs: 3
+Epochs: 30, LR: 0.0003
+
+Loading dataset (once for all experiments)...
+  Loaded 73,981 rows from data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet
+  Per-model advantage normalization: 1 models
+  Loaded in 0.6s — train=66,583 val=7,398
+
+[1/3] control_feat_gnn_side_h256_tau1.0_s42...
+  → card=0.597 adv_card=0.598 pl=3.483 (61s)
+[2/3] control_feat_gnn_side_h256_tau1.0_s43...
+  → card=0.592 adv_card=0.597 pl=3.478 (60s)
+[3/3] control_feat_gnn_side_h256_tau1.0_s44...
+  → card=0.596 adv_card=0.593 pl=3.486 (61s)
+  → control_feat_gnn_side_h256 tau=1.0: adv_card=0.596 ± 0.002
+
+==========================================================================================
+Architecture                           tau Seeds  Card%  AdvCard% AdvCard±  PolicyL
+==========================================================================================
+control_feat_gnn_side_h256               1     3  59.5%     59.6% ± 0.002    3.482
+==========================================================================================
+
+Top-3 by val_adv_card_acc:
+  control_feat_gnn_side_h256_tau1: 59.615%
+
+Results saved to results/awr_sweep/fixed_engine_full.json
+[Sun Apr 19 11:36:58 UTC 2026] Full training complete.
+[Sun Apr 19 11:36:58 UTC 2026] ERROR: Could not find best checkpoint in results/awr_sweep/fixed_engine_full.json

@@ -1,0 +1,83 @@
+Exporting checkpoints to TorchScript ...
+  bc384_bc: already TorchScript, using directly
+  v64_i10: already TorchScript, using directly
+  v64_i20: already TorchScript, using directly
+  v64_i30: already TorchScript, using directly
+  v64_i40: already TorchScript, using directly
+  v64_i50: already TorchScript, using directly
+  v64_i60: already TorchScript, using directly
+  v64_i70: already TorchScript, using directly
+  v64_i80: already TorchScript, using directly
+Loaded 1378 match results from cache results/matches/
+
+Match schedule (9 total, 9 new, 0 reused from prior run):
+  bc384_bc vs v64_i10
+  v64_i10 vs v64_i20
+  v64_i20 vs v64_i30
+  v64_i30 vs v64_i40
+  v64_i40 vs v64_i50
+  v64_i50 vs v64_i60
+  v64_i60 vs v64_i70
+  v64_i70 vs v64_i80
+  v64_i80 vs v55
+
+[new 1/9] bc384_bc vs v64_i10 (200 games = 100/side, seed=88000) ...
+  bc384_bc: 56(48u/8s)  v64_i10: 143(91u/52s)  draws: 1  WR(bc384_bc)=0.282  t=15.1s
+
+[new 2/9] v64_i10 vs v64_i20 (200 games = 100/side, seed=88200) ...
+  v64_i10: 87(68u/19s)  v64_i20: 109(78u/31s)  draws: 4  WR(v64_i10)=0.445  t=16.5s
+
+[new 3/9] v64_i20 vs v64_i30 (200 games = 100/side, seed=88400) ...
+  v64_i20: 92(63u/29s)  v64_i30: 103(69u/34s)  draws: 5  WR(v64_i20)=0.472  t=15.2s
+
+[new 4/9] v64_i30 vs v64_i40 (200 games = 100/side, seed=88600) ...
+  v64_i30: 101(61u/40s)  v64_i40: 92(59u/33s)  draws: 7  WR(v64_i30)=0.522  t=17.0s
+
+[new 5/9] v64_i40 vs v64_i50 (200 games = 100/side, seed=88800) ...
+  v64_i40: 82(49u/33s)  v64_i50: 115(66u/49s)  draws: 3  WR(v64_i40)=0.417  t=15.3s
+
+[new 6/9] v64_i50 vs v64_i60 (200 games = 100/side, seed=89000) ...
+  v64_i50: 96(57u/39s)  v64_i60: 104(61u/43s)  draws: 0  WR(v64_i50)=0.480  t=16.9s
+
+[new 7/9] v64_i60 vs v64_i70 (200 games = 100/side, seed=89200) ...
+  v64_i60: 94(58u/36s)  v64_i70: 102(62u/40s)  draws: 4  WR(v64_i60)=0.480  t=16.8s
+
+[new 8/9] v64_i70 vs v64_i80 (200 games = 100/side, seed=89400) ...
+  v64_i70: 87(48u/39s)  v64_i80: 107(58u/49s)  draws: 6  WR(v64_i70)=0.450  t=14.6s
+
+[new 9/9] v64_i80 vs v55 (200 games = 100/side, seed=89600) ...
+  v64_i80: 13(9u/4s)  v55: 187(96u/91s)  draws: 0  WR(v64_i80)=0.065  t=15.3s
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v55_USSR=2124.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v55_USSR=2124)
+----------------------------------------------------------------------------------------
+v55                    2124   2124   2578  -454  [  2124,   2124]  +0
+v64_i80                1661   2177   1572  +605  [  1617,   1705]  -463
+v64_i70                1625   1568   2108  -539  [  1590,   1659]  -499
+v64_i60                1611   2172   1474  +698  [  1576,   1645]  -513
+v64_i50                1597   1523   2094  -572  [  1562,   1631]  -527
+v64_i30                1554   1509   2027  -518  [  1520,   1589]  -570
+v64_i40                1538   2094   1402  +692  [  1503,   1573]  -586
+v64_i20                1535   2134   1359  +775  [  1500,   1569]  -589
+v64_i10                1495   1495   1889  -394  [  1459,   1532]  -629
+bc384_bc               1333   1875   1073  +802  [  1279,   1386]  -791
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+bc384_bc       vs v64_i10          0.282    0.280     0.281    +0.002     +0.001
+v64_i10        vs v64_i20          0.445    0.441     0.444    +0.004     +0.001
+v64_i20        vs v64_i30          0.472    0.473     0.472    -0.000     +0.001
+v64_i30        vs v64_i40          0.522    0.526     0.523    -0.004     -0.001
+v64_i40        vs v64_i50          0.417    0.417     0.416    +0.001     +0.001
+v64_i50        vs v64_i60          0.480    0.480     0.480    -0.000     +0.000
+v64_i60        vs v64_i70          0.480    0.480     0.480    +0.000     +0.000
+v64_i70        vs v64_i80          0.450    0.448     0.448    +0.002     +0.002
+v64_i80        vs v55              0.065    0.065     0.065    -0.000     -0.000
+------------------------------------------------------------------------------------
+                                              RMSE    0.0020     0.0009
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/elo_v64_checkpoint_selection.json

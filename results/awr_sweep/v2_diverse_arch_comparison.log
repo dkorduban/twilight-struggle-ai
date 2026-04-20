@@ -1,0 +1,32 @@
+[Sun Apr 19 20:41:37 UTC 2026] Starting v2_diverse arch comparison
+[Sun Apr 19 20:41:37 UTC 2026] Data: data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet
+
+Architecture                           val_adv  epoch   val_card
+-----------------------------------   -------- ------   --------
+
+[Sun Apr 19 20:41:37 UTC 2026] Training country_attn_film on v2_diverse (30 epochs) ...
+[Sun Apr 19 20:44:23 UTC 2026] country_attn_film: best_val_adv=0.674 ep=17 val_card=0.666
+country_attn_film                        0.674     17      0.666
+
+[Sun Apr 19 20:44:23 UTC 2026] Training country_attn_film_gated on v2_diverse (30 epochs) ...
+[Sun Apr 19 20:47:15 UTC 2026] country_attn_film_gated: best_val_adv=0.671 ep=30 val_card=0.665
+country_attn_film_gated                  0.671     30      0.665
+
+[Sun Apr 19 20:47:15 UTC 2026] Training country_alloc_head on v2_diverse (30 epochs) ...
+
+[NOTE] country_alloc_head training killed after 10+ minutes with no epoch output.
+Root cause: bounded_knapsack_dp has `for b in range(batch_size):` Python loop — serializes
+over batch dimension, making GPU training ~100x slower. Not practical for AWR comparison.
+Fix needed: vectorize DP or use a batch-parallel alternative.
+
+== SUMMARY (v2_diverse data, 30 epochs, 256 hidden_dim) ==
+Architecture                           val_adv  epoch   val_card   notes
+-----------------------------------   -------- ------   --------   -----
+control_feat_gnn_side (baseline)         0.672     16      0.665   (from v2_diverse_gnn_side run)
+country_attn_film                        0.674     17      0.666   +0.002 vs baseline
+country_attn_film_gated                  0.671     30      0.665   ~equal to baseline (slower convergence)
+country_alloc_head                        N/A    N/A        N/A   DP decoder bottleneck
+
+Conclusion: FiLM variants ~= gnn_side on val_adv metric.
+Marginal improvement doesn't justify arch switch for v4 PPO.
+v4 PPO should warmstart from v3 best (gnn_side arch).

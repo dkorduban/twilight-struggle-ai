@@ -1,0 +1,55 @@
+=== ELO incremental placement: v278_sc ===
+Exporting checkpoints to TorchScript ...
+  Exporting v278_sc → data/checkpoints/scripted_for_elo/v278_sc_scripted.pt ...
+Traceback (most recent call last):
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_elo_tournament.py", line 761, in <module>
+    main()
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_elo_tournament.py", line 507, in main
+    scripts[name] = export_if_needed(ckpt, args.script_dir, name)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_elo_tournament.py", line 349, in export_if_needed
+    export_checkpoint(checkpoint, out)
+  File "/home/dkord/code/twilight-struggle-ai/cpp/tools/export_baseline_to_torchscript.py", line 78, in export_checkpoint
+    model, ckpt_scalar_dim = load_model(checkpoint_path)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/cpp/tools/export_baseline_to_torchscript.py", line 49, in load_model
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/serialization.py", line 1425, in load
+    with _open_file_like(f, "rb") as opened_file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/serialization.py", line 751, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/serialization.py", line 732, in __init__
+    super().__init__(open(name, mode))
+                     ^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'data/checkpoints/scripted_for_elo/v278_sc_scripted.pt'
+Assuming unrestricted shared filesystem usage.
+host: balsa-tree
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 20
+Rules claiming more threads will be scaled down.
+Provided resources: gpu=Resource("gpu", 1)
+Job stats:
+job                  count
+-----------------  -------
+ppo_train_dynamic        1
+total                    1
+
+Select jobs to execute...
+Execute 1 jobs...
+
+[Tue Apr 14 13:09:28 2026]
+localrule ppo_train_dynamic:
+    input: data/checkpoints/ppo_v278_sc_league/ppo_best.pt
+    output: data/checkpoints/ppo_v279_sc_league/ppo_final.pt
+    log: results/logs/ppo/ppo_v279_sc.log
+    jobid: 0
+    reason: Missing output files: data/checkpoints/ppo_v279_sc_league/ppo_final.pt
+    resources: tmpdir=/tmp, gpu=1
+[Tue Apr 14 13:22:01 2026]
+Finished jobid: 0 (Rule: ppo_train_dynamic)
+1 of 1 steps (100%) done
+Complete log(s): /home/dkord/code/twilight-struggle-ai/.snakemake/log/2026-04-14T130928.771726.snakemake.log

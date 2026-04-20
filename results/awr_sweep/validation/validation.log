@@ -1,0 +1,145 @@
+[Fri Apr 17 21:23:49 UTC 2026] Starting AWR validation benchmark
+Candidates: country_attn_side h256, gnn_side h256, gnn_side h384, gnn_card_attn h256, baseline h256
+Architecture                              USSR_WR    US_WR   Combined
+----------------------------------------  -------   ------   --------
+
+
+[Fri Apr 17 21:23:49 UTC 2026] Training country_attn_side_h256 ...
+[Fri Apr 17 21:23:49 UTC 2026] Training country_attn_side_h256 ...
+=== AWR Eval: country_attn_side_h256 ===
+  model: country_attn_side, hidden_dim=256
+  data: data/awr_eval/awr_panel_v5.parquet
+  epochs: 5, lr: 0.0003, tau: 1.0
+
+  Loaded 1,270,488 rows from data/awr_eval/awr_panel_v5.parquet
+  Per-model advantage normalization: 22 models
+  train: 1,143,440 rows, val: 127,048 rows
+  params: 615,835
+  epoch 1/5: pl=3.9212 vl=0.1132 card=0.539 mode=0.626 adv_card=0.528 | val_pl=3.6424 val_card=0.563 val_adv=0.552 (170.7s)
+  epoch 2/5: pl=3.5900 vl=0.0888 card=0.567 mode=0.654 adv_card=0.556 | val_pl=3.5424 val_card=0.572 val_adv=0.561 (187.6s)
+  epoch 3/5: pl=3.5077 vl=0.0864 card=0.573 mode=0.659 adv_card=0.563 | val_pl=3.4962 val_card=0.576 val_adv=0.564 (197.5s)
+  epoch 4/5: pl=3.4578 vl=0.0848 card=0.577 mode=0.662 adv_card=0.567 | val_pl=3.4671 val_card=0.578 val_adv=0.566 (361.3s)
+  epoch 5/5: pl=3.4213 vl=0.0834 card=0.580 mode=0.664 adv_card=0.571 | val_pl=3.4531 val_card=0.580 val_adv=0.569 (477.2s)
+
+============================================================
+AWR Results: country_attn_side_h256
+============================================================
+  model: country_attn_side (615,835 params)
+  best epoch: 5
+  train card_acc: 0.5799
+  train adv_card_acc: 0.5711
+  val card_acc: 0.5801
+  val adv_card_acc: 0.5691
+  val policy_loss: 3.4531
+  val value_loss: 0.0820
+  val card_acc_early: 0.5458
+  val card_acc_mid: 0.5958
+  val card_acc_late: 0.6027
+  total time: 1394.5s (23.2 min)
+============================================================
+=== AWR Eval: country_attn_side_h256 ===
+  model: country_attn_side, hidden_dim=256
+  data: data/awr_eval/awr_panel_v5.parquet
+  epochs: 5, lr: 0.0003, tau: 1.0
+
+  Loaded 1,270,488 rows from data/awr_eval/awr_panel_v5.parquet
+  Per-model advantage normalization: 22 models
+  train: 1,143,440 rows, val: 127,048 rows
+  params: 615,835
+  epoch 1/5: pl=3.9212 vl=0.1132 card=0.539 mode=0.626 adv_card=0.528 | val_pl=3.6424 val_card=0.563 val_adv=0.552 (170.7s)
+  epoch 2/5: pl=3.5900 vl=0.0888 card=0.567 mode=0.654 adv_card=0.556 | val_pl=3.5424 val_card=0.572 val_adv=0.561 (187.6s)
+  epoch 3/5: pl=3.5077 vl=0.0864 card=0.573 mode=0.659 adv_card=0.563 | val_pl=3.4962 val_card=0.576 val_adv=0.564 (197.5s)
+  epoch 4/5: pl=3.4578 vl=0.0848 card=0.577 mode=0.662 adv_card=0.567 | val_pl=3.4671 val_card=0.578 val_adv=0.566 (361.3s)
+  epoch 5/5: pl=3.4213 vl=0.0834 card=0.580 mode=0.664 adv_card=0.571 | val_pl=3.4531 val_card=0.580 val_adv=0.569 (477.2s)
+
+============================================================
+AWR Results: country_attn_side_h256
+============================================================
+  model: country_attn_side (615,835 params)
+  best epoch: 5
+  train card_acc: 0.5799
+  train adv_card_acc: 0.5711
+  val card_acc: 0.5801
+  val adv_card_acc: 0.5691
+  val policy_loss: 3.4531
+  val value_loss: 0.0820
+  val card_acc_early: 0.5458
+  val card_acc_mid: 0.5958
+  val card_acc_late: 0.6027
+  total time: 1394.5s (23.2 min)
+============================================================
+[Fri Apr 17 21:47:29 UTC 2026] Exporting country_attn_side_h256 to TorchScript ...
+[Fri Apr 17 21:47:29 UTC 2026] Exporting country_attn_side_h256 to TorchScript ...
+exported results/awr_sweep/validation/country_attn_side_h256/awr_best.pt -> results/awr_sweep/validation/country_attn_side_h256/awr_best_scripted.pt
+exported results/awr_sweep/validation/country_attn_side_h256/awr_best.pt -> results/awr_sweep/validation/country_attn_side_h256/awr_best_scripted.pt
+[Fri Apr 17 21:47:45 UTC 2026] Benchmarking country_attn_side_h256 (500 games/side) ...
+[Fri Apr 17 21:47:45 UTC 2026] Benchmarking country_attn_side_h256 (500 games/side) ...
+[Fri Apr 17 21:54:38 UTC 2026] country_attn_side_h256: USSR=0.4080 US=0.2620 Combined=0.3350
+[Fri Apr 17 21:54:38 UTC 2026] country_attn_side_h256: USSR=0.4080 US=0.2620 Combined=0.3350
+country_attn_side_h256                     0.4080   0.2620     0.3350
+
+
+[Fri Apr 17 21:54:38 UTC 2026] Training control_feat_gnn_side_h256 ...
+[Fri Apr 17 21:54:38 UTC 2026] Training control_feat_gnn_side_h256 ...
+=== AWR Eval: control_feat_gnn_side_h256 ===
+  model: control_feat_gnn_side, hidden_dim=256
+  data: data/awr_eval/awr_panel_v5.parquet
+  epochs: 5, lr: 0.0003, tau: 1.0
+
+  Loaded 1,270,488 rows from data/awr_eval/awr_panel_v5.parquet
+  Per-model advantage normalization: 22 models
+  train: 1,143,440 rows, val: 127,048 rows
+  params: 532,635
+  epoch 1/5: pl=3.9102 vl=0.1134 card=0.540 mode=0.627 adv_card=0.528 | val_pl=3.6456 val_card=0.562 val_adv=0.552 (247.7s)
+  epoch 2/5: pl=3.5868 vl=0.0894 card=0.567 mode=0.653 adv_card=0.556 | val_pl=3.5470 val_card=0.571 val_adv=0.559 (276.2s)
+  epoch 3/5: pl=3.5048 vl=0.0869 card=0.574 mode=0.659 adv_card=0.564 | val_pl=3.5013 val_card=0.575 val_adv=0.564 (258.8s)
+  epoch 4/5: pl=3.4567 vl=0.0854 card=0.578 mode=0.662 adv_card=0.569 | val_pl=3.4685 val_card=0.578 val_adv=0.566 (100.4s)
+  epoch 5/5: pl=3.4222 vl=0.0840 card=0.580 mode=0.664 adv_card=0.571 | val_pl=3.4567 val_card=0.579 val_adv=0.568 (93.7s)
+
+============================================================
+AWR Results: control_feat_gnn_side_h256
+============================================================
+  model: control_feat_gnn_side (532,635 params)
+  best epoch: 5
+  train card_acc: 0.5797
+  train adv_card_acc: 0.5712
+  val card_acc: 0.5794
+  val adv_card_acc: 0.5680
+  val policy_loss: 3.4567
+  val value_loss: 0.0816
+  val card_acc_early: 0.5436
+  val card_acc_mid: 0.5949
+  val card_acc_late: 0.6049
+  total time: 977.1s (16.3 min)
+============================================================
+=== AWR Eval: control_feat_gnn_side_h256 ===
+  model: control_feat_gnn_side, hidden_dim=256
+  data: data/awr_eval/awr_panel_v5.parquet
+  epochs: 5, lr: 0.0003, tau: 1.0
+
+  Loaded 1,270,488 rows from data/awr_eval/awr_panel_v5.parquet
+  Per-model advantage normalization: 22 models
+  train: 1,143,440 rows, val: 127,048 rows
+  params: 532,635
+  epoch 1/5: pl=3.9102 vl=0.1134 card=0.540 mode=0.627 adv_card=0.528 | val_pl=3.6456 val_card=0.562 val_adv=0.552 (247.7s)
+  epoch 2/5: pl=3.5868 vl=0.0894 card=0.567 mode=0.653 adv_card=0.556 | val_pl=3.5470 val_card=0.571 val_adv=0.559 (276.2s)
+  epoch 3/5: pl=3.5048 vl=0.0869 card=0.574 mode=0.659 adv_card=0.564 | val_pl=3.5013 val_card=0.575 val_adv=0.564 (258.8s)
+  epoch 4/5: pl=3.4567 vl=0.0854 card=0.578 mode=0.662 adv_card=0.569 | val_pl=3.4685 val_card=0.578 val_adv=0.566 (100.4s)
+  epoch 5/5: pl=3.4222 vl=0.0840 card=0.580 mode=0.664 adv_card=0.571 | val_pl=3.4567 val_card=0.579 val_adv=0.568 (93.7s)
+
+============================================================
+AWR Results: control_feat_gnn_side_h256
+============================================================
+  model: control_feat_gnn_side (532,635 params)
+  best epoch: 5
+  train card_acc: 0.5797
+  train adv_card_acc: 0.5712
+  val card_acc: 0.5794
+  val adv_card_acc: 0.5680
+  val policy_loss: 3.4567
+  val value_loss: 0.0816
+  val card_acc_early: 0.5436
+  val card_acc_mid: 0.5949
+  val card_acc_late: 0.6049
+  total time: 977.1s (16.3 min)
+============================================================

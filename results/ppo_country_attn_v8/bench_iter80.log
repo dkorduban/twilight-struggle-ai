@@ -1,0 +1,48 @@
+Traceback (most recent call last):
+  File "/tmp/v8_bench.py", line 14, in <module>
+    tscore.benchmark_batched(model, ts, 20, seed=0)
+TypeError: benchmark_batched(): incompatible function arguments. The following argument types are supported:
+    1. (model_path: str, learned_side: tscore.Side, n_games: int, pool_size: int = 32, seed: object = None, device: str = 'cpu', greedy_opponent: bool = False, temperature: float = 0.0, nash_temperatures: bool = True) -> list[tscore.GameResult]
+
+Invoked with: RecursiveScriptModule(
+  original_name=TSCountryAttnSideModel
+  (influence_encoder_flat): RecursiveScriptModule(original_name=Linear)
+  (influence_encoder_embed): RecursiveScriptModule(
+    original_name=CountryAttnEncoder
+    (country_proj): RecursiveScriptModule(original_name=Linear)
+    (qkv_proj): RecursiveScriptModule(original_name=Linear)
+    (attn_out_proj): RecursiveScriptModule(original_name=Linear)
+    (out_proj): RecursiveScriptModule(original_name=Linear)
+  )
+  (card_encoder): RecursiveScriptModule(original_name=Linear)
+  (region_encoder): RecursiveScriptModule(
+    original_name=ControlFeatGNNEncoder
+    (country_proj): RecursiveScriptModule(original_name=Linear)
+    (gconv1): RecursiveScriptModule(original_name=Linear)
+    (gconv2): RecursiveScriptModule(original_name=Linear)
+    (out_proj): RecursiveScriptModule(original_name=Linear)
+  )
+  (scalar_encoder): RecursiveScriptModule(original_name=FrameContextScalarEncoder)
+  (side_embed): RecursiveScriptModule(original_name=Embedding)
+  (trunk_proj): RecursiveScriptModule(original_name=Linear)
+  (trunk_dropout): RecursiveScriptModule(original_name=Dropout)
+  (trunk_block1): RecursiveScriptModule(
+    original_name=_ResidualBlock
+    (ln): RecursiveScriptModule(original_name=LayerNorm)
+    (linear): RecursiveScriptModule(original_name=Linear)
+  )
+  (trunk_block2): RecursiveScriptModule(
+    original_name=_ResidualBlock
+    (ln): RecursiveScriptModule(original_name=LayerNorm)
+    (linear): RecursiveScriptModule(original_name=Linear)
+  )
+  (card_head): RecursiveScriptModule(original_name=Linear)
+  (mode_head): RecursiveScriptModule(original_name=Linear)
+  (strategy_heads): RecursiveScriptModule(original_name=Linear)
+  (strategy_mixer): RecursiveScriptModule(original_name=Linear)
+  (value_branch_ussr): RecursiveScriptModule(original_name=Linear)
+  (value_head_ussr): RecursiveScriptModule(original_name=Linear)
+  (value_branch_us): RecursiveScriptModule(original_name=Linear)
+  (value_head_us): RecursiveScriptModule(original_name=Linear)
+  (small_choice_head): RecursiveScriptModule(original_name=Linear)
+), <Side.USSR: 0>, 20; kwargs: seed=0

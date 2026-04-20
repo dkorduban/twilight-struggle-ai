@@ -1,0 +1,24 @@
+[ppo_train_dynamic] starting at 2026-04-14T22:12:39Z
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: dkorduban (korduban-ai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run adb00e0c
+wandb: Tracking run with wandb version 0.25.1
+wandb: Run data is saved locally in /home/dkord/code/twilight-struggle-ai/wandb/run-20260414_151241-adb00e0c
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run ppo_v289_sc
+wandb: ⭐️ View project at https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: 🚀 View run at https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/adb00e0c
+Loading checkpoint: data/checkpoints/ppo_v288_sc_league/ppo_best.pt
+  --reset-optimizer: skipping optimizer state restore, starting fresh Adam.
+
+Starting PPO training: 30 iterations × 200 games/iter, side=both
+Device: cuda, lr=5e-05, clip=0.12, ent=0.01, vf=0.5
+League training enabled (pool: data/checkpoints/ppo_v289_sc_league, save-every=10)
+  Saved to league pool: data/checkpoints/ppo_v289_sc_league/iter_0001.pt
+  [league] self: self | ussr_pool: ['v262_sc_scripted', 'v263_sc_scripted'] | us_pool: ['heuristic', 'v267_sc_scripted']
+  [pfsp]
+    [ussr] v262_sc_scripted: WR_ussr=0.67(n=252) WR_us=0.64(n=170) pfsp=0.889
+    [ussr] v263_sc_scripted: WR_ussr=0.70(n=109) WR_us=0.63(n=157) pfsp=0.844
+    [us] heuristic: WR_ussr=0.77(n=128) WR_us=0.62(n=104) pfsp=0.938
+    [us] v267_sc_scripted: WR_ussr=0.70(n=184) WR_us=0.59(n=124) pfsp=0.969
+*** stack smashing detected ***: terminated

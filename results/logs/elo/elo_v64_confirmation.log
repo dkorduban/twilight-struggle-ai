@@ -1,0 +1,81 @@
+Exporting checkpoints to TorchScript ...
+  heuristic: built-in heuristic (no export needed)
+Loaded 1373 match results from cache results/matches/
+
+Match schedule (15 total, 5 new, 10 reused from prior run):
+  v64 vs v8
+  v64 vs v14
+  v64 vs v22
+  v64 vs v55
+  v64 vs heuristic
+  v8 vs v14  [reuse]
+  v8 vs v22  [reuse]
+  v8 vs v55  [reuse]
+  v8 vs heuristic  [reuse]
+  v14 vs v22  [reuse]
+  v14 vs v55  [reuse]
+  v14 vs heuristic  [reuse]
+  v22 vs v55  [reuse]
+  v22 vs heuristic  [reuse]
+  v55 vs heuristic  [reuse]
+
+[new 1/5] v64 vs v8 (200 games = 100/side, seed=88000) ...
+  v64: 15(9u/6s)  v8: 184(93u/91s)  draws: 1  WR(v64)=0.077  t=15.7s
+
+[new 2/5] v64 vs v14 (200 games = 100/side, seed=88200) ...
+  v64: 22(11u/11s)  v14: 178(89u/89s)  draws: 0  WR(v64)=0.110  t=13.0s
+
+[new 3/5] v64 vs v22 (200 games = 100/side, seed=88400) ...
+  v64: 16(11u/5s)  v22: 181(93u/88s)  draws: 3  WR(v64)=0.087  t=16.0s
+
+[new 4/5] v64 vs v55 (200 games = 100/side, seed=88600) ...
+  v64: 11(8u/3s)  v55: 189(97u/92s)  draws: 0  WR(v64)=0.055  t=14.6s
+
+[new 5/5] v64 vs heuristic (200 games = 100/side, seed=88800) ...
+  v64: 123(55u/68s)  heuristic: 74(31u/43s)  draws: 3  WR(v64)=0.623  t=21.0s
+  [reuse] v8 137(68u/69s) - 247(123u/124s) v14  draws=16  WR=0.362
+  [reuse] v8 109(54u/55s) - 282(141u/141s) v22  draws=9  WR=0.284
+  [reuse] v8 105(75u/30s) - 283(163u/120s) v55  draws=12  WR=0.278
+  [reuse] v8 176(88u/88s) - 20(10u/10s) heuristic  draws=4  WR=0.890
+  [reuse] v14 140(70u/70s) - 241(120u/121s) v22  draws=19  WR=0.374
+  [reuse] v14 128(88u/40s) - 255(150u/105s) v55  draws=17  WR=0.341
+  [reuse] v14 329(164u/165s) - 64(32u/32s) heuristic  draws=7  WR=0.831
+  [reuse] v22 197(114u/83s) - 189(111u/78s) v55  draws=14  WR=0.510
+  [reuse] v22 350(175u/175s) - 45(22u/23s) heuristic  draws=5  WR=0.881
+  [reuse] v55 362(189u/173s) - 37(26u/11s) heuristic  draws=1  WR=0.906
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v55                    2117   2205   2036  +170  [  2097,   2136]  +102
+v22                    2108   2098   2113  -15  [  2088,   2127]  +93
+v14                    2015   2015   2008  +7  [  2015,   2015]  +0
+v8                     1954   1957   1943  +14  [  1935,   1974]  -61
+v64                    1677   1667   1676  -9  [  1646,   1707]  -338
+heuristic              1676   1660   1682  -22  [  1651,   1702]  -339
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v64            vs v8               0.077    0.168     0.168    -0.090     -0.091
+v64            vs v14              0.110    0.124     0.125    -0.014     -0.015
+v64            vs v22              0.087    0.076     0.077    +0.011     +0.010
+v64            vs v55              0.055    0.076     0.074    -0.021     -0.019
+v64            vs heuristic        0.623    0.500     0.501    +0.122     +0.122
+v8             vs v14              0.362    0.412     0.413    -0.050     -0.051
+v8             vs v22              0.284    0.289     0.293    -0.006     -0.009
+v8             vs v55              0.278    0.285     0.282    -0.007     -0.004
+v8             vs heuristic        0.890    0.832     0.832    +0.058     +0.058
+v14            vs v22              0.374    0.367     0.370    +0.007     +0.004
+v14            vs v55              0.341    0.357     0.357    -0.015     -0.016
+v14            vs heuristic        0.831    0.876     0.875    -0.045     -0.044
+v22            vs v55              0.510    0.480     0.487    +0.030     +0.023
+v22            vs heuristic        0.881    0.924     0.923    -0.043     -0.042
+v55            vs heuristic        0.906    0.925     0.927    -0.019     -0.020
+------------------------------------------------------------------------------------
+                                              RMSE    0.0484     0.0481
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/elo_v64_confirmation.json

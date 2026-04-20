@@ -1,0 +1,74 @@
+=== ELO incremental placement: country_attn_v8 ===
+Exporting checkpoints to TorchScript ...
+Loaded 5208 match results from SQL match_cache
+
+Match schedule (15 total, 0 new, 15 reused from prior run):
+  v56 vs v54  [reuse]
+  v56 vs v44  [reuse]
+  v56 vs v20  [reuse]
+  v56 vs v55  [reuse]
+  v56 vs country_attn_v8  [reuse]
+  v54 vs v44  [reuse]
+  v54 vs v20  [reuse]
+  v54 vs v55  [reuse]
+  v54 vs country_attn_v8  [reuse]
+  v44 vs v20  [reuse]
+  v44 vs v55  [reuse]
+  v44 vs country_attn_v8  [reuse]
+  v20 vs v55  [reuse]
+  v20 vs country_attn_v8  [reuse]
+  v55 vs country_attn_v8  [reuse]
+  [reuse] v56 240(152u/88s) - 249(155u/94s) v54  draws=11  WR=0.491
+  [reuse] v56 243(157u/86s) - 243(158u/85s) v44  draws=14  WR=0.500
+  [reuse] v56 247(159u/88s) - 245(159u/86s) v20  draws=8  WR=0.502
+  [reuse] v56 246(162u/84s) - 246(160u/86s) v55  draws=8  WR=0.500
+  [reuse] v56 111(78u/33s) - 86(65u/21s) country_attn_v8  draws=3  WR=0.562
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 196(128u/68s) - 184(123u/61s) v20  draws=20  WR=0.515
+  [reuse] v54 229(149u/80s) - 268(169u/99s) v55  draws=3  WR=0.461
+  [reuse] v54 117(76u/41s) - 78(55u/23s) country_attn_v8  draws=5  WR=0.598
+  [reuse] v44 213(134u/79s) - 169(111u/58s) v20  draws=18  WR=0.555
+  [reuse] v44 238(149u/89s) - 252(158u/94s) v55  draws=10  WR=0.486
+  [reuse] v44 108(75u/33s) - 89(65u/24s) country_attn_v8  draws=3  WR=0.547
+  [reuse] v20 255(150u/105s) - 237(141u/96s) v55  draws=8  WR=0.518
+  [reuse] v20 109(70u/39s) - 89(61u/28s) country_attn_v8  draws=2  WR=0.550
+  [reuse] v55 110(72u/38s) - 86(59u/27s) country_attn_v8  draws=4  WR=0.560
+
+Fitting BayesElo (bipartite per-side, anchor=v56_USSR=1900.0) ...
+Fitting BayesElo (combined, for residual comparison) ...
+
+Model                  USSR      US    Gap   Comb*                95% CI   vs anchor
+  (bipartite per-side = PRIMARY, anchor: v56_USSR=1900)
+  (* combined = derived from P(win) = 0.5·P_ussr + 0.5·P_us)
+----------------------------------------------------------------------------------------
+v54                   1891   1806  +85    1910  [  1894,   1925]  +10
+v55                   1886   1802  +84    1905  [  1891,   1920]  +5
+v56                   1900   1777  +123    1900  [  1900,   1900]  +0
+v44                   1878   1790  +88    1896  [  1880,   1911]  -4
+v20                   1877   1788  +89    1894  [  1879,   1910]  -6
+country_attn_v8       1880   1695  +186    1858  [  1834,   1878]  -42
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v56            vs v54              0.491    0.486     0.487    +0.005     +0.004
+v56            vs v44              0.500    0.506     0.506    -0.006     -0.006
+v56            vs v20              0.502    0.508     0.508    -0.006     -0.006
+v56            vs v55              0.500    0.492     0.492    +0.008     +0.008
+v56            vs country_attn_v8   0.562    0.560     0.563    +0.002     -0.001
+v54            vs v44              0.574    0.520     0.519    +0.053     +0.054
+v54            vs v20              0.515    0.522     0.522    -0.007     -0.007
+v54            vs v55              0.461    0.506     0.506    -0.045     -0.045
+v54            vs country_attn_v8   0.598    0.576     0.576    +0.022     +0.021
+v44            vs v20              0.555    0.502     0.502    +0.053     +0.053
+v44            vs v55              0.486    0.486     0.486    +0.000     -0.000
+v44            vs country_attn_v8   0.547    0.557     0.557    -0.010     -0.010
+v20            vs v55              0.518    0.484     0.484    +0.034     +0.034
+v20            vs country_attn_v8   0.550    0.555     0.555    -0.005     -0.005
+v55            vs country_attn_v8   0.560    0.570     0.571    -0.010     -0.011
+------------------------------------------------------------------------------------
+                                              RMSE    0.0255     0.0255
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/logs/elo/elo_country_attn_v8_incremental.json
+[sql] Tournament logged: incremental_20260420T101444Z_country_attn_v8_v20 → results/metadata.sqlite3
+[confirm] Merged $VERSION into results/elo/elo_full_ladder.json: elo=1858

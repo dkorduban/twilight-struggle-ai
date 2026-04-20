@@ -1,0 +1,129 @@
+[run_elo_tournament] ABORT: another instance already running (PID ). Only one Elo tournament may run at a time.
+ERROR: tournament exited with code 1
+
+[candidate] Top-8 panel-eval candidates:
+  iter 0020: avg_panel_wr=0.527  data/checkpoints/ppo_v99_sc_league/ppo_iter0020_scripted.pt
+  iter 0010: avg_panel_wr=0.504  data/checkpoints/ppo_v99_sc_league/ppo_iter0010_scripted.pt
+[candidate] Models in tournament: ['ppo_v99_sc_league_iter0020:data/checkpoints/ppo_v99_sc_league/ppo_iter0020_scripted.pt', 'ppo_v99_sc_league_iter0010:data/checkpoints/ppo_v99_sc_league/ppo_iter0010_scripted.pt', 'v55:data/checkpoints/scripted_for_elo/v55_scripted.pt', 'v54:data/checkpoints/scripted_for_elo/v54_scripted.pt', 'v44:data/checkpoints/scripted_for_elo/v44_scripted.pt', 'v45:data/checkpoints/scripted_for_elo/v45_scripted.pt', 'v14:data/checkpoints/scripted_for_elo/v14_scripted.pt']
+[candidate] Games per matchup: 150, anchor: v14=2015.0
+[candidate] Running: /home/dkord/code/twilight-struggle-ai/.venv/bin/python3 scripts/run_elo_tournament.py --models ppo_v99_sc_league_iter0020:data/checkpoints/ppo_v99_sc_league/ppo_iter0020_scripted.pt ppo_v99_sc_league_iter0010:data/checkpoints/ppo_v99_sc_league/ppo_iter0010_scripted.pt v55:data/checkpoints/scripted_for_elo/v55_scripted.pt v54:data/checkpoints/scripted_for_elo/v54_scripted.pt v44:data/checkpoints/scripted_for_elo/v44_scripted.pt v45:data/checkpoints/scripted_for_elo/v45_scripted.pt v14:data/checkpoints/scripted_for_elo/v14_scripted.pt --games 150 --anchor v14 --anchor-elo 2015.0 --schedule round_robin --out data/checkpoints/ppo_v99_sc_league/candidate_tournament.json --script-dir data/checkpoints/scripted_for_elo
+Exporting checkpoints to TorchScript ...
+  ppo_v99_sc_league_iter0020: already TorchScript, using directly
+  ppo_v99_sc_league_iter0010: already TorchScript, using directly
+Loaded 2827 match results from SQL match_cache
+
+Match schedule (21 total, 6 new, 15 reused from prior run):
+  ppo_v99_sc_league_iter0020 vs ppo_v99_sc_league_iter0010
+  ppo_v99_sc_league_iter0020 vs v55
+  ppo_v99_sc_league_iter0020 vs v54
+  ppo_v99_sc_league_iter0020 vs v44
+  ppo_v99_sc_league_iter0020 vs v45
+  ppo_v99_sc_league_iter0020 vs v14
+  ppo_v99_sc_league_iter0010 vs v55  [reuse]
+  ppo_v99_sc_league_iter0010 vs v54  [reuse]
+  ppo_v99_sc_league_iter0010 vs v44  [reuse]
+  ppo_v99_sc_league_iter0010 vs v45  [reuse]
+  ppo_v99_sc_league_iter0010 vs v14  [reuse]
+  v55 vs v54  [reuse]
+  v55 vs v44  [reuse]
+  v55 vs v45  [reuse]
+  v55 vs v14  [reuse]
+  v54 vs v44  [reuse]
+  v54 vs v45  [reuse]
+  v54 vs v14  [reuse]
+  v44 vs v45  [reuse]
+  v44 vs v14  [reuse]
+  v45 vs v14  [reuse]
+
+[new 1/6] ppo_v99_sc_league_iter0020 vs ppo_v99_sc_league_iter0010 (150 games = 75/side, seed=88000) ...
+  ppo_v99_sc_league_iter0020: 80(69u/11s)  ppo_v99_sc_league_iter0010: 69(64u/5s)  draws: 1  WR(ppo_v99_sc_league_iter0020)=0.537  t=6.7s
+
+[new 2/6] ppo_v99_sc_league_iter0020 vs v55 (150 games = 75/side, seed=88150) ...
+  ppo_v99_sc_league_iter0020: 9(8u/1s)  v55: 141(74u/67s)  draws: 0  WR(ppo_v99_sc_league_iter0020)=0.060  t=5.7s
+
+[new 3/6] ppo_v99_sc_league_iter0020 vs v54 (150 games = 75/side, seed=88300) ...
+  ppo_v99_sc_league_iter0020: 11(10u/1s)  v54: 139(74u/65s)  draws: 0  WR(ppo_v99_sc_league_iter0020)=0.073  t=6.3s
+
+[new 4/6] ppo_v99_sc_league_iter0020 vs v44 (150 games = 75/side, seed=88450) ...
+  ppo_v99_sc_league_iter0020: 4(3u/1s)  v44: 146(74u/72s)  draws: 0  WR(ppo_v99_sc_league_iter0020)=0.027  t=6.4s
+
+[new 5/6] ppo_v99_sc_league_iter0020 vs v45 (150 games = 75/side, seed=88600) ...
+  ppo_v99_sc_league_iter0020: 8(8u/0s)  v45: 142(75u/67s)  draws: 0  WR(ppo_v99_sc_league_iter0020)=0.053  t=6.3s
+
+[new 6/6] ppo_v99_sc_league_iter0020 vs v14 (150 games = 75/side, seed=88750) ...
+  ppo_v99_sc_league_iter0020: 8(6u/2s)  v14: 142(73u/69s)  draws: 0  WR(ppo_v99_sc_league_iter0020)=0.053  t=6.4s
+  [reuse] ppo_v99_sc_league_iter0010 6(6u/0s) - 144(75u/69s) v55  draws=0  WR=0.040
+  [reuse] ppo_v99_sc_league_iter0010 17(15u/2s) - 133(73u/60s) v54  draws=0  WR=0.113
+  [reuse] ppo_v99_sc_league_iter0010 4(3u/1s) - 146(74u/72s) v44  draws=0  WR=0.027
+  [reuse] ppo_v99_sc_league_iter0010 9(6u/3s) - 141(72u/69s) v45  draws=0  WR=0.060
+  [reuse] ppo_v99_sc_league_iter0010 7(7u/0s) - 142(75u/67s) v14  draws=1  WR=0.050
+  [reuse] v55 209(115u/94s) - 181(102u/79s) v54  draws=10  WR=0.535
+  [reuse] v55 201(119u/82s) - 178(110u/68s) v44  draws=21  WR=0.529
+  [reuse] v55 206(136u/70s) - 180(123u/57s) v45  draws=14  WR=0.532
+  [reuse] v55 255(150u/105s) - 128(88u/40s) v14  draws=17  WR=0.659
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 194(125u/69s) - 183(121u/62s) v45  draws=23  WR=0.514
+  [reuse] v54 254(154u/100s) - 131(95u/36s) v14  draws=15  WR=0.654
+  [reuse] v44 194(130u/64s) - 192(130u/62s) v45  draws=14  WR=0.502
+  [reuse] v44 239(147u/92s) - 147(100u/47s) v14  draws=14  WR=0.615
+  [reuse] v45 226(147u/79s) - 162(115u/47s) v14  draws=12  WR=0.580
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v55                    2124   2102   2038  +64  [  2106,   2141]  +109
+v54                    2112   2092   2025  +67  [  2095,   2129]  +97
+v44                    2092   2071   2001  +70  [  2075,   2109]  +77
+v45                    2091   2118   1956  +162  [  2074,   2108]  +76
+v14                    2015   2015   1890  +125  [  2015,   2015]  +0
+ppo_v99_sc_league_iter0020   1596   1596   1302  +295  [  1557,   1635]  -419
+ppo_v99_sc_league_iter0010   1584   1595   1232  +363  [  1545,   1623]  -431
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+ppo_v99_sc_league_iter0020 vs ppo_v99_sc_league_iter0010   0.537    0.523     0.517    +0.013     +0.019
+ppo_v99_sc_league_iter0020 vs v55              0.060    0.041     0.046    +0.019     +0.014
+ppo_v99_sc_league_iter0020 vs v54              0.073    0.044     0.049    +0.029     +0.025
+ppo_v99_sc_league_iter0020 vs v44              0.027    0.050     0.054    -0.024     -0.028
+ppo_v99_sc_league_iter0020 vs v45              0.053    0.061     0.055    -0.007     -0.001
+ppo_v99_sc_league_iter0020 vs v14              0.053    0.086     0.082    -0.033     -0.029
+ppo_v99_sc_league_iter0010 vs v55              0.040    0.039     0.043    +0.001     -0.003
+ppo_v99_sc_league_iter0010 vs v54              0.113    0.042     0.046    +0.071     +0.068
+ppo_v99_sc_league_iter0010 vs v44              0.027    0.048     0.051    -0.021     -0.024
+ppo_v99_sc_league_iter0010 vs v45              0.060    0.059     0.051    +0.001     +0.009
+ppo_v99_sc_league_iter0010 vs v14              0.050    0.083     0.077    -0.033     -0.027
+v55            vs v54              0.535    0.517     0.517    +0.018     +0.018
+v55            vs v44              0.529    0.548     0.546    -0.019     -0.017
+v55            vs v45              0.532    0.544     0.547    -0.011     -0.015
+v55            vs v14              0.659    0.653     0.652    +0.006     +0.007
+v54            vs v44              0.574    0.531     0.529    +0.043     +0.044
+v54            vs v45              0.514    0.528     0.531    -0.014     -0.017
+v54            vs v14              0.654    0.638     0.636    +0.016     +0.018
+v44            vs v45              0.502    0.499     0.501    +0.004     +0.001
+v44            vs v14              0.615    0.610     0.609    +0.005     +0.006
+v45            vs v14              0.580    0.602     0.607    -0.022     -0.027
+------------------------------------------------------------------------------------
+                                              RMSE    0.0251     0.0249
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to data/checkpoints/ppo_v99_sc_league/candidate_tournament.json
+[sql] Tournament logged: round_robin_20260413T180329Z_ppo_v99_sc_league_iter0010_ppo_v99_sc_league_iter0020 → results/metadata.sqlite3
+
+[candidate] Top-8 panel-eval candidates:
+  iter 0020: avg_panel_wr=0.527  data/checkpoints/ppo_v99_sc_league/ppo_iter0020_scripted.pt
+  iter 0010: avg_panel_wr=0.504  data/checkpoints/ppo_v99_sc_league/ppo_iter0010_scripted.pt
+[candidate] Models in tournament: ['ppo_v99_sc_league_iter0020:data/checkpoints/ppo_v99_sc_league/ppo_iter0020_scripted.pt', 'ppo_v99_sc_league_iter0010:data/checkpoints/ppo_v99_sc_league/ppo_iter0010_scripted.pt', 'v55:data/checkpoints/scripted_for_elo/v55_scripted.pt', 'v54:data/checkpoints/scripted_for_elo/v54_scripted.pt', 'v44:data/checkpoints/scripted_for_elo/v44_scripted.pt', 'v45:data/checkpoints/scripted_for_elo/v45_scripted.pt', 'v14:data/checkpoints/scripted_for_elo/v14_scripted.pt']
+[candidate] Games per matchup: 150, anchor: v14=2015.0
+[candidate] Running: /home/dkord/code/twilight-struggle-ai/.venv/bin/python3 scripts/run_elo_tournament.py --models ppo_v99_sc_league_iter0020:data/checkpoints/ppo_v99_sc_league/ppo_iter0020_scripted.pt ppo_v99_sc_league_iter0010:data/checkpoints/ppo_v99_sc_league/ppo_iter0010_scripted.pt v55:data/checkpoints/scripted_for_elo/v55_scripted.pt v54:data/checkpoints/scripted_for_elo/v54_scripted.pt v44:data/checkpoints/scripted_for_elo/v44_scripted.pt v45:data/checkpoints/scripted_for_elo/v45_scripted.pt v14:data/checkpoints/scripted_for_elo/v14_scripted.pt --games 150 --anchor v14 --anchor-elo 2015.0 --schedule round_robin --out data/checkpoints/ppo_v99_sc_league/candidate_tournament.json --script-dir data/checkpoints/scripted_for_elo
+
+[candidate] Tournament results (candidates only):
+  ppo_v99_sc_league_iter0020: Elo=1596.0 ← WINNER
+  ppo_v99_sc_league_iter0010: Elo=1583.9
+[candidate] ppo_best.pt ← data/checkpoints/ppo_v99_sc_league/ppo_iter0020.pt
+[candidate] ppo_best_scripted.pt ← data/checkpoints/ppo_v99_sc_league/ppo_iter0020_scripted.pt
+
+[candidate] Done. Winner: ppo_v99_sc_league_iter0020 (Elo=1596.0)
+[candidate] Full tournament results: data/checkpoints/ppo_v99_sc_league/candidate_tournament.json

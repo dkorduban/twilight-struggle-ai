@@ -1,0 +1,1291 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: dkorduban (korduban-ai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run ymxant6c
+wandb: Tracking run with wandb version 0.25.1
+wandb: Run data is saved locally in /home/dkord/code/twilight-struggle-ai/wandb/run-20260408_082452-ymxant6c
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run ppo_v7_attn_bc_start
+wandb: ⭐️ View project at https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: 🚀 View run at https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/ymxant6c
+Loading checkpoint: data/checkpoints/arch_sweep_attn/best.pt
+
+Starting PPO training: 200 iterations × 200 games/iter, side=both
+Device: cuda, lr=0.0001, clip=0.2, ent=0.03, vf=0.5
+League training enabled (pool: data/checkpoints/league_v4, save-every=20)
+  Saved to league pool: data/checkpoints/league_v4/iter_0001.pt
+  [rollout-save] 12,816 steps → data/ppo_v7_rollouts/rollout_iter_0001.parquet (meta: rollout_iter_0001.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,106.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-25.63,14.32]
+  [diag] values nan=0 range=[-0.9947,0.9671]
+[iter   1/200] steps=12816 rollout_wr=0.175 (ussr=0.330 us=0.020) pl=-0.0104 vl=0.0889 ent=1.528 clip=0.036 kl=0.0041 t=21.2s (rollout=13.3s update=7.9s)
+  [rollout-save] 13,015 steps → data/ppo_v7_rollouts/rollout_iter_0002.parquet (meta: rollout_iter_0002.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,79.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-25.95,13.72]
+  [diag] values nan=0 range=[-0.9955,0.8726]
+[iter   2/200] steps=13015 rollout_wr=0.310 (ussr=0.370 us=0.250) pl=-0.0148 vl=0.1134 ent=1.639 clip=0.071 kl=0.0057 t=28.1s (rollout=20.5s update=7.7s)
+  [rollout-save] 12,904 steps → data/ppo_v7_rollouts/rollout_iter_0003.parquet (meta: rollout_iter_0003.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,99.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-24.83,13.99]
+  [diag] values nan=0 range=[-0.9965,0.6305]
+[iter   3/200] steps=12904 rollout_wr=0.195 (ussr=0.340 us=0.050) pl=-0.0126 vl=0.0758 ent=1.561 clip=0.090 kl=0.0075 t=21.3s (rollout=13.7s update=7.6s)
+  [rollout-save] 12,546 steps → data/ppo_v7_rollouts/rollout_iter_0004.parquet (meta: rollout_iter_0004.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,84.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-25.50,14.08]
+  [diag] values nan=0 range=[-0.9966,0.8101]
+[iter   4/200] steps=12546 rollout_wr=0.405 (ussr=0.500 us=0.310) pl=-0.0171 vl=0.1241 ent=1.677 clip=0.116 kl=0.0090 t=27.4s (rollout=19.8s update=7.5s)
+  [rollout-save] 12,512 steps → data/ppo_v7_rollouts/rollout_iter_0005.parquet (meta: rollout_iter_0005.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,89.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-26.02,13.53]
+  [diag] values nan=0 range=[-0.9990,0.6908]
+[iter   5/200] steps=12512 rollout_wr=0.380 (ussr=0.560 us=0.200) pl=-0.0260 vl=0.1008 ent=1.693 clip=0.128 kl=0.0103 t=26.8s (rollout=19.9s update=7.0s)
+  [rollout-save] 13,421 steps → data/ppo_v7_rollouts/rollout_iter_0006.parquet (meta: rollout_iter_0006.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,111.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-24.47,14.63]
+  [diag] values nan=0 range=[-0.9963,0.8238]
+[iter   6/200] steps=13421 rollout_wr=0.530 (ussr=0.770 us=0.290) pl=-0.0173 vl=0.1125 ent=1.611 clip=0.153 kl=0.0175 t=23.1s (rollout=14.6s update=8.4s)
+  [rollout-save] 13,277 steps → data/ppo_v7_rollouts/rollout_iter_0007.parquet (meta: rollout_iter_0007.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,105.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-25.23,13.44]
+  [diag] values nan=0 range=[-0.9466,0.9339]
+[iter   7/200] steps=13277 rollout_wr=0.585 (ussr=0.770 us=0.400) pl=-0.0185 vl=0.1042 ent=1.644 clip=0.132 kl=0.0118 t=22.2s (rollout=13.9s update=8.2s)
+  [rollout-save] 12,460 steps → data/ppo_v7_rollouts/rollout_iter_0008.parquet (meta: rollout_iter_0008.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,81.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-25.74,13.50]
+  [diag] values nan=0 range=[-0.9636,0.9065]
+[iter   8/200] steps=12460 rollout_wr=0.410 (ussr=0.490 us=0.330) pl=-0.0240 vl=0.1160 ent=1.738 clip=0.170 kl=0.0174 t=26.8s (rollout=19.9s update=6.9s)
+  [rollout-save] 12,425 steps → data/ppo_v7_rollouts/rollout_iter_0009.parquet (meta: rollout_iter_0009.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,100.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-26.16,13.14]
+  [diag] values nan=0 range=[-0.9884,0.7427]
+[iter   9/200] steps=12425 rollout_wr=0.380 (ussr=0.550 us=0.210) pl=-0.0331 vl=0.1053 ent=1.734 clip=0.152 kl=0.0141 t=27.2s (rollout=19.6s update=7.6s)
+  [rollout-save] 12,840 steps → data/ppo_v7_rollouts/rollout_iter_0010.parquet (meta: rollout_iter_0010.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,100.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-24.80,13.78]
+  [diag] values nan=0 range=[-0.9913,0.9432]
+[iter  10/200] steps=12840 rollout_wr=0.250 (ussr=0.350 us=0.150) pl=-0.0187 vl=0.0804 ent=1.682 clip=0.151 kl=0.0151 t=20.8s (rollout=13.5s update=7.3s)
+  [rollout-save] 13,254 steps → data/ppo_v7_rollouts/rollout_iter_0011.parquet (meta: rollout_iter_0011.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,110.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-24.72,13.71]
+  [diag] values nan=0 range=[-0.9931,0.7473]
+[iter  11/200] steps=13254 rollout_wr=0.260 (ussr=0.390 us=0.130) pl=-0.0237 vl=0.0820 ent=1.690 clip=0.158 kl=0.0198 t=21.4s (rollout=13.7s update=7.7s)
+  [rollout-save] 12,220 steps → data/ppo_v7_rollouts/rollout_iter_0012.parquet (meta: rollout_iter_0012.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,79.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-26.75,13.10]
+  [diag] values nan=0 range=[-0.9901,0.4974]
+[iter  12/200] steps=12220 rollout_wr=0.475 (ussr=0.650 us=0.300) pl=-0.0222 vl=0.1184 ent=1.793 clip=0.141 kl=0.0120 t=26.3s (rollout=19.1s update=7.1s)
+  [rollout-save] 13,101 steps → data/ppo_v7_rollouts/rollout_iter_0013.parquet (meta: rollout_iter_0013.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,100.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-25.61,13.87]
+  [diag] values nan=0 range=[-0.9926,0.8833]
+[iter  13/200] steps=13101 rollout_wr=0.195 (ussr=0.280 us=0.110) pl=-0.0228 vl=0.0699 ent=1.753 clip=0.146 kl=0.0127 t=21.0s (rollout=13.3s update=7.7s)
+  [rollout-save] 12,436 steps → data/ppo_v7_rollouts/rollout_iter_0014.parquet (meta: rollout_iter_0014.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,114.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-24.12,12.61]
+  [diag] values nan=0 range=[-0.9888,0.7632]
+[iter  14/200] steps=12436 rollout_wr=0.235 (ussr=0.410 us=0.060) pl=-0.0277 vl=0.0732 ent=1.759 clip=0.159 kl=0.0150 t=19.9s (rollout=12.8s update=7.0s)
+  [rollout-save] 12,321 steps → data/ppo_v7_rollouts/rollout_iter_0015.parquet (meta: rollout_iter_0015.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,101.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-26.89,13.15]
+  [diag] values nan=0 range=[-0.9741,0.6794]
+[iter  15/200] steps=12321 rollout_wr=0.365 (ussr=0.590 us=0.140) pl=-0.0137 vl=0.0889 ent=1.819 clip=0.150 kl=0.0143 t=26.1s (rollout=19.3s update=6.8s)
+  [rollout-save] 12,117 steps → data/ppo_v7_rollouts/rollout_iter_0016.parquet (meta: rollout_iter_0016.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,87.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-24.61,14.07]
+  [diag] values nan=0 range=[-0.9890,0.6331]
+[iter  16/200] steps=12117 rollout_wr=0.500 (ussr=0.590 us=0.410) pl=-0.0224 vl=0.1166 ent=1.831 clip=0.144 kl=0.0125 t=25.8s (rollout=18.8s update=7.0s)
+  [rollout-save] 13,172 steps → data/ppo_v7_rollouts/rollout_iter_0017.parquet (meta: rollout_iter_0017.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,96.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-23.71,14.21]
+  [diag] values nan=0 range=[-0.9949,0.9338]
+[iter  17/200] steps=13172 rollout_wr=0.220 (ussr=0.390 us=0.050) pl=-0.0218 vl=0.0689 ent=1.796 clip=0.149 kl=0.0137 t=21.1s (rollout=13.3s update=7.8s)
+  [rollout-save] 11,754 steps → data/ppo_v7_rollouts/rollout_iter_0018.parquet (meta: rollout_iter_0018.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,77.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-27.40,13.07]
+  [diag] values nan=0 range=[-0.9852,0.6887]
+[iter  18/200] steps=11754 rollout_wr=0.515 (ussr=0.750 us=0.280) pl=-0.0221 vl=0.1169 ent=1.906 clip=0.146 kl=0.0129 t=24.7s (rollout=18.3s update=6.3s)
+  [rollout-save] 13,054 steps → data/ppo_v7_rollouts/rollout_iter_0019.parquet (meta: rollout_iter_0019.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,91.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-26.09,13.92]
+  [diag] values nan=0 range=[-0.9950,0.9441]
+[iter  19/200] steps=13054 rollout_wr=0.205 (ussr=0.370 us=0.040) pl=-0.0209 vl=0.0568 ent=1.840 clip=0.158 kl=0.0150 t=20.9s (rollout=13.2s update=7.7s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0020.pt
+  [rollout-save] 13,227 steps → data/ppo_v7_rollouts/rollout_iter_0020.parquet (meta: rollout_iter_0020.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,97.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-24.80,13.89]
+  [diag] values nan=0 range=[-0.9960,0.8435]
+[iter  20/200] steps=13227 rollout_wr=0.190 (ussr=0.330 us=0.050) pl=-0.0219 vl=0.0529 ent=1.858 clip=0.150 kl=0.0124 t=20.9s (rollout=13.4s update=7.5s)
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.534 US=0.352 combined=0.443 (90s)
+  New best: combined=0.443
+  [rollout-save] 11,853 steps → data/ppo_v7_rollouts/rollout_iter_0021.parquet (meta: rollout_iter_0021.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,75.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-24.03,12.56]
+  [diag] values nan=0 range=[-0.9915,0.6603]
+[iter  21/200] steps=11853 rollout_wr=0.525 (ussr=0.660 us=0.390) pl=-0.0202 vl=0.1197 ent=1.986 clip=0.133 kl=0.0118 t=24.7s (rollout=18.2s update=6.5s)
+  [rollout-save] 12,974 steps → data/ppo_v7_rollouts/rollout_iter_0022.parquet (meta: rollout_iter_0022.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,96.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-24.69,13.88]
+  [diag] values nan=0 range=[-0.9928,0.9014]
+[iter  22/200] steps=12974 rollout_wr=0.325 (ussr=0.540 us=0.110) pl=-0.0198 vl=0.0860 ent=1.953 clip=0.179 kl=0.0195 t=20.2s (rollout=13.0s update=7.2s)
+  [rollout-save] 12,333 steps → data/ppo_v7_rollouts/rollout_iter_0023.parquet (meta: rollout_iter_0023.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,70.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-27.22,13.62]
+  [diag] values nan=0 range=[-0.9629,0.7733]
+[iter  23/200] steps=12333 rollout_wr=0.445 (ussr=0.640 us=0.250) pl=-0.0333 vl=0.1047 ent=2.063 clip=0.168 kl=0.0210 t=26.5s (rollout=19.1s update=7.4s)
+  [rollout-save] 11,795 steps → data/ppo_v7_rollouts/rollout_iter_0024.parquet (meta: rollout_iter_0024.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,75.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-26.35,13.85]
+  [diag] values nan=0 range=[-0.9874,0.6868]
+[iter  24/200] steps=11795 rollout_wr=0.565 (ussr=0.690 us=0.440) pl=-0.0251 vl=0.1164 ent=2.055 clip=0.145 kl=0.0127 t=24.6s (rollout=18.2s update=6.4s)
+  [rollout-save] 12,631 steps → data/ppo_v7_rollouts/rollout_iter_0025.parquet (meta: rollout_iter_0025.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,77.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-26.47,12.25]
+  [diag] values nan=0 range=[-0.9773,0.7636]
+[iter  25/200] steps=12631 rollout_wr=0.420 (ussr=0.560 us=0.280) pl=-0.0234 vl=0.1045 ent=2.050 clip=0.162 kl=0.0148 t=27.2s (rollout=19.6s update=7.6s)
+  [rollout-save] 13,162 steps → data/ppo_v7_rollouts/rollout_iter_0026.parquet (meta: rollout_iter_0026.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,81.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.850,1.125]
+  [diag] card_logits nan=0 range=[-24.05,13.60]
+  [diag] values nan=0 range=[-0.9918,0.9331]
+[iter  26/200] steps=13162 rollout_wr=0.280 (ussr=0.450 us=0.110) pl=-0.0206 vl=0.0859 ent=2.031 clip=0.182 kl=0.0170 t=20.9s (rollout=13.1s update=7.8s)
+  [rollout-save] 12,059 steps → data/ppo_v7_rollouts/rollout_iter_0027.parquet (meta: rollout_iter_0027.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,78.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-23.88,13.26]
+  [diag] values nan=0 range=[-0.9629,0.6693]
+[iter  27/200] steps=12059 rollout_wr=0.485 (ussr=0.630 us=0.340) pl=-0.0256 vl=0.1143 ent=2.104 clip=0.153 kl=0.0145 t=25.6s (rollout=18.9s update=6.7s)
+  [rollout-save] 13,454 steps → data/ppo_v7_rollouts/rollout_iter_0028.parquet (meta: rollout_iter_0028.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,82.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.850,1.125]
+  [diag] card_logits nan=0 range=[-22.83,13.75]
+  [diag] values nan=0 range=[-0.9764,0.8270]
+[iter  28/200] steps=13454 rollout_wr=0.260 (ussr=0.450 us=0.070) pl=-0.0235 vl=0.0627 ent=2.089 clip=0.158 kl=0.0136 t=21.2s (rollout=13.3s update=7.9s)
+  [rollout-save] 12,825 steps → data/ppo_v7_rollouts/rollout_iter_0029.parquet (meta: rollout_iter_0029.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,91.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.850,1.125]
+  [diag] card_logits nan=0 range=[-26.74,13.47]
+  [diag] values nan=0 range=[-0.9857,0.8405]
+[iter  29/200] steps=12825 rollout_wr=0.265 (ussr=0.410 us=0.120) pl=-0.0214 vl=0.0803 ent=2.132 clip=0.179 kl=0.0200 t=20.6s (rollout=13.1s update=7.5s)
+  [rollout-save] 13,135 steps → data/ppo_v7_rollouts/rollout_iter_0030.parquet (meta: rollout_iter_0030.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,111.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-24.06,12.86]
+  [diag] values nan=0 range=[-0.9316,0.9197]
+[iter  30/200] steps=13135 rollout_wr=0.655 (ussr=0.860 us=0.450) pl=-0.0263 vl=0.0904 ent=2.191 clip=0.248 kl=0.0815 t=21.4s (rollout=13.8s update=7.5s)
+  [rollout-save] 12,376 steps → data/ppo_v7_rollouts/rollout_iter_0031.parquet (meta: rollout_iter_0031.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,82.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-22.95,13.04]
+  [diag] values nan=0 range=[-0.9425,0.7747]
+[iter  31/200] steps=12376 rollout_wr=0.475 (ussr=0.670 us=0.280) pl=-0.0123 vl=0.0992 ent=2.464 clip=0.303 kl=0.0719 t=26.6s (rollout=19.6s update=7.0s)
+  [rollout-save] 13,076 steps → data/ppo_v7_rollouts/rollout_iter_0032.parquet (meta: rollout_iter_0032.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,87.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.800,1.000]
+  [diag] card_logits nan=0 range=[-23.43,14.10]
+  [diag] values nan=0 range=[-0.9876,0.9096]
+[iter  32/200] steps=13076 rollout_wr=0.280 (ussr=0.450 us=0.110) pl=-0.0174 vl=0.0682 ent=2.389 clip=0.246 kl=0.0364 t=20.3s (rollout=13.1s update=7.2s)
+  [rollout-save] 12,307 steps → data/ppo_v7_rollouts/rollout_iter_0033.parquet (meta: rollout_iter_0033.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,76.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-23.91,13.00]
+  [diag] values nan=0 range=[-0.9826,0.8222]
+[iter  33/200] steps=12307 rollout_wr=0.455 (ussr=0.620 us=0.290) pl=-0.0121 vl=0.1025 ent=2.511 clip=0.270 kl=0.0413 t=27.0s (rollout=19.3s update=7.7s)
+  [rollout-save] 12,754 steps → data/ppo_v7_rollouts/rollout_iter_0034.parquet (meta: rollout_iter_0034.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,86.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.250]
+  [diag] card_logits nan=0 range=[-23.34,12.95]
+  [diag] values nan=0 range=[-0.9861,0.9120]
+[iter  34/200] steps=12754 rollout_wr=0.280 (ussr=0.380 us=0.180) pl=-0.0244 vl=0.0867 ent=2.434 clip=0.241 kl=0.0347 t=20.1s (rollout=12.8s update=7.3s)
+  [rollout-save] 13,347 steps → data/ppo_v7_rollouts/rollout_iter_0035.parquet (meta: rollout_iter_0035.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,84.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-23.60,13.23]
+  [diag] values nan=0 range=[-0.9818,0.8400]
+[iter  35/200] steps=13347 rollout_wr=0.370 (ussr=0.540 us=0.200) pl=-0.0266 vl=0.0902 ent=2.422 clip=0.232 kl=0.0331 t=20.7s (rollout=13.4s update=7.3s)
+  [rollout-save] 11,811 steps → data/ppo_v7_rollouts/rollout_iter_0036.parquet (meta: rollout_iter_0036.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,76.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-22.89,13.13]
+  [diag] values nan=0 range=[-0.9865,0.8663]
+[iter  36/200] steps=11811 rollout_wr=0.580 (ussr=0.710 us=0.450) pl=-0.0246 vl=0.1166 ent=2.591 clip=0.233 kl=0.0709 t=25.4s (rollout=18.5s update=7.0s)
+  [rollout-save] 12,898 steps → data/ppo_v7_rollouts/rollout_iter_0037.parquet (meta: rollout_iter_0037.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,81.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-22.45,13.75]
+  [diag] values nan=0 range=[-0.9917,0.8462]
+[iter  37/200] steps=12898 rollout_wr=0.270 (ussr=0.390 us=0.150) pl=-0.0279 vl=0.0720 ent=2.494 clip=0.233 kl=0.0320 t=20.4s (rollout=13.0s update=7.3s)
+  [rollout-save] 12,975 steps → data/ppo_v7_rollouts/rollout_iter_0038.parquet (meta: rollout_iter_0038.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,78.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-21.48,13.75]
+  [diag] values nan=0 range=[-0.9917,0.9768]
+[iter  38/200] steps=12975 rollout_wr=0.290 (ussr=0.400 us=0.180) pl=-0.0234 vl=0.0811 ent=2.561 clip=0.245 kl=0.0366 t=20.1s (rollout=12.8s update=7.3s)
+  [rollout-save] 13,161 steps → data/ppo_v7_rollouts/rollout_iter_0039.parquet (meta: rollout_iter_0039.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,83.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-21.95,12.70]
+  [diag] values nan=0 range=[-0.9886,0.8684]
+[iter  39/200] steps=13161 rollout_wr=0.300 (ussr=0.450 us=0.150) pl=-0.0197 vl=0.0726 ent=2.567 clip=0.232 kl=0.0367 t=21.0s (rollout=13.2s update=7.8s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0040.pt
+  [rollout-save] 13,620 steps → data/ppo_v7_rollouts/rollout_iter_0040.parquet (meta: rollout_iter_0040.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,86.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-22.31,12.97]
+  [diag] values nan=0 range=[-0.9826,0.9703]
+[iter  40/200] steps=13620 rollout_wr=0.245 (ussr=0.320 us=0.170) pl=-0.0249 vl=0.0795 ent=2.571 clip=0.240 kl=0.0324 t=22.2s (rollout=14.3s update=7.9s)
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.700 US=0.354 combined=0.527 (94s)
+  New best: combined=0.527
+  [rollout-save] 12,126 steps → data/ppo_v7_rollouts/rollout_iter_0041.parquet (meta: rollout_iter_0041.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,74.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-23.67,13.12]
+  [diag] values nan=0 range=[-0.9507,0.9047]
+[iter  41/200] steps=12126 rollout_wr=0.575 (ussr=0.720 us=0.430) pl=-0.0245 vl=0.1271 ent=2.711 clip=0.244 kl=0.0323 t=25.8s (rollout=19.2s update=6.6s)
+  [rollout-save] 12,747 steps → data/ppo_v7_rollouts/rollout_iter_0042.parquet (meta: rollout_iter_0042.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,85.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-24.02,13.29]
+  [diag] values nan=0 range=[-0.9904,0.9550]
+[iter  42/200] steps=12747 rollout_wr=0.345 (ussr=0.490 us=0.200) pl=-0.0249 vl=0.0902 ent=2.674 clip=0.241 kl=0.0339 t=20.8s (rollout=13.1s update=7.7s)
+  [rollout-save] 12,492 steps → data/ppo_v7_rollouts/rollout_iter_0043.parquet (meta: rollout_iter_0043.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,69.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-23.19,13.40]
+  [diag] values nan=0 range=[-0.9134,0.8910]
+[iter  43/200] steps=12492 rollout_wr=0.580 (ussr=0.680 us=0.480) pl=-0.0244 vl=0.1088 ent=2.789 clip=0.238 kl=0.0320 t=26.9s (rollout=19.8s update=7.2s)
+  [rollout-save] 12,076 steps → data/ppo_v7_rollouts/rollout_iter_0044.parquet (meta: rollout_iter_0044.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,86.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-23.88,13.41]
+  [diag] values nan=0 range=[-0.9860,0.8629]
+[iter  44/200] steps=12076 rollout_wr=0.575 (ussr=0.710 us=0.440) pl=-0.0247 vl=0.1131 ent=2.760 clip=0.200 kl=0.0267 t=25.8s (rollout=19.1s update=6.7s)
+  [rollout-save] 13,032 steps → data/ppo_v7_rollouts/rollout_iter_0045.parquet (meta: rollout_iter_0045.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,81.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-23.81,13.57]
+  [diag] values nan=0 range=[-0.9900,0.9546]
+[iter  45/200] steps=13032 rollout_wr=0.350 (ussr=0.520 us=0.180) pl=-0.0262 vl=0.0880 ent=2.700 clip=0.242 kl=0.0339 t=20.3s (rollout=12.7s update=7.6s)
+  [rollout-save] 12,775 steps → data/ppo_v7_rollouts/rollout_iter_0046.parquet (meta: rollout_iter_0046.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,86.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.88,12.84]
+  [diag] values nan=0 range=[-0.9709,0.9381]
+[iter  46/200] steps=12775 rollout_wr=0.460 (ussr=0.600 us=0.320) pl=-0.0194 vl=0.1003 ent=2.781 clip=0.268 kl=0.0378 t=20.5s (rollout=13.0s update=7.5s)
+  [rollout-save] 13,039 steps → data/ppo_v7_rollouts/rollout_iter_0047.parquet (meta: rollout_iter_0047.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,88.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-23.02,12.94]
+  [diag] values nan=0 range=[-0.9816,0.9257]
+[iter  47/200] steps=13039 rollout_wr=0.305 (ussr=0.420 us=0.190) pl=-0.0219 vl=0.0799 ent=2.799 clip=0.238 kl=0.0344 t=21.0s (rollout=13.3s update=7.7s)
+  [rollout-save] 12,874 steps → data/ppo_v7_rollouts/rollout_iter_0048.parquet (meta: rollout_iter_0048.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,85.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-22.26,13.63]
+  [diag] values nan=0 range=[-0.9750,0.9656]
+[iter  48/200] steps=12874 rollout_wr=0.365 (ussr=0.490 us=0.240) pl=-0.0269 vl=0.0889 ent=2.861 clip=0.256 kl=0.0358 t=21.0s (rollout=13.5s update=7.4s)
+  [rollout-save] 13,034 steps → data/ppo_v7_rollouts/rollout_iter_0049.parquet (meta: rollout_iter_0049.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,82.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-24.01,12.96]
+  [diag] values nan=0 range=[-0.9783,0.9753]
+[iter  49/200] steps=13034 rollout_wr=0.385 (ussr=0.520 us=0.250) pl=-0.0283 vl=0.0952 ent=2.890 clip=0.247 kl=0.0355 t=20.6s (rollout=13.3s update=7.3s)
+  [rollout-save] 13,092 steps → data/ppo_v7_rollouts/rollout_iter_0050.parquet (meta: rollout_iter_0050.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,99.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-22.68,13.15]
+  [diag] values nan=0 range=[-0.9657,0.9780]
+[iter  50/200] steps=13092 rollout_wr=0.385 (ussr=0.530 us=0.240) pl=-0.0235 vl=0.0915 ent=2.922 clip=0.229 kl=0.0304 t=21.7s (rollout=13.7s update=7.9s)
+  [rollout-save] 12,851 steps → data/ppo_v7_rollouts/rollout_iter_0051.parquet (meta: rollout_iter_0051.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,95.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.250]
+  [diag] card_logits nan=0 range=[-23.31,12.89]
+  [diag] values nan=0 range=[-0.9686,0.9742]
+[iter  51/200] steps=12851 rollout_wr=0.355 (ussr=0.490 us=0.220) pl=-0.0212 vl=0.0858 ent=2.917 clip=0.228 kl=0.0349 t=20.8s (rollout=13.1s update=7.8s)
+  [rollout-save] 13,528 steps → data/ppo_v7_rollouts/rollout_iter_0052.parquet (meta: rollout_iter_0052.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,93.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-22.09,12.93]
+  [diag] values nan=0 range=[-0.9749,0.9734]
+[iter  52/200] steps=13528 rollout_wr=0.360 (ussr=0.420 us=0.300) pl=-0.0233 vl=0.0900 ent=2.988 clip=0.246 kl=0.0330 t=21.8s (rollout=14.3s update=7.5s)
+  [rollout-save] 13,199 steps → data/ppo_v7_rollouts/rollout_iter_0053.parquet (meta: rollout_iter_0053.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,93.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-23.82,12.73]
+  [diag] values nan=0 range=[-0.9337,0.9835]
+[iter  53/200] steps=13199 rollout_wr=0.420 (ussr=0.580 us=0.260) pl=-0.0241 vl=0.0940 ent=2.951 clip=0.231 kl=0.0323 t=21.3s (rollout=13.3s update=8.0s)
+  [rollout-save] 12,724 steps → data/ppo_v7_rollouts/rollout_iter_0054.parquet (meta: rollout_iter_0054.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,72.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-22.14,13.05]
+  [diag] values nan=0 range=[-0.9533,0.9308]
+[iter  54/200] steps=12724 rollout_wr=0.625 (ussr=0.740 us=0.510) pl=-0.0279 vl=0.1005 ent=3.031 clip=0.239 kl=0.0294 t=27.4s (rollout=20.2s update=7.1s)
+  [rollout-save] 12,507 steps → data/ppo_v7_rollouts/rollout_iter_0055.parquet (meta: rollout_iter_0055.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,70.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-25.58,12.16]
+  [diag] values nan=0 range=[-0.9432,0.9322]
+[iter  55/200] steps=12507 rollout_wr=0.620 (ussr=0.740 us=0.500) pl=-0.0243 vl=0.1094 ent=3.030 clip=0.223 kl=0.0266 t=27.2s (rollout=19.9s update=7.2s)
+  [rollout-save] 12,885 steps → data/ppo_v7_rollouts/rollout_iter_0056.parquet (meta: rollout_iter_0056.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,88.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-22.82,12.45]
+  [diag] values nan=0 range=[-0.9774,0.9868]
+[iter  56/200] steps=12885 rollout_wr=0.370 (ussr=0.540 us=0.200) pl=-0.0311 vl=0.0812 ent=3.008 clip=0.236 kl=0.0323 t=20.8s (rollout=13.2s update=7.6s)
+  [rollout-save] 12,549 steps → data/ppo_v7_rollouts/rollout_iter_0057.parquet (meta: rollout_iter_0057.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,61.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-21.93,12.83]
+  [diag] values nan=0 range=[-0.9505,0.9417]
+[iter  57/200] steps=12549 rollout_wr=0.585 (ussr=0.740 us=0.430) pl=-0.0284 vl=0.1116 ent=3.119 clip=0.226 kl=0.0262 t=27.4s (rollout=20.2s update=7.2s)
+  [rollout-save] 12,684 steps → data/ppo_v7_rollouts/rollout_iter_0058.parquet (meta: rollout_iter_0058.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,91.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.62,12.47]
+  [diag] values nan=0 range=[-0.9732,0.9795]
+[iter  58/200] steps=12684 rollout_wr=0.435 (ussr=0.590 us=0.280) pl=-0.0317 vl=0.0993 ent=3.055 clip=0.237 kl=0.0293 t=20.6s (rollout=13.2s update=7.4s)
+  [rollout-save] 13,198 steps → data/ppo_v7_rollouts/rollout_iter_0059.parquet (meta: rollout_iter_0059.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,86.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-23.16,12.74]
+  [diag] values nan=0 range=[-0.9628,0.9784]
+[iter  59/200] steps=13198 rollout_wr=0.425 (ussr=0.570 us=0.280) pl=-0.0267 vl=0.0853 ent=3.060 clip=0.242 kl=0.0293 t=20.8s (rollout=13.3s update=7.4s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0060.pt
+  [rollout-save] 12,659 steps → data/ppo_v7_rollouts/rollout_iter_0060.parquet (meta: rollout_iter_0060.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,65.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-21.42,11.93]
+  [diag] values nan=0 range=[-0.9700,0.9732]
+[iter  60/200] steps=12659 rollout_wr=0.560 (ussr=0.710 us=0.410) pl=-0.0265 vl=0.1056 ent=3.187 clip=0.226 kl=0.0261 t=27.4s (rollout=19.9s update=7.5s)
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.706 US=0.444 combined=0.575 (95s)
+  New best: combined=0.575
+  [rollout-save] 13,235 steps → data/ppo_v7_rollouts/rollout_iter_0061.parquet (meta: rollout_iter_0061.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,106.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.78,11.70]
+  [diag] values nan=0 range=[-0.9660,0.9872]
+[iter  61/200] steps=13235 rollout_wr=0.375 (ussr=0.490 us=0.260) pl=-0.0259 vl=0.0941 ent=3.101 clip=0.226 kl=0.0279 t=21.0s (rollout=13.4s update=7.6s)
+  [rollout-save] 12,491 steps → data/ppo_v7_rollouts/rollout_iter_0062.parquet (meta: rollout_iter_0062.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,63.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-21.23,12.87]
+  [diag] values nan=0 range=[-0.9775,0.9797]
+[iter  62/200] steps=12491 rollout_wr=0.670 (ussr=0.760 us=0.580) pl=-0.0248 vl=0.1050 ent=3.217 clip=0.248 kl=0.0271 t=27.2s (rollout=19.8s update=7.4s)
+  [rollout-save] 12,524 steps → data/ppo_v7_rollouts/rollout_iter_0063.parquet (meta: rollout_iter_0063.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,91.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.850,1.000]
+  [diag] card_logits nan=0 range=[-22.62,12.58]
+  [diag] values nan=0 range=[-0.9847,0.9814]
+[iter  63/200] steps=12524 rollout_wr=0.460 (ussr=0.660 us=0.260) pl=-0.0293 vl=0.0941 ent=3.165 clip=0.265 kl=0.0301 t=20.1s (rollout=12.7s update=7.4s)
+  [rollout-save] 12,920 steps → data/ppo_v7_rollouts/rollout_iter_0064.parquet (meta: rollout_iter_0064.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,71.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.79,12.17]
+  [diag] values nan=0 range=[-0.9437,0.9478]
+[iter  64/200] steps=12920 rollout_wr=0.665 (ussr=0.790 us=0.540) pl=-0.0318 vl=0.0903 ent=3.198 clip=0.239 kl=0.0260 t=27.9s (rollout=20.5s update=7.4s)
+  [rollout-save] 13,549 steps → data/ppo_v7_rollouts/rollout_iter_0065.parquet (meta: rollout_iter_0065.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,83.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.850,1.125]
+  [diag] card_logits nan=0 range=[-21.22,12.16]
+  [diag] values nan=0 range=[-0.9643,0.9879]
+[iter  65/200] steps=13549 rollout_wr=0.415 (ussr=0.560 us=0.270) pl=-0.0267 vl=0.0913 ent=3.152 clip=0.238 kl=0.0269 t=21.5s (rollout=13.9s update=7.6s)
+  [rollout-save] 12,588 steps → data/ppo_v7_rollouts/rollout_iter_0066.parquet (meta: rollout_iter_0066.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,57.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-21.27,13.16]
+  [diag] values nan=0 range=[-0.9159,0.9575]
+[iter  66/200] steps=12588 rollout_wr=0.650 (ussr=0.730 us=0.570) pl=-0.0344 vl=0.1052 ent=3.224 clip=0.230 kl=0.0240 t=27.9s (rollout=20.1s update=7.8s)
+  [rollout-save] 13,403 steps → data/ppo_v7_rollouts/rollout_iter_0067.parquet (meta: rollout_iter_0067.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,86.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-23.41,12.71]
+  [diag] values nan=0 range=[-0.9856,0.9809]
+[iter  67/200] steps=13403 rollout_wr=0.435 (ussr=0.550 us=0.320) pl=-0.0295 vl=0.0923 ent=3.171 clip=0.242 kl=0.0264 t=22.3s (rollout=14.0s update=8.3s)
+  [rollout-save] 12,439 steps → data/ppo_v7_rollouts/rollout_iter_0068.parquet (meta: rollout_iter_0068.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,60.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.59,12.68]
+  [diag] values nan=0 range=[-0.9744,0.9762]
+[iter  68/200] steps=12439 rollout_wr=0.645 (ussr=0.730 us=0.560) pl=-0.0206 vl=0.1124 ent=3.289 clip=0.220 kl=0.0239 t=26.8s (rollout=20.0s update=6.8s)
+  [rollout-save] 13,472 steps → data/ppo_v7_rollouts/rollout_iter_0069.parquet (meta: rollout_iter_0069.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,115.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.81,13.40]
+  [diag] values nan=0 range=[-0.8028,0.9827]
+[iter  69/200] steps=13472 rollout_wr=0.805 (ussr=0.940 us=0.670) pl=-0.0283 vl=0.0623 ent=2.983 clip=0.245 kl=0.0324 t=22.8s (rollout=14.7s update=8.1s)
+  [rollout-save] 13,265 steps → data/ppo_v7_rollouts/rollout_iter_0070.parquet (meta: rollout_iter_0070.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,81.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.23,12.62]
+  [diag] values nan=0 range=[-0.9206,0.9786]
+[iter  70/200] steps=13265 rollout_wr=0.420 (ussr=0.580 us=0.260) pl=-0.0308 vl=0.0887 ent=3.217 clip=0.240 kl=0.0281 t=21.0s (rollout=13.3s update=7.7s)
+  [rollout-save] 12,263 steps → data/ppo_v7_rollouts/rollout_iter_0071.parquet (meta: rollout_iter_0071.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,54.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.80,12.61]
+  [diag] values nan=0 range=[-0.8656,0.9600]
+[iter  71/200] steps=12263 rollout_wr=0.620 (ussr=0.720 us=0.520) pl=-0.0297 vl=0.1038 ent=3.277 clip=0.251 kl=0.0277 t=27.1s (rollout=19.9s update=7.1s)
+  [rollout-save] 12,345 steps → data/ppo_v7_rollouts/rollout_iter_0072.parquet (meta: rollout_iter_0072.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,62.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-22.76,12.52]
+  [diag] values nan=0 range=[-0.9668,0.9646]
+[iter  72/200] steps=12345 rollout_wr=0.675 (ussr=0.800 us=0.550) pl=-0.0140 vl=0.0969 ent=3.243 clip=0.217 kl=0.0235 t=27.6s (rollout=20.3s update=7.2s)
+  [rollout-save] 13,066 steps → data/ppo_v7_rollouts/rollout_iter_0073.parquet (meta: rollout_iter_0073.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,130.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-21.67,12.97]
+  [diag] values nan=0 range=[-0.7621,0.9896]
+[iter  73/200] steps=13066 rollout_wr=0.775 (ussr=0.840 us=0.710) pl=-0.0305 vl=0.0724 ent=3.000 clip=0.236 kl=0.0304 t=22.0s (rollout=14.2s update=7.8s)
+  [rollout-save] 12,212 steps → data/ppo_v7_rollouts/rollout_iter_0074.parquet (meta: rollout_iter_0074.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,56.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.59,12.76]
+  [diag] values nan=0 range=[-0.9515,0.9738]
+[iter  74/200] steps=12212 rollout_wr=0.715 (ussr=0.850 us=0.580) pl=-0.0259 vl=0.0984 ent=3.232 clip=0.213 kl=0.0246 t=26.4s (rollout=19.5s update=6.9s)
+  [rollout-save] 12,720 steps → data/ppo_v7_rollouts/rollout_iter_0075.parquet (meta: rollout_iter_0075.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,88.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-19.20,13.20]
+  [diag] values nan=0 range=[-0.9734,0.9910]
+[iter  75/200] steps=12720 rollout_wr=0.430 (ussr=0.600 us=0.260) pl=-0.0294 vl=0.0969 ent=3.179 clip=0.216 kl=0.0247 t=20.4s (rollout=13.2s update=7.2s)
+  [rollout-save] 12,940 steps → data/ppo_v7_rollouts/rollout_iter_0076.parquet (meta: rollout_iter_0076.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,94.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.91,14.05]
+  [diag] values nan=0 range=[-0.9683,0.9854]
+[iter  76/200] steps=12940 rollout_wr=0.445 (ussr=0.560 us=0.330) pl=-0.0315 vl=0.0995 ent=3.219 clip=0.249 kl=0.0278 t=21.4s (rollout=13.6s update=7.8s)
+  [rollout-save] 12,271 steps → data/ppo_v7_rollouts/rollout_iter_0077.parquet (meta: rollout_iter_0077.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,57.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.91,13.69]
+  [diag] values nan=0 range=[-0.9250,0.9489]
+[iter  77/200] steps=12271 rollout_wr=0.660 (ussr=0.770 us=0.550) pl=-0.0290 vl=0.0990 ent=3.284 clip=0.239 kl=0.0290 t=26.8s (rollout=19.7s update=7.1s)
+  [rollout-save] 12,092 steps → data/ppo_v7_rollouts/rollout_iter_0078.parquet (meta: rollout_iter_0078.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,54.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.94,12.11]
+  [diag] values nan=0 range=[-0.9310,0.9805]
+[iter  78/200] steps=12092 rollout_wr=0.605 (ussr=0.740 us=0.470) pl=-0.0252 vl=0.1140 ent=3.262 clip=0.215 kl=0.0231 t=26.1s (rollout=19.4s update=6.7s)
+  [rollout-save] 12,888 steps → data/ppo_v7_rollouts/rollout_iter_0079.parquet (meta: rollout_iter_0079.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,106.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-20.00,12.39]
+  [diag] values nan=0 range=[-0.9768,0.9825]
+[iter  79/200] steps=12888 rollout_wr=0.460 (ussr=0.590 us=0.330) pl=-0.0365 vl=0.0828 ent=3.204 clip=0.267 kl=0.0372 t=21.1s (rollout=13.3s update=7.8s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0080.pt
+  [rollout-save] 13,120 steps → data/ppo_v7_rollouts/rollout_iter_0080.parquet (meta: rollout_iter_0080.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,101.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-19.48,12.27]
+  [diag] values nan=0 range=[-0.9784,0.9773]
+[iter  80/200] steps=13120 rollout_wr=0.445 (ussr=0.570 us=0.320) pl=-0.0256 vl=0.0946 ent=3.298 clip=0.220 kl=0.0234 t=21.1s (rollout=13.6s update=7.6s)
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.710 US=0.544 combined=0.627 (99s)
+  New best: combined=0.627
+  [rollout-save] 12,684 steps → data/ppo_v7_rollouts/rollout_iter_0081.parquet (meta: rollout_iter_0081.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,47.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.12,12.89]
+  [diag] values nan=0 range=[-0.9689,0.9812]
+[iter  81/200] steps=12684 rollout_wr=0.615 (ussr=0.700 us=0.530) pl=-0.0286 vl=0.1138 ent=3.372 clip=0.228 kl=0.0228 t=27.0s (rollout=20.1s update=6.9s)
+  [rollout-save] 12,381 steps → data/ppo_v7_rollouts/rollout_iter_0082.parquet (meta: rollout_iter_0082.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,57.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.30,14.35]
+  [diag] values nan=0 range=[-0.9363,0.9425]
+[iter  82/200] steps=12381 rollout_wr=0.650 (ussr=0.730 us=0.570) pl=-0.0372 vl=0.1002 ent=3.313 clip=0.221 kl=0.0228 t=27.5s (rollout=19.7s update=7.8s)
+  [rollout-save] 12,518 steps → data/ppo_v7_rollouts/rollout_iter_0083.parquet (meta: rollout_iter_0083.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,54.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.80,13.46]
+  [diag] values nan=0 range=[-0.9338,0.9758]
+[iter  83/200] steps=12518 rollout_wr=0.650 (ussr=0.770 us=0.530) pl=-0.0292 vl=0.0989 ent=3.326 clip=0.204 kl=0.0202 t=26.8s (rollout=19.9s update=6.9s)
+  [rollout-save] 12,575 steps → data/ppo_v7_rollouts/rollout_iter_0084.parquet (meta: rollout_iter_0084.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,57.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.82,13.44]
+  [diag] values nan=0 range=[-0.9571,0.9589]
+[iter  84/200] steps=12575 rollout_wr=0.660 (ussr=0.730 us=0.590) pl=-0.0246 vl=0.0968 ent=3.267 clip=0.202 kl=0.0214 t=27.9s (rollout=20.4s update=7.5s)
+  [rollout-save] 12,945 steps → data/ppo_v7_rollouts/rollout_iter_0085.parquet (meta: rollout_iter_0085.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,88.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.19,14.06]
+  [diag] values nan=0 range=[-0.9757,0.9840]
+[iter  85/200] steps=12945 rollout_wr=0.525 (ussr=0.680 us=0.370) pl=-0.0333 vl=0.0916 ent=3.258 clip=0.265 kl=0.0293 t=21.4s (rollout=13.6s update=7.8s)
+  [rollout-save] 13,196 steps → data/ppo_v7_rollouts/rollout_iter_0086.parquet (meta: rollout_iter_0086.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,77.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-22.17,13.07]
+  [diag] values nan=0 range=[-0.9785,0.9741]
+[iter  86/200] steps=13196 rollout_wr=0.590 (ussr=0.740 us=0.440) pl=-0.0309 vl=0.0972 ent=3.294 clip=0.214 kl=0.0219 t=21.0s (rollout=13.5s update=7.5s)
+  [rollout-save] 12,360 steps → data/ppo_v7_rollouts/rollout_iter_0087.parquet (meta: rollout_iter_0087.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,54.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.38,13.43]
+  [diag] values nan=0 range=[-0.9050,0.9856]
+[iter  87/200] steps=12360 rollout_wr=0.700 (ussr=0.800 us=0.600) pl=-0.0216 vl=0.0926 ent=3.314 clip=0.263 kl=0.0254 t=27.3s (rollout=20.0s update=7.3s)
+  [rollout-save] 13,171 steps → data/ppo_v7_rollouts/rollout_iter_0088.parquet (meta: rollout_iter_0088.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,90.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-18.79,14.77]
+  [diag] values nan=0 range=[-0.9717,0.9618]
+[iter  88/200] steps=13171 rollout_wr=0.495 (ussr=0.590 us=0.400) pl=-0.0357 vl=0.1037 ent=3.260 clip=0.228 kl=0.0232 t=21.0s (rollout=13.4s update=7.6s)
+  [rollout-save] 12,957 steps → data/ppo_v7_rollouts/rollout_iter_0089.parquet (meta: rollout_iter_0089.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,81.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.42,14.20]
+  [diag] values nan=0 range=[-0.9732,0.9693]
+[iter  89/200] steps=12957 rollout_wr=0.520 (ussr=0.670 us=0.370) pl=-0.0332 vl=0.0911 ent=3.322 clip=0.212 kl=0.0221 t=20.8s (rollout=13.3s update=7.5s)
+  [rollout-save] 13,328 steps → data/ppo_v7_rollouts/rollout_iter_0090.parquet (meta: rollout_iter_0090.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,87.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.22,13.88]
+  [diag] values nan=0 range=[-0.9664,0.9757]
+[iter  90/200] steps=13328 rollout_wr=0.495 (ussr=0.640 us=0.350) pl=-0.0313 vl=0.0968 ent=3.356 clip=0.218 kl=0.0228 t=21.8s (rollout=14.2s update=7.6s)
+  [rollout-save] 13,118 steps → data/ppo_v7_rollouts/rollout_iter_0091.parquet (meta: rollout_iter_0091.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,100.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.800,1.125]
+  [diag] card_logits nan=0 range=[-20.27,14.62]
+  [diag] values nan=0 range=[-0.9736,0.9735]
+[iter  91/200] steps=13118 rollout_wr=0.530 (ussr=0.650 us=0.410) pl=-0.0295 vl=0.1041 ent=3.382 clip=0.236 kl=0.0242 t=21.4s (rollout=14.1s update=7.4s)
+  [rollout-save] 12,866 steps → data/ppo_v7_rollouts/rollout_iter_0092.parquet (meta: rollout_iter_0092.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,90.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-20.63,13.07]
+  [diag] values nan=0 range=[-0.9559,0.9770]
+[iter  92/200] steps=12866 rollout_wr=0.535 (ussr=0.630 us=0.440) pl=-0.0316 vl=0.0845 ent=3.389 clip=0.213 kl=0.0214 t=21.1s (rollout=13.3s update=7.8s)
+  [rollout-save] 12,975 steps → data/ppo_v7_rollouts/rollout_iter_0093.parquet (meta: rollout_iter_0093.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,85.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.95,13.19]
+  [diag] values nan=0 range=[-0.9782,0.9957]
+[iter  93/200] steps=12975 rollout_wr=0.480 (ussr=0.620 us=0.340) pl=-0.0347 vl=0.0904 ent=3.389 clip=0.227 kl=0.0227 t=21.7s (rollout=13.7s update=8.0s)
+  [rollout-save] 12,524 steps → data/ppo_v7_rollouts/rollout_iter_0094.parquet (meta: rollout_iter_0094.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,45.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.62,13.33]
+  [diag] values nan=0 range=[-0.9076,0.9756]
+[iter  94/200] steps=12524 rollout_wr=0.685 (ussr=0.750 us=0.620) pl=-0.0317 vl=0.0946 ent=3.434 clip=0.259 kl=0.0240 t=27.6s (rollout=20.7s update=7.0s)
+  [rollout-save] 13,265 steps → data/ppo_v7_rollouts/rollout_iter_0095.parquet (meta: rollout_iter_0095.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,111.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.08,12.60]
+  [diag] values nan=0 range=[-0.9706,0.9884]
+[iter  95/200] steps=13265 rollout_wr=0.510 (ussr=0.630 us=0.390) pl=-0.0280 vl=0.0827 ent=3.372 clip=0.241 kl=0.0243 t=21.7s (rollout=13.8s update=7.9s)
+  [rollout-save] 13,155 steps → data/ppo_v7_rollouts/rollout_iter_0096.parquet (meta: rollout_iter_0096.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,109.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.86,12.93]
+  [diag] values nan=0 range=[-0.9797,0.9840]
+[iter  96/200] steps=13155 rollout_wr=0.595 (ussr=0.730 us=0.460) pl=-0.0333 vl=0.0839 ent=3.401 clip=0.237 kl=0.0229 t=21.2s (rollout=13.6s update=7.6s)
+  [rollout-save] 12,891 steps → data/ppo_v7_rollouts/rollout_iter_0097.parquet (meta: rollout_iter_0097.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,97.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.78,13.38]
+  [diag] values nan=0 range=[-0.9797,0.9900]
+[iter  97/200] steps=12891 rollout_wr=0.460 (ussr=0.610 us=0.310) pl=-0.0289 vl=0.0937 ent=3.418 clip=0.226 kl=0.0225 t=21.3s (rollout=13.7s update=7.6s)
+  [rollout-save] 12,930 steps → data/ppo_v7_rollouts/rollout_iter_0098.parquet (meta: rollout_iter_0098.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,97.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-19.43,12.15]
+  [diag] values nan=0 range=[-0.9849,0.9799]
+[iter  98/200] steps=12930 rollout_wr=0.530 (ussr=0.640 us=0.420) pl=-0.0305 vl=0.0959 ent=3.393 clip=0.229 kl=0.0235 t=21.1s (rollout=13.4s update=7.6s)
+  [rollout-save] 13,278 steps → data/ppo_v7_rollouts/rollout_iter_0099.parquet (meta: rollout_iter_0099.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,140.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.24,11.57]
+  [diag] values nan=0 range=[-0.6316,0.9923]
+[iter  99/200] steps=13278 rollout_wr=0.870 (ussr=0.950 us=0.790) pl=-0.0411 vl=0.0561 ent=3.367 clip=0.392 kl=0.0556 t=21.8s (rollout=14.1s update=7.7s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0100.pt
+  [rollout-save] 13,470 steps → data/ppo_v7_rollouts/rollout_iter_0100.parquet (meta: rollout_iter_0100.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,92.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.18,13.77]
+  [diag] values nan=0 range=[-0.9693,0.9871]
+[iter 100/200] steps=13470 rollout_wr=0.585 (ussr=0.710 us=0.460) pl=-0.0305 vl=0.0954 ent=3.363 clip=0.214 kl=0.0226 t=22.1s (rollout=14.3s update=7.8s)
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.702 US=0.556 combined=0.629 (102s)
+  New best: combined=0.629
+  [rollout-save] 13,090 steps → data/ppo_v7_rollouts/rollout_iter_0101.parquet (meta: rollout_iter_0101.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,105.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-20.56,14.47]
+  [diag] values nan=0 range=[-0.9789,0.9874]
+[iter 101/200] steps=13090 rollout_wr=0.530 (ussr=0.660 us=0.400) pl=-0.0301 vl=0.0943 ent=3.416 clip=0.211 kl=0.0235 t=21.7s (rollout=13.5s update=8.2s)
+  [rollout-save] 12,722 steps → data/ppo_v7_rollouts/rollout_iter_0102.parquet (meta: rollout_iter_0102.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,49.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.57,13.10]
+  [diag] values nan=0 range=[-0.9205,0.9688]
+[iter 102/200] steps=12722 rollout_wr=0.675 (ussr=0.740 us=0.610) pl=-0.0340 vl=0.1046 ent=3.443 clip=0.250 kl=0.0265 t=27.9s (rollout=20.4s update=7.4s)
+  [rollout-save] 13,061 steps → data/ppo_v7_rollouts/rollout_iter_0103.parquet (meta: rollout_iter_0103.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,84.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.58,13.71]
+  [diag] values nan=0 range=[-0.9681,0.9636]
+[iter 103/200] steps=13061 rollout_wr=0.520 (ussr=0.710 us=0.330) pl=-0.0292 vl=0.0841 ent=3.411 clip=0.263 kl=0.0274 t=21.1s (rollout=13.5s update=7.6s)
+  [rollout-save] 13,242 steps → data/ppo_v7_rollouts/rollout_iter_0104.parquet (meta: rollout_iter_0104.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,96.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.27,13.39]
+  [diag] values nan=0 range=[-0.9856,0.9789]
+[iter 104/200] steps=13242 rollout_wr=0.590 (ussr=0.680 us=0.500) pl=-0.0321 vl=0.0852 ent=3.432 clip=0.236 kl=0.0245 t=21.6s (rollout=13.8s update=7.7s)
+  [rollout-save] 13,128 steps → data/ppo_v7_rollouts/rollout_iter_0105.parquet (meta: rollout_iter_0105.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,92.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.77,14.04]
+  [diag] values nan=0 range=[-0.9751,0.9818]
+[iter 105/200] steps=13128 rollout_wr=0.530 (ussr=0.650 us=0.410) pl=-0.0281 vl=0.0922 ent=3.403 clip=0.214 kl=0.0244 t=21.3s (rollout=13.5s update=7.8s)
+  [rollout-save] 12,730 steps → data/ppo_v7_rollouts/rollout_iter_0106.parquet (meta: rollout_iter_0106.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,53.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.42,13.34]
+  [diag] values nan=0 range=[-0.8985,0.9821]
+[iter 106/200] steps=12730 rollout_wr=0.685 (ussr=0.760 us=0.610) pl=-0.0364 vl=0.0940 ent=3.520 clip=0.269 kl=0.0254 t=28.5s (rollout=21.2s update=7.3s)
+  [rollout-save] 13,899 steps → data/ppo_v7_rollouts/rollout_iter_0107.parquet (meta: rollout_iter_0107.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,123.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.85,13.22]
+  [diag] values nan=0 range=[-0.9035,0.9739]
+[iter 107/200] steps=13899 rollout_wr=0.890 (ussr=0.970 us=0.810) pl=-0.0326 vl=0.0449 ent=3.424 clip=0.323 kl=0.0463 t=23.1s (rollout=15.4s update=7.7s)
+  [rollout-save] 13,496 steps → data/ppo_v7_rollouts/rollout_iter_0108.parquet (meta: rollout_iter_0108.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,126.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.46,13.23]
+  [diag] values nan=0 range=[-0.8094,0.9805]
+[iter 108/200] steps=13496 rollout_wr=0.835 (ussr=0.890 us=0.780) pl=-0.0259 vl=0.0507 ent=3.415 clip=0.262 kl=0.0269 t=22.1s (rollout=14.5s update=7.6s)
+  [rollout-save] 13,442 steps → data/ppo_v7_rollouts/rollout_iter_0109.parquet (meta: rollout_iter_0109.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,119.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-21.97,14.50]
+  [diag] values nan=0 range=[-0.9225,0.9857]
+[iter 109/200] steps=13442 rollout_wr=0.800 (ussr=0.880 us=0.720) pl=-0.0296 vl=0.0601 ent=3.404 clip=0.229 kl=0.0240 t=23.2s (rollout=14.6s update=8.6s)
+  [rollout-save] 13,278 steps → data/ppo_v7_rollouts/rollout_iter_0110.parquet (meta: rollout_iter_0110.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,89.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-21.15,14.46]
+  [diag] values nan=0 range=[-0.9224,0.9803]
+[iter 110/200] steps=13278 rollout_wr=0.615 (ussr=0.840 us=0.390) pl=-0.0287 vl=0.0919 ent=3.494 clip=0.227 kl=0.0208 t=22.0s (rollout=14.6s update=7.4s)
+  [rollout-save] 13,784 steps → data/ppo_v7_rollouts/rollout_iter_0111.parquet (meta: rollout_iter_0111.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,79.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.95,13.44]
+  [diag] values nan=0 range=[-0.9529,0.9717]
+[iter 111/200] steps=13784 rollout_wr=0.610 (ussr=0.810 us=0.410) pl=-0.0288 vl=0.0810 ent=3.462 clip=0.200 kl=0.0181 t=23.4s (rollout=15.2s update=8.1s)
+  [rollout-save] 13,049 steps → data/ppo_v7_rollouts/rollout_iter_0112.parquet (meta: rollout_iter_0112.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,94.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-22.81,13.47]
+  [diag] values nan=0 range=[-0.9797,0.9724]
+[iter 112/200] steps=13049 rollout_wr=0.670 (ussr=0.810 us=0.530) pl=-0.0313 vl=0.0859 ent=3.521 clip=0.240 kl=0.0221 t=22.3s (rollout=14.5s update=7.8s)
+  [rollout-save] 13,254 steps → data/ppo_v7_rollouts/rollout_iter_0113.parquet (meta: rollout_iter_0113.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,115.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-20.67,13.67]
+  [diag] values nan=0 range=[-0.9904,0.9746]
+[iter 113/200] steps=13254 rollout_wr=0.500 (ussr=0.610 us=0.390) pl=-0.0302 vl=0.0819 ent=3.378 clip=0.218 kl=0.0217 t=21.5s (rollout=13.8s update=7.7s)
+  [rollout-save] 12,473 steps → data/ppo_v7_rollouts/rollout_iter_0114.parquet (meta: rollout_iter_0114.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,45.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.63,12.50]
+  [diag] values nan=0 range=[-0.9740,0.9534]
+[iter 114/200] steps=12473 rollout_wr=0.710 (ussr=0.770 us=0.650) pl=-0.0287 vl=0.0980 ent=3.520 clip=0.235 kl=0.0243 t=27.8s (rollout=20.3s update=7.4s)
+  [rollout-save] 13,300 steps → data/ppo_v7_rollouts/rollout_iter_0115.parquet (meta: rollout_iter_0115.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,95.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.12,12.31]
+  [diag] values nan=0 range=[-0.9551,0.9722]
+[iter 115/200] steps=13300 rollout_wr=0.555 (ussr=0.690 us=0.420) pl=-0.0333 vl=0.1022 ent=3.387 clip=0.240 kl=0.0247 t=21.5s (rollout=13.7s update=7.8s)
+  [rollout-save] 13,132 steps → data/ppo_v7_rollouts/rollout_iter_0116.parquet (meta: rollout_iter_0116.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,123.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.69,13.20]
+  [diag] values nan=0 range=[-0.9303,0.9602]
+[iter 116/200] steps=13132 rollout_wr=0.770 (ussr=0.900 us=0.640) pl=-0.0287 vl=0.0644 ent=3.438 clip=0.204 kl=0.0220 t=22.1s (rollout=14.3s update=7.8s)
+  [rollout-save] 13,528 steps → data/ppo_v7_rollouts/rollout_iter_0117.parquet (meta: rollout_iter_0117.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,85.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.17,12.20]
+  [diag] values nan=0 range=[-0.9770,0.9728]
+[iter 117/200] steps=13528 rollout_wr=0.610 (ussr=0.820 us=0.400) pl=-0.0267 vl=0.0760 ent=3.523 clip=0.192 kl=0.0236 t=22.5s (rollout=14.8s update=7.7s)
+  [rollout-save] 13,255 steps → data/ppo_v7_rollouts/rollout_iter_0118.parquet (meta: rollout_iter_0118.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,104.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.07,12.87]
+  [diag] values nan=0 range=[-0.9730,0.9855]
+[iter 118/200] steps=13255 rollout_wr=0.545 (ussr=0.670 us=0.420) pl=-0.0303 vl=0.1014 ent=3.457 clip=0.232 kl=0.0266 t=21.2s (rollout=13.8s update=7.4s)
+  [rollout-save] 13,617 steps → data/ppo_v7_rollouts/rollout_iter_0119.parquet (meta: rollout_iter_0119.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,66.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-23.30,12.41]
+  [diag] values nan=0 range=[-0.9522,0.9600]
+[iter 119/200] steps=13617 rollout_wr=0.570 (ussr=0.790 us=0.350) pl=-0.0292 vl=0.0800 ent=3.503 clip=0.201 kl=0.0168 t=23.5s (rollout=15.0s update=8.5s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0120.pt
+  [rollout-save] 12,967 steps → data/ppo_v7_rollouts/rollout_iter_0120.parquet (meta: rollout_iter_0120.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,42.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.86,12.38]
+  [diag] values nan=0 range=[-0.9476,0.9716]
+[iter 120/200] steps=12967 rollout_wr=0.685 (ussr=0.780 us=0.590) pl=-0.0319 vl=0.0950 ent=3.521 clip=0.215 kl=0.0223 t=28.1s (rollout=21.0s update=7.1s)
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.788 US=0.562 combined=0.675 (98s)
+  New best: combined=0.675
+  [rollout-save] 13,336 steps → data/ppo_v7_rollouts/rollout_iter_0121.parquet (meta: rollout_iter_0121.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,93.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.31,11.31]
+  [diag] values nan=0 range=[-0.9513,0.9701]
+[iter 121/200] steps=13336 rollout_wr=0.505 (ussr=0.600 us=0.410) pl=-0.0327 vl=0.0881 ent=3.468 clip=0.209 kl=0.0186 t=21.4s (rollout=13.6s update=7.8s)
+  [rollout-save] 13,387 steps → data/ppo_v7_rollouts/rollout_iter_0122.parquet (meta: rollout_iter_0122.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,101.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.96,11.66]
+  [diag] values nan=0 range=[-0.9638,0.9729]
+[iter 122/200] steps=13387 rollout_wr=0.610 (ussr=0.730 us=0.490) pl=-0.0343 vl=0.0706 ent=3.485 clip=0.243 kl=0.0219 t=21.4s (rollout=13.6s update=7.8s)
+  [rollout-save] 12,655 steps → data/ppo_v7_rollouts/rollout_iter_0123.parquet (meta: rollout_iter_0123.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,48.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.17,12.56]
+  [diag] values nan=0 range=[-0.9355,0.9819]
+[iter 123/200] steps=12655 rollout_wr=0.715 (ussr=0.800 us=0.630) pl=-0.0318 vl=0.0890 ent=3.586 clip=0.273 kl=0.0256 t=27.5s (rollout=20.3s update=7.2s)
+  [rollout-save] 13,326 steps → data/ppo_v7_rollouts/rollout_iter_0124.parquet (meta: rollout_iter_0124.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,90.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-21.72,12.28]
+  [diag] values nan=0 range=[-0.9787,0.9770]
+[iter 124/200] steps=13326 rollout_wr=0.590 (ussr=0.660 us=0.520) pl=-0.0332 vl=0.1017 ent=3.495 clip=0.239 kl=0.0220 t=20.9s (rollout=13.6s update=7.4s)
+  [rollout-save] 12,841 steps → data/ppo_v7_rollouts/rollout_iter_0125.parquet (meta: rollout_iter_0125.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,41.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.25,11.56]
+  [diag] values nan=0 range=[-0.9485,0.9347]
+[iter 125/200] steps=12841 rollout_wr=0.635 (ussr=0.730 us=0.540) pl=-0.0360 vl=0.0976 ent=3.602 clip=0.207 kl=0.0200 t=29.0s (rollout=21.0s update=8.1s)
+  [rollout-save] 12,586 steps → data/ppo_v7_rollouts/rollout_iter_0126.parquet (meta: rollout_iter_0126.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,43.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.14,11.32]
+  [diag] values nan=0 range=[-0.8687,0.9507]
+[iter 126/200] steps=12586 rollout_wr=0.645 (ussr=0.740 us=0.550) pl=-0.0343 vl=0.0962 ent=3.563 clip=0.224 kl=0.0221 t=27.9s (rollout=20.8s update=7.0s)
+  [rollout-save] 12,364 steps → data/ppo_v7_rollouts/rollout_iter_0127.parquet (meta: rollout_iter_0127.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,45.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.62,11.58]
+  [diag] values nan=0 range=[-0.9163,0.9411]
+[iter 127/200] steps=12364 rollout_wr=0.700 (ussr=0.740 us=0.660) pl=-0.0258 vl=0.0921 ent=3.530 clip=0.197 kl=0.0199 t=27.3s (rollout=20.0s update=7.3s)
+  [rollout-save] 12,855 steps → data/ppo_v7_rollouts/rollout_iter_0128.parquet (meta: rollout_iter_0128.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,43.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.35,11.43]
+  [diag] values nan=0 range=[-0.9606,0.9225]
+[iter 128/200] steps=12855 rollout_wr=0.640 (ussr=0.710 us=0.570) pl=-0.0279 vl=0.0974 ent=3.543 clip=0.209 kl=0.0206 t=28.1s (rollout=20.7s update=7.4s)
+  [rollout-save] 12,340 steps → data/ppo_v7_rollouts/rollout_iter_0129.parquet (meta: rollout_iter_0129.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,40.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.47,12.76]
+  [diag] values nan=0 range=[-0.9771,0.9477]
+[iter 129/200] steps=12340 rollout_wr=0.680 (ussr=0.790 us=0.570) pl=-0.0315 vl=0.0916 ent=3.614 clip=0.220 kl=0.0223 t=27.3s (rollout=20.1s update=7.2s)
+  [rollout-save] 13,292 steps → data/ppo_v7_rollouts/rollout_iter_0130.parquet (meta: rollout_iter_0130.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,94.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.42,11.74]
+  [diag] values nan=0 range=[-0.9759,0.9819]
+[iter 130/200] steps=13292 rollout_wr=0.555 (ussr=0.660 us=0.450) pl=-0.0336 vl=0.0907 ent=3.457 clip=0.233 kl=0.0207 t=20.6s (rollout=13.1s update=7.5s)
+  [rollout-save] 13,284 steps → data/ppo_v7_rollouts/rollout_iter_0131.parquet (meta: rollout_iter_0131.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,94.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.61,13.05]
+  [diag] values nan=0 range=[-0.9718,0.9813]
+[iter 131/200] steps=13284 rollout_wr=0.590 (ussr=0.700 us=0.480) pl=-0.0301 vl=0.0938 ent=3.482 clip=0.202 kl=0.0212 t=21.3s (rollout=13.4s update=7.9s)
+  [rollout-save] 13,391 steps → data/ppo_v7_rollouts/rollout_iter_0132.parquet (meta: rollout_iter_0132.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,121.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.52,12.51]
+  [diag] values nan=0 range=[-0.9742,0.9879]
+[iter 132/200] steps=13391 rollout_wr=0.575 (ussr=0.640 us=0.510) pl=-0.0334 vl=0.0959 ent=3.527 clip=0.226 kl=0.0215 t=21.3s (rollout=13.7s update=7.7s)
+  [rollout-save] 12,713 steps → data/ppo_v7_rollouts/rollout_iter_0133.parquet (meta: rollout_iter_0133.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,52.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.64,12.52]
+  [diag] values nan=0 range=[-0.9421,0.9783]
+[iter 133/200] steps=12713 rollout_wr=0.675 (ussr=0.770 us=0.580) pl=-0.0399 vl=0.0931 ent=3.716 clip=0.295 kl=0.0288 t=27.6s (rollout=20.6s update=7.0s)
+  [rollout-save] 13,161 steps → data/ppo_v7_rollouts/rollout_iter_0134.parquet (meta: rollout_iter_0134.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,73.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.28,11.75]
+  [diag] values nan=0 range=[-0.9593,0.9711]
+[iter 134/200] steps=13161 rollout_wr=0.590 (ussr=0.810 us=0.370) pl=-0.0298 vl=0.0804 ent=3.712 clip=0.202 kl=0.0180 t=22.1s (rollout=14.3s update=7.8s)
+  [rollout-save] 13,134 steps → data/ppo_v7_rollouts/rollout_iter_0135.parquet (meta: rollout_iter_0135.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,94.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.31,11.61]
+  [diag] values nan=0 range=[-0.9663,0.9831]
+[iter 135/200] steps=13134 rollout_wr=0.490 (ussr=0.610 us=0.370) pl=-0.0361 vl=0.0945 ent=3.562 clip=0.224 kl=0.0209 t=21.4s (rollout=13.4s update=7.9s)
+  [rollout-save] 12,867 steps → data/ppo_v7_rollouts/rollout_iter_0136.parquet (meta: rollout_iter_0136.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,85.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.28,12.09]
+  [diag] values nan=0 range=[-0.9641,0.9859]
+[iter 136/200] steps=12867 rollout_wr=0.540 (ussr=0.650 us=0.430) pl=-0.0339 vl=0.0894 ent=3.623 clip=0.216 kl=0.0203 t=20.3s (rollout=13.2s update=7.1s)
+  [rollout-save] 13,164 steps → data/ppo_v7_rollouts/rollout_iter_0137.parquet (meta: rollout_iter_0137.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,93.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.70,13.43]
+  [diag] values nan=0 range=[-0.9482,0.9926]
+[iter 137/200] steps=13164 rollout_wr=0.615 (ussr=0.750 us=0.480) pl=-0.0357 vl=0.0830 ent=3.690 clip=0.256 kl=0.0232 t=21.7s (rollout=13.8s update=7.9s)
+  [rollout-save] 12,880 steps → data/ppo_v7_rollouts/rollout_iter_0138.parquet (meta: rollout_iter_0138.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,43.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.78,11.65]
+  [diag] values nan=0 range=[-0.8817,0.9836]
+[iter 138/200] steps=12880 rollout_wr=0.670 (ussr=0.800 us=0.540) pl=-0.0317 vl=0.1013 ent=3.811 clip=0.248 kl=0.0226 t=28.3s (rollout=21.0s update=7.3s)
+  [rollout-save] 12,975 steps → data/ppo_v7_rollouts/rollout_iter_0139.parquet (meta: rollout_iter_0139.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,44.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.13,12.87]
+  [diag] values nan=0 range=[-0.8793,0.9682]
+[iter 139/200] steps=12975 rollout_wr=0.645 (ussr=0.750 us=0.540) pl=-0.0315 vl=0.0881 ent=3.759 clip=0.225 kl=0.0203 t=28.9s (rollout=21.1s update=7.8s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0140.pt
+  [rollout-save] 13,367 steps → data/ppo_v7_rollouts/rollout_iter_0140.parquet (meta: rollout_iter_0140.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,99.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.92,11.73]
+  [diag] values nan=0 range=[-0.9589,0.9570]
+[iter 140/200] steps=13367 rollout_wr=0.610 (ussr=0.710 us=0.510) pl=-0.0358 vl=0.0910 ent=3.639 clip=0.254 kl=0.0226 t=21.7s (rollout=13.8s update=7.8s)
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.692 US=0.588 combined=0.640 (109s)
+  [rollout-save] 13,229 steps → data/ppo_v7_rollouts/rollout_iter_0141.parquet (meta: rollout_iter_0141.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,71.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-18.80,12.58]
+  [diag] values nan=0 range=[-0.9629,0.9795]
+[iter 141/200] steps=13229 rollout_wr=0.615 (ussr=0.740 us=0.490) pl=-0.0311 vl=0.0951 ent=3.701 clip=0.186 kl=0.0164 t=22.4s (rollout=14.9s update=7.5s)
+  [rollout-save] 13,367 steps → data/ppo_v7_rollouts/rollout_iter_0142.parquet (meta: rollout_iter_0142.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,117.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.08,11.53]
+  [diag] values nan=0 range=[-0.5236,0.9810]
+[iter 142/200] steps=13367 rollout_wr=0.870 (ussr=0.950 us=0.790) pl=-0.0352 vl=0.0437 ent=3.635 clip=0.346 kl=0.0470 t=24.0s (rollout=16.0s update=8.0s)
+  [rollout-save] 13,412 steps → data/ppo_v7_rollouts/rollout_iter_0143.parquet (meta: rollout_iter_0143.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,99.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.000]
+  [diag] card_logits nan=0 range=[-20.06,11.76]
+  [diag] values nan=0 range=[-0.9367,0.9687]
+[iter 143/200] steps=13412 rollout_wr=0.650 (ussr=0.710 us=0.590) pl=-0.0317 vl=0.0838 ent=3.569 clip=0.201 kl=0.0166 t=21.9s (rollout=13.9s update=8.0s)
+  [rollout-save] 12,751 steps → data/ppo_v7_rollouts/rollout_iter_0144.parquet (meta: rollout_iter_0144.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,99.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.53,12.87]
+  [diag] values nan=0 range=[-0.9451,0.9771]
+[iter 144/200] steps=12751 rollout_wr=0.605 (ussr=0.680 us=0.530) pl=-0.0311 vl=0.0909 ent=3.628 clip=0.199 kl=0.0173 t=20.3s (rollout=12.9s update=7.4s)
+  [rollout-save] 13,301 steps → data/ppo_v7_rollouts/rollout_iter_0145.parquet (meta: rollout_iter_0145.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,105.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.47,11.68]
+  [diag] values nan=0 range=[-0.9688,0.9876]
+[iter 145/200] steps=13301 rollout_wr=0.625 (ussr=0.760 us=0.490) pl=-0.0352 vl=0.0835 ent=3.685 clip=0.224 kl=0.0207 t=21.3s (rollout=13.7s update=7.5s)
+  [rollout-save] 12,819 steps → data/ppo_v7_rollouts/rollout_iter_0146.parquet (meta: rollout_iter_0146.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,36.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-17.64,12.40]
+  [diag] values nan=0 range=[-0.9615,0.9482]
+[iter 146/200] steps=12819 rollout_wr=0.595 (ussr=0.700 us=0.490) pl=-0.0476 vl=0.1059 ent=3.766 clip=0.267 kl=0.0219 t=27.9s (rollout=20.7s update=7.2s)
+  [rollout-save] 12,497 steps → data/ppo_v7_rollouts/rollout_iter_0147.parquet (meta: rollout_iter_0147.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,37.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.29,11.61]
+  [diag] values nan=0 range=[-0.9411,0.8946]
+[iter 147/200] steps=12497 rollout_wr=0.690 (ussr=0.800 us=0.580) pl=-0.0357 vl=0.0917 ent=3.736 clip=0.196 kl=0.0165 t=27.3s (rollout=20.3s update=7.0s)
+  [rollout-save] 12,939 steps → data/ppo_v7_rollouts/rollout_iter_0148.parquet (meta: rollout_iter_0148.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,110.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-18.02,11.66]
+  [diag] values nan=0 range=[-0.9608,0.9382]
+[iter 148/200] steps=12939 rollout_wr=0.610 (ussr=0.650 us=0.570) pl=-0.0386 vl=0.0999 ent=3.628 clip=0.261 kl=0.0228 t=20.5s (rollout=13.1s update=7.4s)
+  [rollout-save] 13,081 steps → data/ppo_v7_rollouts/rollout_iter_0149.parquet (meta: rollout_iter_0149.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,104.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.22,12.45]
+  [diag] values nan=0 range=[-0.9545,0.9439]
+[iter 149/200] steps=13081 rollout_wr=0.590 (ussr=0.690 us=0.490) pl=-0.0311 vl=0.0922 ent=3.712 clip=0.228 kl=0.0193 t=20.4s (rollout=13.3s update=7.1s)
+  [rollout-save] 12,637 steps → data/ppo_v7_rollouts/rollout_iter_0150.parquet (meta: rollout_iter_0150.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,37.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.80,11.71]
+  [diag] values nan=0 range=[-0.9489,0.9334]
+[iter 150/200] steps=12637 rollout_wr=0.695 (ussr=0.790 us=0.600) pl=-0.0299 vl=0.0888 ent=3.896 clip=0.227 kl=0.0249 t=29.0s (rollout=21.4s update=7.6s)
+  [rollout-save] 12,609 steps → data/ppo_v7_rollouts/rollout_iter_0151.parquet (meta: rollout_iter_0151.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,51.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.32,11.08]
+  [diag] values nan=0 range=[-0.9541,0.9465]
+[iter 151/200] steps=12609 rollout_wr=0.670 (ussr=0.790 us=0.550) pl=-0.0354 vl=0.0892 ent=3.906 clip=0.235 kl=0.0199 t=27.9s (rollout=21.0s update=6.9s)
+  [rollout-save] 13,321 steps → data/ppo_v7_rollouts/rollout_iter_0152.parquet (meta: rollout_iter_0152.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,100.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-21.03,12.83]
+  [diag] values nan=0 range=[-0.9576,0.9766]
+[iter 152/200] steps=13321 rollout_wr=0.585 (ussr=0.660 us=0.510) pl=-0.0395 vl=0.1040 ent=3.678 clip=0.226 kl=0.0201 t=21.4s (rollout=13.5s update=7.9s)
+  [rollout-save] 13,327 steps → data/ppo_v7_rollouts/rollout_iter_0153.parquet (meta: rollout_iter_0153.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,98.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.30,12.28]
+  [diag] values nan=0 range=[-0.9411,0.9391]
+[iter 153/200] steps=13327 rollout_wr=0.670 (ussr=0.740 us=0.600) pl=-0.0361 vl=0.0930 ent=3.706 clip=0.208 kl=0.0179 t=20.9s (rollout=13.2s update=7.7s)
+  [rollout-save] 12,356 steps → data/ppo_v7_rollouts/rollout_iter_0154.parquet (meta: rollout_iter_0154.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,43.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.49,11.31]
+  [diag] values nan=0 range=[-0.9098,0.9476]
+[iter 154/200] steps=12356 rollout_wr=0.695 (ussr=0.820 us=0.570) pl=-0.0402 vl=0.0868 ent=3.870 clip=0.215 kl=0.0180 t=27.0s (rollout=20.0s update=7.0s)
+  [rollout-save] 12,455 steps → data/ppo_v7_rollouts/rollout_iter_0155.parquet (meta: rollout_iter_0155.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,39.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-17.13,11.79]
+  [diag] values nan=0 range=[-0.9408,0.9314]
+[iter 155/200] steps=12455 rollout_wr=0.640 (ussr=0.800 us=0.480) pl=-0.0341 vl=0.0985 ent=3.846 clip=0.220 kl=0.0184 t=27.6s (rollout=20.2s update=7.3s)
+  [rollout-save] 13,190 steps → data/ppo_v7_rollouts/rollout_iter_0156.parquet (meta: rollout_iter_0156.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,105.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.44,12.92]
+  [diag] values nan=0 range=[-0.9516,0.9383]
+[iter 156/200] steps=13190 rollout_wr=0.655 (ussr=0.790 us=0.520) pl=-0.0365 vl=0.0818 ent=3.741 clip=0.207 kl=0.0167 t=20.2s (rollout=12.8s update=7.4s)
+  [rollout-save] 12,342 steps → data/ppo_v7_rollouts/rollout_iter_0157.parquet (meta: rollout_iter_0157.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,41.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.62,12.14]
+  [diag] values nan=0 range=[-0.9088,0.9352]
+[iter 157/200] steps=12342 rollout_wr=0.685 (ussr=0.740 us=0.630) pl=-0.0332 vl=0.0929 ent=3.885 clip=0.248 kl=0.0213 t=27.0s (rollout=19.9s update=7.1s)
+  [rollout-save] 13,023 steps → data/ppo_v7_rollouts/rollout_iter_0158.parquet (meta: rollout_iter_0158.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,104.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.93,11.62]
+  [diag] values nan=0 range=[-0.9574,0.9802]
+[iter 158/200] steps=13023 rollout_wr=0.590 (ussr=0.760 us=0.420) pl=-0.0335 vl=0.1016 ent=3.766 clip=0.215 kl=0.0186 t=20.3s (rollout=13.0s update=7.3s)
+  [rollout-save] 13,559 steps → data/ppo_v7_rollouts/rollout_iter_0159.parquet (meta: rollout_iter_0159.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,79.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.89,12.86]
+  [diag] values nan=0 range=[-0.9552,0.9493]
+[iter 159/200] steps=13559 rollout_wr=0.680 (ussr=0.770 us=0.590) pl=-0.0342 vl=0.0793 ent=3.775 clip=0.219 kl=0.0173 t=21.9s (rollout=14.6s update=7.4s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0160.pt
+  [rollout-save] 13,339 steps → data/ppo_v7_rollouts/rollout_iter_0160.parquet (meta: rollout_iter_0160.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,125.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-17.58,11.00]
+  [diag] values nan=0 range=[-0.6422,0.9786]
+[iter 160/200] steps=13339 rollout_wr=0.820 (ussr=0.930 us=0.710) pl=-0.0313 vl=0.0705 ent=3.708 clip=0.269 kl=0.0266 t=22.2s (rollout=14.5s update=7.7s)
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.812 US=0.612 combined=0.712 (97s)
+  New best: combined=0.712
+  [rollout-save] 12,955 steps → data/ppo_v7_rollouts/rollout_iter_0161.parquet (meta: rollout_iter_0161.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,98.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.900,1.125]
+  [diag] card_logits nan=0 range=[-18.67,11.78]
+  [diag] values nan=0 range=[-0.9413,0.9543]
+[iter 161/200] steps=12955 rollout_wr=0.610 (ussr=0.700 us=0.520) pl=-0.0366 vl=0.0826 ent=3.720 clip=0.182 kl=0.0147 t=20.4s (rollout=13.0s update=7.4s)
+  [rollout-save] 13,564 steps → data/ppo_v7_rollouts/rollout_iter_0162.parquet (meta: rollout_iter_0162.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,100.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-18.24,12.10]
+  [diag] values nan=0 range=[-0.9603,0.9570]
+[iter 162/200] steps=13564 rollout_wr=0.660 (ussr=0.760 us=0.560) pl=-0.0361 vl=0.0788 ent=3.776 clip=0.191 kl=0.0151 t=21.6s (rollout=13.8s update=7.8s)
+  [rollout-save] 13,286 steps → data/ppo_v7_rollouts/rollout_iter_0163.parquet (meta: rollout_iter_0163.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,103.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.99,11.59]
+  [diag] values nan=0 range=[-0.9520,0.9687]
+[iter 163/200] steps=13286 rollout_wr=0.640 (ussr=0.710 us=0.570) pl=-0.0355 vl=0.0903 ent=3.697 clip=0.210 kl=0.0164 t=21.2s (rollout=13.5s update=7.8s)
+  [rollout-save] 13,362 steps → data/ppo_v7_rollouts/rollout_iter_0164.parquet (meta: rollout_iter_0164.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,102.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.48,11.43]
+  [diag] values nan=0 range=[-0.9303,0.9722]
+[iter 164/200] steps=13362 rollout_wr=0.685 (ussr=0.720 us=0.650) pl=-0.0327 vl=0.0675 ent=3.762 clip=0.201 kl=0.0171 t=21.2s (rollout=13.6s update=7.7s)
+  [rollout-save] 12,555 steps → data/ppo_v7_rollouts/rollout_iter_0165.parquet (meta: rollout_iter_0165.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,57.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-16.97,10.67]
+  [diag] values nan=0 range=[-0.9082,0.9638]
+[iter 165/200] steps=12555 rollout_wr=0.655 (ussr=0.760 us=0.550) pl=-0.0360 vl=0.0947 ent=3.870 clip=0.235 kl=0.0185 t=27.0s (rollout=20.2s update=6.8s)
+  [rollout-save] 12,386 steps → data/ppo_v7_rollouts/rollout_iter_0166.parquet (meta: rollout_iter_0166.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,42.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-17.71,10.93]
+  [diag] values nan=0 range=[-0.9398,0.9577]
+[iter 166/200] steps=12386 rollout_wr=0.640 (ussr=0.750 us=0.530) pl=-0.0290 vl=0.1023 ent=3.873 clip=0.203 kl=0.0167 t=27.4s (rollout=20.0s update=7.4s)
+  [rollout-save] 12,769 steps → data/ppo_v7_rollouts/rollout_iter_0167.parquet (meta: rollout_iter_0167.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,102.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-17.97,11.37]
+  [diag] values nan=0 range=[-0.9552,0.9670]
+[iter 167/200] steps=12769 rollout_wr=0.630 (ussr=0.770 us=0.490) pl=-0.0396 vl=0.1063 ent=3.757 clip=0.259 kl=0.0223 t=20.4s (rollout=13.0s update=7.4s)
+  [rollout-save] 13,348 steps → data/ppo_v7_rollouts/rollout_iter_0168.parquet (meta: rollout_iter_0168.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,125.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-20.07,10.82]
+  [diag] values nan=0 range=[-0.3230,0.9625]
+[iter 168/200] steps=13348 rollout_wr=0.900 (ussr=0.990 us=0.810) pl=-0.0407 vl=0.0400 ent=3.828 clip=0.340 kl=0.0484 t=21.2s (rollout=14.0s update=7.2s)
+  [rollout-save] 13,083 steps → data/ppo_v7_rollouts/rollout_iter_0169.parquet (meta: rollout_iter_0169.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,116.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-17.72,11.78]
+  [diag] values nan=0 range=[-0.9277,0.9762]
+[iter 169/200] steps=13083 rollout_wr=0.755 (ussr=0.900 us=0.610) pl=-0.0322 vl=0.0578 ent=3.829 clip=0.196 kl=0.0156 t=21.6s (rollout=14.0s update=7.5s)
+  [rollout-save] 13,004 steps → data/ppo_v7_rollouts/rollout_iter_0170.parquet (meta: rollout_iter_0170.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,98.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.09,11.60]
+  [diag] values nan=0 range=[-0.9573,0.9690]
+[iter 170/200] steps=13004 rollout_wr=0.600 (ussr=0.640 us=0.560) pl=-0.0375 vl=0.0909 ent=3.736 clip=0.200 kl=0.0165 t=20.5s (rollout=13.1s update=7.4s)
+  [rollout-save] 13,686 steps → data/ppo_v7_rollouts/rollout_iter_0171.parquet (meta: rollout_iter_0171.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,132.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.52,10.66]
+  [diag] values nan=0 range=[-0.8283,0.9811]
+[iter 171/200] steps=13686 rollout_wr=0.885 (ussr=0.980 us=0.790) pl=-0.0317 vl=0.0431 ent=3.828 clip=0.269 kl=0.0250 t=22.3s (rollout=14.6s update=7.7s)
+  [rollout-save] 13,405 steps → data/ppo_v7_rollouts/rollout_iter_0172.parquet (meta: rollout_iter_0172.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,97.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.51,11.51]
+  [diag] values nan=0 range=[-0.9413,0.9615]
+[iter 172/200] steps=13405 rollout_wr=0.640 (ussr=0.730 us=0.550) pl=-0.0359 vl=0.0917 ent=3.754 clip=0.204 kl=0.0169 t=21.5s (rollout=13.6s update=8.0s)
+  [rollout-save] 12,725 steps → data/ppo_v7_rollouts/rollout_iter_0173.parquet (meta: rollout_iter_0173.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,44.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.69,10.96]
+  [diag] values nan=0 range=[-0.9142,0.9498]
+[iter 173/200] steps=12725 rollout_wr=0.655 (ussr=0.730 us=0.580) pl=-0.0352 vl=0.1000 ent=3.878 clip=0.191 kl=0.0161 t=28.3s (rollout=20.9s update=7.4s)
+  [rollout-save] 13,173 steps → data/ppo_v7_rollouts/rollout_iter_0174.parquet (meta: rollout_iter_0174.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,108.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-18.07,10.87]
+  [diag] values nan=0 range=[-0.9360,0.9474]
+[iter 174/200] steps=13173 rollout_wr=0.645 (ussr=0.690 us=0.600) pl=-0.0345 vl=0.0870 ent=3.771 clip=0.196 kl=0.0162 t=20.5s (rollout=13.1s update=7.4s)
+  [rollout-save] 12,283 steps → data/ppo_v7_rollouts/rollout_iter_0175.parquet (meta: rollout_iter_0175.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,53.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.77,11.02]
+  [diag] values nan=0 range=[-0.8750,0.9160]
+[iter 175/200] steps=12283 rollout_wr=0.645 (ussr=0.760 us=0.530) pl=-0.0348 vl=0.0998 ent=3.833 clip=0.194 kl=0.0157 t=26.4s (rollout=19.7s update=6.7s)
+  [rollout-save] 13,427 steps → data/ppo_v7_rollouts/rollout_iter_0176.parquet (meta: rollout_iter_0176.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,101.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.41,11.80]
+  [diag] values nan=0 range=[-0.9458,0.9373]
+[iter 176/200] steps=13427 rollout_wr=0.620 (ussr=0.620 us=0.620) pl=-0.0347 vl=0.0871 ent=3.687 clip=0.239 kl=0.0193 t=20.9s (rollout=13.6s update=7.3s)
+  [rollout-save] 13,139 steps → data/ppo_v7_rollouts/rollout_iter_0177.parquet (meta: rollout_iter_0177.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,103.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-18.21,11.09]
+  [diag] values nan=0 range=[-0.9386,0.9682]
+[iter 177/200] steps=13139 rollout_wr=0.610 (ussr=0.650 us=0.570) pl=-0.0344 vl=0.0858 ent=3.712 clip=0.205 kl=0.0164 t=20.8s (rollout=12.9s update=7.9s)
+  [rollout-save] 13,452 steps → data/ppo_v7_rollouts/rollout_iter_0178.parquet (meta: rollout_iter_0178.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,101.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.44,11.47]
+  [diag] values nan=0 range=[-0.9515,0.9811]
+[iter 178/200] steps=13452 rollout_wr=0.635 (ussr=0.660 us=0.610) pl=-0.0353 vl=0.0801 ent=3.778 clip=0.188 kl=0.0151 t=21.2s (rollout=13.9s update=7.4s)
+  [rollout-save] 12,937 steps → data/ppo_v7_rollouts/rollout_iter_0179.parquet (meta: rollout_iter_0179.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,60.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.31,11.69]
+  [diag] values nan=0 range=[-0.9548,0.9673]
+[iter 179/200] steps=12937 rollout_wr=0.605 (ussr=0.680 us=0.530) pl=-0.0408 vl=0.1000 ent=3.895 clip=0.218 kl=0.0178 t=28.8s (rollout=21.2s update=7.5s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0180.pt
+  [rollout-save] 12,682 steps → data/ppo_v7_rollouts/rollout_iter_0180.parquet (meta: rollout_iter_0180.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,48.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.57,11.07]
+  [diag] values nan=0 range=[-0.9639,0.9539]
+[iter 180/200] steps=12682 rollout_wr=0.650 (ussr=0.780 us=0.520) pl=-0.0340 vl=0.0938 ent=3.933 clip=0.195 kl=0.0152 t=27.5s (rollout=20.5s update=7.0s)
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.752 US=0.526 combined=0.639 (99s)
+  [rollout-save] 12,427 steps → data/ppo_v7_rollouts/rollout_iter_0181.parquet (meta: rollout_iter_0181.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,62.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.16,11.61]
+  [diag] values nan=0 range=[-0.9109,0.9833]
+[iter 181/200] steps=12427 rollout_wr=0.730 (ussr=0.880 us=0.580) pl=-0.0338 vl=0.1027 ent=3.910 clip=0.239 kl=0.0200 t=30.0s (rollout=23.0s update=7.0s)
+  [rollout-save] 13,539 steps → data/ppo_v7_rollouts/rollout_iter_0182.parquet (meta: rollout_iter_0182.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,111.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-18.14,10.78]
+  [diag] values nan=0 range=[-0.9371,0.9800]
+[iter 182/200] steps=13539 rollout_wr=0.610 (ussr=0.670 us=0.550) pl=-0.0332 vl=0.0770 ent=3.816 clip=0.176 kl=0.0138 t=22.5s (rollout=14.4s update=8.1s)
+  [rollout-save] 12,557 steps → data/ppo_v7_rollouts/rollout_iter_0183.parquet (meta: rollout_iter_0183.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,54.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.06,11.36]
+  [diag] values nan=0 range=[-0.9341,0.9579]
+[iter 183/200] steps=12557 rollout_wr=0.655 (ussr=0.750 us=0.560) pl=-0.0385 vl=0.0932 ent=3.952 clip=0.194 kl=0.0156 t=27.9s (rollout=20.9s update=7.0s)
+  [rollout-save] 12,417 steps → data/ppo_v7_rollouts/rollout_iter_0184.parquet (meta: rollout_iter_0184.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,57.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.43,11.84]
+  [diag] values nan=0 range=[-0.9671,0.9442]
+[iter 184/200] steps=12417 rollout_wr=0.660 (ussr=0.790 us=0.530) pl=-0.0240 vl=0.1000 ent=3.926 clip=0.181 kl=0.0151 t=27.8s (rollout=20.6s update=7.2s)
+  [rollout-save] 13,034 steps → data/ppo_v7_rollouts/rollout_iter_0185.parquet (meta: rollout_iter_0185.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,60.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-24.03,12.90]
+  [diag] values nan=0 range=[-0.9500,0.9661]
+[iter 185/200] steps=13034 rollout_wr=0.605 (ussr=0.690 us=0.520) pl=-0.0374 vl=0.1006 ent=3.911 clip=0.203 kl=0.0157 t=29.0s (rollout=21.4s update=7.6s)
+  [rollout-save] 12,386 steps → data/ppo_v7_rollouts/rollout_iter_0186.parquet (meta: rollout_iter_0186.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,40.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.02,12.01]
+  [diag] values nan=0 range=[-0.9686,0.9234]
+[iter 186/200] steps=12386 rollout_wr=0.665 (ussr=0.820 us=0.510) pl=-0.0322 vl=0.0942 ent=3.939 clip=0.179 kl=0.0143 t=27.0s (rollout=20.1s update=7.0s)
+  [rollout-save] 12,590 steps → data/ppo_v7_rollouts/rollout_iter_0187.parquet (meta: rollout_iter_0187.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,45.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.96,13.31]
+  [diag] values nan=0 range=[-0.9661,0.9519]
+[iter 187/200] steps=12590 rollout_wr=0.730 (ussr=0.850 us=0.610) pl=-0.0332 vl=0.0747 ent=3.939 clip=0.206 kl=0.0162 t=27.5s (rollout=20.3s update=7.2s)
+  [rollout-save] 13,447 steps → data/ppo_v7_rollouts/rollout_iter_0188.parquet (meta: rollout_iter_0188.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,99.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-21.22,12.08]
+  [diag] values nan=0 range=[-0.9765,0.9578]
+[iter 188/200] steps=13447 rollout_wr=0.590 (ussr=0.660 us=0.520) pl=-0.0369 vl=0.0867 ent=3.817 clip=0.240 kl=0.0223 t=21.1s (rollout=13.4s update=7.7s)
+  [rollout-save] 12,875 steps → data/ppo_v7_rollouts/rollout_iter_0189.parquet (meta: rollout_iter_0189.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,46.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.54,11.84]
+  [diag] values nan=0 range=[-0.9432,0.9350]
+[iter 189/200] steps=12875 rollout_wr=0.595 (ussr=0.740 us=0.450) pl=-0.0346 vl=0.0954 ent=3.954 clip=0.208 kl=0.0157 t=28.9s (rollout=21.4s update=7.4s)
+  [rollout-save] 12,707 steps → data/ppo_v7_rollouts/rollout_iter_0190.parquet (meta: rollout_iter_0190.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,37.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-21.20,11.36]
+  [diag] values nan=0 range=[-0.9564,0.9579]
+[iter 190/200] steps=12707 rollout_wr=0.685 (ussr=0.760 us=0.610) pl=-0.0334 vl=0.0998 ent=3.910 clip=0.182 kl=0.0141 t=28.2s (rollout=21.2s update=7.0s)
+  [rollout-save] 13,748 steps → data/ppo_v7_rollouts/rollout_iter_0191.parquet (meta: rollout_iter_0191.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,104.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-20.06,13.42]
+  [diag] values nan=0 range=[-0.9438,0.9574]
+[iter 191/200] steps=13748 rollout_wr=0.655 (ussr=0.660 us=0.650) pl=-0.0361 vl=0.0765 ent=3.847 clip=0.208 kl=0.0167 t=23.4s (rollout=14.6s update=8.8s)
+  [rollout-save] 13,079 steps → data/ppo_v7_rollouts/rollout_iter_0192.parquet (meta: rollout_iter_0192.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,59.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.73,12.85]
+  [diag] values nan=0 range=[-0.9317,0.9565]
+[iter 192/200] steps=13079 rollout_wr=0.490 (ussr=0.700 us=0.280) pl=-0.0334 vl=0.0937 ent=3.904 clip=0.264 kl=0.0223 t=30.6s (rollout=21.8s update=8.8s)
+  [rollout-save] 13,301 steps → data/ppo_v7_rollouts/rollout_iter_0193.parquet (meta: rollout_iter_0193.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,98.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.53,11.94]
+  [diag] values nan=0 range=[-0.9477,0.9483]
+[iter 193/200] steps=13301 rollout_wr=0.630 (ussr=0.680 us=0.580) pl=-0.0380 vl=0.0892 ent=3.918 clip=0.265 kl=0.0250 t=30.1s (rollout=21.3s update=8.8s)
+  [rollout-save] 13,050 steps → data/ppo_v7_rollouts/rollout_iter_0194.parquet (meta: rollout_iter_0194.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,51.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.16,11.54]
+  [diag] values nan=0 range=[-0.9511,0.9636]
+[iter 194/200] steps=13050 rollout_wr=0.600 (ussr=0.710 us=0.490) pl=-0.0347 vl=0.0951 ent=4.073 clip=0.206 kl=0.0166 t=39.7s (rollout=30.7s update=8.9s)
+  [rollout-save] 12,687 steps → data/ppo_v7_rollouts/rollout_iter_0195.parquet (meta: rollout_iter_0195.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,46.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-18.27,12.11]
+  [diag] values nan=0 range=[-0.9631,0.9412]
+[iter 195/200] steps=12687 rollout_wr=0.590 (ussr=0.740 us=0.440) pl=-0.0372 vl=0.0974 ent=4.144 clip=0.196 kl=0.0146 t=38.0s (rollout=29.6s update=8.4s)
+  [rollout-save] 12,548 steps → data/ppo_v7_rollouts/rollout_iter_0196.parquet (meta: rollout_iter_0196.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,52.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.14,12.65]
+  [diag] values nan=0 range=[-0.9517,0.9084]
+[iter 196/200] steps=12548 rollout_wr=0.670 (ussr=0.770 us=0.570) pl=-0.0273 vl=0.0972 ent=4.031 clip=0.169 kl=0.0147 t=37.2s (rollout=28.7s update=8.5s)
+  [rollout-save] 13,895 steps → data/ppo_v7_rollouts/rollout_iter_0197.parquet (meta: rollout_iter_0197.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,68.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.850,1.125]
+  [diag] card_logits nan=0 range=[-20.05,12.44]
+  [diag] values nan=0 range=[-0.9536,0.9401]
+[iter 197/200] steps=13895 rollout_wr=0.450 (ussr=0.620 us=0.280) pl=-0.0357 vl=0.0908 ent=3.872 clip=0.241 kl=0.0178 t=31.9s (rollout=22.8s update=9.1s)
+  [rollout-save] 12,875 steps → data/ppo_v7_rollouts/rollout_iter_0198.parquet (meta: rollout_iter_0198.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,121.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-22.72,11.86]
+  [diag] values nan=0 range=[-0.9280,0.9702]
+[iter 198/200] steps=12875 rollout_wr=0.880 (ussr=0.920 us=0.840) pl=-0.0271 vl=0.0522 ent=3.790 clip=0.244 kl=0.0204 t=29.4s (rollout=21.1s update=8.3s)
+  [rollout-save] 12,861 steps → data/ppo_v7_rollouts/rollout_iter_0199.parquet (meta: rollout_iter_0199.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,119.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.125]
+  [diag] card_logits nan=0 range=[-19.97,13.41]
+  [diag] values nan=0 range=[-0.8002,0.9814]
+[iter 199/200] steps=12861 rollout_wr=0.820 (ussr=0.900 us=0.740) pl=-0.0272 vl=0.0684 ent=3.778 clip=0.216 kl=0.0177 t=29.7s (rollout=21.2s update=8.5s)
+  Saved to league pool: data/checkpoints/league_v4/iter_0200.pt
+  [rollout-save] 13,290 steps → data/ppo_v7_rollouts/rollout_iter_0200.parquet (meta: rollout_iter_0200.meta.json)
+  [diag] inf dtype=torch.float32 shape=torch.Size([2048, 172]) nan=0 inf_vals=0 range=[0.00,128.00]
+  [diag] scalar dtype=torch.float32 nan=0 range=[-0.950,1.000]
+  [diag] card_logits nan=0 range=[-19.44,12.32]
+  [diag] values nan=0 range=[-0.3986,0.9794]
+[iter 200/200] steps=13290 rollout_wr=0.880 (ussr=0.930 us=0.830) pl=-0.0291 vl=0.0476 ent=3.775 clip=0.238 kl=0.0212 t=30.8s (rollout=22.6s update=8.1s)
+wandb: updating run metadata
+wandb: uploading wandb-summary.json; uploading config.yaml; uploading output.log
+wandb: uploading history steps 198-199, summary, console lines 1241-1247
+wandb: 
+wandb: Run history:
+wandb:               approx_kl ▁▁▂▁▁▁▁▂█▇▃▄▃▃▃▃▃▂▃▂▂▂▂▂▂▂▂▂▂▂▂▂▁▂▂▂▂▁▂▂
+wandb:           clip_fraction ▁▂▄▃▃▄▃▃▅▅▅▅▅▅▅▆▅▅█▅▅▅▅▄▄▅▅▅▄▄▅▅▅▄▄▄▅▄▄▅
+wandb:             combined_wr ▁▃▄▆▆▇▆█▆█
+wandb: core_scalar_weight_norm ▁▁▁▁▁▂▂▂▂▂▂▃▃▃▃▃▃▄▄▄▄▄▅▅▅▅▆▆▆▇▇▇▇▇▇▇████
+wandb:                ent_coef ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:                 entropy ▁▁▁▂▂▂▂▃▃▄▅▅▅▆▆▆▆▆▆▆▆▆▆▇▆▇▆▇▆▇▇▇▇▇▇▇▇██▇
+wandb:             iter_time_s ▂▂▇▇▇▆▆▇▆▁▆▁▇▇▇▇▇▂▇▇▂█▃▃▂▂▇▂▂▁▂▃▂▇▁▇▂██▇
+wandb:                 n_steps ▅▆▃█▅▂█▄▆▅▅▇▇▃▂▂▁▄▂▃▃▆▆▄██▄▂▆▅▅▄▇▂▇▇▄▇▃▅
+wandb:  new_scalar_weight_norm ▆▄▃▃▃▂▃▄▃▃▂▁▃▃▃▄▄▄▃▄▃▃▂▂▂▂▂▃▃▃▂▃▃▃▄▄▄▆▇█
+wandb:             policy_loss █▄▆▅▅▅▄▅▆▄▂▃▆▃▃▁▃▂▃▃▃▃▄▃▃▄▂▃▃▁▂▁▂▁▁▂▂▅▂▁
+wandb:                    +103 ...
+wandb: 
+wandb: Run summary:
+wandb:               approx_kl 0.02124
+wandb:           clip_fraction 0.23826
+wandb:             combined_wr 0.713
+wandb: core_scalar_weight_norm 3.73402
+wandb:                ent_coef 0.03
+wandb:                 entropy 3.77536
+wandb:             iter_time_s 30.75252
+wandb:                 n_steps 13290
+wandb:  new_scalar_weight_norm 2.68614
+wandb:             policy_loss -0.02906
+wandb:                    +103 ...
+wandb: 
+wandb: 🚀 View run ppo_v7_attn_bc_start at: https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/ymxant6c
+wandb: ⭐️ View project at: https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260408_082452-ymxant6c/logs
+  Running benchmark (500 games each side)...
+  Benchmark: USSR=0.846 US=0.580 combined=0.713 (99s)
+  New best: combined=0.713
+
+Training complete in 97.2 minutes
+Best combined WR: 0.713
+Checkpoints in: data/checkpoints/ppo_v7_league

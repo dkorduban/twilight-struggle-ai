@@ -1,0 +1,598 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: dkorduban (korduban-ai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run e77fm9fy
+wandb: Tracking run with wandb version 0.25.1
+wandb: Run data is saved locally in /home/dkord/code/twilight-struggle-ai/wandb/run-20260405_081048-e77fm9fy
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run v106_cf_gnn_s123
+wandb: ⭐️ View project at https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: 🚀 View run at https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/e77fm9fy
+W&B run initialised: korduban-ai/twilight-struggle-ai/v106_cf_gnn_s123
+[provenance] git=36cd1161 dirty=True inputs=1 files
+Device: cuda
+Data dir: data/nash_c_only
+Output dir: data/checkpoints/v106_cf_gnn_s123
+[dataset] Loaded 1,367,237 rows from 1 file(s) in 27.7s
+Dataset: 1367237 steps  (train=1230514, val=136723)
+[wandb] Dataset QA: 1,367,237 rows, 1 files, composition: {'anchor': 1367237}
+  [deterministic split] train=1,233,445  val=133,792  (9.8% val)
+Model parameters: 486,801
+
+=== Epoch 1/95 ===
+  [train e1 batch  100]  loss=8.4706  card_loss=4.2586  mode_loss=0.9653  country_loss=2.8943  country_ce=2.8943  value_mse=0.3524  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.041  mode_acc=0.626  country_top1=0.208  elapsed=21.8s
+Epoch 1 summary  train_loss=8.9416  train_card_top1=0.037  train_card_mrr=0.113  train_mode_acc=0.614  train_country_ce=3.2010  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=7.9337  val_card_top1=0.080  val_card_mrr=0.183  val_card_nll=4.0058  val_card_conf=0.040  val_mode_acc=0.687  val_country_ce=2.7019  country_top1=0.217  val_value_mse=0.3327  elapsed=34.4s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch1.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=7.9337)
+
+=== Epoch 2/95 ===
+  [train e2 batch  100]  loss=7.0812  card_loss=3.4965  mode_loss=0.6988  country_loss=2.5740  country_ce=2.5740  value_mse=0.3118  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.219  mode_acc=0.764  country_top1=0.237  elapsed=22.0s
+Epoch 2 summary  train_loss=7.2914  train_card_top1=0.187  train_card_mrr=0.313  train_mode_acc=0.744  train_country_ce=2.6184  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=6.4182  val_card_top1=0.366  val_card_mrr=0.509  val_card_nll=2.7755  val_card_conf=0.172  val_mode_acc=0.785  val_country_ce=2.5076  country_top1=0.253  val_value_mse=0.3048  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch2.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=6.4182)
+
+=== Epoch 3/95 ===
+  [train e3 batch  100]  loss=5.4565  card_loss=2.1003  mode_loss=0.6154  country_loss=2.4345  country_ce=2.4345  value_mse=0.3063  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.550  mode_acc=0.814  country_top1=0.258  elapsed=22.1s
+Epoch 3 summary  train_loss=5.7289  train_card_top1=0.500  train_card_mrr=0.640  train_mode_acc=0.803  train_country_ce=2.4663  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=4.8961  val_card_top1=0.659  val_card_mrr=0.780  val_card_nll=1.3483  val_card_conf=0.501  val_mode_acc=0.843  val_country_ce=2.3688  country_top1=0.279  val_value_mse=0.2959  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch3.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=4.8961)
+
+=== Epoch 4/95 ===
+  [train e4 batch  100]  loss=4.5378  card_loss=1.3864  mode_loss=0.5427  country_loss=2.3062  country_ce=2.3062  value_mse=0.3026  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.730  mode_acc=0.858  country_top1=0.286  elapsed=22.0s
+Epoch 4 summary  train_loss=4.6720  train_card_top1=0.706  train_card_mrr=0.816  train_mode_acc=0.851  train_country_ce=2.3406  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=4.2201  val_card_top1=0.796  val_card_mrr=0.879  val_card_nll=0.7886  val_card_conf=0.665  val_mode_acc=0.882  val_country_ce=2.2482  country_top1=0.283  val_value_mse=0.2923  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch4.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=4.2201)
+
+=== Epoch 5/95 ===
+  [train e5 batch  100]  loss=4.1315  card_loss=1.1385  mode_loss=0.4801  country_loss=2.2168  country_ce=2.2168  value_mse=0.2961  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.811  mode_acc=0.887  country_top1=0.285  elapsed=22.0s
+Epoch 5 summary  train_loss=4.1775  train_card_top1=0.800  train_card_mrr=0.882  train_mode_acc=0.882  train_country_ce=2.2278  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=3.8642  val_card_top1=0.859  val_card_mrr=0.920  val_card_nll=0.5593  val_card_conf=0.745  val_mode_acc=0.903  val_country_ce=2.1395  country_top1=0.310  val_value_mse=0.2914  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch5.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=3.8642)
+
+=== Epoch 6/95 ===
+  [train e6 batch  100]  loss=3.8254  card_loss=0.9787  mode_loss=0.4345  country_loss=2.1158  country_ce=2.1158  value_mse=0.2964  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.863  mode_acc=0.906  country_top1=0.305  elapsed=21.9s
+Epoch 6 summary  train_loss=3.8708  train_card_top1=0.849  train_card_mrr=0.913  train_mode_acc=0.903  train_country_ce=2.1211  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=3.6222  val_card_top1=0.896  val_card_mrr=0.942  val_card_nll=0.4361  val_card_conf=0.793  val_mode_acc=0.920  val_country_ce=2.0383  country_top1=0.321  val_value_mse=0.2943  elapsed=34.4s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch6.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=3.6222)
+
+=== Epoch 7/95 ===
+  [train e7 batch  100]  loss=3.6343  card_loss=0.9268  mode_loss=0.4002  country_loss=2.0210  country_ce=2.0210  value_mse=0.2863  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.875  mode_acc=0.925  country_top1=0.333  elapsed=22.0s
+Epoch 7 summary  train_loss=3.6536  train_card_top1=0.879  train_card_mrr=0.932  train_mode_acc=0.916  train_country_ce=2.0259  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=3.4402  val_card_top1=0.915  val_card_mrr=0.953  val_card_nll=0.3615  val_card_conf=0.821  val_mode_acc=0.927  val_country_ce=1.9454  country_top1=0.325  val_value_mse=0.2916  elapsed=34.4s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch7.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=3.4402)
+
+=== Epoch 8/95 ===
+  [train e8 batch  100]  loss=3.4549  card_loss=0.8479  mode_loss=0.4018  country_loss=1.9175  country_ce=1.9175  value_mse=0.2877  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.905  mode_acc=0.919  country_top1=0.365  elapsed=22.1s
+Epoch 8 summary  train_loss=3.4834  train_card_top1=0.899  train_card_mrr=0.943  train_mode_acc=0.923  train_country_ce=1.9351  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=3.3235  val_card_top1=0.930  val_card_mrr=0.961  val_card_nll=0.3126  val_card_conf=0.840  val_mode_acc=0.932  val_country_ce=1.8589  country_top1=0.395  val_value_mse=0.3153  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch8.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=3.3235)
+
+=== Epoch 9/95 ===
+  [train e9 batch  100]  loss=3.3028  card_loss=0.8103  mode_loss=0.3764  country_loss=1.8357  country_ce=1.8357  value_mse=0.2805  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.917  mode_acc=0.930  country_top1=0.385  elapsed=22.1s
+Epoch 9 summary  train_loss=3.3467  train_card_top1=0.912  train_card_mrr=0.951  train_mode_acc=0.927  train_country_ce=1.8541  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=3.1814  val_card_top1=0.939  val_card_mrr=0.966  val_card_nll=0.2771  val_card_conf=0.861  val_mode_acc=0.935  val_country_ce=1.7827  country_top1=0.384  val_value_mse=0.2913  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch9.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=3.1814)
+
+=== Epoch 10/95 ===
+  [train e10 batch  100]  loss=3.1964  card_loss=0.7755  mode_loss=0.3732  country_loss=1.7693  country_ce=1.7693  value_mse=0.2784  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.927  mode_acc=0.929  country_top1=0.402  elapsed=22.1s
+Epoch 10 summary  train_loss=3.2314  train_card_top1=0.922  train_card_mrr=0.957  train_mode_acc=0.931  train_country_ce=1.7774  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=3.0711  val_card_top1=0.945  val_card_mrr=0.970  val_card_nll=0.2545  val_card_conf=0.871  val_mode_acc=0.938  val_country_ce=1.7031  country_top1=0.410  val_value_mse=0.2913  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch10.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=3.0711)
+
+=== Epoch 11/95 ===
+  [train e11 batch  100]  loss=3.1103  card_loss=0.7537  mode_loss=0.3725  country_loss=1.7076  country_ce=1.7076  value_mse=0.2766  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.932  mode_acc=0.932  country_top1=0.406  elapsed=22.0s
+Epoch 11 summary  train_loss=3.1235  train_card_top1=0.929  train_card_mrr=0.961  train_mode_acc=0.934  train_country_ce=1.7113  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=3.0019  val_card_top1=0.949  val_card_mrr=0.972  val_card_nll=0.2358  val_card_conf=0.880  val_mode_acc=0.940  val_country_ce=1.6552  country_top1=0.426  val_value_mse=0.2925  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch11.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=3.0019)
+
+=== Epoch 12/95 ===
+  [train e12 batch  100]  loss=3.0353  card_loss=0.7448  mode_loss=0.3615  country_loss=1.6500  country_ce=1.6500  value_mse=0.2790  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.936  mode_acc=0.936  country_top1=0.446  elapsed=22.0s
+Epoch 12 summary  train_loss=3.0534  train_card_top1=0.935  train_card_mrr=0.964  train_mode_acc=0.935  train_country_ce=1.6622  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.9572  val_card_top1=0.953  val_card_mrr=0.974  val_card_nll=0.2220  val_card_conf=0.885  val_mode_acc=0.941  val_country_ce=1.6040  country_top1=0.440  val_value_mse=0.3177  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch12.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.9572)
+
+=== Epoch 13/95 ===
+  [train e13 batch  100]  loss=2.9347  card_loss=0.7212  mode_loss=0.3514  country_loss=1.5882  country_ce=1.5882  value_mse=0.2739  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.943  mode_acc=0.941  country_top1=0.419  elapsed=22.0s
+Epoch 13 summary  train_loss=2.9831  train_card_top1=0.939  train_card_mrr=0.967  train_mode_acc=0.937  train_country_ce=1.6197  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.9182  val_card_top1=0.955  val_card_mrr=0.976  val_card_nll=0.2114  val_card_conf=0.892  val_mode_acc=0.942  val_country_ce=1.5764  country_top1=0.433  val_value_mse=0.3203  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch13.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.9182)
+
+=== Epoch 14/95 ===
+  [train e14 batch  100]  loss=2.9258  card_loss=0.7110  mode_loss=0.3610  country_loss=1.5890  country_ce=1.5890  value_mse=0.2647  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.940  mode_acc=0.934  country_top1=0.435  elapsed=22.1s
+Epoch 14 summary  train_loss=2.9203  train_card_top1=0.943  train_card_mrr=0.969  train_mode_acc=0.939  train_country_ce=1.5832  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.8480  val_card_top1=0.959  val_card_mrr=0.978  val_card_nll=0.1985  val_card_conf=0.896  val_mode_acc=0.945  val_country_ce=1.5453  country_top1=0.455  val_value_mse=0.3016  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch14.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.8480)
+
+=== Epoch 15/95 ===
+  [train e15 batch  100]  loss=2.8644  card_loss=0.6985  mode_loss=0.3478  country_loss=1.5444  country_ce=1.5444  value_mse=0.2738  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.945  mode_acc=0.943  country_top1=0.485  elapsed=22.3s
+Epoch 15 summary  train_loss=2.8677  train_card_top1=0.946  train_card_mrr=0.971  train_mode_acc=0.941  train_country_ce=1.5529  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.8203  val_card_top1=0.961  val_card_mrr=0.979  val_card_nll=0.1870  val_card_conf=0.907  val_mode_acc=0.944  val_country_ce=1.5210  country_top1=0.481  val_value_mse=0.3046  elapsed=34.9s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch15.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.8203)
+
+=== Epoch 16/95 ===
+  [train e16 batch  100]  loss=2.8240  card_loss=0.6788  mode_loss=0.3410  country_loss=1.5377  country_ce=1.5377  value_mse=0.2664  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.953  mode_acc=0.949  country_top1=0.466  elapsed=22.0s
+Epoch 16 summary  train_loss=2.8238  train_card_top1=0.949  train_card_mrr=0.972  train_mode_acc=0.942  train_country_ce=1.5262  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.7831  val_card_top1=0.962  val_card_mrr=0.979  val_card_nll=0.1815  val_card_conf=0.906  val_mode_acc=0.945  val_country_ce=1.4871  country_top1=0.462  val_value_mse=0.3158  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch16.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.7831)
+
+=== Epoch 17/95 ===
+  [train e17 batch  100]  loss=2.7630  card_loss=0.6753  mode_loss=0.3450  country_loss=1.4832  country_ce=1.4832  value_mse=0.2595  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.955  mode_acc=0.944  country_top1=0.479  elapsed=22.0s
+Epoch 17 summary  train_loss=2.7795  train_card_top1=0.951  train_card_mrr=0.973  train_mode_acc=0.944  train_country_ce=1.4971  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.7423  val_card_top1=0.963  val_card_mrr=0.980  val_card_nll=0.1721  val_card_conf=0.915  val_mode_acc=0.946  val_country_ce=1.4596  country_top1=0.504  val_value_mse=0.3082  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch17.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.7423)
+
+=== Epoch 18/95 ===
+  [train e18 batch  100]  loss=2.7492  card_loss=0.6801  mode_loss=0.3428  country_loss=1.4717  country_ce=1.4717  value_mse=0.2545  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.950  mode_acc=0.944  country_top1=0.452  elapsed=22.1s
+Epoch 18 summary  train_loss=2.7369  train_card_top1=0.953  train_card_mrr=0.974  train_mode_acc=0.944  train_country_ce=1.4669  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.6982  val_card_top1=0.963  val_card_mrr=0.980  val_card_nll=0.1680  val_card_conf=0.915  val_mode_acc=0.948  val_country_ce=1.4240  country_top1=0.474  val_value_mse=0.3105  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch18.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.6982)
+
+=== Epoch 19/95 ===
+  [train e19 batch  100]  loss=2.7049  card_loss=0.6720  mode_loss=0.3519  country_loss=1.4357  country_ce=1.4357  value_mse=0.2454  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.950  mode_acc=0.941  country_top1=0.505  elapsed=22.0s
+Epoch 19 summary  train_loss=2.7049  train_card_top1=0.954  train_card_mrr=0.975  train_mode_acc=0.945  train_country_ce=1.4465  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.7060  val_card_top1=0.963  val_card_mrr=0.980  val_card_nll=0.1740  val_card_conf=0.910  val_mode_acc=0.948  val_country_ce=1.4210  country_top1=0.493  val_value_mse=0.3232  elapsed=34.6s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch19.pt
+
+=== Epoch 20/95 ===
+  [train e20 batch  100]  loss=2.6719  card_loss=0.6551  mode_loss=0.3464  country_loss=1.4216  country_ce=1.4216  value_mse=0.2488  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.954  mode_acc=0.942  country_top1=0.474  elapsed=22.1s
+Epoch 20 summary  train_loss=2.6696  train_card_top1=0.955  train_card_mrr=0.976  train_mode_acc=0.946  train_country_ce=1.4227  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.6471  val_card_top1=0.966  val_card_mrr=0.982  val_card_nll=0.1588  val_card_conf=0.919  val_mode_acc=0.949  val_country_ce=1.3830  country_top1=0.486  val_value_mse=0.3172  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch20.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.6471)
+
+=== Epoch 21/95 ===
+  [train e21 batch  100]  loss=2.6236  card_loss=0.6487  mode_loss=0.3398  country_loss=1.3732  country_ce=1.3732  value_mse=0.2618  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.957  mode_acc=0.946  country_top1=0.495  elapsed=22.0s
+Epoch 21 summary  train_loss=2.6294  train_card_top1=0.957  train_card_mrr=0.977  train_mode_acc=0.947  train_country_ce=1.3940  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.6369  val_card_top1=0.966  val_card_mrr=0.982  val_card_nll=0.1575  val_card_conf=0.921  val_mode_acc=0.947  val_country_ce=1.3659  country_top1=0.519  val_value_mse=0.3199  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch21.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.6369)
+
+=== Epoch 22/95 ===
+  [train e22 batch  100]  loss=2.5983  card_loss=0.6482  mode_loss=0.3404  country_loss=1.3586  country_ce=1.3586  value_mse=0.2511  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.957  mode_acc=0.947  country_top1=0.451  elapsed=22.2s
+Epoch 22 summary  train_loss=2.5890  train_card_top1=0.958  train_card_mrr=0.977  train_mode_acc=0.948  train_country_ce=1.3628  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5826  val_card_top1=0.967  val_card_mrr=0.982  val_card_nll=0.1551  val_card_conf=0.921  val_mode_acc=0.952  val_country_ce=1.3203  country_top1=0.465  val_value_mse=0.3252  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch22.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.5826)
+
+=== Epoch 23/95 ===
+  [train e23 batch  100]  loss=2.5263  card_loss=0.6324  mode_loss=0.3306  country_loss=1.3284  country_ce=1.3284  value_mse=0.2349  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.963  mode_acc=0.951  country_top1=0.531  elapsed=22.1s
+Epoch 23 summary  train_loss=2.5446  train_card_top1=0.959  train_card_mrr=0.978  train_mode_acc=0.950  train_country_ce=1.3300  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5373  val_card_top1=0.968  val_card_mrr=0.983  val_card_nll=0.1509  val_card_conf=0.922  val_mode_acc=0.952  val_country_ce=1.2905  country_top1=0.499  val_value_mse=0.3181  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch23.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.5373)
+
+=== Epoch 24/95 ===
+  [train e24 batch  100]  loss=2.5201  card_loss=0.6279  mode_loss=0.3287  country_loss=1.3172  country_ce=1.3172  value_mse=0.2463  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.962  mode_acc=0.953  country_top1=0.517  elapsed=22.2s
+Epoch 24 summary  train_loss=2.5091  train_card_top1=0.960  train_card_mrr=0.979  train_mode_acc=0.951  train_country_ce=1.3052  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5261  val_card_top1=0.968  val_card_mrr=0.983  val_card_nll=0.1489  val_card_conf=0.927  val_mode_acc=0.951  val_country_ce=1.2748  country_top1=0.501  val_value_mse=0.3212  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch24.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.5261)
+
+=== Epoch 25/95 ===
+  [train e25 batch  100]  loss=2.4657  card_loss=0.6212  mode_loss=0.3235  country_loss=1.2804  country_ce=1.2804  value_mse=0.2405  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.964  mode_acc=0.954  country_top1=0.528  elapsed=22.0s
+Epoch 25 summary  train_loss=2.4845  train_card_top1=0.961  train_card_mrr=0.979  train_mode_acc=0.951  train_country_ce=1.2880  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5162  val_card_top1=0.966  val_card_mrr=0.982  val_card_nll=0.1521  val_card_conf=0.925  val_mode_acc=0.953  val_country_ce=1.2675  country_top1=0.469  val_value_mse=0.3200  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch25.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.5162)
+
+=== Epoch 26/95 ===
+  [train e26 batch  100]  loss=2.4626  card_loss=0.6208  mode_loss=0.3298  country_loss=1.2802  country_ce=1.2802  value_mse=0.2318  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.963  mode_acc=0.951  country_top1=0.521  elapsed=22.1s
+Epoch 26 summary  train_loss=2.4578  train_card_top1=0.962  train_card_mrr=0.980  train_mode_acc=0.952  train_country_ce=1.2711  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5127  val_card_top1=0.969  val_card_mrr=0.983  val_card_nll=0.1428  val_card_conf=0.928  val_mode_acc=0.950  val_country_ce=1.2572  country_top1=0.519  val_value_mse=0.3276  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch26.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.5127)
+
+=== Epoch 27/95 ===
+  [train e27 batch  100]  loss=2.4489  card_loss=0.6131  mode_loss=0.3318  country_loss=1.2758  country_ce=1.2758  value_mse=0.2282  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.964  mode_acc=0.951  country_top1=0.515  elapsed=21.9s
+Epoch 27 summary  train_loss=2.4379  train_card_top1=0.963  train_card_mrr=0.980  train_mode_acc=0.953  train_country_ce=1.2585  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4725  val_card_top1=0.970  val_card_mrr=0.984  val_card_nll=0.1448  val_card_conf=0.926  val_mode_acc=0.955  val_country_ce=1.2314  country_top1=0.516  val_value_mse=0.3327  elapsed=34.4s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch27.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4725)
+
+=== Epoch 28/95 ===
+  [train e28 batch  100]  loss=3.8276  card_loss=1.1473  mode_loss=0.4479  country_loss=1.9749  country_ce=1.9749  value_mse=0.2574  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.820  mode_acc=0.901  country_top1=0.325  elapsed=22.1s
+Epoch 28 summary  train_loss=4.7685  train_card_top1=0.669  train_card_mrr=0.746  train_mode_acc=0.842  train_country_ce=2.1264  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=3.2408  val_card_top1=0.925  val_card_mrr=0.956  val_card_nll=0.3521  val_card_conf=0.837  val_mode_acc=0.932  val_country_ce=1.7278  country_top1=0.358  val_value_mse=0.3228  elapsed=34.6s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch28.pt
+
+=== Epoch 29/95 ===
+  [train e29 batch  100]  loss=3.0477  card_loss=0.8273  mode_loss=0.3644  country_loss=1.6163  country_ce=1.6163  value_mse=0.2397  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.914  mode_acc=0.939  country_top1=0.410  elapsed=22.2s
+Epoch 29 summary  train_loss=3.1421  train_card_top1=0.907  train_card_mrr=0.945  train_mode_acc=0.934  train_country_ce=1.6722  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.9384  val_card_top1=0.949  val_card_mrr=0.971  val_card_nll=0.2474  val_card_conf=0.879  val_mode_acc=0.938  val_country_ce=1.5563  country_top1=0.416  val_value_mse=0.3227  elapsed=34.6s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch29.pt
+
+=== Epoch 30/95 ===
+  [train e30 batch  100]  loss=2.8571  card_loss=0.7631  mode_loss=0.3411  country_loss=1.5156  country_ce=1.5156  value_mse=0.2373  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.932  mode_acc=0.947  country_top1=0.468  elapsed=22.0s
+Epoch 30 summary  train_loss=2.9207  train_card_top1=0.928  train_card_mrr=0.958  train_mode_acc=0.941  train_country_ce=1.5544  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.7913  val_card_top1=0.958  val_card_mrr=0.977  val_card_nll=0.2019  val_card_conf=0.902  val_mode_acc=0.947  val_country_ce=1.4599  country_top1=0.423  val_value_mse=0.3271  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch30.pt
+
+=== Epoch 31/95 ===
+  [train e31 batch  100]  loss=2.7750  card_loss=0.7299  mode_loss=0.3374  country_loss=1.4648  country_ce=1.4648  value_mse=0.2429  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.936  mode_acc=0.947  country_top1=0.422  elapsed=22.0s
+Epoch 31 summary  train_loss=2.8169  train_card_top1=0.937  train_card_mrr=0.964  train_mode_acc=0.944  train_country_ce=1.4963  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.7370  val_card_top1=0.961  val_card_mrr=0.978  val_card_nll=0.1922  val_card_conf=0.906  val_mode_acc=0.949  val_country_ce=1.4159  country_top1=0.443  val_value_mse=0.3396  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch31.pt
+
+=== Epoch 32/95 ===
+  [train e32 batch  100]  loss=2.7657  card_loss=0.7032  mode_loss=0.3489  country_loss=1.4805  country_ce=1.4805  value_mse=0.2332  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.946  mode_acc=0.940  country_top1=0.461  elapsed=22.0s
+Epoch 32 summary  train_loss=2.7507  train_card_top1=0.943  train_card_mrr=0.967  train_mode_acc=0.946  train_country_ce=1.4568  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.6839  val_card_top1=0.963  val_card_mrr=0.980  val_card_nll=0.1784  val_card_conf=0.912  val_mode_acc=0.950  val_country_ce=1.3876  country_top1=0.469  val_value_mse=0.3297  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch32.pt
+
+=== Epoch 33/95 ===
+  [train e33 batch  100]  loss=2.6945  card_loss=0.6950  mode_loss=0.3358  country_loss=1.4250  country_ce=1.4250  value_mse=0.2388  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.948  mode_acc=0.950  country_top1=0.419  elapsed=22.0s
+Epoch 33 summary  train_loss=2.6918  train_card_top1=0.947  train_card_mrr=0.970  train_mode_acc=0.948  train_country_ce=1.4222  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.6545  val_card_top1=0.964  val_card_mrr=0.980  val_card_nll=0.1718  val_card_conf=0.922  val_mode_acc=0.951  val_country_ce=1.3641  country_top1=0.461  val_value_mse=0.3301  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch33.pt
+
+=== Epoch 34/95 ===
+  [train e34 batch  100]  loss=2.6630  card_loss=0.6770  mode_loss=0.3380  country_loss=1.4128  country_ce=1.4128  value_mse=0.2352  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.948  mode_acc=0.949  country_top1=0.458  elapsed=22.0s
+Epoch 34 summary  train_loss=2.6498  train_card_top1=0.949  train_card_mrr=0.971  train_mode_acc=0.950  train_country_ce=1.3955  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.6180  val_card_top1=0.966  val_card_mrr=0.981  val_card_nll=0.1656  val_card_conf=0.920  val_mode_acc=0.952  val_country_ce=1.3375  country_top1=0.484  val_value_mse=0.3322  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch34.pt
+
+=== Epoch 35/95 ===
+  [train e35 batch  100]  loss=2.6036  card_loss=0.6774  mode_loss=0.3282  country_loss=1.3597  country_ce=1.3597  value_mse=0.2382  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.950  mode_acc=0.955  country_top1=0.506  elapsed=22.0s
+Epoch 35 summary  train_loss=2.6158  train_card_top1=0.951  train_card_mrr=0.972  train_mode_acc=0.950  train_country_ce=1.3752  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5964  val_card_top1=0.967  val_card_mrr=0.982  val_card_nll=0.1614  val_card_conf=0.922  val_mode_acc=0.954  val_country_ce=1.3211  country_top1=0.462  val_value_mse=0.3344  elapsed=34.6s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch35.pt
+
+=== Epoch 36/95 ===
+  [train e36 batch  100]  loss=2.6230  card_loss=0.6769  mode_loss=0.3315  country_loss=1.3743  country_ce=1.3743  value_mse=0.2404  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.952  mode_acc=0.952  country_top1=0.460  elapsed=22.2s
+Epoch 36 summary  train_loss=2.5894  train_card_top1=0.953  train_card_mrr=0.974  train_mode_acc=0.951  train_country_ce=1.3578  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5752  val_card_top1=0.967  val_card_mrr=0.982  val_card_nll=0.1615  val_card_conf=0.919  val_mode_acc=0.950  val_country_ce=1.3102  country_top1=0.503  val_value_mse=0.3283  elapsed=34.6s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch36.pt
+
+=== Epoch 37/95 ===
+  [train e37 batch  100]  loss=2.5503  card_loss=0.6536  mode_loss=0.3307  country_loss=1.3313  country_ce=1.3313  value_mse=0.2347  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.957  mode_acc=0.951  country_top1=0.497  elapsed=22.0s
+Epoch 37 summary  train_loss=2.5613  train_card_top1=0.954  train_card_mrr=0.974  train_mode_acc=0.952  train_country_ce=1.3423  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5508  val_card_top1=0.967  val_card_mrr=0.982  val_card_nll=0.1554  val_card_conf=0.927  val_mode_acc=0.954  val_country_ce=1.2860  country_top1=0.523  val_value_mse=0.3356  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch37.pt
+
+=== Epoch 38/95 ===
+  [train e38 batch  100]  loss=2.5455  card_loss=0.6595  mode_loss=0.3274  country_loss=1.3264  country_ce=1.3264  value_mse=0.2322  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.955  mode_acc=0.953  country_top1=0.477  elapsed=22.0s
+Epoch 38 summary  train_loss=2.5427  train_card_top1=0.955  train_card_mrr=0.975  train_mode_acc=0.952  train_country_ce=1.3314  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5354  val_card_top1=0.968  val_card_mrr=0.983  val_card_nll=0.1548  val_card_conf=0.923  val_mode_acc=0.955  val_country_ce=1.2805  country_top1=0.539  val_value_mse=0.3336  elapsed=34.4s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch38.pt
+
+=== Epoch 39/95 ===
+  [train e39 batch  100]  loss=2.5300  card_loss=0.6446  mode_loss=0.3339  country_loss=1.3259  country_ce=1.3259  value_mse=0.2256  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.957  mode_acc=0.950  country_top1=0.473  elapsed=22.0s
+Epoch 39 summary  train_loss=2.5196  train_card_top1=0.957  train_card_mrr=0.976  train_mode_acc=0.953  train_country_ce=1.3166  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5319  val_card_top1=0.969  val_card_mrr=0.983  val_card_nll=0.1539  val_card_conf=0.927  val_mode_acc=0.955  val_country_ce=1.2733  country_top1=0.490  val_value_mse=0.3366  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch39.pt
+
+=== Epoch 40/95 ===
+  [train e40 batch  100]  loss=2.4604  card_loss=0.6388  mode_loss=0.3211  country_loss=1.2732  country_ce=1.2732  value_mse=0.2273  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.959  mode_acc=0.955  country_top1=0.499  elapsed=22.0s
+Epoch 40 summary  train_loss=2.5018  train_card_top1=0.958  train_card_mrr=0.976  train_mode_acc=0.954  train_country_ce=1.3058  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.5118  val_card_top1=0.969  val_card_mrr=0.983  val_card_nll=0.1492  val_card_conf=0.924  val_mode_acc=0.955  val_country_ce=1.2604  country_top1=0.524  val_value_mse=0.3364  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch40.pt
+
+=== Epoch 41/95 ===
+  [train e41 batch  100]  loss=2.5003  card_loss=0.6446  mode_loss=0.3258  country_loss=1.3040  country_ce=1.3040  value_mse=0.2260  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.957  mode_acc=0.953  country_top1=0.513  elapsed=21.9s
+Epoch 41 summary  train_loss=2.4882  train_card_top1=0.958  train_card_mrr=0.977  train_mode_acc=0.954  train_country_ce=1.2969  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4928  val_card_top1=0.970  val_card_mrr=0.984  val_card_nll=0.1484  val_card_conf=0.927  val_mode_acc=0.956  val_country_ce=1.2456  country_top1=0.499  val_value_mse=0.3379  elapsed=34.4s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch41.pt
+
+=== Epoch 42/95 ===
+  [train e42 batch  100]  loss=2.4717  card_loss=0.6476  mode_loss=0.3199  country_loss=1.2815  country_ce=1.2815  value_mse=0.2227  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.953  mode_acc=0.954  country_top1=0.502  elapsed=21.9s
+Epoch 42 summary  train_loss=2.4663  train_card_top1=0.959  train_card_mrr=0.977  train_mode_acc=0.955  train_country_ce=1.2835  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4843  val_card_top1=0.970  val_card_mrr=0.984  val_card_nll=0.1491  val_card_conf=0.926  val_mode_acc=0.957  val_country_ce=1.2388  country_top1=0.497  val_value_mse=0.3387  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch42.pt
+
+=== Epoch 43/95 ===
+  [train e43 batch  100]  loss=2.4324  card_loss=0.6407  mode_loss=0.3191  country_loss=1.2523  country_ce=1.2523  value_mse=0.2203  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.958  mode_acc=0.957  country_top1=0.503  elapsed=22.1s
+Epoch 43 summary  train_loss=2.4495  train_card_top1=0.960  train_card_mrr=0.978  train_mode_acc=0.955  train_country_ce=1.2727  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4720  val_card_top1=0.970  val_card_mrr=0.984  val_card_nll=0.1427  val_card_conf=0.929  val_mode_acc=0.957  val_country_ce=1.2221  country_top1=0.543  val_value_mse=0.3472  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch43.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4720)
+
+=== Epoch 44/95 ===
+  [train e44 batch  100]  loss=2.4116  card_loss=0.6281  mode_loss=0.3148  country_loss=1.2557  country_ce=1.2557  value_mse=0.2131  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.958  mode_acc=0.959  country_top1=0.510  elapsed=22.0s
+Epoch 44 summary  train_loss=2.4327  train_card_top1=0.961  train_card_mrr=0.978  train_mode_acc=0.956  train_country_ce=1.2618  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4646  val_card_top1=0.970  val_card_mrr=0.984  val_card_nll=0.1429  val_card_conf=0.926  val_mode_acc=0.957  val_country_ce=1.2209  country_top1=0.523  val_value_mse=0.3450  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch44.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4646)
+
+=== Epoch 45/95 ===
+  [train e45 batch  100]  loss=2.4283  card_loss=0.6189  mode_loss=0.3221  country_loss=1.2611  country_ce=1.2611  value_mse=0.2262  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.963  mode_acc=0.955  country_top1=0.500  elapsed=22.0s
+Epoch 45 summary  train_loss=2.4177  train_card_top1=0.961  train_card_mrr=0.979  train_mode_acc=0.956  train_country_ce=1.2511  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4568  val_card_top1=0.971  val_card_mrr=0.984  val_card_nll=0.1432  val_card_conf=0.931  val_mode_acc=0.956  val_country_ce=1.2126  country_top1=0.499  val_value_mse=0.3432  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch45.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4568)
+
+=== Epoch 46/95 ===
+  [train e46 batch  100]  loss=2.4022  card_loss=0.6126  mode_loss=0.3176  country_loss=1.2384  country_ce=1.2384  value_mse=0.2335  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.965  mode_acc=0.958  country_top1=0.518  elapsed=22.0s
+Epoch 46 summary  train_loss=2.4022  train_card_top1=0.962  train_card_mrr=0.979  train_mode_acc=0.957  train_country_ce=1.2416  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4459  val_card_top1=0.971  val_card_mrr=0.984  val_card_nll=0.1421  val_card_conf=0.927  val_mode_acc=0.958  val_country_ce=1.2027  country_top1=0.528  val_value_mse=0.3465  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch46.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4459)
+
+=== Epoch 47/95 ===
+  [train e47 batch  100]  loss=2.3909  card_loss=0.6194  mode_loss=0.3229  country_loss=1.2308  country_ce=1.2308  value_mse=0.2179  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.962  mode_acc=0.955  country_top1=0.535  elapsed=22.0s
+Epoch 47 summary  train_loss=2.3918  train_card_top1=0.963  train_card_mrr=0.979  train_mode_acc=0.957  train_country_ce=1.2351  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4331  val_card_top1=0.971  val_card_mrr=0.984  val_card_nll=0.1411  val_card_conf=0.930  val_mode_acc=0.957  val_country_ce=1.1949  country_top1=0.525  val_value_mse=0.3456  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch47.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4331)
+
+=== Epoch 48/95 ===
+  [train e48 batch  100]  loss=2.3552  card_loss=0.6013  mode_loss=0.3144  country_loss=1.2134  country_ce=1.2134  value_mse=0.2260  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.968  mode_acc=0.959  country_top1=0.547  elapsed=22.0s
+Epoch 48 summary  train_loss=2.3797  train_card_top1=0.963  train_card_mrr=0.980  train_mode_acc=0.957  train_country_ce=1.2270  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4295  val_card_top1=0.971  val_card_mrr=0.984  val_card_nll=0.1407  val_card_conf=0.930  val_mode_acc=0.958  val_country_ce=1.1912  country_top1=0.536  val_value_mse=0.3462  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch48.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4295)
+
+=== Epoch 49/95 ===
+  [train e49 batch  100]  loss=2.3579  card_loss=0.6166  mode_loss=0.3159  country_loss=1.2083  country_ce=1.2083  value_mse=0.2171  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.961  mode_acc=0.958  country_top1=0.492  elapsed=22.1s
+Epoch 49 summary  train_loss=2.3657  train_card_top1=0.964  train_card_mrr=0.980  train_mode_acc=0.958  train_country_ce=1.2185  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4191  val_card_top1=0.971  val_card_mrr=0.984  val_card_nll=0.1399  val_card_conf=0.929  val_mode_acc=0.957  val_country_ce=1.1854  country_top1=0.529  val_value_mse=0.3438  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch49.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4191)
+
+=== Epoch 50/95 ===
+  [train e50 batch  100]  loss=2.3512  card_loss=0.6084  mode_loss=0.3110  country_loss=1.2096  country_ce=1.2096  value_mse=0.2222  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.961  mode_acc=0.961  country_top1=0.506  elapsed=22.1s
+Epoch 50 summary  train_loss=2.3550  train_card_top1=0.964  train_card_mrr=0.980  train_mode_acc=0.958  train_country_ce=1.2111  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4117  val_card_top1=0.972  val_card_mrr=0.985  val_card_nll=0.1380  val_card_conf=0.930  val_mode_acc=0.958  val_country_ce=1.1758  country_top1=0.518  val_value_mse=0.3506  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch50.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4117)
+
+=== Epoch 51/95 ===
+  [train e51 batch  100]  loss=2.3571  card_loss=0.6172  mode_loss=0.3171  country_loss=1.2015  country_ce=1.2015  value_mse=0.2211  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.961  mode_acc=0.958  country_top1=0.535  elapsed=22.1s
+Epoch 51 summary  train_loss=2.3446  train_card_top1=0.965  train_card_mrr=0.981  train_mode_acc=0.958  train_country_ce=1.2045  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.4036  val_card_top1=0.972  val_card_mrr=0.985  val_card_nll=0.1363  val_card_conf=0.931  val_mode_acc=0.958  val_country_ce=1.1688  country_top1=0.520  val_value_mse=0.3513  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch51.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.4036)
+
+=== Epoch 52/95 ===
+  [train e52 batch  100]  loss=2.3439  card_loss=0.6002  mode_loss=0.3162  country_loss=1.2037  country_ce=1.2037  value_mse=0.2239  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.967  mode_acc=0.960  country_top1=0.511  elapsed=22.0s
+Epoch 52 summary  train_loss=2.3331  train_card_top1=0.965  train_card_mrr=0.981  train_mode_acc=0.959  train_country_ce=1.1971  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3967  val_card_top1=0.973  val_card_mrr=0.985  val_card_nll=0.1349  val_card_conf=0.929  val_mode_acc=0.959  val_country_ce=1.1635  country_top1=0.504  val_value_mse=0.3532  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch52.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3967)
+
+=== Epoch 53/95 ===
+  [train e53 batch  100]  loss=2.3282  card_loss=0.6015  mode_loss=0.3061  country_loss=1.2033  country_ce=1.2033  value_mse=0.2174  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.964  mode_acc=0.963  country_top1=0.507  elapsed=22.1s
+Epoch 53 summary  train_loss=2.3235  train_card_top1=0.966  train_card_mrr=0.981  train_mode_acc=0.959  train_country_ce=1.1908  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3943  val_card_top1=0.972  val_card_mrr=0.985  val_card_nll=0.1358  val_card_conf=0.928  val_mode_acc=0.958  val_country_ce=1.1610  country_top1=0.525  val_value_mse=0.3514  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch53.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3943)
+
+=== Epoch 54/95 ===
+  [train e54 batch  100]  loss=2.3189  card_loss=0.5941  mode_loss=0.3157  country_loss=1.1889  country_ce=1.1889  value_mse=0.2202  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.967  mode_acc=0.957  country_top1=0.526  elapsed=22.0s
+Epoch 54 summary  train_loss=2.3139  train_card_top1=0.966  train_card_mrr=0.981  train_mode_acc=0.960  train_country_ce=1.1849  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3747  val_card_top1=0.972  val_card_mrr=0.985  val_card_nll=0.1362  val_card_conf=0.926  val_mode_acc=0.959  val_country_ce=1.1525  country_top1=0.528  val_value_mse=0.3463  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch54.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3747)
+
+=== Epoch 55/95 ===
+  [train e55 batch  100]  loss=2.3158  card_loss=0.5948  mode_loss=0.3121  country_loss=1.1830  country_ce=1.1830  value_mse=0.2259  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.965  mode_acc=0.957  country_top1=0.513  elapsed=22.1s
+Epoch 55 summary  train_loss=2.3047  train_card_top1=0.966  train_card_mrr=0.981  train_mode_acc=0.960  train_country_ce=1.1791  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3806  val_card_top1=0.972  val_card_mrr=0.985  val_card_nll=0.1384  val_card_conf=0.927  val_mode_acc=0.960  val_country_ce=1.1502  country_top1=0.547  val_value_mse=0.3543  elapsed=34.6s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch55.pt
+
+=== Epoch 56/95 ===
+  [train e56 batch  100]  loss=2.3018  card_loss=0.5932  mode_loss=0.3130  country_loss=1.1869  country_ce=1.1869  value_mse=0.2087  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.967  mode_acc=0.959  country_top1=0.520  elapsed=22.1s
+Epoch 56 summary  train_loss=2.2971  train_card_top1=0.967  train_card_mrr=0.982  train_mode_acc=0.960  train_country_ce=1.1740  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3723  val_card_top1=0.973  val_card_mrr=0.986  val_card_nll=0.1340  val_card_conf=0.927  val_mode_acc=0.959  val_country_ce=1.1476  country_top1=0.523  val_value_mse=0.3515  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch56.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3723)
+
+=== Epoch 57/95 ===
+  [train e57 batch  100]  loss=2.3018  card_loss=0.6011  mode_loss=0.3126  country_loss=1.1727  country_ce=1.1727  value_mse=0.2154  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.964  mode_acc=0.960  country_top1=0.495  elapsed=22.2s
+Epoch 57 summary  train_loss=2.2867  train_card_top1=0.967  train_card_mrr=0.982  train_mode_acc=0.960  train_country_ce=1.1674  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3568  val_card_top1=0.973  val_card_mrr=0.986  val_card_nll=0.1337  val_card_conf=0.929  val_mode_acc=0.959  val_country_ce=1.1406  country_top1=0.561  val_value_mse=0.3445  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch57.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3568)
+
+=== Epoch 58/95 ===
+  [train e58 batch  100]  loss=2.2903  card_loss=0.5935  mode_loss=0.3109  country_loss=1.1710  country_ce=1.1710  value_mse=0.2150  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.966  mode_acc=0.961  country_top1=0.529  elapsed=22.1s
+Epoch 58 summary  train_loss=2.2768  train_card_top1=0.967  train_card_mrr=0.982  train_mode_acc=0.961  train_country_ce=1.1612  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3592  val_card_top1=0.973  val_card_mrr=0.985  val_card_nll=0.1342  val_card_conf=0.927  val_mode_acc=0.960  val_country_ce=1.1368  country_top1=0.538  val_value_mse=0.3506  elapsed=34.7s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch58.pt
+
+=== Epoch 59/95 ===
+  [train e59 batch  100]  loss=2.2875  card_loss=0.5904  mode_loss=0.3085  country_loss=1.1701  country_ce=1.1701  value_mse=0.2186  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.965  mode_acc=0.962  country_top1=0.543  elapsed=22.1s
+Epoch 59 summary  train_loss=2.2698  train_card_top1=0.968  train_card_mrr=0.982  train_mode_acc=0.961  train_country_ce=1.1569  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3487  val_card_top1=0.973  val_card_mrr=0.986  val_card_nll=0.1307  val_card_conf=0.929  val_mode_acc=0.960  val_country_ce=1.1322  country_top1=0.545  val_value_mse=0.3507  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch59.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3487)
+
+=== Epoch 60/95 ===
+  [train e60 batch  100]  loss=2.2678  card_loss=0.5851  mode_loss=0.3127  country_loss=1.1572  country_ce=1.1572  value_mse=0.2127  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.969  mode_acc=0.959  country_top1=0.532  elapsed=22.0s
+Epoch 60 summary  train_loss=2.2605  train_card_top1=0.968  train_card_mrr=0.983  train_mode_acc=0.961  train_country_ce=1.1508  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3468  val_card_top1=0.974  val_card_mrr=0.986  val_card_nll=0.1289  val_card_conf=0.933  val_mode_acc=0.959  val_country_ce=1.1292  country_top1=0.539  val_value_mse=0.3497  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch60.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3468)
+
+=== Epoch 61/95 ===
+  [train e61 batch  100]  loss=2.2540  card_loss=0.5862  mode_loss=0.3109  country_loss=1.1485  country_ce=1.1485  value_mse=0.2084  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.967  mode_acc=0.960  country_top1=0.524  elapsed=22.1s
+Epoch 61 summary  train_loss=2.2507  train_card_top1=0.969  train_card_mrr=0.983  train_mode_acc=0.962  train_country_ce=1.1450  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3381  val_card_top1=0.973  val_card_mrr=0.985  val_card_nll=0.1312  val_card_conf=0.930  val_mode_acc=0.960  val_country_ce=1.1243  country_top1=0.519  val_value_mse=0.3476  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch61.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3381)
+
+=== Epoch 62/95 ===
+  [train e62 batch  100]  loss=2.2329  card_loss=0.5779  mode_loss=0.3070  country_loss=1.1305  country_ce=1.1305  value_mse=0.2176  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.969  mode_acc=0.962  country_top1=0.505  elapsed=22.0s
+Epoch 62 summary  train_loss=2.2440  train_card_top1=0.969  train_card_mrr=0.983  train_mode_acc=0.962  train_country_ce=1.1404  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3329  val_card_top1=0.973  val_card_mrr=0.986  val_card_nll=0.1291  val_card_conf=0.931  val_mode_acc=0.960  val_country_ce=1.1192  country_top1=0.552  val_value_mse=0.3498  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch62.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3329)
+
+=== Epoch 63/95 ===
+  [train e63 batch  100]  loss=2.2315  card_loss=0.5795  mode_loss=0.3117  country_loss=1.1266  country_ce=1.1266  value_mse=0.2137  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.969  mode_acc=0.960  country_top1=0.524  elapsed=21.9s
+Epoch 63 summary  train_loss=2.2363  train_card_top1=0.969  train_card_mrr=0.983  train_mode_acc=0.962  train_country_ce=1.1356  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3356  val_card_top1=0.974  val_card_mrr=0.986  val_card_nll=0.1288  val_card_conf=0.933  val_mode_acc=0.961  val_country_ce=1.1171  country_top1=0.590  val_value_mse=0.3557  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch63.pt
+
+=== Epoch 64/95 ===
+  [train e64 batch  100]  loss=2.2391  card_loss=0.5797  mode_loss=0.3070  country_loss=1.1378  country_ce=1.1378  value_mse=0.2146  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.967  mode_acc=0.963  country_top1=0.499  elapsed=22.1s
+Epoch 64 summary  train_loss=2.2286  train_card_top1=0.969  train_card_mrr=0.983  train_mode_acc=0.963  train_country_ce=1.1304  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3307  val_card_top1=0.973  val_card_mrr=0.986  val_card_nll=0.1283  val_card_conf=0.932  val_mode_acc=0.961  val_country_ce=1.1133  country_top1=0.530  val_value_mse=0.3554  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch64.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3307)
+
+=== Epoch 65/95 ===
+  [train e65 batch  100]  loss=2.2233  card_loss=0.5736  mode_loss=0.3016  country_loss=1.1335  country_ce=1.1335  value_mse=0.2146  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.970  mode_acc=0.964  country_top1=0.536  elapsed=22.1s
+Epoch 65 summary  train_loss=2.2218  train_card_top1=0.970  train_card_mrr=0.984  train_mode_acc=0.963  train_country_ce=1.1262  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3183  val_card_top1=0.974  val_card_mrr=0.986  val_card_nll=0.1275  val_card_conf=0.931  val_mode_acc=0.961  val_country_ce=1.1065  country_top1=0.502  val_value_mse=0.3517  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch65.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3183)
+
+=== Epoch 66/95 ===
+  [train e66 batch  100]  loss=2.2181  card_loss=0.5754  mode_loss=0.3082  country_loss=1.1228  country_ce=1.1228  value_mse=0.2116  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.969  mode_acc=0.964  country_top1=0.542  elapsed=22.1s
+Epoch 66 summary  train_loss=2.2140  train_card_top1=0.970  train_card_mrr=0.984  train_mode_acc=0.963  train_country_ce=1.1209  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3135  val_card_top1=0.974  val_card_mrr=0.986  val_card_nll=0.1291  val_card_conf=0.930  val_mode_acc=0.961  val_country_ce=1.1026  country_top1=0.545  val_value_mse=0.3528  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch66.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3135)
+
+=== Epoch 67/95 ===
+  [train e67 batch  100]  loss=2.2005  card_loss=0.5830  mode_loss=0.3032  country_loss=1.1067  country_ce=1.1067  value_mse=0.2077  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.966  mode_acc=0.964  country_top1=0.523  elapsed=22.0s
+Epoch 67 summary  train_loss=2.2074  train_card_top1=0.970  train_card_mrr=0.984  train_mode_acc=0.964  train_country_ce=1.1170  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3135  val_card_top1=0.975  val_card_mrr=0.986  val_card_nll=0.1274  val_card_conf=0.933  val_mode_acc=0.961  val_country_ce=1.0999  country_top1=0.511  val_value_mse=0.3552  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch67.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3135)
+
+=== Epoch 68/95 ===
+  [train e68 batch  100]  loss=2.2139  card_loss=0.5794  mode_loss=0.3039  country_loss=1.1134  country_ce=1.1134  value_mse=0.2172  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.969  mode_acc=0.963  country_top1=0.534  elapsed=22.1s
+Epoch 68 summary  train_loss=2.2013  train_card_top1=0.970  train_card_mrr=0.984  train_mode_acc=0.964  train_country_ce=1.1128  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3094  val_card_top1=0.974  val_card_mrr=0.986  val_card_nll=0.1261  val_card_conf=0.932  val_mode_acc=0.961  val_country_ce=1.0982  country_top1=0.519  val_value_mse=0.3539  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch68.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3094)
+
+=== Epoch 69/95 ===
+  [train e69 batch  100]  loss=2.2008  card_loss=0.5695  mode_loss=0.3043  country_loss=1.1090  country_ce=1.1090  value_mse=0.2179  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.971  mode_acc=0.963  country_top1=0.539  elapsed=22.0s
+Epoch 69 summary  train_loss=2.1952  train_card_top1=0.971  train_card_mrr=0.984  train_mode_acc=0.964  train_country_ce=1.1087  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.3040  val_card_top1=0.974  val_card_mrr=0.986  val_card_nll=0.1258  val_card_conf=0.932  val_mode_acc=0.962  val_country_ce=1.0940  country_top1=0.524  val_value_mse=0.3537  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch69.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.3040)
+
+=== Epoch 70/95 ===
+  [train e70 batch  100]  loss=2.2041  card_loss=0.5710  mode_loss=0.3044  country_loss=1.1147  country_ce=1.1147  value_mse=0.2139  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.973  mode_acc=0.962  country_top1=0.521  elapsed=22.2s
+Epoch 70 summary  train_loss=2.1887  train_card_top1=0.971  train_card_mrr=0.984  train_mode_acc=0.964  train_country_ce=1.1046  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2995  val_card_top1=0.974  val_card_mrr=0.986  val_card_nll=0.1252  val_card_conf=0.932  val_mode_acc=0.962  val_country_ce=1.0918  country_top1=0.527  val_value_mse=0.3531  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch70.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2995)
+
+=== Epoch 71/95 ===
+  [train e71 batch  100]  loss=2.2065  card_loss=0.5647  mode_loss=0.3048  country_loss=1.1230  country_ce=1.1230  value_mse=0.2139  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.972  mode_acc=0.965  country_top1=0.514  elapsed=22.0s
+Epoch 71 summary  train_loss=2.1830  train_card_top1=0.971  train_card_mrr=0.984  train_mode_acc=0.965  train_country_ce=1.1009  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2974  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1247  val_card_conf=0.934  val_mode_acc=0.962  val_country_ce=1.0897  country_top1=0.578  val_value_mse=0.3534  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch71.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2974)
+
+=== Epoch 72/95 ===
+  [train e72 batch  100]  loss=2.2041  card_loss=0.5707  mode_loss=0.3093  country_loss=1.1121  country_ce=1.1121  value_mse=0.2119  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.968  mode_acc=0.961  country_top1=0.497  elapsed=22.1s
+Epoch 72 summary  train_loss=2.1768  train_card_top1=0.971  train_card_mrr=0.985  train_mode_acc=0.965  train_country_ce=1.0969  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2900  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1250  val_card_conf=0.933  val_mode_acc=0.962  val_country_ce=1.0844  country_top1=0.526  val_value_mse=0.3519  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch72.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2900)
+
+=== Epoch 73/95 ===
+  [train e73 batch  100]  loss=2.1855  card_loss=0.5682  mode_loss=0.3069  country_loss=1.1005  country_ce=1.1005  value_mse=0.2099  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.970  mode_acc=0.963  country_top1=0.534  elapsed=22.1s
+Epoch 73 summary  train_loss=2.1714  train_card_top1=0.972  train_card_mrr=0.985  train_mode_acc=0.965  train_country_ce=1.0937  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2978  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1243  val_card_conf=0.933  val_mode_acc=0.961  val_country_ce=1.0869  country_top1=0.567  val_value_mse=0.3570  elapsed=34.6s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch73.pt
+
+=== Epoch 74/95 ===
+  [train e74 batch  100]  loss=2.1499  card_loss=0.5673  mode_loss=0.2990  country_loss=1.0759  country_ce=1.0759  value_mse=0.2077  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.972  mode_acc=0.966  country_top1=0.557  elapsed=22.1s
+Epoch 74 summary  train_loss=2.1668  train_card_top1=0.972  train_card_mrr=0.985  train_mode_acc=0.965  train_country_ce=1.0903  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2884  val_card_top1=0.975  val_card_mrr=0.986  val_card_nll=0.1236  val_card_conf=0.936  val_mode_acc=0.962  val_country_ce=1.0806  country_top1=0.539  val_value_mse=0.3546  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch74.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2884)
+
+=== Epoch 75/95 ===
+  [train e75 batch  100]  loss=2.1910  card_loss=0.5675  mode_loss=0.3037  country_loss=1.1102  country_ce=1.1102  value_mse=0.2096  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.970  mode_acc=0.964  country_top1=0.519  elapsed=22.0s
+Epoch 75 summary  train_loss=2.1615  train_card_top1=0.972  train_card_mrr=0.985  train_mode_acc=0.965  train_country_ce=1.0870  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2878  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1257  val_card_conf=0.932  val_mode_acc=0.962  val_country_ce=1.0800  country_top1=0.549  val_value_mse=0.3557  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch75.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2878)
+
+=== Epoch 76/95 ===
+  [train e76 batch  100]  loss=2.1537  card_loss=0.5591  mode_loss=0.3008  country_loss=1.0841  country_ce=1.0841  value_mse=0.2097  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.974  mode_acc=0.965  country_top1=0.558  elapsed=21.9s
+Epoch 76 summary  train_loss=2.1572  train_card_top1=0.972  train_card_mrr=0.985  train_mode_acc=0.966  train_country_ce=1.0846  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2858  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1252  val_card_conf=0.932  val_mode_acc=0.962  val_country_ce=1.0782  country_top1=0.563  val_value_mse=0.3569  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch76.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2858)
+
+=== Epoch 77/95 ===
+  [train e77 batch  100]  loss=2.1483  card_loss=0.5651  mode_loss=0.3002  country_loss=1.0706  country_ce=1.0706  value_mse=0.2123  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.971  mode_acc=0.967  country_top1=0.550  elapsed=22.1s
+Epoch 77 summary  train_loss=2.1525  train_card_top1=0.972  train_card_mrr=0.985  train_mode_acc=0.966  train_country_ce=1.0811  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2822  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1233  val_card_conf=0.935  val_mode_acc=0.962  val_country_ce=1.0752  country_top1=0.542  val_value_mse=0.3563  elapsed=34.8s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch77.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2822)
+
+=== Epoch 78/95 ===
+  [train e78 batch  100]  loss=2.1539  card_loss=0.5559  mode_loss=0.2966  country_loss=1.0908  country_ce=1.0908  value_mse=0.2106  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.975  mode_acc=0.966  country_top1=0.539  elapsed=22.1s
+Epoch 78 summary  train_loss=2.1486  train_card_top1=0.972  train_card_mrr=0.985  train_mode_acc=0.966  train_country_ce=1.0788  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2783  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1245  val_card_conf=0.931  val_mode_acc=0.962  val_country_ce=1.0751  country_top1=0.540  val_value_mse=0.3540  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch78.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2783)
+
+=== Epoch 79/95 ===
+  [train e79 batch  100]  loss=2.1431  card_loss=0.5578  mode_loss=0.2984  country_loss=1.0792  country_ce=1.0792  value_mse=0.2078  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.976  mode_acc=0.965  country_top1=0.545  elapsed=22.2s
+Epoch 79 summary  train_loss=2.1447  train_card_top1=0.973  train_card_mrr=0.985  train_mode_acc=0.966  train_country_ce=1.0765  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2737  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1241  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0736  country_top1=0.545  val_value_mse=0.3517  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch79.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2737)
+
+=== Epoch 80/95 ===
+  [train e80 batch  100]  loss=2.1534  card_loss=0.5596  mode_loss=0.2967  country_loss=1.0847  country_ce=1.0847  value_mse=0.2124  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.974  mode_acc=0.967  country_top1=0.552  elapsed=22.0s
+Epoch 80 summary  train_loss=2.1406  train_card_top1=0.973  train_card_mrr=0.985  train_mode_acc=0.966  train_country_ce=1.0741  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2782  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1243  val_card_conf=0.932  val_mode_acc=0.962  val_country_ce=1.0734  country_top1=0.552  val_value_mse=0.3564  elapsed=34.5s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch80.pt
+
+=== Epoch 81/95 ===
+  [train e81 batch  100]  loss=2.1497  card_loss=0.5648  mode_loss=0.2957  country_loss=1.0759  country_ce=1.0759  value_mse=0.2133  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.974  mode_acc=0.969  country_top1=0.542  elapsed=22.1s
+Epoch 81 summary  train_loss=2.1365  train_card_top1=0.973  train_card_mrr=0.985  train_mode_acc=0.967  train_country_ce=1.0715  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2738  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1228  val_card_conf=0.934  val_mode_acc=0.963  val_country_ce=1.0702  country_top1=0.536  val_value_mse=0.3558  elapsed=34.6s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch81.pt
+
+=== Epoch 82/95 ===
+  [train e82 batch  100]  loss=2.1482  card_loss=0.5650  mode_loss=0.2976  country_loss=1.0815  country_ce=1.0815  value_mse=0.2041  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.970  mode_acc=0.967  country_top1=0.550  elapsed=22.0s
+Epoch 82 summary  train_loss=2.1342  train_card_top1=0.973  train_card_mrr=0.986  train_mode_acc=0.967  train_country_ce=1.0700  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2733  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1221  val_card_conf=0.933  val_mode_acc=0.962  val_country_ce=1.0687  country_top1=0.552  val_value_mse=0.3576  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch82.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2733)
+
+=== Epoch 83/95 ===
+  [train e83 batch  100]  loss=2.1292  card_loss=0.5638  mode_loss=0.2982  country_loss=1.0639  country_ce=1.0639  value_mse=0.2032  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.970  mode_acc=0.966  country_top1=0.550  elapsed=22.0s
+Epoch 83 summary  train_loss=2.1311  train_card_top1=0.973  train_card_mrr=0.986  train_mode_acc=0.967  train_country_ce=1.0680  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2724  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1229  val_card_conf=0.933  val_mode_acc=0.962  val_country_ce=1.0687  country_top1=0.548  val_value_mse=0.3563  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch83.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2724)
+
+=== Epoch 84/95 ===
+  [train e84 batch  100]  loss=2.1119  card_loss=0.5610  mode_loss=0.2939  country_loss=1.0514  country_ce=1.0514  value_mse=0.2057  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.972  mode_acc=0.969  country_top1=0.550  elapsed=22.2s
+Epoch 84 summary  train_loss=2.1279  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.967  train_country_ce=1.0660  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2726  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1230  val_card_conf=0.932  val_mode_acc=0.962  val_country_ce=1.0681  country_top1=0.542  val_value_mse=0.3574  elapsed=34.8s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch84.pt
+
+=== Epoch 85/95 ===
+  [train e85 batch  100]  loss=2.1328  card_loss=0.5547  mode_loss=0.2968  country_loss=1.0727  country_ce=1.0727  value_mse=0.2086  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.974  mode_acc=0.968  country_top1=0.546  elapsed=22.1s
+Epoch 85 summary  train_loss=2.1260  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.967  train_country_ce=1.0648  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2682  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1232  val_card_conf=0.932  val_mode_acc=0.963  val_country_ce=1.0662  country_top1=0.560  val_value_mse=0.3556  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch85.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2682)
+
+=== Epoch 86/95 ===
+  [train e86 batch  100]  loss=2.1218  card_loss=0.5645  mode_loss=0.2947  country_loss=1.0613  country_ce=1.0613  value_mse=0.2013  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.971  mode_acc=0.968  country_top1=0.555  elapsed=22.1s
+Epoch 86 summary  train_loss=2.1233  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.967  train_country_ce=1.0632  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2717  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1225  val_card_conf=0.934  val_mode_acc=0.963  val_country_ce=1.0660  country_top1=0.544  val_value_mse=0.3592  elapsed=34.7s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch86.pt
+
+=== Epoch 87/95 ===
+  [train e87 batch  100]  loss=2.1297  card_loss=0.5616  mode_loss=0.2974  country_loss=1.0704  country_ce=1.0704  value_mse=0.2002  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.971  mode_acc=0.967  country_top1=0.544  elapsed=22.1s
+Epoch 87 summary  train_loss=2.1216  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.967  train_country_ce=1.0623  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2701  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1220  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0660  country_top1=0.555  val_value_mse=0.3579  elapsed=34.6s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch87.pt
+
+=== Epoch 88/95 ===
+  [train e88 batch  100]  loss=2.1182  card_loss=0.5601  mode_loss=0.2977  country_loss=1.0514  country_ce=1.0514  value_mse=0.2091  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.970  mode_acc=0.967  country_top1=0.557  elapsed=22.1s
+Epoch 88 summary  train_loss=2.1193  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.967  train_country_ce=1.0609  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2684  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1220  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0653  country_top1=0.555  val_value_mse=0.3570  elapsed=34.7s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch88.pt
+
+=== Epoch 89/95 ===
+  [train e89 batch  100]  loss=2.1066  card_loss=0.5489  mode_loss=0.2946  country_loss=1.0502  country_ce=1.0502  value_mse=0.2130  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.975  mode_acc=0.968  country_top1=0.543  elapsed=22.0s
+Epoch 89 summary  train_loss=2.1185  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.967  train_country_ce=1.0605  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2678  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1222  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0646  country_top1=0.550  val_value_mse=0.3574  elapsed=34.5s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch89.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2678)
+
+=== Epoch 90/95 ===
+  [train e90 batch  100]  loss=2.1192  card_loss=0.5563  mode_loss=0.2940  country_loss=1.0633  country_ce=1.0633  value_mse=0.2055  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.974  mode_acc=0.968  country_top1=0.543  elapsed=22.1s
+Epoch 90 summary  train_loss=2.1168  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.968  train_country_ce=1.0590  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2670  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1224  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0646  country_top1=0.552  val_value_mse=0.3566  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch90.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2670)
+
+=== Epoch 91/95 ===
+  [train e91 batch  100]  loss=2.1134  card_loss=0.5518  mode_loss=0.2924  country_loss=1.0605  country_ce=1.0605  value_mse=0.2088  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.975  mode_acc=0.971  country_top1=0.550  elapsed=22.2s
+Epoch 91 summary  train_loss=2.1161  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.968  train_country_ce=1.0590  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2675  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1220  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0643  country_top1=0.553  val_value_mse=0.3574  elapsed=34.9s
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch91.pt
+
+=== Epoch 92/95 ===
+  [train e92 batch  100]  loss=2.1122  card_loss=0.5540  mode_loss=0.2894  country_loss=1.0682  country_ce=1.0682  value_mse=0.2007  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.974  mode_acc=0.970  country_top1=0.537  elapsed=22.1s
+Epoch 92 summary  train_loss=2.1150  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.968  train_country_ce=1.0583  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2668  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1220  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0641  country_top1=0.548  val_value_mse=0.3571  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch92.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2668)
+
+=== Epoch 93/95 ===
+  [train e93 batch  100]  loss=2.0955  card_loss=0.5504  mode_loss=0.2953  country_loss=1.0455  country_ce=1.0455  value_mse=0.2044  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.976  mode_acc=0.968  country_top1=0.554  elapsed=22.1s
+Epoch 93 summary  train_loss=2.1144  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.968  train_country_ce=1.0578  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2665  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1222  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0640  country_top1=0.552  val_value_mse=0.3571  elapsed=34.7s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch93.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2665)
+
+=== Epoch 94/95 ===
+  [train e94 batch  100]  loss=2.1142  card_loss=0.5501  mode_loss=0.3013  country_loss=1.0580  country_ce=1.0580  value_mse=0.2048  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.975  mode_acc=0.965  country_top1=0.553  elapsed=22.1s
+Epoch 94 summary  train_loss=2.1144  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.968  train_country_ce=1.0580  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2664  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1221  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0639  country_top1=0.551  val_value_mse=0.3571  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch94.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2664)
+
+=== Epoch 95/95 ===
+  [train e95 batch  100]  loss=2.1234  card_loss=0.5516  mode_loss=0.2988  country_loss=1.0676  country_ce=1.0676  value_mse=0.2054  teacher_coverage=0.000  teacher_kl_card=0.0000  teacher_kl_mode=0.0000  teacher_value_mse=0.0000  card_top1=0.974  mode_acc=0.967  country_top1=0.548  elapsed=22.1s
+Epoch 95 summary  train_loss=2.1135  train_card_top1=0.974  train_card_mrr=0.986  train_mode_acc=0.968  train_country_ce=1.0574  train_teacher_coverage=0.000  train_teacher_kl_card=0.0000  train_teacher_kl_mode=0.0000  val_loss=2.2664  val_card_top1=0.975  val_card_mrr=0.987  val_card_nll=0.1220  val_card_conf=0.933  val_mode_acc=0.963  val_country_ce=1.0639  country_top1=0.551  val_value_mse=0.3570  elapsed=34.6s  [BEST]
+Saved checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_epoch95.pt
+Saved best checkpoint: data/checkpoints/v106_cf_gnn_s123/baseline_best.pt  (val_loss=2.2664)
+
+Training complete. Best val_loss=2.2664 -> data/checkpoints/v106_cf_gnn_s123/baseline_best.pt
+wandb: updating run metadata
+wandb: uploading output.log; uploading wandb-summary.json; uploading config.yaml
+wandb: uploading output.log
+wandb: 
+wandb: Run history:
+wandb:    best_val_loss █▄▄▃▃▂▂▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:            epoch ▁▁▁▁▂▂▂▂▂▂▃▃▃▃▃▄▄▄▄▄▅▅▅▅▅▅▅▆▆▆▆▇▇▇▇▇████
+wandb:               lr ▂▂▃▃▃▅▅▆▆▇████████▇▇▇▆▆▆▅▅▄▄▄▄▃▃▃▂▂▂▁▁▁▁
+wandb:     samples_seen ▁▁▁▁▂▂▂▂▃▃▃▃▃▃▃▃▄▄▄▄▄▄▄▄▅▅▅▅▅▆▆▆▆▆▆▇▇▇██
+wandb:  train_card_conf ▁▁▅▆▇▇▇███████▅▇████████████████████████
+wandb:  train_card_loss █▅▅▄▃▃▃▂▂▂▄▃▃▃▂▂▂▂▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:   train_card_mrr ▁▄▇▇████████████████████████████████████
+wandb:   train_card_nll █▇▄▂▂▁▁▁▁▁▁▁▁▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:  train_card_top1 ▄▆▇▇▇▇▇▇████▁▆▇▇▇▇██████████████████████
+wandb: train_country_ce █▇▆▆▅▄▄▄▃▃▂▂▂▃▃▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:              +28 ...
+wandb: 
+wandb: Run summary:
+wandb:      best_epoch 95
+wandb:   best_val_loss 2.26637
+wandb:           epoch 95
+wandb:              lr 0.0
+wandb:    samples_seen 117177275
+wandb: train_card_conf 0.90687
+wandb: train_card_loss 0.55377
+wandb:  train_card_mrr 0.98619
+wandb:  train_card_nll 0.14892
+wandb: train_card_top1 0.97433
+wandb:             +29 ...
+wandb: 
+wandb: 🚀 View run v106_cf_gnn_s123 at: https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/e77fm9fy
+wandb: ⭐️ View project at: https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: Synced 5 W&B file(s), 1 media file(s), 2 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260405_081048-e77fm9fy/logs

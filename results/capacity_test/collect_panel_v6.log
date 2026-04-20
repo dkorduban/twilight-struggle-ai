@@ -1,0 +1,46 @@
+Collecting from 7 models, 200 games each vs heuristic
+Round-robin: 21 pairs, 100 games each
+Expected: ~210000 rows
+
+[1/7] ussr_only_v5 (200 games)... 12,152 rows, adv=[-1.85, 1.89], 22.9s
+[2/7] us_only_v5 (200 games)... 12,294 rows, adv=[-1.68, 1.46], 24.5s
+[3/7] v44 (200 games)... 11,769 rows, adv=[-1.93, 1.90], 16.0s
+[4/7] v55 (200 games)... 12,172 rows, adv=[-1.59, 1.59], 23.9s
+[5/7] v56 (200 games)... 11,758 rows, adv=[-1.60, 1.54], 15.8s
+[6/7] v54 (200 games)... 12,438 rows, adv=[-1.66, 1.45], 15.9s
+[7/7] v20 (200 games)... 11,965 rows, adv=[-1.93, 1.69], 15.0s
+
+Round-robin: 21 pairs, 100 games each
+  [1/21] ussr_only_v5 vs us_only_v5... 6,285 rows, adv=[-1.52, 1.79], 11.9s
+  [2/21] ussr_only_v5 vs v44... 6,369 rows, adv=[-1.54, 1.69], 9.3s
+  [3/21] ussr_only_v5 vs v55... 6,107 rows, adv=[-1.68, 1.73], 11.4s
+  [4/21] ussr_only_v5 vs v56... 6,071 rows, adv=[-1.71, 1.43], 9.4s
+  [5/21] ussr_only_v5 vs v54... 6,134 rows, adv=[-1.72, 1.46], 8.9s
+  [6/21] ussr_only_v5 vs v20... 6,263 rows, adv=[-1.39, 1.77], 9.1s
+  [7/21] us_only_v5 vs v44... 6,084 rows, adv=[-1.78, 1.45], 8.3s
+  [8/21] us_only_v5 vs v55... 6,166 rows, adv=[-1.70, 1.60], 11.7s
+  [9/21] us_only_v5 vs v56... 6,418 rows, adv=[-1.68, 1.77], 9.1s
+  [10/21] us_only_v5 vs v54... 6,388 rows, adv=[-1.79, 1.53], 9.1s
+  [11/21] us_only_v5 vs v20... 6,180 rows, adv=[-1.80, 1.57], 9.0s
+  [12/21] v44 vs v55... 6,240 rows, adv=[-1.68, 1.71], 8.9s
+  [13/21] v44 vs v56... 6,129 rows, adv=[-1.44, 1.50], 5.8s
+  [14/21] v44 vs v54... 5,625 rows, adv=[-1.67, 1.32], 5.4s
+  [15/21] v44 vs v20... 6,026 rows, adv=[-1.76, 1.51], 5.7s
+  [16/21] v55 vs v56... 6,021 rows, adv=[-1.83, 1.71], 8.6s
+  [17/21] v55 vs v54... 6,119 rows, adv=[-1.46, 1.87], 8.7s
+  [18/21] v55 vs v20... 6,208 rows, adv=[-1.63, 1.65], 8.6s
+  [19/21] v56 vs v54... 6,327 rows, adv=[-1.39, 1.62], 5.8s
+  [20/21] v56 vs v20... 6,009 rows, adv=[-1.62, 1.69], 5.7s
+  [21/21] v54 vs v20... 6,216 rows, adv=[-1.80, 1.54], 5.7s
+
+Saved 213,933 rows to data/awr_eval/awr_panel_v6.parquet (14.9 MB)
+Total time: 312s (5.2 min)
+
+Column shapes:
+  influence: fixed_size_list<item: float>[172]
+  cards: fixed_size_list<item: float>[448]
+  scalars: fixed_size_list<item: float>[32]
+  card_mask: fixed_size_list<item: bool>[111]
+  mode_mask: fixed_size_list<item: bool>[6]
+
+[Sat Apr 18 06:43:45 UTC 2026] Done. Written to data/awr_eval/awr_panel_v6.parquet

@@ -1,0 +1,289 @@
+
+[candidate] Top-8 panel-eval candidates:
+  iter 0150: avg_panel_wr=0.484  results/ppo_gnn_card_attn_v3/ppo_iter0150_scripted.pt
+  iter 0100: avg_panel_wr=0.409  results/ppo_gnn_card_attn_v3/ppo_iter0100_scripted.pt
+  iter 0050: avg_panel_wr=0.318  results/ppo_gnn_card_attn_v3/ppo_iter0050_scripted.pt
+[candidate] Models in tournament: ['ppo_gnn_card_attn_v3_iter0150:results/ppo_gnn_card_attn_v3/ppo_iter0150_scripted.pt', 'ppo_gnn_card_attn_v3_iter0100:results/ppo_gnn_card_attn_v3/ppo_iter0100_scripted.pt', 'ppo_gnn_card_attn_v3_iter0050:results/ppo_gnn_card_attn_v3/ppo_iter0050_scripted.pt', 'v56:data/checkpoints/scripted_for_elo/v56_scripted.pt', 'v54:data/checkpoints/scripted_for_elo/v54_scripted.pt', 'v44:data/checkpoints/scripted_for_elo/v44_scripted.pt', 'v20:data/checkpoints/scripted_for_elo/v20_scripted.pt', 'v55:data/checkpoints/scripted_for_elo/v55_scripted.pt']
+[candidate] Games per matchup: 150, anchor: v56=1900.0
+[candidate] Running: /home/dkord/code/twilight-struggle-ai/.venv/bin/python3 scripts/run_elo_tournament.py --models ppo_gnn_card_attn_v3_iter0150:results/ppo_gnn_card_attn_v3/ppo_iter0150_scripted.pt ppo_gnn_card_attn_v3_iter0100:results/ppo_gnn_card_attn_v3/ppo_iter0100_scripted.pt ppo_gnn_card_attn_v3_iter0050:results/ppo_gnn_card_attn_v3/ppo_iter0050_scripted.pt v56:data/checkpoints/scripted_for_elo/v56_scripted.pt v54:data/checkpoints/scripted_for_elo/v54_scripted.pt v44:data/checkpoints/scripted_for_elo/v44_scripted.pt v20:data/checkpoints/scripted_for_elo/v20_scripted.pt v55:data/checkpoints/scripted_for_elo/v55_scripted.pt --games 150 --anchor v56 --anchor-elo 1900.0 --schedule round_robin --out results/ppo_gnn_card_attn_v3/candidate_tournament.json --script-dir data/checkpoints/scripted_for_elo
+Exporting checkpoints to TorchScript ...
+  ppo_gnn_card_attn_v3_iter0150: already TorchScript, using directly
+  ppo_gnn_card_attn_v3_iter0100: already TorchScript, using directly
+  ppo_gnn_card_attn_v3_iter0050: already TorchScript, using directly
+Loaded 6096 match results from SQL match_cache
+
+Match schedule (28 total, 7 new, 21 reused from prior run):
+  ppo_gnn_card_attn_v3_iter0150 vs ppo_gnn_card_attn_v3_iter0100
+  ppo_gnn_card_attn_v3_iter0150 vs ppo_gnn_card_attn_v3_iter0050
+  ppo_gnn_card_attn_v3_iter0150 vs v56
+  ppo_gnn_card_attn_v3_iter0150 vs v54
+  ppo_gnn_card_attn_v3_iter0150 vs v44
+  ppo_gnn_card_attn_v3_iter0150 vs v20
+  ppo_gnn_card_attn_v3_iter0150 vs v55
+  ppo_gnn_card_attn_v3_iter0100 vs ppo_gnn_card_attn_v3_iter0050  [reuse]
+  ppo_gnn_card_attn_v3_iter0100 vs v56  [reuse]
+  ppo_gnn_card_attn_v3_iter0100 vs v54  [reuse]
+  ppo_gnn_card_attn_v3_iter0100 vs v44  [reuse]
+  ppo_gnn_card_attn_v3_iter0100 vs v20  [reuse]
+  ppo_gnn_card_attn_v3_iter0100 vs v55  [reuse]
+  ppo_gnn_card_attn_v3_iter0050 vs v56  [reuse]
+  ppo_gnn_card_attn_v3_iter0050 vs v54  [reuse]
+  ppo_gnn_card_attn_v3_iter0050 vs v44  [reuse]
+  ppo_gnn_card_attn_v3_iter0050 vs v20  [reuse]
+  ppo_gnn_card_attn_v3_iter0050 vs v55  [reuse]
+  v56 vs v54  [reuse]
+  v56 vs v44  [reuse]
+  v56 vs v20  [reuse]
+  v56 vs v55  [reuse]
+  v54 vs v44  [reuse]
+  v54 vs v20  [reuse]
+  v54 vs v55  [reuse]
+  v44 vs v20  [reuse]
+  v44 vs v55  [reuse]
+  v20 vs v55  [reuse]
+
+[new 1/7] ppo_gnn_card_attn_v3_iter0150 vs ppo_gnn_card_attn_v3_iter0100 (150 games = 75/side, seed=88000) ...
+  ppo_gnn_card_attn_v3_iter0150: 83(59u/24s)  ppo_gnn_card_attn_v3_iter0100: 66(50u/16s)  draws: 1  WR(ppo_gnn_card_attn_v3_iter0150)=0.557  t=34.4s
+
+[new 2/7] ppo_gnn_card_attn_v3_iter0150 vs ppo_gnn_card_attn_v3_iter0050 (150 games = 75/side, seed=88150) ...
+  ppo_gnn_card_attn_v3_iter0150: 70(42u/28s)  ppo_gnn_card_attn_v3_iter0050: 78(46u/32s)  draws: 2  WR(ppo_gnn_card_attn_v3_iter0150)=0.473  t=33.6s
+
+[new 3/7] ppo_gnn_card_attn_v3_iter0150 vs v56 (150 games = 75/side, seed=88300) ...
+  ppo_gnn_card_attn_v3_iter0150: 45(29u/16s)  v56: 104(58u/46s)  draws: 1  WR(ppo_gnn_card_attn_v3_iter0150)=0.303  t=20.0s
+
+[new 4/7] ppo_gnn_card_attn_v3_iter0150 vs v54 (150 games = 75/side, seed=88450) ...
+  ppo_gnn_card_attn_v3_iter0150: 44(31u/13s)  v54: 101(59u/42s)  draws: 5  WR(ppo_gnn_card_attn_v3_iter0150)=0.310  t=16.5s
+
+[new 5/7] ppo_gnn_card_attn_v3_iter0150 vs v44 (150 games = 75/side, seed=88600) ...
+  ppo_gnn_card_attn_v3_iter0150: 46(32u/14s)  v44: 104(61u/43s)  draws: 0  WR(ppo_gnn_card_attn_v3_iter0150)=0.307  t=10.5s
+
+[new 6/7] ppo_gnn_card_attn_v3_iter0150 vs v20 (150 games = 75/side, seed=88750) ...
+  ppo_gnn_card_attn_v3_iter0150: 51(31u/20s)  v20: 98(54u/44s)  draws: 1  WR(ppo_gnn_card_attn_v3_iter0150)=0.343  t=10.2s
+
+[new 7/7] ppo_gnn_card_attn_v3_iter0150 vs v55 (150 games = 75/side, seed=88900) ...
+  ppo_gnn_card_attn_v3_iter0150: 47(33u/14s)  v55: 102(60u/42s)  draws: 1  WR(ppo_gnn_card_attn_v3_iter0150)=0.317  t=13.6s
+  [reuse] ppo_gnn_card_attn_v3_iter0100 61(40u/21s) - 87(53u/34s) ppo_gnn_card_attn_v3_iter0050  draws=2  WR=0.413
+  [reuse] ppo_gnn_card_attn_v3_iter0100 56(41u/15s) - 91(58u/33s) v56  draws=3  WR=0.383
+  [reuse] ppo_gnn_card_attn_v3_iter0100 55(39u/16s) - 94(59u/35s) v54  draws=1  WR=0.370
+  [reuse] ppo_gnn_card_attn_v3_iter0100 52(34u/18s) - 96(57u/39s) v44  draws=2  WR=0.353
+  [reuse] ppo_gnn_card_attn_v3_iter0100 51(31u/20s) - 96(54u/42s) v20  draws=3  WR=0.350
+  [reuse] ppo_gnn_card_attn_v3_iter0100 51(36u/15s) - 97(60u/37s) v55  draws=2  WR=0.347
+  [reuse] ppo_gnn_card_attn_v3_iter0050 64(40u/24s) - 84(49u/35s) v56  draws=2  WR=0.433
+  [reuse] ppo_gnn_card_attn_v3_iter0050 53(32u/21s) - 95(53u/42s) v54  draws=2  WR=0.360
+  [reuse] ppo_gnn_card_attn_v3_iter0050 49(29u/20s) - 99(54u/45s) v44  draws=2  WR=0.333
+  [reuse] ppo_gnn_card_attn_v3_iter0050 62(28u/34s) - 86(40u/46s) v20  draws=2  WR=0.420
+  [reuse] ppo_gnn_card_attn_v3_iter0050 52(28u/24s) - 96(50u/46s) v55  draws=2  WR=0.353
+  [reuse] v56 197(118u/79s) - 195(116u/79s) v54  draws=8  WR=0.502
+  [reuse] v56 185(101u/84s) - 200(108u/92s) v44  draws=15  WR=0.481
+  [reuse] v56 188(122u/66s) - 200(131u/69s) v20  draws=12  WR=0.485
+  [reuse] v56 183(110u/73s) - 206(121u/85s) v55  draws=11  WR=0.471
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 196(128u/68s) - 184(123u/61s) v20  draws=20  WR=0.515
+  [reuse] v54 181(102u/79s) - 209(115u/94s) v55  draws=10  WR=0.465
+  [reuse] v44 213(134u/79s) - 169(111u/58s) v20  draws=18  WR=0.555
+  [reuse] v44 178(110u/68s) - 201(119u/82s) v55  draws=21  WR=0.471
+  [reuse] v20 167(115u/52s) - 219(137u/82s) v55  draws=14  WR=0.435
+
+Fitting BayesElo (bipartite per-side, anchor=v56_USSR=1900.0) ...
+Fitting BayesElo (combined, for residual comparison) ...
+
+Model                  USSR      US    Gap   Comb*                95% CI   vs anchor
+  (bipartite per-side = PRIMARY, anchor: v56_USSR=1900)
+  (* combined = derived from P(win) = 0.5·P_ussr + 0.5·P_us)
+----------------------------------------------------------------------------------------
+v55                   1933   1863  +70    1931  [  1915,   1946]  +31
+v54                   1920   1848  +72    1917  [  1901,   1932]  +17
+v44                   1902   1848  +54    1909  [  1894,   1925]  +9
+v56                   1900   1832  +68    1900  [  1900,   1900]  +0
+v20                   1914   1802  +112    1893  [  1878,   1908]  -7
+ppo_gnn_card_attn_v3_iter0050  1789   1789  +0    1823  [  1804,   1847]  -77
+ppo_gnn_card_attn_v3_iter0100  1829   1668  +161    1794  [  1771,   1815]  -106
+ppo_gnn_card_attn_v3_iter0150  1803   1689  +113    1787  [  1766,   1810]  -113
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+ppo_gnn_card_attn_v3_iter0150 vs ppo_gnn_card_attn_v3_iter0100   0.557    0.497     0.494    +0.060     +0.063
+ppo_gnn_card_attn_v3_iter0150 vs ppo_gnn_card_attn_v3_iter0050   0.473    0.440     0.446    +0.033     +0.027
+ppo_gnn_card_attn_v3_iter0150 vs v56              0.303    0.343     0.345    -0.040     -0.041
+ppo_gnn_card_attn_v3_iter0150 vs v54              0.310    0.322     0.323    -0.012     -0.013
+ppo_gnn_card_attn_v3_iter0150 vs v44              0.307    0.331     0.333    -0.024     -0.026
+ppo_gnn_card_attn_v3_iter0150 vs v20              0.343    0.358     0.354    -0.014     -0.010
+ppo_gnn_card_attn_v3_iter0150 vs v55              0.317    0.305     0.306    +0.012     +0.011
+ppo_gnn_card_attn_v3_iter0100 vs ppo_gnn_card_attn_v3_iter0050   0.413    0.445     0.453    -0.032     -0.040
+ppo_gnn_card_attn_v3_iter0100 vs v56              0.383    0.352     0.350    +0.031     +0.033
+ppo_gnn_card_attn_v3_iter0100 vs v54              0.370    0.332     0.329    +0.038     +0.041
+ppo_gnn_card_attn_v3_iter0100 vs v44              0.353    0.340     0.338    +0.014     +0.015
+ppo_gnn_card_attn_v3_iter0100 vs v20              0.350    0.367     0.360    -0.017     -0.010
+ppo_gnn_card_attn_v3_iter0100 vs v55              0.347    0.315     0.312    +0.032     +0.035
+ppo_gnn_card_attn_v3_iter0050 vs v56              0.433    0.392     0.395    +0.042     +0.039
+ppo_gnn_card_attn_v3_iter0050 vs v54              0.360    0.368     0.372    -0.008     -0.012
+ppo_gnn_card_attn_v3_iter0050 vs v44              0.333    0.379     0.382    -0.046     -0.049
+ppo_gnn_card_attn_v3_iter0050 vs v20              0.420    0.404     0.404    +0.016     +0.016
+ppo_gnn_card_attn_v3_iter0050 vs v55              0.353    0.349     0.354    +0.004     -0.000
+v56            vs v54              0.502    0.475     0.476    +0.027     +0.027
+v56            vs v44              0.481    0.488     0.487    -0.006     -0.006
+v56            vs v20              0.485    0.511     0.510    -0.026     -0.025
+v56            vs v55              0.471    0.456     0.456    +0.016     +0.015
+v54            vs v44              0.574    0.512     0.511    +0.061     +0.063
+v54            vs v20              0.515    0.534     0.534    -0.019     -0.019
+v54            vs v55              0.465    0.480     0.480    -0.015     -0.015
+v44            vs v20              0.555    0.523     0.523    +0.032     +0.032
+v44            vs v55              0.471    0.467     0.469    +0.004     +0.002
+v20            vs v55              0.435    0.446     0.446    -0.011     -0.011
+------------------------------------------------------------------------------------
+                                              RMSE    0.0292     0.0298
+  (bipartite RMSE < combined RMSE → bipartite model better fit)
+
+Saved to results/ppo_gnn_card_attn_v3/candidate_tournament.json
+[sql] Tournament logged: round_robin_20260419T230651Z_ppo_gnn_card_attn_v3_iter0050_ppo_gnn_card_attn_v3_iter0100 → results/metadata.sqlite3
+
+[candidate] Tournament results (candidates only):
+  ppo_gnn_card_attn_v3_iter0050: Elo=1823.4 ← WINNER
+  ppo_gnn_card_attn_v3_iter0100: Elo=1793.9
+  ppo_gnn_card_attn_v3_iter0150: Elo=1787.2
+[candidate] ppo_best.pt ← results/ppo_gnn_card_attn_v3/ppo_iter0050.pt
+[candidate] ppo_best_scripted.pt ← results/ppo_gnn_card_attn_v3/ppo_iter0050_scripted.pt
+
+[candidate] Done. Winner: ppo_gnn_card_attn_v3_iter0050 (Elo=1823.4)
+[candidate] Full tournament results: results/ppo_gnn_card_attn_v3/candidate_tournament.json
+=== ELO incremental placement: gnn_card_attn_v3 ===
+Exporting checkpoints to TorchScript ...
+Loaded 6103 match results from SQL match_cache
+
+Match schedule (36 total, 0 new, 36 reused from prior run):
+  v56 vs v54  [reuse]
+  v56 vs v44  [reuse]
+  v56 vs v20  [reuse]
+  v56 vs v55  [reuse]
+  v56 vs v218_sc  [reuse]
+  v56 vs v223_sc  [reuse]
+  v56 vs v297_sc  [reuse]
+  v56 vs gnn_card_attn_v3  [reuse]
+  v54 vs v44  [reuse]
+  v54 vs v20  [reuse]
+  v54 vs v55  [reuse]
+  v54 vs v218_sc  [reuse]
+  v54 vs v223_sc  [reuse]
+  v54 vs v297_sc  [reuse]
+  v54 vs gnn_card_attn_v3  [reuse]
+  v44 vs v20  [reuse]
+  v44 vs v55  [reuse]
+  v44 vs v218_sc  [reuse]
+  v44 vs v223_sc  [reuse]
+  v44 vs v297_sc  [reuse]
+  v44 vs gnn_card_attn_v3  [reuse]
+  v20 vs v55  [reuse]
+  v20 vs v218_sc  [reuse]
+  v20 vs v223_sc  [reuse]
+  v20 vs v297_sc  [reuse]
+  v20 vs gnn_card_attn_v3  [reuse]
+  v55 vs v218_sc  [reuse]
+  v55 vs v223_sc  [reuse]
+  v55 vs v297_sc  [reuse]
+  v55 vs gnn_card_attn_v3  [reuse]
+  v218_sc vs v223_sc  [reuse]
+  v218_sc vs v297_sc  [reuse]
+  v218_sc vs gnn_card_attn_v3  [reuse]
+  v223_sc vs v297_sc  [reuse]
+  v223_sc vs gnn_card_attn_v3  [reuse]
+  v297_sc vs gnn_card_attn_v3  [reuse]
+  [reuse] v56 197(118u/79s) - 195(116u/79s) v54  draws=8  WR=0.502
+  [reuse] v56 185(101u/84s) - 200(108u/92s) v44  draws=15  WR=0.481
+  [reuse] v56 188(122u/66s) - 200(131u/69s) v20  draws=12  WR=0.485
+  [reuse] v56 183(110u/73s) - 206(121u/85s) v55  draws=11  WR=0.471
+  [reuse] v56 180(94u/86s) - 20(14u/6s) v218_sc  draws=0  WR=0.900
+  [reuse] v56 182(92u/90s) - 18(10u/8s) v223_sc  draws=0  WR=0.910
+  [reuse] v56 23(2u/21s) - 177(79u/98s) v297_sc  draws=0  WR=0.115
+  [reuse] v56 136(79u/57s) - 60(40u/20s) gnn_card_attn_v3  draws=4  WR=0.690
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 196(128u/68s) - 184(123u/61s) v20  draws=20  WR=0.515
+  [reuse] v54 181(102u/79s) - 209(115u/94s) v55  draws=10  WR=0.465
+  [reuse] v54 165(93u/72s) - 34(28u/6s) v218_sc  draws=1  WR=0.828
+  [reuse] v54 173(94u/79s) - 24(20u/4s) v223_sc  draws=3  WR=0.873
+  [reuse] v54 3(0u/3s) - 197(97u/100s) v297_sc  draws=0  WR=0.015
+  [reuse] v54 126(73u/53s) - 73(47u/26s) gnn_card_attn_v3  draws=1  WR=0.632
+  [reuse] v44 213(134u/79s) - 169(111u/58s) v20  draws=18  WR=0.555
+  [reuse] v44 178(110u/68s) - 201(119u/82s) v55  draws=21  WR=0.471
+  [reuse] v44 171(90u/81s) - 24(17u/7s) v218_sc  draws=5  WR=0.868
+  [reuse] v44 165(86u/79s) - 30(19u/11s) v223_sc  draws=5  WR=0.838
+  [reuse] v44 1(0u/1s) - 199(99u/100s) v297_sc  draws=0  WR=0.005
+  [reuse] v44 132(73u/59s) - 66(40u/26s) gnn_card_attn_v3  draws=2  WR=0.665
+  [reuse] v20 167(115u/52s) - 219(137u/82s) v55  draws=14  WR=0.435
+  [reuse] v20 175(90u/85s) - 25(15u/10s) v218_sc  draws=0  WR=0.875
+  [reuse] v20 176(93u/83s) - 21(16u/5s) v223_sc  draws=3  WR=0.887
+  [reuse] v20 6(1u/5s) - 194(95u/99s) v297_sc  draws=0  WR=0.030
+  [reuse] v20 113(63u/50s) - 83(47u/36s) gnn_card_attn_v3  draws=4  WR=0.575
+  [reuse] v55 170(95u/75s) - 28(25u/3s) v218_sc  draws=2  WR=0.855
+  [reuse] v55 168(88u/80s) - 30(19u/11s) v223_sc  draws=2  WR=0.845
+  [reuse] v55 10(1u/9s) - 189(90u/99s) v297_sc  draws=1  WR=0.052
+  [reuse] v55 130(77u/53s) - 68(46u/22s) gnn_card_attn_v3  draws=2  WR=0.655
+  [reuse] v218_sc 111(56u/55s) - 89(45u/44s) v223_sc  draws=0  WR=0.555
+  [reuse] v218_sc 43(24u/19s) - 154(80u/74s) v297_sc  draws=3  WR=0.223
+  [reuse] v218_sc 34(21u/13s) - 164(85u/79s) gnn_card_attn_v3  draws=2  WR=0.175
+  [reuse] v223_sc 31(21u/10s) - 167(89u/78s) v297_sc  draws=2  WR=0.160
+  [reuse] v223_sc 41(19u/22s) - 157(78u/79s) gnn_card_attn_v3  draws=2  WR=0.210
+  [reuse] v297_sc 91(49u/42s) - 104(55u/49s) gnn_card_attn_v3  draws=5  WR=0.468
+
+Fitting BayesElo (bipartite per-side, anchor=v56_USSR=1900.0) ...
+Fitting BayesElo (combined, for residual comparison) ...
+
+Model                  USSR      US    Gap   Comb*                95% CI   vs anchor
+  (bipartite per-side = PRIMARY, anchor: v56_USSR=1900)
+  (* combined = derived from P(win) = 0.5·P_ussr + 0.5·P_us)
+----------------------------------------------------------------------------------------
+v297_sc               2093   2189  -95    2161  [  2137,   2187]  +261
+v55                   1934   1854  +80    1914  [  1898,   1928]  +14
+v56                   1900   1858  +42    1900  [  1900,   1900]  +0
+v54                   1919   1836  +83    1899  [  1883,   1913]  -1
+v44                   1896   1843  +53    1890  [  1876,   1906]  -10
+v20                   1920   1795  +125    1880  [  1864,   1894]  -20
+gnn_card_attn_v3      1853   1802  +51    1850  [  1831,   1869]  -50
+v218_sc               1620   1550  +70    1612  [  1592,   1637]  -288
+v223_sc               1577   1553  +24    1589  [  1569,   1616]  -311
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v56            vs v54              0.502    0.502     0.503    +0.001     -0.001
+v56            vs v44              0.481    0.514     0.513    -0.032     -0.032
+v56            vs v20              0.485    0.529     0.530    -0.044     -0.045
+v56            vs v55              0.471    0.479     0.481    -0.008     -0.010
+v56            vs v218_sc          0.900    0.840     0.838    +0.060     +0.062
+v56            vs v223_sc          0.910    0.857     0.854    +0.053     +0.056
+v56            vs v297_sc          0.115    0.182     0.181    -0.067     -0.066
+v56            vs gnn_card_attn_v3   0.690    0.572     0.571    +0.118     +0.119
+v54            vs v44              0.574    0.511     0.510    +0.062     +0.064
+v54            vs v20              0.515    0.526     0.527    -0.011     -0.012
+v54            vs v55              0.465    0.478     0.478    -0.013     -0.013
+v54            vs v218_sc          0.828    0.835     0.836    -0.007     -0.009
+v54            vs v223_sc          0.873    0.854     0.853    +0.019     +0.020
+v54            vs v297_sc          0.015    0.180     0.179    -0.165     -0.164
+v54            vs gnn_card_attn_v3   0.632    0.569     0.568    +0.064     +0.064
+v44            vs v20              0.555    0.516     0.516    +0.039     +0.039
+v44            vs v55              0.471    0.466     0.468    +0.005     +0.004
+v44            vs v218_sc          0.868    0.832     0.831    +0.036     +0.037
+v44            vs v223_sc          0.838    0.850     0.848    -0.012     -0.010
+v44            vs v297_sc          0.005    0.174     0.173    -0.169     -0.168
+v44            vs gnn_card_attn_v3   0.665    0.558     0.558    +0.107     +0.107
+v20            vs v55              0.435    0.452     0.451    -0.017     -0.016
+v20            vs v218_sc          0.875    0.813     0.821    +0.062     +0.054
+v20            vs v223_sc          0.887    0.835     0.839    +0.053     +0.048
+v20            vs v297_sc          0.030    0.164     0.164    -0.134     -0.134
+v20            vs gnn_card_attn_v3   0.575    0.540     0.542    +0.035     +0.033
+v55            vs v218_sc          0.855    0.848     0.848    +0.007     +0.007
+v55            vs v223_sc          0.845    0.865     0.864    -0.020     -0.019
+v55            vs v297_sc          0.052    0.194     0.193    -0.142     -0.140
+v55            vs gnn_card_attn_v3   0.655    0.591     0.590    +0.064     +0.065
+v218_sc        vs v223_sc          0.555    0.527     0.532    +0.028     +0.023
+v218_sc        vs v297_sc          0.223    0.039     0.041    +0.183     +0.181
+v218_sc        vs gnn_card_attn_v3   0.175    0.204     0.205    -0.029     -0.030
+v223_sc        vs v297_sc          0.160    0.036     0.036    +0.124     +0.124
+v223_sc        vs gnn_card_attn_v3   0.210    0.183     0.185    +0.027     +0.025
+v297_sc        vs gnn_card_attn_v3   0.468    0.858     0.858    -0.391     -0.390
+------------------------------------------------------------------------------------
+                                              RMSE    0.1001     0.0998
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/logs/elo/elo_gnn_card_attn_v3_incremental.json
+[sql] Tournament logged: incremental_20260419T230654Z_gnn_card_attn_v3_v20 → results/metadata.sqlite3
+[confirm] Merged $VERSION into results/elo/elo_full_ladder.json: elo=1850
+Done. gnn_card_attn_v3: elo=1850 elo_ussr=1853 elo_us=1802

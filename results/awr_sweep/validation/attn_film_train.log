@@ -1,0 +1,31 @@
+=== AWR Eval: country_attn_film_h256 ===
+  model: country_attn_film, hidden_dim=256
+  data: data/awr_eval/awr_panel_v5.parquet
+  epochs: 5, lr: 0.0003, tau: 1.0
+
+  Loaded 1,270,488 rows from data/awr_eval/awr_panel_v5.parquet
+  Per-model advantage normalization: 22 models
+  train: 1,143,440 rows, val: 127,048 rows
+  params: 624,539
+  epoch 1/5: pl=3.9140 vl=0.1138 card=0.539 mode=0.626 adv_card=0.527 | val_pl=3.6473 val_card=0.562 val_adv=0.551 (386.8s)
+  epoch 2/5: pl=3.5944 vl=0.0893 card=0.566 mode=0.653 adv_card=0.556 | val_pl=3.5377 val_card=0.572 val_adv=0.560 (473.5s)
+  epoch 3/5: pl=3.5103 vl=0.0864 card=0.573 mode=0.659 adv_card=0.563 | val_pl=3.4934 val_card=0.575 val_adv=0.564 (360.2s)
+  epoch 4/5: pl=3.4589 vl=0.0850 card=0.578 mode=0.662 adv_card=0.569 | val_pl=3.4662 val_card=0.579 val_adv=0.568 (321.3s)
+  epoch 5/5: pl=3.4227 vl=0.0836 card=0.580 mode=0.664 adv_card=0.571 | val_pl=3.4458 val_card=0.581 val_adv=0.569 (370.4s)
+
+============================================================
+AWR Results: country_attn_film_h256
+============================================================
+  model: country_attn_film (624,539 params)
+  best epoch: 5
+  train card_acc: 0.5798
+  train adv_card_acc: 0.5713
+  val card_acc: 0.5805
+  val adv_card_acc: 0.5689
+  val policy_loss: 3.4458
+  val value_loss: 0.0819
+  val card_acc_early: 0.5473
+  val card_acc_mid: 0.5961
+  val card_acc_late: 0.6020
+  total time: 1912.6s (31.9 min)
+============================================================

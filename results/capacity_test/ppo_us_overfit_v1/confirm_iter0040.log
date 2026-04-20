@@ -1,0 +1,77 @@
+No panel_eval_history.json for us_overfit_v1 — skipping candidate tournament
+=== ELO incremental placement: us_overfit_v1 ===
+Exporting checkpoints to TorchScript ...
+  us_overfit_v1: already TorchScript, using directly
+Loaded 5185 match results from SQL match_cache
+
+Match schedule (15 total, 0 new, 15 reused from prior run):
+  v56 vs v54  [reuse]
+  v56 vs v44  [reuse]
+  v56 vs v20  [reuse]
+  v56 vs v55  [reuse]
+  v56 vs us_overfit_v1  [reuse]
+  v54 vs v44  [reuse]
+  v54 vs v20  [reuse]
+  v54 vs v55  [reuse]
+  v54 vs us_overfit_v1  [reuse]
+  v44 vs v20  [reuse]
+  v44 vs v55  [reuse]
+  v44 vs us_overfit_v1  [reuse]
+  v20 vs v55  [reuse]
+  v20 vs us_overfit_v1  [reuse]
+  v55 vs us_overfit_v1  [reuse]
+  [reuse] v56 240(152u/88s) - 249(155u/94s) v54  draws=11  WR=0.491
+  [reuse] v56 243(157u/86s) - 243(158u/85s) v44  draws=14  WR=0.500
+  [reuse] v56 247(159u/88s) - 245(159u/86s) v20  draws=8  WR=0.502
+  [reuse] v56 246(162u/84s) - 246(160u/86s) v55  draws=8  WR=0.500
+  [reuse] v56 124(77u/47s) - 74(51u/23s) us_overfit_v1  draws=2  WR=0.625
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 196(128u/68s) - 184(123u/61s) v20  draws=20  WR=0.515
+  [reuse] v54 229(149u/80s) - 268(169u/99s) v55  draws=3  WR=0.461
+  [reuse] v54 121(65u/56s) - 78(44u/34s) us_overfit_v1  draws=1  WR=0.608
+  [reuse] v44 213(134u/79s) - 169(111u/58s) v20  draws=18  WR=0.555
+  [reuse] v44 238(149u/89s) - 252(158u/94s) v55  draws=10  WR=0.486
+  [reuse] v44 115(64u/51s) - 78(46u/32s) us_overfit_v1  draws=7  WR=0.593
+  [reuse] v20 255(150u/105s) - 237(141u/96s) v55  draws=8  WR=0.518
+  [reuse] v20 115(66u/49s) - 82(50u/32s) us_overfit_v1  draws=3  WR=0.583
+  [reuse] v55 107(61u/46s) - 90(52u/38s) us_overfit_v1  draws=3  WR=0.542
+
+Fitting BayesElo (bipartite per-side, anchor=v56_USSR=1900.0) ...
+Fitting BayesElo (combined, for residual comparison) ...
+
+Model                  USSR      US    Gap   Comb*                95% CI   vs anchor
+  (bipartite per-side = PRIMARY, anchor: v56_USSR=1900)
+  (* combined = derived from P(win) = 0.5·P_ussr + 0.5·P_us)
+----------------------------------------------------------------------------------------
+v54                   1884   1803  +81    1907  [  1891,   1922]  +7
+v55                   1881   1795  +86    1901  [  1887,   1916]  +1
+v56                   1900   1773  +127    1900  [  1900,   1900]  +0
+v44                   1872   1791  +81    1895  [  1880,   1911]  -5
+v20                   1876   1781  +95    1893  [  1877,   1908]  -7
+us_overfit_v1         1785   1754  +30    1836  [  1813,   1857]  -64
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v56            vs v54              0.491    0.490     0.491    +0.001     +0.000
+v56            vs v44              0.500    0.507     0.507    -0.007     -0.007
+v56            vs v20              0.502    0.510     0.510    -0.008     -0.008
+v56            vs v55              0.500    0.498     0.498    +0.002     +0.002
+v56            vs us_overfit_v1    0.625    0.591     0.593    +0.034     +0.032
+v54            vs v44              0.574    0.517     0.516    +0.057     +0.058
+v54            vs v20              0.515    0.520     0.520    -0.005     -0.005
+v54            vs v55              0.461    0.508     0.507    -0.047     -0.046
+v54            vs us_overfit_v1    0.608    0.603     0.601    +0.005     +0.006
+v44            vs v20              0.555    0.503     0.503    +0.052     +0.052
+v44            vs v55              0.486    0.491     0.491    -0.005     -0.005
+v44            vs us_overfit_v1    0.593    0.586     0.586    +0.007     +0.007
+v20            vs v55              0.518    0.488     0.488    +0.030     +0.030
+v20            vs us_overfit_v1    0.583    0.582     0.583    +0.000     -0.000
+v55            vs us_overfit_v1    0.542    0.595     0.594    -0.052     -0.052
+------------------------------------------------------------------------------------
+                                              RMSE    0.0296     0.0295
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/logs/elo/elo_us_overfit_v1_incremental.json
+[sql] Tournament logged: incremental_20260420T093811Z_us_overfit_v1_v20 → results/metadata.sqlite3
+[confirm] Merged $VERSION into results/elo/elo_full_ladder.json: elo=1836
+Done. us_overfit_v1: elo=1836 elo_ussr=1785 elo_us=1754

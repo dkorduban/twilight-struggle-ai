@@ -1,0 +1,23 @@
+[provenance] git=7bee368d dirty=True inputs=1 files
+Device: cuda
+Data dir: data/capacity_test/us
+Output dir: results/capacity_test/us_only
+Traceback (most recent call last):
+  File "/home/dkord/code/twilight-struggle-ai/scripts/train_baseline.py", line 1210, in <module>
+    main()
+  File "/home/dkord/code/twilight-struggle-ai/scripts/train_baseline.py", line 910, in main
+    full_dataset = TS_SelfPlayDataset(
+                   ^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/scripts/../python/tsrl/policies/dataset.py", line 294, in __init__
+    ussr_inf = np.array(df["ussr_influence"].to_list(), dtype=np.float32)  # (N, 86)
+                        ~~^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/polars/dataframe/frame.py", line 1432, in __getitem__
+    return get_df_item_by_key(self, key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/polars/_utils/getitem.py", line 163, in get_df_item_by_key
+    return df.get_column(key)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/polars/dataframe/frame.py", line 9214, in get_column
+    return wrap_s(self._df.get_column(name))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+polars.exceptions.ColumnNotFoundError: "ussr_influence" not found

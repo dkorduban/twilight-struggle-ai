@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "/home/dkord/code/twilight-struggle-ai/cpp/tools/export_baseline_to_torchscript.py", line 87, in <module>
+    main()
+  File "/home/dkord/code/twilight-struggle-ai/cpp/tools/export_baseline_to_torchscript.py", line 82, in main
+    export_checkpoint(args.checkpoint, args.out)
+  File "/home/dkord/code/twilight-struggle-ai/cpp/tools/export_baseline_to_torchscript.py", line 59, in export_checkpoint
+    model = load_model(checkpoint_path)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/cpp/tools/export_baseline_to_torchscript.py", line 53, in load_model
+    model.load_state_dict(state_dict, strict=False)
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 2581, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for TSControlFeatGNNModel:
+	size mismatch for strategy_heads.weight: copying a param with shape torch.Size([86, 256]) from checkpoint, the shape in current model is torch.Size([344, 256]).
+	size mismatch for strategy_heads.bias: copying a param with shape torch.Size([86]) from checkpoint, the shape in current model is torch.Size([344]).
+	size mismatch for strategy_mixer.weight: copying a param with shape torch.Size([1, 256]) from checkpoint, the shape in current model is torch.Size([4, 256]).
+	size mismatch for strategy_mixer.bias: copying a param with shape torch.Size([1]) from checkpoint, the shape in current model is torch.Size([4]).

@@ -1,0 +1,44 @@
+[ppo_train_dynamic] starting at 2026-04-14T05:22:00Z
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: dkorduban (korduban-ai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run b18f5d37
+wandb: Tracking run with wandb version 0.25.1
+wandb: Run data is saved locally in /home/dkord/code/twilight-struggle-ai/wandb/run-20260413_222202-b18f5d37
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run ppo_v204_sc
+wandb: ⭐️ View project at https://wandb.ai/korduban-ai/twilight-struggle-ai
+wandb: 🚀 View run at https://wandb.ai/korduban-ai/twilight-struggle-ai/runs/b18f5d37
+Loading checkpoint: data/checkpoints/ppo_v203_sc_league/ppo_best.pt
+  [load_model] skipped incompatible mode_head.weight: torch.Size([5, 256]) vs torch.Size([6, 256])
+  [load_model] skipped incompatible mode_head.bias: torch.Size([5]) vs torch.Size([6])
+[smoke test] FAILED: Smoke test failed: index 5 is out of bounds for dimension 0 with size 5
+Exception raised from applySelect at /pytorch/aten/src/ATen/TensorIndexing.h:257 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::string) + 0x96 (0x76217fb6c1b6 in /home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x18ee89f (0x7621634ee89f in /home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: <unknown function> + 0x18f2fc6 (0x7621634f2fc6 in /home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: at::Tensor::index(c10::ArrayRef<at::indexing::TensorIndex>) const + 0x161 (0x7621634ec891 in /home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #4: at::Tensor::index(std::initializer_list<at::indexing::TensorIndex>) const + 0x22 (0x7621634ecbb2 in /home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #5: <unknown function> + 0xdd56d (0x7620b95a556d in /home/dkord/code/twilight-struggle-ai/build-ninja/bindings/tscore.cpython-312-x86_64-linux-gnu.so)
+frame #6: <unknown function> + 0xeb14a (0x7620b95b314a in /home/dkord/code/twilight-struggle-ai/build-ninja/bindings/tscore.cpython-312-x86_64-linux-gnu.so)
+frame #7: ts::benchmark_games_batched(int, torch::jit::Module&, ts::Side, int, unsigned int, c10::Device, bool, float, bool) + 0x84e (0x7620b95c83ee in /home/dkord/code/twilight-struggle-ai/build-ninja/bindings/tscore.cpython-312-x86_64-linux-gnu.so)
+frame #8: <unknown function> + 0x3e8ee (0x7620b95068ee in /home/dkord/code/twilight-struggle-ai/build-ninja/bindings/tscore.cpython-312-x86_64-linux-gnu.so)
+frame #9: <unknown function> + 0x45407 (0x7620b950d407 in /home/dkord/code/twilight-struggle-ai/build-ninja/bindings/tscore.cpython-312-x86_64-linux-gnu.so)
+frame #10: <unknown function> + 0x633ec (0x7620b952b3ec in /home/dkord/code/twilight-struggle-ai/build-ninja/bindings/tscore.cpython-312-x86_64-linux-gnu.so)
+frame #11: /home/dkord/code/twilight-struggle-ai/.venv/bin/python3() [0x581e9f]
+frame #12: _PyObject_MakeTpCall + 0x13e (0x54903e in /home/dkord/code/twilight-struggle-ai/.venv/bin/python3)
+frame #13: _PyEval_EvalFrameDefault + 0xa89 (0x5d6f09 in /home/dkord/code/twilight-struggle-ai/.venv/bin/python3)
+frame #14: PyEval_EvalCode + 0x15b (0x5d543b in /home/dkord/code/twilight-struggle-ai/.venv/bin/python3)
+frame #15: /home/dkord/code/twilight-struggle-ai/.venv/bin/python3() [0x6085d2]
+frame #16: /home/dkord/code/twilight-struggle-ai/.venv/bin/python3() [0x6b4d03]
+frame #17: _PyRun_SimpleFileObject + 0x1aa (0x6b4a6a in /home/dkord/code/twilight-struggle-ai/.venv/bin/python3)
+frame #18: _PyRun_AnyFileObject + 0x4f (0x6b489f in /home/dkord/code/twilight-struggle-ai/.venv/bin/python3)
+frame #19: Py_RunMain + 0x3b5 (0x6bc905 in /home/dkord/code/twilight-struggle-ai/.venv/bin/python3)
+frame #20: Py_BytesMain + 0x2d (0x6bc3ed in /home/dkord/code/twilight-struggle-ai/.venv/bin/python3)
+frame #21: <unknown function> + 0x2a1ca (0x762180e2a1ca in /lib/x86_64-linux-gnu/libc.so.6)
+frame #22: __libc_start_main + 0x8b (0x762180e2a28b in /lib/x86_64-linux-gnu/libc.so.6)
+frame #23: _start + 0x25 (0x6576c5 in /home/dkord/code/twilight-struggle-ai/.venv/bin/python3)
+
+Use --skip-smoke-test to bypass.
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33mppo_v204_sc[0m at: [34mhttps://wandb.ai/korduban-ai/twilight-struggle-ai/runs/b18f5d37[0m
+[1;34mwandb[0m: Find logs at: [1;35mwandb/run-20260413_222202-b18f5d37/logs[0m

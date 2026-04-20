@@ -1,0 +1,36 @@
+Diagnostic: 10 games/side · pool=16 pend=8 intra=4
+
+=== C) v55 greedy NN vs heuristic (control) ===
+elapsed=1.6s (greedy heuristic — matches ISMCTS opponent config)
+greedy v55 as USSR (opponent = greedy heuristic US):
+  n=10  mean_end_turn=8.50  winners[USSR=8, US=2]
+  reasons: europe_control=4, turn_limit=4, vp=1, vp_threshold=1
+greedy v55 as US (opponent = greedy heuristic USSR):
+  n=10  mean_end_turn=7.60  winners[USSR=7, US=3]
+  reasons: europe_control=3, turn_limit=3, defcon1=2, wargames=1, vp_threshold=1
+
+=== B) v55 ISMCTS(4x50) vs heuristic ===
+[ISMCTS profile] advance=0.244s select=5.325s nn=3.815s expand=6.931s apply=1.444s total=17.759s
+[ISMCTS profile] batches=477 items=78364 avg_batch=164.3
+[ISMCTS profile] advance=0.155s select=3.003s nn=2.820s expand=3.756s apply=0.735s total=10.468s
+[ISMCTS profile] batches=559 items=50902 avg_batch=91.1
+elapsed=28.4s
+ISMCTS as USSR (opponent = greedy heuristic US):
+  n=10  mean_end_turn=5.90  winners[US=10]
+  reasons: vp_threshold=7, defcon1=3
+ISMCTS as US (opponent = greedy heuristic USSR):
+  n=10  mean_end_turn=4.20  winners[USSR=9, US=1]
+  reasons: defcon1=5, vp_threshold=3, vp=1, turn_limit=1
+
+=== A) v55 ISMCTS(4x50) vs v55 greedy NN ===
+[ISMCTS vs model profile] advance=0.413s select=3.427s nn=2.426s expand=3.699s apply=0.762s total=10.728s
+[ISMCTS vs model profile] batches=433 items=43634 avg_batch=100.8
+[ISMCTS vs model profile] advance=0.184s select=1.650s nn=1.297s expand=1.871s apply=0.394s total=5.396s
+[ISMCTS vs model profile] batches=245 items=22914 avg_batch=93.5
+elapsed=16.2s
+ISMCTS as USSR (opponent = greedy v55 US):
+  n=10  mean_end_turn=3.80  winners[USSR=6, US=4]
+  reasons: defcon1=8, vp_threshold=1, vp=1
+ISMCTS as US (opponent = greedy v55 USSR):
+  n=10  mean_end_turn=2.20  winners[US=8, USSR=2]
+  reasons: defcon1=9, vp_threshold=1

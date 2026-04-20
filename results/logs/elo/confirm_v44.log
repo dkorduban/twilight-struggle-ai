@@ -1,0 +1,125 @@
+Exporting checkpoints to TorchScript ...
+  iter0060: already TorchScript, using directly
+  iter0020: already TorchScript, using directly
+  iter0160: already TorchScript, using directly
+  heuristic: built-in heuristic (no export needed)
+Loaded 518 match results from cache results/matches/
+
+Match schedule (21 total, 7 new, 14 reused from prior run):
+  iter0060 vs iter0020
+  iter0060 vs iter0160
+  iter0060 vs v8  [reuse]
+  iter0060 vs v14  [reuse]
+  iter0060 vs v22  [reuse]
+  iter0060 vs heuristic  [reuse]
+  iter0020 vs iter0160
+  iter0020 vs v8
+  iter0020 vs v14
+  iter0020 vs v22
+  iter0020 vs heuristic
+  iter0160 vs v8  [reuse]
+  iter0160 vs v14  [reuse]
+  iter0160 vs v22  [reuse]
+  iter0160 vs heuristic  [reuse]
+  v8 vs v14  [reuse]
+  v8 vs v22  [reuse]
+  v8 vs heuristic  [reuse]
+  v14 vs v22  [reuse]
+  v14 vs heuristic  [reuse]
+  v22 vs heuristic  [reuse]
+
+[new 1/7] iter0060 vs iter0020 (400 games = 200/side, seed=88000) ...
+  iter0060: 189(119u/70s)  iter0020: 198(125u/73s)  draws: 13  WR(iter0060)=0.489  t=24.4s
+
+[new 2/7] iter0060 vs iter0160 (400 games = 200/side, seed=88400) ...
+  iter0060: 200(124u/76s)  iter0160: 184(118u/66s)  draws: 16  WR(iter0060)=0.520  t=21.6s
+  [reuse] iter0060 115(85u/30s) - 279(169u/110s) v8  draws=6  WR=0.295
+  [reuse] iter0060 76(60u/16s) - 319(182u/137s) v14  draws=5  WR=0.196
+  [reuse] iter0060 66(52u/14s) - 330(184u/146s) v22  draws=4  WR=0.170
+  [reuse] iter0060 286(164u/122s) - 109(76u/33s) heuristic  draws=5  WR=0.721
+
+[new 3/7] iter0020 vs iter0160 (400 games = 200/side, seed=88800) ...
+  iter0020: 192(128u/64s)  iter0160: 194(129u/65s)  draws: 14  WR(iter0020)=0.497  t=20.3s
+
+[new 4/7] iter0020 vs v8 (400 games = 200/side, seed=89200) ...
+  iter0020: 287(170u/117s)  v8: 107(81u/26s)  draws: 6  WR(iter0020)=0.725  t=21.0s
+
+[new 5/7] iter0020 vs v14 (400 games = 200/side, seed=89600) ...
+  iter0020: 263(164u/99s)  v14: 128(93u/35s)  draws: 9  WR(iter0020)=0.669  t=20.7s
+
+[new 6/7] iter0020 vs v22 (400 games = 200/side, seed=90000) ...
+  iter0020: 196(117u/79s)  v22: 189(111u/78s)  draws: 15  WR(iter0020)=0.509  t=20.6s
+
+[new 7/7] iter0020 vs heuristic (400 games = 200/side, seed=90400) ...
+  iter0020: 364(192u/172s)  heuristic: 33(26u/7s)  draws: 3  WR(iter0020)=0.914  t=26.6s
+  [reuse] iter0160 72(60u/12s) - 323(186u/137s) v8  draws=5  WR=0.186
+  [reuse] iter0160 63(48u/15s) - 330(181u/149s) v14  draws=7  WR=0.166
+  [reuse] iter0160 48(44u/4s) - 348(195u/153s) v22  draws=4  WR=0.125
+  [reuse] iter0160 239(141u/98s) - 158(99u/59s) heuristic  draws=3  WR=0.601
+  [reuse] v8 137(68u/69s) - 247(123u/124s) v14  draws=16  WR=0.362
+  [reuse] v8 109(54u/55s) - 282(141u/141s) v22  draws=9  WR=0.284
+  [reuse] v8 176(88u/88s) - 20(10u/10s) heuristic  draws=4  WR=0.890
+  [reuse] v14 140(70u/70s) - 241(120u/121s) v22  draws=19  WR=0.374
+  [reuse] v14 329(164u/165s) - 64(32u/32s) heuristic  draws=7  WR=0.831
+  [reuse] v22 350(175u/175s) - 45(22u/23s) heuristic  draws=5  WR=0.881
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v22                    2092   2090   2081  +9  [  2075,   2108]  +77
+iter0020               2017   2096   1936  +159  [  2002,   2033]  +2
+v14                    2015   2015   2000  +15  [  2015,   2015]  +0
+v8                     1954   1958   1932  +26  [  1938,   1970]  -61
+iter0060               1851   1907   1762  +145  [  1835,   1866]  -164
+iter0160               1810   1867   1710  +156  [  1794,   1826]  -205
+heuristic              1695   1679   1675  +4  [  1676,   1714]  -320
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+iter0060       vs iter0020         0.489    0.293     0.277    +0.196     +0.212
+iter0060       vs iter0160         0.520    0.555     0.558    -0.035     -0.038
+iter0060       vs v8               0.295    0.354     0.356    -0.059     -0.061
+iter0060       vs v14              0.196    0.279     0.280    -0.083     -0.084
+iter0060       vs v22              0.170    0.200     0.200    -0.030     -0.030
+iter0060       vs heuristic        0.721    0.705     0.711    +0.017     +0.011
+iter0020       vs iter0160         0.497    0.751     0.767    -0.253     -0.269
+iter0020       vs v8               0.725    0.594     0.590    +0.131     +0.135
+iter0020       vs v14              0.669    0.512     0.503    +0.157     +0.166
+iter0020       vs v22              0.509    0.407     0.394    +0.102     +0.114
+iter0020       vs heuristic        0.914    0.867     0.865    +0.047     +0.049
+iter0160       vs v8               0.186    0.301     0.304    -0.114     -0.118
+iter0160       vs v14              0.166    0.232     0.235    -0.066     -0.069
+iter0160       vs v22              0.125    0.163     0.165    -0.038     -0.040
+iter0160       vs heuristic        0.601    0.648     0.660    -0.047     -0.059
+v8             vs v14              0.362    0.411     0.413    -0.049     -0.051
+v8             vs v22              0.284    0.308     0.312    -0.024     -0.028
+v8             vs heuristic        0.890    0.823     0.816    +0.067     +0.074
+v14            vs v22              0.374    0.389     0.391    -0.016     -0.018
+v14            vs heuristic        0.831    0.870     0.863    -0.039     -0.032
+v22            vs heuristic        0.881    0.913     0.908    -0.032     -0.026
+------------------------------------------------------------------------------------
+                                              RMSE    0.0978     0.1038
+  (bipartite RMSE < combined RMSE → bipartite model better fit)
+
+Saved to data/checkpoints/ppo_v44_league/confirmation_tournament.json
+
+[confirm] Top-3 panel-eval candidates:
+  iter 0060: avg_panel_wr=0.595  data/checkpoints/ppo_v44_league/ppo_iter0060_scripted.pt
+  iter 0020: avg_panel_wr=0.589  data/checkpoints/ppo_v44_league/ppo_iter0020_scripted.pt
+  iter 0160: avg_panel_wr=0.581  data/checkpoints/ppo_v44_league/ppo_iter0160_scripted.pt
+[confirm] Models in tournament: ['iter0060:data/checkpoints/ppo_v44_league/ppo_iter0060_scripted.pt', 'iter0020:data/checkpoints/ppo_v44_league/ppo_iter0020_scripted.pt', 'iter0160:data/checkpoints/ppo_v44_league/ppo_iter0160_scripted.pt', 'v8:data/checkpoints/scripted_for_elo/v8_scripted.pt', 'v14:data/checkpoints/scripted_for_elo/v14_scripted.pt', 'v22:data/checkpoints/scripted_for_elo/v22_scripted.pt', 'heuristic']
+[confirm] Games per matchup: 400, anchor: v14=2015.0
+[confirm] Running: /home/dkord/code/twilight-struggle-ai/.venv/bin/python3 scripts/run_elo_tournament.py --models iter0060:data/checkpoints/ppo_v44_league/ppo_iter0060_scripted.pt iter0020:data/checkpoints/ppo_v44_league/ppo_iter0020_scripted.pt iter0160:data/checkpoints/ppo_v44_league/ppo_iter0160_scripted.pt v8:data/checkpoints/scripted_for_elo/v8_scripted.pt v14:data/checkpoints/scripted_for_elo/v14_scripted.pt v22:data/checkpoints/scripted_for_elo/v22_scripted.pt heuristic --games 400 --anchor v14 --anchor-elo 2015.0 --schedule round_robin --out data/checkpoints/ppo_v44_league/confirmation_tournament.json --script-dir data/checkpoints/scripted_for_elo
+
+[confirm] Tournament results (candidates only):
+  iter0020: Elo=2017.2 ← WINNER
+  iter0060: Elo=1850.8
+  iter0160: Elo=1810.3
+[confirm] ppo_best.pt ← data/checkpoints/ppo_v44_league/ppo_iter0020.pt
+[confirm] ppo_best_scripted.pt ← data/checkpoints/ppo_v44_league/ppo_iter0020_scripted.pt
+
+[confirm] Done. Winner: iter0020 (Elo=2017.2)
+[confirm] Full tournament results: data/checkpoints/ppo_v44_league/confirmation_tournament.json

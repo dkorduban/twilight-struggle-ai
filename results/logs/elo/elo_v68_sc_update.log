@@ -1,0 +1,73 @@
+=== ELO incremental placement: v68_sc ===
+Exporting checkpoints to TorchScript ...
+Loaded 1855 match results from SQL match_cache
+
+Match schedule (15 total, 0 new, 15 reused from prior run):
+  v55 vs v14  [reuse]
+  v55 vs v54  [reuse]
+  v55 vs v44  [reuse]
+  v55 vs v45  [reuse]
+  v55 vs v68_sc  [reuse]
+  v14 vs v54  [reuse]
+  v14 vs v44  [reuse]
+  v14 vs v45  [reuse]
+  v14 vs v68_sc  [reuse]
+  v54 vs v44  [reuse]
+  v54 vs v45  [reuse]
+  v54 vs v68_sc  [reuse]
+  v44 vs v45  [reuse]
+  v44 vs v68_sc  [reuse]
+  v45 vs v68_sc  [reuse]
+  [reuse] v55 255(150u/105s) - 128(88u/40s) v14  draws=17  WR=0.659
+  [reuse] v55 209(115u/94s) - 181(102u/79s) v54  draws=10  WR=0.535
+  [reuse] v55 201(119u/82s) - 178(110u/68s) v44  draws=21  WR=0.529
+  [reuse] v55 206(136u/70s) - 180(123u/57s) v45  draws=14  WR=0.532
+  [reuse] v55 134(73u/61s) - 62(36u/26s) v68_sc  draws=4  WR=0.680
+  [reuse] v14 131(95u/36s) - 254(154u/100s) v54  draws=15  WR=0.346
+  [reuse] v14 147(100u/47s) - 239(147u/92s) v44  draws=14  WR=0.385
+  [reuse] v14 162(115u/47s) - 226(147u/79s) v45  draws=12  WR=0.420
+  [reuse] v14 123(70u/53s) - 75(46u/29s) v68_sc  draws=2  WR=0.620
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 194(125u/69s) - 183(121u/62s) v45  draws=23  WR=0.514
+  [reuse] v54 132(77u/55s) - 58(40u/18s) v68_sc  draws=10  WR=0.685
+  [reuse] v44 194(130u/64s) - 192(130u/62s) v45  draws=14  WR=0.502
+  [reuse] v44 126(66u/60s) - 64(36u/28s) v68_sc  draws=10  WR=0.655
+  [reuse] v45 124(75u/49s) - 69(49u/20s) v68_sc  draws=7  WR=0.637
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v55                    2122   2096   2038  +57  [  2105,   2139]  +107
+v54                    2116   2093   2029  +65  [  2099,   2133]  +101
+v45                    2089   2118   1948  +170  [  2072,   2105]  +74
+v44                    2088   2066   1995  +71  [  2071,   2105]  +73
+v14                    2015   2015   1886  +129  [  2015,   2015]  +0
+v68_sc                 1969   1926   1886  +40  [  1945,   1992]  -46
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v55            vs v14              0.659    0.651     0.649    +0.007     +0.009
+v55            vs v54              0.535    0.508     0.509    +0.027     +0.026
+v55            vs v44              0.529    0.550     0.549    -0.021     -0.020
+v55            vs v45              0.532    0.544     0.548    -0.011     -0.015
+v55            vs v68_sc           0.680    0.713     0.708    -0.033     -0.028
+v14            vs v54              0.346    0.357     0.359    -0.010     -0.012
+v14            vs v44              0.385    0.395     0.396    -0.010     -0.011
+v14            vs v45              0.420    0.402     0.395    +0.018     +0.025
+v14            vs v68_sc           0.620    0.560     0.567    +0.060     +0.053
+v54            vs v44              0.574    0.542     0.540    +0.032     +0.033
+v54            vs v45              0.514    0.536     0.539    -0.022     -0.025
+v54            vs v68_sc           0.685    0.706     0.700    -0.021     -0.015
+v44            vs v45              0.502    0.497     0.499    +0.005     +0.004
+v44            vs v68_sc           0.655    0.668     0.665    -0.013     -0.010
+v45            vs v68_sc           0.637    0.661     0.666    -0.024     -0.029
+------------------------------------------------------------------------------------
+                                              RMSE    0.0248     0.0243
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/logs/elo/elo_v68_sc_incremental.json
+[sql] Tournament logged: incremental_20260412T113534Z_v14_v44 → results/metadata.sqlite3
+[confirm] Merged v68_sc into results/elo/elo_full_ladder.json: elo=1968

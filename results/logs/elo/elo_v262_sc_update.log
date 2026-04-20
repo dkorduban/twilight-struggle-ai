@@ -1,0 +1,215 @@
+=== ELO incremental placement: v262_sc ===
+Exporting checkpoints to TorchScript ...
+Loaded 4956 match results from SQL match_cache
+
+Match schedule (36 total, 24 new, 12 reused from prior run):
+  v209_sc vs v217_sc  [reuse]
+  v209_sc vs v232_sc  [reuse]
+  v209_sc vs v228_sc  [reuse]
+  v209_sc vs v227_sc  [reuse]
+  v209_sc vs v170_sc
+  v209_sc vs v245_sc
+  v209_sc vs v261_sc
+  v209_sc vs v262_sc
+  v217_sc vs v232_sc  [reuse]
+  v217_sc vs v228_sc  [reuse]
+  v217_sc vs v227_sc  [reuse]
+  v217_sc vs v170_sc
+  v217_sc vs v245_sc
+  v217_sc vs v261_sc
+  v217_sc vs v262_sc
+  v232_sc vs v228_sc  [reuse]
+  v232_sc vs v227_sc  [reuse]
+  v232_sc vs v170_sc
+  v232_sc vs v245_sc
+  v232_sc vs v261_sc
+  v232_sc vs v262_sc
+  v228_sc vs v227_sc  [reuse]
+  v228_sc vs v170_sc
+  v228_sc vs v245_sc
+  v228_sc vs v261_sc
+  v228_sc vs v262_sc
+  v227_sc vs v170_sc  [reuse]
+  v227_sc vs v245_sc
+  v227_sc vs v261_sc  [reuse]
+  v227_sc vs v262_sc
+  v170_sc vs v245_sc
+  v170_sc vs v261_sc
+  v170_sc vs v262_sc
+  v245_sc vs v261_sc
+  v245_sc vs v262_sc
+  v261_sc vs v262_sc
+  [reuse] v209_sc 57(22u/35s) - 92(39u/53s) v217_sc  draws=1  WR=0.383
+  [reuse] v209_sc 71(32u/39s) - 78(36u/42s) v232_sc  draws=1  WR=0.477
+  [reuse] v209_sc 80(30u/50s) - 70(25u/45s) v228_sc  draws=0  WR=0.533
+  [reuse] v209_sc 75(31u/44s) - 75(31u/44s) v227_sc  draws=0  WR=0.500
+
+[new 1/24] v209_sc vs v170_sc (200 games = 100/side, seed=88000) ...
+  v209_sc: 182(93u/89s)  v170_sc: 18(11u/7s)  draws: 0  WR(v209_sc)=0.910  t=7.6s
+
+[new 2/24] v209_sc vs v245_sc (200 games = 100/side, seed=88200) ...
+  v209_sc: 96(46u/50s)  v245_sc: 104(50u/54s)  draws: 0  WR(v209_sc)=0.480  t=12.0s
+
+[new 3/24] v209_sc vs v261_sc (200 games = 100/side, seed=88400) ...
+  v209_sc: 86(37u/49s)  v261_sc: 111(49u/62s)  draws: 3  WR(v209_sc)=0.438  t=12.3s
+
+[new 4/24] v209_sc vs v262_sc (200 games = 100/side, seed=88600) ...
+  v209_sc: 82(32u/50s)  v262_sc: 117(49u/68s)  draws: 1  WR(v209_sc)=0.412  t=11.6s
+  [reuse] v217_sc 62(26u/36s) - 86(37u/49s) v232_sc  draws=2  WR=0.420
+  [reuse] v217_sc 73(36u/37s) - 75(36u/39s) v228_sc  draws=2  WR=0.493
+  [reuse] v217_sc 82(36u/46s) - 68(29u/39s) v227_sc  draws=0  WR=0.547
+
+[new 5/24] v217_sc vs v170_sc (200 games = 100/side, seed=88800) ...
+  v217_sc: 180(90u/90s)  v170_sc: 20(10u/10s)  draws: 0  WR(v217_sc)=0.900  t=8.1s
+
+[new 6/24] v217_sc vs v245_sc (200 games = 100/side, seed=89000) ...
+  v217_sc: 89(39u/50s)  v245_sc: 110(50u/60s)  draws: 1  WR(v217_sc)=0.448  t=11.5s
+
+[new 7/24] v217_sc vs v261_sc (200 games = 100/side, seed=89200) ...
+Assuming unrestricted shared filesystem usage.
+host: balsa-tree
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 20
+Rules claiming more threads will be scaled down.
+Provided resources: gpu=Resource("gpu", 1)
+Job stats:
+job                  count
+-----------------  -------
+ppo_train_dynamic        1
+total                    1
+
+Select jobs to execute...
+Execute 1 jobs...
+
+[Tue Apr 14 10:29:03 2026]
+localrule ppo_train_dynamic:
+    input: data/checkpoints/ppo_v217_sc_league/ppo_best.pt
+    output: data/checkpoints/ppo_v263_sc_league/ppo_final.pt
+    log: results/logs/ppo/ppo_v263_sc.log
+    jobid: 0
+    reason: Missing output files: data/checkpoints/ppo_v263_sc_league/ppo_final.pt
+    resources: tmpdir=/tmp, gpu=1
+  v217_sc: 95(45u/50s)  v261_sc: 104(50u/54s)  draws: 1  WR(v217_sc)=0.477  t=11.6s
+
+[new 8/24] v217_sc vs v262_sc (200 games = 100/side, seed=89400) ...
+  v217_sc: 102(45u/57s)  v262_sc: 98(43u/55s)  draws: 0  WR(v217_sc)=0.510  t=12.6s
+  [reuse] v232_sc 74(35u/39s) - 76(36u/40s) v228_sc  draws=0  WR=0.493
+  [reuse] v232_sc 74(40u/34s) - 76(41u/35s) v227_sc  draws=0  WR=0.493
+
+[new 9/24] v232_sc vs v170_sc (200 games = 100/side, seed=89600) ...
+  v232_sc: 187(96u/91s)  v170_sc: 13(9u/4s)  draws: 0  WR(v232_sc)=0.935  t=9.3s
+
+[new 10/24] v232_sc vs v245_sc (200 games = 100/side, seed=89800) ...
+  v232_sc: 92(42u/50s)  v245_sc: 107(49u/58s)  draws: 1  WR(v232_sc)=0.463  t=13.3s
+
+[new 11/24] v232_sc vs v261_sc (200 games = 100/side, seed=90000) ...
+  v232_sc: 107(45u/62s)  v261_sc: 92(37u/55s)  draws: 1  WR(v232_sc)=0.537  t=12.8s
+
+[new 12/24] v232_sc vs v262_sc (200 games = 100/side, seed=90200) ...
+  v232_sc: 120(50u/70s)  v262_sc: 79(29u/50s)  draws: 1  WR(v232_sc)=0.603  t=13.1s
+  [reuse] v228_sc 72(34u/38s) - 76(36u/40s) v227_sc  draws=2  WR=0.487
+
+[new 13/24] v228_sc vs v170_sc (200 games = 100/side, seed=90400) ...
+  v228_sc: 178(86u/92s)  v170_sc: 22(8u/14s)  draws: 0  WR(v228_sc)=0.890  t=9.1s
+
+[new 14/24] v228_sc vs v245_sc (200 games = 100/side, seed=90600) ...
+  v228_sc: 91(53u/38s)  v245_sc: 109(62u/47s)  draws: 0  WR(v228_sc)=0.455  t=11.7s
+
+[new 15/24] v228_sc vs v261_sc (200 games = 100/side, seed=90800) ...
+  v228_sc: 106(46u/60s)  v261_sc: 92(39u/53s)  draws: 2  WR(v228_sc)=0.535  t=13.3s
+
+[new 16/24] v228_sc vs v262_sc (200 games = 100/side, seed=91000) ...
+  v228_sc: 116(58u/58s)  v262_sc: 83(42u/41s)  draws: 1  WR(v228_sc)=0.583  t=12.9s
+  [reuse] v227_sc 113(69u/44s) - 79(51u/28s) v170_sc  draws=8  WR=0.585
+
+[new 17/24] v227_sc vs v245_sc (200 games = 100/side, seed=91200) ...
+  v227_sc: 102(48u/54s)  v245_sc: 96(46u/50s)  draws: 2  WR(v227_sc)=0.515  t=14.1s
+  [reuse] v227_sc 97(45u/52s) - 101(47u/54s) v261_sc  draws=2  WR=0.490
+
+[new 18/24] v227_sc vs v262_sc (200 games = 100/side, seed=91400) ...
+  v227_sc: 88(45u/43s)  v262_sc: 111(56u/55s)  draws: 1  WR(v227_sc)=0.443  t=13.0s
+
+[new 19/24] v170_sc vs v245_sc (200 games = 100/side, seed=91600) ...
+  v170_sc: 21(9u/12s)  v245_sc: 179(88u/91s)  draws: 0  WR(v170_sc)=0.105  t=9.5s
+
+[new 20/24] v170_sc vs v261_sc (200 games = 100/side, seed=91800) ...
+  v170_sc: 20(8u/12s)  v261_sc: 180(88u/92s)  draws: 0  WR(v170_sc)=0.100  t=9.1s
+
+[new 21/24] v170_sc vs v262_sc (200 games = 100/side, seed=92000) ...
+  v170_sc: 26(12u/14s)  v262_sc: 174(86u/88s)  draws: 0  WR(v170_sc)=0.130  t=8.6s
+
+[new 22/24] v245_sc vs v261_sc (200 games = 100/side, seed=92200) ...
+  v245_sc: 101(46u/55s)  v261_sc: 98(45u/53s)  draws: 1  WR(v245_sc)=0.507  t=13.4s
+
+[new 23/24] v245_sc vs v262_sc (200 games = 100/side, seed=92400) ...
+  v245_sc: 116(54u/62s)  v262_sc: 82(37u/45s)  draws: 2  WR(v245_sc)=0.585  t=13.9s
+
+[new 24/24] v261_sc vs v262_sc (200 games = 100/side, seed=92600) ...
+  v261_sc: 107(44u/63s)  v262_sc: 92(37u/55s)  draws: 1  WR(v261_sc)=0.537  t=13.9s
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v209_sc_USSR=1875.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v209_sc_USSR=1875)
+----------------------------------------------------------------------------------------
+v232_sc                1918   1936   1973  -38  [  1899,   1937]  +43
+v245_sc                1916   1952   1953  -1  [  1898,   1934]  +41
+v228_sc                1902   1933   1943  -9  [  1883,   1921]  +27
+v261_sc                1902   1908   1968  -60  [  1884,   1919]  +27
+v217_sc                1897   1911   1956  -45  [  1878,   1916]  +22
+v262_sc                1880   1891   1941  -50  [  1863,   1898]  +5
+v209_sc                1875   1875   1946  -71  [  1875,   1875]  +0
+v227_sc                1862   1909   1887  +22  [  1843,   1881]  -13
+v170_sc                1575   1642   1578  +64  [  1550,   1599]  -300
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v209_sc        vs v217_sc          0.383    0.468     0.468    -0.085     -0.084
+v209_sc        vs v232_sc          0.477    0.439     0.438    +0.038     +0.039
+v209_sc        vs v228_sc          0.533    0.461     0.461    +0.072     +0.072
+v209_sc        vs v227_sc          0.500    0.518     0.519    -0.018     -0.019
+v209_sc        vs v170_sc          0.910    0.850     0.849    +0.060     +0.061
+v209_sc        vs v245_sc          0.480    0.441     0.441    +0.039     +0.039
+v209_sc        vs v261_sc          0.438    0.463     0.462    -0.025     -0.024
+v209_sc        vs v262_sc          0.412    0.492     0.492    -0.080     -0.080
+v217_sc        vs v232_sc          0.420    0.470     0.470    -0.050     -0.050
+v217_sc        vs v228_sc          0.493    0.494     0.494    -0.000     -0.000
+v217_sc        vs v227_sc          0.547    0.551     0.551    -0.004     -0.004
+v217_sc        vs v170_sc          0.900    0.866     0.865    +0.034     +0.035
+v217_sc        vs v245_sc          0.448    0.473     0.473    -0.026     -0.026
+v217_sc        vs v261_sc          0.477    0.494     0.494    -0.017     -0.017
+v217_sc        vs v262_sc          0.510    0.524     0.524    -0.014     -0.014
+v232_sc        vs v228_sc          0.493    0.524     0.523    -0.030     -0.030
+v232_sc        vs v227_sc          0.493    0.580     0.580    -0.087     -0.087
+v232_sc        vs v170_sc          0.935    0.879     0.878    +0.056     +0.057
+v232_sc        vs v245_sc          0.463    0.503     0.503    -0.041     -0.041
+v232_sc        vs v261_sc          0.537    0.524     0.524    +0.014     +0.014
+v232_sc        vs v262_sc          0.603    0.554     0.554    +0.048     +0.048
+v228_sc        vs v227_sc          0.487    0.557     0.557    -0.070     -0.070
+v228_sc        vs v170_sc          0.890    0.868     0.868    +0.022     +0.022
+v228_sc        vs v245_sc          0.455    0.480     0.480    -0.025     -0.025
+v228_sc        vs v261_sc          0.535    0.501     0.501    +0.034     +0.034
+v228_sc        vs v262_sc          0.583    0.531     0.531    +0.051     +0.052
+v227_sc        vs v170_sc          0.585    0.838     0.839    -0.253     -0.254
+v227_sc        vs v245_sc          0.515    0.423     0.423    +0.092     +0.092
+v227_sc        vs v261_sc          0.490    0.444     0.443    +0.046     +0.047
+v227_sc        vs v262_sc          0.443    0.474     0.474    -0.032     -0.031
+v170_sc        vs v245_sc          0.105    0.124     0.123    -0.019     -0.018
+v170_sc        vs v261_sc          0.100    0.132     0.132    -0.032     -0.032
+v170_sc        vs v262_sc          0.130    0.146     0.147    -0.016     -0.017
+v245_sc        vs v261_sc          0.507    0.521     0.521    -0.013     -0.013
+v245_sc        vs v262_sc          0.585    0.551     0.551    +0.034     +0.034
+v261_sc        vs v262_sc          0.537    0.530     0.530    +0.007     +0.007
+------------------------------------------------------------------------------------
+                                              RMSE    0.0613     0.0615
+  (bipartite RMSE < combined RMSE → bipartite model better fit)
+
+Saved to results/logs/elo/elo_v262_sc_incremental.json
+[sql] Tournament logged: incremental_20260414T173228Z_v170_sc_v209_sc → results/metadata.sqlite3
+[confirm] Merged $VERSION into results/elo/elo_full_ladder.json: elo=1880
+[Tue Apr 14 10:38:02 2026]
+Finished jobid: 0 (Rule: ppo_train_dynamic)
+1 of 1 steps (100%) done
+Complete log(s): /home/dkord/code/twilight-struggle-ai/.snakemake/log/2026-04-14T102902.960467.snakemake.log

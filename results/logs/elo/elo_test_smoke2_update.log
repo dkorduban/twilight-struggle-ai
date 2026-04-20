@@ -1,0 +1,28 @@
+=== ELO incremental placement: test_smoke2 ===
+Exporting checkpoints to TorchScript ...
+  heuristic: built-in heuristic (no export needed)
+  Exporting test_smoke2 → data/checkpoints/scripted_for_elo/test_smoke2_scripted.pt ...
+Traceback (most recent call last):
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_elo_tournament.py", line 698, in <module>
+    main()
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_elo_tournament.py", line 465, in main
+    scripts[name] = export_if_needed(ckpt, args.script_dir, name)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/scripts/run_elo_tournament.py", line 345, in export_if_needed
+    export_checkpoint(checkpoint, out)
+  File "/home/dkord/code/twilight-struggle-ai/cpp/tools/export_baseline_to_torchscript.py", line 68, in export_checkpoint
+    model = load_model(checkpoint_path)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/cpp/tools/export_baseline_to_torchscript.py", line 48, in load_model
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/serialization.py", line 1425, in load
+    with _open_file_like(f, "rb") as opened_file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/serialization.py", line 751, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dkord/code/twilight-struggle-ai/.venv/lib/python3.12/site-packages/torch/serialization.py", line 732, in __init__
+    super().__init__(open(name, mode))
+                     ^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'data/checkpoints/scripted_for_elo/test_smoke2_scripted.pt'

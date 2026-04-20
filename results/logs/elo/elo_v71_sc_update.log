@@ -1,0 +1,2503 @@
+=== ELO incremental placement: v71_sc ===
+Exporting checkpoints to TorchScript ...
+Loaded 2122 match results from SQL match_cache
+
+Match schedule (15 total, 0 new, 15 reused from prior run):
+  v55 vs v14  [reuse]
+  v55 vs v54  [reuse]
+  v55 vs v44  [reuse]
+  v55 vs v45  [reuse]
+  v55 vs v71_sc  [reuse]
+  v14 vs v54  [reuse]
+  v14 vs v44  [reuse]
+  v14 vs v45  [reuse]
+  v14 vs v71_sc  [reuse]
+  v54 vs v44  [reuse]
+  v54 vs v45  [reuse]
+  v54 vs v71_sc  [reuse]
+  v44 vs v45  [reuse]
+  v44 vs v71_sc  [reuse]
+  v45 vs v71_sc  [reuse]
+  [reuse] v55 255(150u/105s) - 128(88u/40s) v14  draws=17  WR=0.659
+  [reuse] v55 209(115u/94s) - 181(102u/79s) v54  draws=10  WR=0.535
+  [reuse] v55 201(119u/82s) - 178(110u/68s) v44  draws=21  WR=0.529
+  [reuse] v55 206(136u/70s) - 180(123u/57s) v45  draws=14  WR=0.532
+  [reuse] v55 155(81u/74s) - 42(26u/16s) v71_sc  draws=3  WR=0.782
+  [reuse] v14 131(95u/36s) - 254(154u/100s) v54  draws=15  WR=0.346
+  [reuse] v14 147(100u/47s) - 239(147u/92s) v44  draws=14  WR=0.385
+  [reuse] v14 162(115u/47s) - 226(147u/79s) v45  draws=12  WR=0.420
+  [reuse] v14 144(79u/65s) - 51(32u/19s) v71_sc  draws=5  WR=0.733
+  [reuse] v54 222(126u/96s) - 163(99u/64s) v44  draws=15  WR=0.574
+  [reuse] v54 194(125u/69s) - 183(121u/62s) v45  draws=23  WR=0.514
+  [reuse] v54 145(74u/71s) - 49(28u/21s) v71_sc  draws=6  WR=0.740
+  [reuse] v44 194(130u/64s) - 192(130u/62s) v45  draws=14  WR=0.502
+  [reuse] v44 144(79u/65s) - 49(33u/16s) v71_sc  draws=7  WR=0.738
+  [reuse] v45 132(73u/59s) - 59(36u/23s) v71_sc  draws=9  WR=0.682
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v55                    2122   2098   2035  +62  [  2105,   2139]  +107
+v54                    2113   2082   2031  +51  [  2096,   2130]  +98
+v44                    2087   2072   1985  +87  [  2070,   2103]  +72
+v45                    2085   2108   1947  +161  [  2068,   2102]  +70
+v14                    2015   2015   1884  +131  [  2015,   2015]  +0
+v71_sc                 1899   1841   1829  +11  [  1874,   1924]  -116
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+v55            vs v14              0.659    0.651     0.650    +0.007     +0.009
+v55            vs v54              0.535    0.514     0.513    +0.021     +0.022
+v55            vs v44              0.529    0.552     0.551    -0.024     -0.023
+v55            vs v45              0.532    0.550     0.553    -0.018     -0.021
+v55            vs v71_sc           0.782    0.789     0.784    -0.007     -0.001
+v14            vs v54              0.346    0.360     0.363    -0.014     -0.016
+v14            vs v44              0.385    0.399     0.399    -0.014     -0.014
+v14            vs v45              0.420    0.406     0.400    +0.014     +0.020
+v14            vs v71_sc           0.733    0.654     0.661    +0.079     +0.071
+v54            vs v44              0.574    0.539     0.538    +0.035     +0.036
+v54            vs v45              0.514    0.538     0.540    -0.024     -0.026
+v54            vs v71_sc           0.740    0.780     0.774    -0.040     -0.034
+v44            vs v45              0.502    0.501     0.502    +0.002     +0.000
+v44            vs v71_sc           0.738    0.749     0.747    -0.011     -0.009
+v45            vs v71_sc           0.682    0.741     0.745    -0.058     -0.063
+------------------------------------------------------------------------------------
+                                              RMSE    0.0317     0.0311
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/logs/elo/elo_v71_sc_incremental.json
+[sql] Tournament logged: incremental_20260412T142555Z_v14_v44 → results/metadata.sqlite3
+[confirm] Merged v71_sc into results/elo/elo_full_ladder.json: elo=1899
+  v48: 282(141u/141s)  v71_sc: 107(54u/53s)  draws: 11  WR(v48)=0.719  t=42.2s
+  v48: 282(141u/141s)  v71_sc: 107(54u/53s)  draws: 11  WR(v48)=0.719  t=42.2s
+  [reuse] v48 293(166u/127s) - 99(69u/30s) v8  draws=8  WR=0.743
+  [reuse] v48 293(166u/127s) - 99(69u/30s) v8  draws=8  WR=0.743
+  [reuse] v48 264(153u/111s) - 123(84u/39s) v9  draws=13  WR=0.676
+  [reuse] v49 184(107u/77s) - 203(117u/86s) v50  draws=13  WR=0.476
+  [reuse] v48 264(153u/111s) - 123(84u/39s) v9  draws=13  WR=0.676
+  [reuse] v49 184(107u/77s) - 203(117u/86s) v50  draws=13  WR=0.476
+  [reuse] v49 220(120u/100s) - 171(97u/74s) v51  draws=9  WR=0.561
+  [reuse] v49 220(120u/100s) - 171(97u/74s) v51  draws=9  WR=0.561
+  [reuse] v49 239(137u/102s) - 147(94u/53s) v52  draws=14  WR=0.615
+  [reuse] v49 239(137u/102s) - 147(94u/53s) v52  draws=14  WR=0.615
+  [reuse] v49 224(130u/94s) - 161(100u/61s) v53  draws=15  WR=0.579
+  [reuse] v49 224(130u/94s) - 161(100u/61s) v53  draws=15  WR=0.579
+  [reuse] v49 198(114u/84s) - 187(109u/78s) v54  draws=15  WR=0.514
+  [reuse] v49 198(114u/84s) - 187(109u/78s) v54  draws=15  WR=0.514
+  [reuse] v49 379(195u/184s) - 21(16u/5s) v55_sc  draws=0  WR=0.948
+  [reuse] v49 379(195u/184s) - 21(16u/5s) v55_sc  draws=0  WR=0.948
+  [reuse] v49 166(87u/79s) - 224(118u/106s) v55  draws=10  WR=0.427
+  [reuse] v49 166(87u/79s) - 224(118u/106s) v55  draws=10  WR=0.427
+  [reuse] v49 199(107u/92s) - 188(100u/88s) v56  draws=13  WR=0.514
+  [reuse] v49 199(107u/92s) - 188(100u/88s) v56  draws=13  WR=0.514
+  [reuse] v49 184(102u/82s) - 202(115u/87s) v57  draws=14  WR=0.477
+  [reuse] v49 184(102u/82s) - 202(115u/87s) v57  draws=14  WR=0.477
+  [reuse] v49 218(117u/101s) - 173(95u/78s) v58  draws=9  WR=0.556
+  [reuse] v49 218(117u/101s) - 173(95u/78s) v58  draws=9  WR=0.556
+  [reuse] v49 222(120u/102s) - 162(93u/69s) v59  draws=16  WR=0.575
+  [reuse] v49 222(120u/102s) - 162(93u/69s) v59  draws=16  WR=0.575
+  [reuse] v49 224(116u/108s) - 163(89u/74s) v60  draws=13  WR=0.576
+  [reuse] v49 224(116u/108s) - 163(89u/74s) v60  draws=13  WR=0.576
+  [reuse] v49 247(138u/109s) - 144(87u/57s) v61  draws=9  WR=0.629
+  [reuse] v49 247(138u/109s) - 144(87u/57s) v61  draws=9  WR=0.629
+  [reuse] v49 372(191u/181s) - 27(19u/8s) v64  draws=1  WR=0.931
+  [reuse] v49 372(191u/181s) - 27(19u/8s) v64  draws=1  WR=0.931
+  [reuse] v49 211(128u/83s) - 178(114u/64s) v66_sc  draws=11  WR=0.541
+  [reuse] v49 211(128u/83s) - 178(114u/64s) v66_sc  draws=11  WR=0.541
+  [reuse] v49 215(111u/104s) - 171(90u/81s) v67_sc  draws=14  WR=0.555
+  [reuse] v49 215(111u/104s) - 171(90u/81s) v67_sc  draws=14  WR=0.555
+  [reuse] v49 265(129u/136s) - 125(60u/65s) v68_sc  draws=10  WR=0.675
+  [reuse] v49 265(129u/136s) - 125(60u/65s) v68_sc  draws=10  WR=0.675
+  [reuse] v49 285(156u/129s) - 108(68u/40s) v69_sc  draws=7  WR=0.721
+  [reuse] v49 285(156u/129s) - 108(68u/40s) v69_sc  draws=7  WR=0.721
+  [reuse] v49 277(143u/134s) - 116(64u/52s) v70_sc  draws=7  WR=0.701
+  [reuse] v49 277(143u/134s) - 116(64u/52s) v70_sc  draws=7  WR=0.701
+
+[new 17/36] v49 vs v71_sc (400 games = 200/side, seed=94400) ...
+
+[new 17/36] v49 vs v71_sc (400 games = 200/side, seed=94400) ...
+  v49: 264(123u/141s)  v71_sc: 125(58u/67s)  draws: 11  WR(v49)=0.674  t=30.1s
+  v49: 264(123u/141s)  v71_sc: 125(58u/67s)  draws: 11  WR(v49)=0.674  t=30.1s
+  [reuse] v49 289(169u/120s) - 97(71u/26s) v8  draws=14  WR=0.740
+  [reuse] v49 264(154u/110s) - 126(86u/40s) v9  draws=10  WR=0.672
+  [reuse] v50 227(127u/100s) - 162(99u/63s) v51  draws=11  WR=0.581
+  [reuse] v50 245(133u/112s) - 140(81u/59s) v52  draws=15  WR=0.631
+  [reuse] v50 236(130u/106s) - 148(86u/62s) v53  draws=16  WR=0.610
+  [reuse] v50 170(94u/76s) - 213(116u/97s) v54  draws=17  WR=0.446
+  [reuse] v49 289(169u/120s) - 97(71u/26s) v8  draws=14  WR=0.740
+  [reuse] v49 264(154u/110s) - 126(86u/40s) v9  draws=10  WR=0.672
+  [reuse] v50 227(127u/100s) - 162(99u/63s) v51  draws=11  WR=0.581
+  [reuse] v50 245(133u/112s) - 140(81u/59s) v52  draws=15  WR=0.631
+  [reuse] v50 236(130u/106s) - 148(86u/62s) v53  draws=16  WR=0.610
+  [reuse] v50 170(94u/76s) - 213(116u/97s) v54  draws=17  WR=0.446
+  [reuse] v50 381(198u/183s) - 18(17u/1s) v55_sc  draws=1  WR=0.954
+  [reuse] v50 159(90u/69s) - 231(129u/102s) v55  draws=10  WR=0.410
+  [reuse] v50 169(95u/74s) - 220(120u/100s) v56  draws=11  WR=0.436
+  [reuse] v50 187(102u/85s) - 198(106u/92s) v57  draws=15  WR=0.486
+  [reuse] v50 188(112u/76s) - 194(113u/81s) v58  draws=18  WR=0.492
+  [reuse] v50 206(116u/90s) - 183(104u/79s) v59  draws=11  WR=0.529
+  [reuse] v50 220(116u/104s) - 166(89u/77s) v60  draws=14  WR=0.568
+  [reuse] v50 381(198u/183s) - 18(17u/1s) v55_sc  draws=1  WR=0.954
+  [reuse] v50 159(90u/69s) - 231(129u/102s) v55  draws=10  WR=0.410
+  [reuse] v50 169(95u/74s) - 220(120u/100s) v56  draws=11  WR=0.436
+  [reuse] v50 187(102u/85s) - 198(106u/92s) v57  draws=15  WR=0.486
+  [reuse] v50 188(112u/76s) - 194(113u/81s) v58  draws=18  WR=0.492
+  [reuse] v50 206(116u/90s) - 183(104u/79s) v59  draws=11  WR=0.529
+  [reuse] v50 220(116u/104s) - 166(89u/77s) v60  draws=14  WR=0.568
+  [reuse] v50 216(123u/93s) - 169(101u/68s) v61  draws=15  WR=0.559
+  [reuse] v50 216(123u/93s) - 169(101u/68s) v61  draws=15  WR=0.559
+  [reuse] v50 368(191u/177s) - 30(22u/8s) v64  draws=2  WR=0.922
+  [reuse] v50 201(116u/85s) - 188(111u/77s) v66_sc  draws=11  WR=0.516
+  [reuse] v50 368(191u/177s) - 30(22u/8s) v64  draws=2  WR=0.922
+  [reuse] v50 201(116u/85s) - 188(111u/77s) v66_sc  draws=11  WR=0.516
+  [reuse] v50 203(106u/97s) - 178(92u/86s) v67_sc  draws=19  WR=0.531
+  [reuse] v50 203(106u/97s) - 178(92u/86s) v67_sc  draws=19  WR=0.531
+  [reuse] v50 246(120u/126s) - 141(69u/72s) v68_sc  draws=13  WR=0.631
+  [reuse] v50 246(120u/126s) - 141(69u/72s) v68_sc  draws=13  WR=0.631
+  [reuse] v50 273(137u/136s) - 111(58u/53s) v69_sc  draws=16  WR=0.703
+  [reuse] v50 274(137u/137s) - 121(59u/62s) v70_sc  draws=5  WR=0.691
+  [reuse] v50 273(137u/136s) - 111(58u/53s) v69_sc  draws=16  WR=0.703
+  [reuse] v50 274(137u/137s) - 121(59u/62s) v70_sc  draws=5  WR=0.691
+
+[new 18/36] v50 vs v71_sc (400 games = 200/side, seed=94800) ...
+
+[new 18/36] v50 vs v71_sc (400 games = 200/side, seed=94800) ...
+  v50: 267(125u/142s)  v71_sc: 122(55u/67s)  draws: 11  WR(v50)=0.681  t=28.5s
+  v50: 267(125u/142s)  v71_sc: 122(55u/67s)  draws: 11  WR(v50)=0.681  t=28.5s
+  [reuse] v50 272(159u/113s) - 111(75u/36s) v8  draws=17  WR=0.701
+  [reuse] v50 267(156u/111s) - 121(84u/37s) v9  draws=12  WR=0.682
+  [reuse] v50 272(159u/113s) - 111(75u/36s) v8  draws=17  WR=0.701
+  [reuse] v50 267(156u/111s) - 121(84u/37s) v9  draws=12  WR=0.682
+  [reuse] v51 189(118u/71s) - 197(121u/76s) v52  draws=14  WR=0.490
+  [reuse] v51 204(118u/86s) - 180(108u/72s) v53  draws=16  WR=0.530
+  [reuse] v51 148(85u/63s) - 234(128u/106s) v54  draws=18  WR=0.393
+  [reuse] v51 377(199u/178s) - 22(21u/1s) v55_sc  draws=1  WR=0.944
+  [reuse] v51 125(77u/48s) - 253(137u/116s) v55  draws=22  WR=0.340
+  [reuse] v51 189(118u/71s) - 197(121u/76s) v52  draws=14  WR=0.490
+  [reuse] v51 204(118u/86s) - 180(108u/72s) v53  draws=16  WR=0.530
+  [reuse] v51 148(85u/63s) - 234(128u/106s) v54  draws=18  WR=0.393
+  [reuse] v51 377(199u/178s) - 22(21u/1s) v55_sc  draws=1  WR=0.944
+  [reuse] v51 125(77u/48s) - 253(137u/116s) v55  draws=22  WR=0.340
+  [reuse] v51 156(96u/60s) - 233(131u/102s) v56  draws=11  WR=0.404
+  [reuse] v51 156(96u/60s) - 233(131u/102s) v56  draws=11  WR=0.404
+  [reuse] v51 145(82u/63s) - 235(125u/110s) v57  draws=20  WR=0.388
+  [reuse] v51 145(82u/63s) - 235(125u/110s) v57  draws=20  WR=0.388
+  [reuse] v51 158(95u/63s) - 224(129u/95s) v58  draws=18  WR=0.417
+  [reuse] v51 158(95u/63s) - 224(129u/95s) v58  draws=18  WR=0.417
+  [reuse] v51 189(108u/81s) - 197(111u/86s) v59  draws=14  WR=0.490
+  [reuse] v51 189(108u/81s) - 197(111u/86s) v59  draws=14  WR=0.490
+  [reuse] v51 186(107u/79s) - 194(108u/86s) v60  draws=20  WR=0.490
+  [reuse] v51 186(107u/79s) - 194(108u/86s) v60  draws=20  WR=0.490
+  [reuse] v51 201(122u/79s) - 181(111u/70s) v61  draws=18  WR=0.525
+  [reuse] v51 201(122u/79s) - 181(111u/70s) v61  draws=18  WR=0.525
+  [reuse] v51 359(181u/178s) - 37(19u/18s) v64  draws=4  WR=0.902
+  [reuse] v51 359(181u/178s) - 37(19u/18s) v64  draws=4  WR=0.902
+  [reuse] v51 148(100u/48s) - 237(144u/93s) v66_sc  draws=15  WR=0.389
+  [reuse] v51 175(97u/78s) - 214(116u/98s) v67_sc  draws=11  WR=0.451
+  [reuse] v51 148(100u/48s) - 237(144u/93s) v66_sc  draws=15  WR=0.389
+  [reuse] v51 175(97u/78s) - 214(116u/98s) v67_sc  draws=11  WR=0.451
+  [reuse] v51 214(110u/104s) - 168(87u/81s) v68_sc  draws=18  WR=0.557
+  [reuse] v51 214(110u/104s) - 168(87u/81s) v68_sc  draws=18  WR=0.557
+  [reuse] v51 229(114u/115s) - 155(77u/78s) v69_sc  draws=16  WR=0.593
+  [reuse] v51 231(109u/122s) - 153(71u/82s) v70_sc  draws=16  WR=0.598
+
+[new 19/36] v51 vs v71_sc (400 games = 200/side, seed=95200) ...
+  [reuse] v51 229(114u/115s) - 155(77u/78s) v69_sc  draws=16  WR=0.593
+  [reuse] v51 231(109u/122s) - 153(71u/82s) v70_sc  draws=16  WR=0.598
+
+[new 19/36] v51 vs v71_sc (400 games = 200/side, seed=95200) ...
+  v51: 215(95u/120s)  v71_sc: 162(66u/96s)  draws: 23  WR(v51)=0.566  t=30.1s
+  v51: 215(95u/120s)  v71_sc: 162(66u/96s)  draws: 23  WR(v51)=0.566  t=30.1s
+  [reuse] v51 238(151u/87s) - 151(107u/44s) v8  draws=11  WR=0.609
+  [reuse] v51 225(151u/74s) - 160(114u/46s) v9  draws=15  WR=0.581
+  [reuse] v52 187(113u/74s) - 196(119u/77s) v53  draws=17  WR=0.489
+  [reuse] v52 130(83u/47s) - 256(144u/112s) v54  draws=14  WR=0.343
+  [reuse] v52 381(197u/184s) - 19(16u/3s) v55_sc  draws=0  WR=0.953
+  [reuse] v52 129(79u/50s) - 262(144u/118s) v55  draws=9  WR=0.334
+  [reuse] v51 238(151u/87s) - 151(107u/44s) v8  draws=11  WR=0.609
+  [reuse] v51 225(151u/74s) - 160(114u/46s) v9  draws=15  WR=0.581
+  [reuse] v52 187(113u/74s) - 196(119u/77s) v53  draws=17  WR=0.489
+  [reuse] v52 130(83u/47s) - 256(144u/112s) v54  draws=14  WR=0.343
+  [reuse] v52 381(197u/184s) - 19(16u/3s) v55_sc  draws=0  WR=0.953
+  [reuse] v52 129(79u/50s) - 262(144u/118s) v55  draws=9  WR=0.334
+  [reuse] v52 141(90u/51s) - 246(143u/103s) v56  draws=13  WR=0.369
+  [reuse] v52 162(94u/68s) - 229(127u/102s) v57  draws=9  WR=0.416
+  [reuse] v52 150(92u/58s) - 237(135u/102s) v58  draws=13  WR=0.391
+  [reuse] v52 175(102u/73s) - 206(117u/89s) v59  draws=19  WR=0.461
+  [reuse] v52 180(112u/68s) - 203(125u/78s) v60  draws=17  WR=0.471
+  [reuse] v52 141(90u/51s) - 246(143u/103s) v56  draws=13  WR=0.369
+  [reuse] v52 162(94u/68s) - 229(127u/102s) v57  draws=9  WR=0.416
+  [reuse] v52 150(92u/58s) - 237(135u/102s) v58  draws=13  WR=0.391
+  [reuse] v52 175(102u/73s) - 206(117u/89s) v59  draws=19  WR=0.461
+  [reuse] v52 180(112u/68s) - 203(125u/78s) v60  draws=17  WR=0.471
+  [reuse] v52 203(122u/81s) - 176(105u/71s) v61  draws=21  WR=0.534
+  [reuse] v52 203(122u/81s) - 176(105u/71s) v61  draws=21  WR=0.534
+  [reuse] v52 360(182u/178s) - 38(22u/16s) v64  draws=2  WR=0.902
+  [reuse] v52 360(182u/178s) - 38(22u/16s) v64  draws=2  WR=0.902
+  [reuse] v52 133(87u/46s) - 250(142u/108s) v66_sc  draws=17  WR=0.354
+  [reuse] v52 133(87u/46s) - 250(142u/108s) v66_sc  draws=17  WR=0.354
+  [reuse] v52 169(107u/62s) - 221(132u/89s) v67_sc  draws=10  WR=0.435
+  [reuse] v52 169(107u/62s) - 221(132u/89s) v67_sc  draws=10  WR=0.435
+  [reuse] v52 197(103u/94s) - 188(100u/88s) v68_sc  draws=15  WR=0.511
+  [reuse] v52 230(116u/114s) - 160(79u/81s) v69_sc  draws=10  WR=0.588
+  [reuse] v52 197(103u/94s) - 188(100u/88s) v68_sc  draws=15  WR=0.511
+  [reuse] v52 230(116u/114s) - 160(79u/81s) v69_sc  draws=10  WR=0.588
+  [reuse] v52 223(107u/116s) - 165(80u/85s) v70_sc  draws=12  WR=0.573
+  [reuse] v52 223(107u/116s) - 165(80u/85s) v70_sc  draws=12  WR=0.573
+
+[new 20/36] v52 vs v71_sc (400 games = 200/side, seed=95600) ...
+
+[new 20/36] v52 vs v71_sc (400 games = 200/side, seed=95600) ...
+  v52: 220(99u/121s)  v71_sc: 169(74u/95s)  draws: 11  WR(v52)=0.564  t=43.4s
+  v52: 220(99u/121s)  v71_sc: 169(74u/95s)  draws: 11  WR(v52)=0.564  t=43.4s
+  [reuse] v52 243(148u/95s) - 147(99u/48s) v8  draws=10  WR=0.620
+  [reuse] v52 243(148u/95s) - 147(99u/48s) v8  draws=10  WR=0.620
+  [reuse] v52 205(124u/81s) - 183(114u/69s) v9  draws=12  WR=0.527
+  [reuse] v52 205(124u/81s) - 183(114u/69s) v9  draws=12  WR=0.527
+  [reuse] v53 145(102u/43s) - 241(147u/94s) v54  draws=14  WR=0.380
+  [reuse] v53 373(199u/174s) - 26(25u/1s) v55_sc  draws=1  WR=0.934
+  [reuse] v53 137(78u/59s) - 249(133u/116s) v55  draws=14  WR=0.360
+  [reuse] v53 138(82u/56s) - 250(138u/112s) v56  draws=12  WR=0.360
+  [reuse] v53 145(78u/67s) - 242(130u/112s) v57  draws=13  WR=0.379
+  [reuse] v53 177(114u/63s) - 201(126u/75s) v58  draws=22  WR=0.470
+  [reuse] v53 181(104u/77s) - 199(113u/86s) v59  draws=20  WR=0.477
+  [reuse] v53 163(101u/62s) - 214(125u/89s) v60  draws=23  WR=0.436
+  [reuse] v53 211(119u/92s) - 175(100u/75s) v61  draws=14  WR=0.545
+  [reuse] v53 354(179u/175s) - 40(22u/18s) v64  draws=6  WR=0.892
+  [reuse] v53 164(108u/56s) - 220(133u/87s) v66_sc  draws=16  WR=0.430
+  [reuse] v53 153(91u/62s) - 233(130u/103s) v67_sc  draws=14  WR=0.400
+  [reuse] v53 188(97u/91s) - 191(96u/95s) v68_sc  draws=21  WR=0.496
+  [reuse] v53 219(95u/124s) - 176(73u/103s) v69_sc  draws=5  WR=0.554
+  [reuse] v53 223(102u/121s) - 166(71u/95s) v70_sc  draws=11  WR=0.571
+
+[new 21/36] v53 vs v71_sc (400 games = 200/side, seed=96000) ...
+  [reuse] v53 145(102u/43s) - 241(147u/94s) v54  draws=14  WR=0.380
+  [reuse] v53 373(199u/174s) - 26(25u/1s) v55_sc  draws=1  WR=0.934
+  [reuse] v53 137(78u/59s) - 249(133u/116s) v55  draws=14  WR=0.360
+  [reuse] v53 138(82u/56s) - 250(138u/112s) v56  draws=12  WR=0.360
+  [reuse] v53 145(78u/67s) - 242(130u/112s) v57  draws=13  WR=0.379
+  [reuse] v53 177(114u/63s) - 201(126u/75s) v58  draws=22  WR=0.470
+  [reuse] v53 181(104u/77s) - 199(113u/86s) v59  draws=20  WR=0.477
+  [reuse] v53 163(101u/62s) - 214(125u/89s) v60  draws=23  WR=0.436
+  [reuse] v53 211(119u/92s) - 175(100u/75s) v61  draws=14  WR=0.545
+  [reuse] v53 354(179u/175s) - 40(22u/18s) v64  draws=6  WR=0.892
+  [reuse] v53 164(108u/56s) - 220(133u/87s) v66_sc  draws=16  WR=0.430
+  [reuse] v53 153(91u/62s) - 233(130u/103s) v67_sc  draws=14  WR=0.400
+  [reuse] v53 188(97u/91s) - 191(96u/95s) v68_sc  draws=21  WR=0.496
+  [reuse] v53 219(95u/124s) - 176(73u/103s) v69_sc  draws=5  WR=0.554
+  [reuse] v53 223(102u/121s) - 166(71u/95s) v70_sc  draws=11  WR=0.571
+
+[new 21/36] v53 vs v71_sc (400 games = 200/side, seed=96000) ...
+  v53: 223(101u/122s)  v71_sc: 164(74u/90s)  draws: 13  WR(v53)=0.574  t=55.2s
+  v53: 223(101u/122s)  v71_sc: 164(74u/90s)  draws: 13  WR(v53)=0.574  t=55.2s
+  [reuse] v53 232(138u/94s) - 158(98u/60s) v8  draws=10  WR=0.593
+  [reuse] v53 207(134u/73s) - 185(123u/62s) v9  draws=8  WR=0.527
+  [reuse] v54 372(198u/174s) - 28(26u/2s) v55_sc  draws=0  WR=0.930
+  [reuse] v54 181(102u/79s) - 209(115u/94s) v55  draws=10  WR=0.465
+  [reuse] v54 195(116u/79s) - 197(118u/79s) v56  draws=8  WR=0.497
+  [reuse] v54 197(125u/72s) - 191(119u/72s) v57  draws=12  WR=0.507
+  [reuse] v54 223(130u/93s) - 161(99u/62s) v58  draws=16  WR=0.578
+  [reuse] v54 214(123u/91s) - 167(102u/65s) v59  draws=19  WR=0.559
+  [reuse] v54 233(136u/97s) - 149(94u/55s) v60  draws=18  WR=0.605
+  [reuse] v54 240(138u/102s) - 146(93u/53s) v61  draws=14  WR=0.618
+  [reuse] v54 379(193u/186s) - 20(13u/7s) v64  draws=1  WR=0.949
+  [reuse] v54 229(137u/92s) - 162(103u/59s) v66_sc  draws=9  WR=0.584
+  [reuse] v54 116(71u/45s) - 81(52u/29s) v67_sc  draws=3  WR=0.588
+  [reuse] v54 132(77u/55s) - 58(40u/18s) v68_sc  draws=10  WR=0.685
+  [reuse] v54 156(88u/68s) - 35(25u/10s) v69_sc  draws=9  WR=0.802
+  [reuse] v54 149(82u/67s) - 46(30u/16s) v70_sc  draws=5  WR=0.757
+  [reuse] v54 145(74u/71s) - 49(28u/21s) v71_sc  draws=6  WR=0.740
+  [reuse] v54 289(169u/120s) - 105(78u/27s) v8  draws=6  WR=0.730
+  [reuse] v54 282(169u/113s) - 113(83u/30s) v9  draws=5  WR=0.711
+  [reuse] v55_sc 23(23u/0s) - 377(200u/177s) v55  draws=0  WR=0.058
+  [reuse] v55_sc 29(25u/4s) - 371(196u/175s) v56  draws=0  WR=0.072
+  [reuse] v55_sc 21(19u/2s) - 379(198u/181s) v57  draws=0  WR=0.052
+  [reuse] v55_sc 20(19u/1s) - 379(198u/181s) v58  draws=1  WR=0.051
+  [reuse] v55_sc 32(30u/2s) - 368(198u/170s) v59  draws=0  WR=0.080
+  [reuse] v55_sc 29(25u/4s) - 371(196u/175s) v60  draws=0  WR=0.072
+  [reuse] v55_sc 23(23u/0s) - 376(200u/176s) v61  draws=1  WR=0.059
+  [reuse] v55_sc 49(24u/25s) - 349(173u/176s) v64  draws=2  WR=0.125
+  [reuse] v55_sc 35(32u/3s) - 364(197u/167s) v66_sc  draws=1  WR=0.089
+  [reuse] v55_sc 34(33u/1s) - 365(198u/167s) v67_sc  draws=1  WR=0.086
+  [reuse] v55_sc 29(25u/4s) - 368(195u/173s) v68_sc  draws=3  WR=0.076
+  [reuse] v55_sc 38(29u/9s) - 362(191u/171s) v69_sc  draws=0  WR=0.095
+  [reuse] v55_sc 35(30u/5s) - 364(194u/170s) v70_sc  draws=1  WR=0.089
+
+[new 22/36] v55_sc vs v71_sc (400 games = 200/side, seed=96400) ...
+  [reuse] v53 232(138u/94s) - 158(98u/60s) v8  draws=10  WR=0.593
+  [reuse] v53 207(134u/73s) - 185(123u/62s) v9  draws=8  WR=0.527
+  [reuse] v54 372(198u/174s) - 28(26u/2s) v55_sc  draws=0  WR=0.930
+  [reuse] v54 181(102u/79s) - 209(115u/94s) v55  draws=10  WR=0.465
+  [reuse] v54 195(116u/79s) - 197(118u/79s) v56  draws=8  WR=0.497
+  [reuse] v54 197(125u/72s) - 191(119u/72s) v57  draws=12  WR=0.507
+  [reuse] v54 223(130u/93s) - 161(99u/62s) v58  draws=16  WR=0.578
+  [reuse] v54 214(123u/91s) - 167(102u/65s) v59  draws=19  WR=0.559
+  [reuse] v54 233(136u/97s) - 149(94u/55s) v60  draws=18  WR=0.605
+  [reuse] v54 240(138u/102s) - 146(93u/53s) v61  draws=14  WR=0.618
+  [reuse] v54 379(193u/186s) - 20(13u/7s) v64  draws=1  WR=0.949
+  [reuse] v54 229(137u/92s) - 162(103u/59s) v66_sc  draws=9  WR=0.584
+  [reuse] v54 116(71u/45s) - 81(52u/29s) v67_sc  draws=3  WR=0.588
+  [reuse] v54 132(77u/55s) - 58(40u/18s) v68_sc  draws=10  WR=0.685
+  [reuse] v54 156(88u/68s) - 35(25u/10s) v69_sc  draws=9  WR=0.802
+  [reuse] v54 149(82u/67s) - 46(30u/16s) v70_sc  draws=5  WR=0.757
+  [reuse] v54 145(74u/71s) - 49(28u/21s) v71_sc  draws=6  WR=0.740
+  [reuse] v54 289(169u/120s) - 105(78u/27s) v8  draws=6  WR=0.730
+  [reuse] v54 282(169u/113s) - 113(83u/30s) v9  draws=5  WR=0.711
+  [reuse] v55_sc 23(23u/0s) - 377(200u/177s) v55  draws=0  WR=0.058
+  [reuse] v55_sc 29(25u/4s) - 371(196u/175s) v56  draws=0  WR=0.072
+  [reuse] v55_sc 21(19u/2s) - 379(198u/181s) v57  draws=0  WR=0.052
+  [reuse] v55_sc 20(19u/1s) - 379(198u/181s) v58  draws=1  WR=0.051
+  [reuse] v55_sc 32(30u/2s) - 368(198u/170s) v59  draws=0  WR=0.080
+  [reuse] v55_sc 29(25u/4s) - 371(196u/175s) v60  draws=0  WR=0.072
+  [reuse] v55_sc 23(23u/0s) - 376(200u/176s) v61  draws=1  WR=0.059
+  [reuse] v55_sc 49(24u/25s) - 349(173u/176s) v64  draws=2  WR=0.125
+  [reuse] v55_sc 35(32u/3s) - 364(197u/167s) v66_sc  draws=1  WR=0.089
+  [reuse] v55_sc 34(33u/1s) - 365(198u/167s) v67_sc  draws=1  WR=0.086
+  [reuse] v55_sc 29(25u/4s) - 368(195u/173s) v68_sc  draws=3  WR=0.076
+  [reuse] v55_sc 38(29u/9s) - 362(191u/171s) v69_sc  draws=0  WR=0.095
+  [reuse] v55_sc 35(30u/5s) - 364(194u/170s) v70_sc  draws=1  WR=0.089
+
+[new 22/36] v55_sc vs v71_sc (400 games = 200/side, seed=96400) ...
+  v55_sc: 28(23u/5s)  v71_sc: 365(191u/174s)  draws: 7  WR(v55_sc)=0.079  t=53.9s
+  v55_sc: 28(23u/5s)  v71_sc: 365(191u/174s)  draws: 7  WR(v55_sc)=0.079  t=53.9s
+  [reuse] v55_sc 19(19u/0s) - 381(200u/181s) v8  draws=0  WR=0.048
+  [reuse] v55_sc 19(19u/0s) - 381(200u/181s) v8  draws=0  WR=0.048
+  [reuse] v55_sc 10(9u/1s) - 390(199u/191s) v9  draws=0  WR=0.025
+  [reuse] v55_sc 10(9u/1s) - 390(199u/191s) v9  draws=0  WR=0.025
+  [reuse] v55 206(121u/85s) - 183(110u/73s) v56  draws=11  WR=0.529
+  [reuse] v55 206(121u/85s) - 183(110u/73s) v56  draws=11  WR=0.529
+  [reuse] v55 205(110u/95s) - 180(100u/80s) v57  draws=15  WR=0.531
+  [reuse] v55 205(110u/95s) - 180(100u/80s) v57  draws=15  WR=0.531
+  [reuse] v55 226(126u/100s) - 163(96u/67s) v58  draws=11  WR=0.579
+  [reuse] v55 226(126u/100s) - 163(96u/67s) v58  draws=11  WR=0.579
+  [reuse] v55 240(133u/107s) - 150(91u/59s) v59  draws=10  WR=0.613
+  [reuse] v55 240(133u/107s) - 150(91u/59s) v59  draws=10  WR=0.613
+  [reuse] v55 243(138u/105s) - 144(88u/56s) v60  draws=13  WR=0.624
+  [reuse] v55 243(138u/105s) - 144(88u/56s) v60  draws=13  WR=0.624
+  [reuse] v55 259(144u/115s) - 130(80u/50s) v61  draws=11  WR=0.661
+  [reuse] v55 259(144u/115s) - 130(80u/50s) v61  draws=11  WR=0.661
+  [reuse] v55 189(97u/92s) - 11(8u/3s) v64  draws=0  WR=0.945
+  [reuse] v55 189(97u/92s) - 11(8u/3s) v64  draws=0  WR=0.945
+  [reuse] v55 243(142u/101s) - 148(95u/53s) v66_sc  draws=9  WR=0.619
+  [reuse] v55 243(142u/101s) - 148(95u/53s) v66_sc  draws=9  WR=0.619
+  [reuse] v55 108(53u/55s) - 89(44u/45s) v67_sc  draws=3  WR=0.547
+  [reuse] v55 108(53u/55s) - 89(44u/45s) v67_sc  draws=3  WR=0.547
+  [reuse] v55 134(73u/61s) - 62(36u/26s) v68_sc  draws=4  WR=0.680
+  [reuse] v55 134(73u/61s) - 62(36u/26s) v68_sc  draws=4  WR=0.680
+  [reuse] v55 163(88u/75s) - 32(23u/9s) v69_sc  draws=5  WR=0.828
+  [reuse] v55 163(88u/75s) - 32(23u/9s) v69_sc  draws=5  WR=0.828
+  [reuse] v55 156(84u/72s) - 43(27u/16s) v70_sc  draws=1  WR=0.782
+  [reuse] v55 156(84u/72s) - 43(27u/16s) v70_sc  draws=1  WR=0.782
+  [reuse] v55 155(81u/74s) - 42(26u/16s) v71_sc  draws=3  WR=0.782
+  [reuse] v55 155(81u/74s) - 42(26u/16s) v71_sc  draws=3  WR=0.782
+  [reuse] v55 283(163u/120s) - 105(75u/30s) v8  draws=12  WR=0.723
+  [reuse] v55 283(163u/120s) - 105(75u/30s) v8  draws=12  WR=0.723
+  [reuse] v55 292(170u/122s) - 95(70u/25s) v9  draws=13  WR=0.746
+  [reuse] v55 292(170u/122s) - 95(70u/25s) v9  draws=13  WR=0.746
+  [reuse] v56 212(117u/95s) - 171(99u/72s) v57  draws=17  WR=0.551
+  [reuse] v56 212(117u/95s) - 171(99u/72s) v57  draws=17  WR=0.551
+  [reuse] v56 198(118u/80s) - 195(115u/80s) v58  draws=7  WR=0.504
+  [reuse] v56 198(118u/80s) - 195(115u/80s) v58  draws=7  WR=0.504
+  [reuse] v56 222(122u/100s) - 161(92u/69s) v59  draws=17  WR=0.576
+  [reuse] v56 222(122u/100s) - 161(92u/69s) v59  draws=17  WR=0.576
+  [reuse] v56 241(129u/112s) - 143(80u/63s) v60  draws=16  WR=0.623
+  [reuse] v56 241(129u/112s) - 143(80u/63s) v60  draws=16  WR=0.623
+  [reuse] v56 241(143u/98s) - 146(96u/50s) v61  draws=13  WR=0.619
+  [reuse] v56 241(143u/98s) - 146(96u/50s) v61  draws=13  WR=0.619
+  [reuse] v56 363(191u/172s) - 36(28u/8s) v64  draws=1  WR=0.909
+  [reuse] v56 363(191u/172s) - 36(28u/8s) v64  draws=1  WR=0.909
+  [reuse] v56 242(149u/93s) - 152(104u/48s) v66_sc  draws=6  WR=0.613
+  [reuse] v56 242(149u/93s) - 152(104u/48s) v66_sc  draws=6  WR=0.613
+  [reuse] v56 229(128u/101s) - 162(94u/68s) v67_sc  draws=9  WR=0.584
+  [reuse] v56 229(128u/101s) - 162(94u/68s) v67_sc  draws=9  WR=0.584
+  [reuse] v56 247(132u/115s) - 143(81u/62s) v68_sc  draws=10  WR=0.630
+  [reuse] v56 247(132u/115s) - 143(81u/62s) v68_sc  draws=10  WR=0.630
+  [reuse] v56 293(157u/136s) - 98(62u/36s) v69_sc  draws=9  WR=0.744
+  [reuse] v56 293(157u/136s) - 98(62u/36s) v69_sc  draws=9  WR=0.744
+  [reuse] v56 316(160u/156s) - 79(43u/36s) v70_sc  draws=5  WR=0.796
+  [reuse] v56 316(160u/156s) - 79(43u/36s) v70_sc  draws=5  WR=0.796
+
+[new 23/36] v56 vs v71_sc (400 games = 200/side, seed=96800) ...
+
+[new 23/36] v56 vs v71_sc (400 games = 200/side, seed=96800) ...
+  v56: 306(148u/158s)  v71_sc: 88(41u/47s)  draws: 6  WR(v56)=0.772  t=43.9s
+  v56: 306(148u/158s)  v71_sc: 88(41u/47s)  draws: 6  WR(v56)=0.772  t=43.9s
+  [reuse] v56 289(162u/127s) - 99(66u/33s) v8  draws=12  WR=0.738
+  [reuse] v56 289(162u/127s) - 99(66u/33s) v8  draws=12  WR=0.738
+  [reuse] v56 260(162u/98s) - 122(91u/31s) v9  draws=18  WR=0.672
+  [reuse] v56 260(162u/98s) - 122(91u/31s) v9  draws=18  WR=0.672
+  [reuse] v57 210(122u/88s) - 177(107u/70s) v58  draws=13  WR=0.541
+  [reuse] v57 210(122u/88s) - 177(107u/70s) v58  draws=13  WR=0.541
+  [reuse] v57 200(105u/95s) - 184(95u/89s) v59  draws=16  WR=0.520
+  [reuse] v57 200(105u/95s) - 184(95u/89s) v59  draws=16  WR=0.520
+  [reuse] v57 222(122u/100s) - 166(96u/70s) v60  draws=12  WR=0.570
+  [reuse] v57 222(122u/100s) - 166(96u/70s) v60  draws=12  WR=0.570
+  [reuse] v57 232(134u/98s) - 154(93u/61s) v61  draws=14  WR=0.598
+  [reuse] v57 232(134u/98s) - 154(93u/61s) v61  draws=14  WR=0.598
+  [reuse] v57 357(185u/172s) - 41(27u/14s) v64  draws=2  WR=0.895
+  [reuse] v57 357(185u/172s) - 41(27u/14s) v64  draws=2  WR=0.895
+  [reuse] v57 222(137u/85s) - 159(109u/50s) v66_sc  draws=19  WR=0.579
+  [reuse] v57 222(137u/85s) - 159(109u/50s) v66_sc  draws=19  WR=0.579
+  [reuse] v57 236(131u/105s) - 150(91u/59s) v67_sc  draws=14  WR=0.608
+  [reuse] v57 236(131u/105s) - 150(91u/59s) v67_sc  draws=14  WR=0.608
+  [reuse] v57 255(136u/119s) - 137(76u/61s) v68_sc  draws=8  WR=0.647
+  [reuse] v57 255(136u/119s) - 137(76u/61s) v68_sc  draws=8  WR=0.647
+  [reuse] v57 281(146u/135s) - 105(57u/48s) v69_sc  draws=14  WR=0.720
+  [reuse] v57 281(146u/135s) - 105(57u/48s) v69_sc  draws=14  WR=0.720
+  [reuse] v57 286(149u/137s) - 101(56u/45s) v70_sc  draws=13  WR=0.731
+  [reuse] v57 286(149u/137s) - 101(56u/45s) v70_sc  draws=13  WR=0.731
+
+[new 24/36] v57 vs v71_sc (400 games = 200/side, seed=97200) ...
+
+[new 24/36] v57 vs v71_sc (400 games = 200/side, seed=97200) ...
+  v57: 269(133u/136s)  v71_sc: 119(60u/59s)  draws: 12  WR(v57)=0.688  t=36.2s
+  v57: 269(133u/136s)  v71_sc: 119(60u/59s)  draws: 12  WR(v57)=0.688  t=36.2s
+  [reuse] v57 282(170u/112s) - 112(86u/26s) v8  draws=6  WR=0.713
+  [reuse] v57 248(154u/94s) - 140(98u/42s) v9  draws=12  WR=0.635
+  [reuse] v58 205(119u/86s) - 177(107u/70s) v59  draws=18  WR=0.535
+  [reuse] v58 210(125u/85s) - 167(102u/65s) v60  draws=23  WR=0.554
+  [reuse] v58 221(129u/92s) - 168(102u/66s) v61  draws=11  WR=0.566
+  [reuse] v57 282(170u/112s) - 112(86u/26s) v8  draws=6  WR=0.713
+  [reuse] v57 248(154u/94s) - 140(98u/42s) v9  draws=12  WR=0.635
+  [reuse] v58 205(119u/86s) - 177(107u/70s) v59  draws=18  WR=0.535
+  [reuse] v58 210(125u/85s) - 167(102u/65s) v60  draws=23  WR=0.554
+  [reuse] v58 221(129u/92s) - 168(102u/66s) v61  draws=11  WR=0.566
+  [reuse] v58 361(188u/173s) - 37(27u/10s) v64  draws=2  WR=0.905
+  [reuse] v58 226(127u/99s) - 161(95u/66s) v66_sc  draws=13  WR=0.581
+  [reuse] v58 221(123u/98s) - 170(99u/71s) v67_sc  draws=9  WR=0.564
+  [reuse] v58 229(121u/108s) - 159(85u/74s) v68_sc  draws=12  WR=0.588
+  [reuse] v58 286(147u/139s) - 103(55u/48s) v69_sc  draws=11  WR=0.729
+  [reuse] v58 361(188u/173s) - 37(27u/10s) v64  draws=2  WR=0.905
+  [reuse] v58 226(127u/99s) - 161(95u/66s) v66_sc  draws=13  WR=0.581
+  [reuse] v58 221(123u/98s) - 170(99u/71s) v67_sc  draws=9  WR=0.564
+  [reuse] v58 229(121u/108s) - 159(85u/74s) v68_sc  draws=12  WR=0.588
+  [reuse] v58 286(147u/139s) - 103(55u/48s) v69_sc  draws=11  WR=0.729
+  [reuse] v58 276(145u/131s) - 113(68u/45s) v70_sc  draws=11  WR=0.704
+  [reuse] v58 276(145u/131s) - 113(68u/45s) v70_sc  draws=11  WR=0.704
+
+[new 25/36] v58 vs v71_sc (400 games = 200/side, seed=97600) ...
+
+[new 25/36] v58 vs v71_sc (400 games = 200/side, seed=97600) ...
+  v58: 280(145u/135s)  v71_sc: 116(64u/52s)  draws: 4  WR(v58)=0.705  t=28.3s
+  v58: 280(145u/135s)  v71_sc: 116(64u/52s)  draws: 4  WR(v58)=0.705  t=28.3s
+  [reuse] v58 286(161u/125s) - 102(66u/36s) v8  draws=12  WR=0.730
+  [reuse] v58 286(161u/125s) - 102(66u/36s) v8  draws=12  WR=0.730
+  [reuse] v58 241(159u/82s) - 150(109u/41s) v9  draws=9  WR=0.614
+  [reuse] v59 198(105u/93s) - 175(95u/80s) v60  draws=27  WR=0.529
+  [reuse] v59 222(124u/98s) - 156(92u/64s) v61  draws=22  WR=0.583
+  [reuse] v59 367(187u/180s) - 31(19u/12s) v64  draws=2  WR=0.920
+  [reuse] v58 241(159u/82s) - 150(109u/41s) v9  draws=9  WR=0.614
+  [reuse] v59 198(105u/93s) - 175(95u/80s) v60  draws=27  WR=0.529
+  [reuse] v59 222(124u/98s) - 156(92u/64s) v61  draws=22  WR=0.583
+  [reuse] v59 367(187u/180s) - 31(19u/12s) v64  draws=2  WR=0.920
+  [reuse] v59 203(115u/88s) - 181(104u/77s) v66_sc  draws=16  WR=0.527
+  [reuse] v59 203(115u/88s) - 181(104u/77s) v66_sc  draws=16  WR=0.527
+  [reuse] v59 190(99u/91s) - 193(101u/92s) v67_sc  draws=17  WR=0.496
+  [reuse] v59 190(99u/91s) - 193(101u/92s) v67_sc  draws=17  WR=0.496
+  [reuse] v59 238(125u/113s) - 151(85u/66s) v68_sc  draws=11  WR=0.609
+  [reuse] v59 238(125u/113s) - 151(85u/66s) v68_sc  draws=11  WR=0.609
+  [reuse] v59 276(147u/129s) - 109(65u/44s) v69_sc  draws=15  WR=0.709
+  [reuse] v59 276(147u/129s) - 109(65u/44s) v69_sc  draws=15  WR=0.709
+  [reuse] v59 279(155u/124s) - 113(72u/41s) v70_sc  draws=8  WR=0.708
+  [reuse] v59 279(155u/124s) - 113(72u/41s) v70_sc  draws=8  WR=0.708
+
+[new 26/36] v59 vs v71_sc (400 games = 200/side, seed=98000) ...
+
+[new 26/36] v59 vs v71_sc (400 games = 200/side, seed=98000) ...
+  v59: 232(119u/113s)  v71_sc: 152(77u/75s)  draws: 16  WR(v59)=0.600  t=30.1s
+  v59: 232(119u/113s)  v71_sc: 152(77u/75s)  draws: 16  WR(v59)=0.600  t=30.1s
+  [reuse] v59 248(154u/94s) - 137(99u/38s) v8  draws=15  WR=0.639
+  [reuse] v59 248(154u/94s) - 137(99u/38s) v8  draws=15  WR=0.639
+  [reuse] v59 239(155u/84s) - 152(107u/45s) v9  draws=9  WR=0.609
+  [reuse] v60 195(111u/84s) - 187(109u/78s) v61  draws=18  WR=0.510
+  [reuse] v59 239(155u/84s) - 152(107u/45s) v9  draws=9  WR=0.609
+  [reuse] v60 195(111u/84s) - 187(109u/78s) v61  draws=18  WR=0.510
+  [reuse] v60 354(180u/174s) - 43(26u/17s) v64  draws=3  WR=0.889
+  [reuse] v60 354(180u/174s) - 43(26u/17s) v64  draws=3  WR=0.889
+  [reuse] v60 184(117u/67s) - 204(128u/76s) v66_sc  draws=12  WR=0.475
+  [reuse] v60 184(117u/67s) - 204(128u/76s) v66_sc  draws=12  WR=0.475
+  [reuse] v60 190(110u/80s) - 198(116u/82s) v67_sc  draws=12  WR=0.490
+  [reuse] v60 190(110u/80s) - 198(116u/82s) v67_sc  draws=12  WR=0.490
+  [reuse] v60 214(118u/96s) - 174(99u/75s) v68_sc  draws=12  WR=0.550
+  [reuse] v60 214(118u/96s) - 174(99u/75s) v68_sc  draws=12  WR=0.550
+  [reuse] v60 255(138u/117s) - 132(79u/53s) v69_sc  draws=13  WR=0.654
+  [reuse] v60 255(138u/117s) - 132(79u/53s) v69_sc  draws=13  WR=0.654
+  [reuse] v60 250(127u/123s) - 138(69u/69s) v70_sc  draws=12  WR=0.640
+  [reuse] v60 250(127u/123s) - 138(69u/69s) v70_sc  draws=12  WR=0.640
+
+[new 27/36] v60 vs v71_sc (400 games = 200/side, seed=98400) ...
+
+[new 27/36] v60 vs v71_sc (400 games = 200/side, seed=98400) ...
+  v60: 237(121u/116s)  v71_sc: 149(73u/76s)  draws: 14  WR(v60)=0.610  t=30.8s
+  v60: 237(121u/116s)  v71_sc: 149(73u/76s)  draws: 14  WR(v60)=0.610  t=30.8s
+  [reuse] v60 247(154u/93s) - 141(99u/42s) v8  draws=12  WR=0.632
+  [reuse] v60 218(141u/77s) - 169(116u/53s) v9  draws=13  WR=0.561
+  [reuse] v61 360(177u/183s) - 36(15u/21s) v64  draws=4  WR=0.905
+  [reuse] v61 161(108u/53s) - 223(140u/83s) v66_sc  draws=16  WR=0.422
+  [reuse] v61 167(104u/63s) - 218(131u/87s) v67_sc  draws=15  WR=0.436
+  [reuse] v61 200(119u/81s) - 187(112u/75s) v68_sc  draws=13  WR=0.516
+  [reuse] v61 241(128u/113s) - 145(79u/66s) v69_sc  draws=14  WR=0.620
+  [reuse] v60 247(154u/93s) - 141(99u/42s) v8  draws=12  WR=0.632
+  [reuse] v60 218(141u/77s) - 169(116u/53s) v9  draws=13  WR=0.561
+  [reuse] v61 360(177u/183s) - 36(15u/21s) v64  draws=4  WR=0.905
+  [reuse] v61 161(108u/53s) - 223(140u/83s) v66_sc  draws=16  WR=0.422
+  [reuse] v61 167(104u/63s) - 218(131u/87s) v67_sc  draws=15  WR=0.436
+  [reuse] v61 200(119u/81s) - 187(112u/75s) v68_sc  draws=13  WR=0.516
+  [reuse] v61 241(128u/113s) - 145(79u/66s) v69_sc  draws=14  WR=0.620
+  [reuse] v61 231(118u/113s) - 158(80u/78s) v70_sc  draws=11  WR=0.591
+
+[new 28/36] v61 vs v71_sc (400 games = 200/side, seed=98800) ...
+  [reuse] v61 231(118u/113s) - 158(80u/78s) v70_sc  draws=11  WR=0.591
+
+[new 28/36] v61 vs v71_sc (400 games = 200/side, seed=98800) ...
+  v61: 228(113u/115s)  v71_sc: 158(80u/78s)  draws: 14  WR(v61)=0.588  t=31.6s
+  v61: 228(113u/115s)  v71_sc: 158(80u/78s)  draws: 14  WR(v61)=0.588  t=31.6s
+  [reuse] v61 230(141u/89s) - 158(101u/57s) v8  draws=12  WR=0.590
+  [reuse] v61 230(141u/89s) - 158(101u/57s) v8  draws=12  WR=0.590
+  [reuse] v61 202(127u/75s) - 185(116u/69s) v9  draws=13  WR=0.521
+  [reuse] v64 47(31u/16s) - 349(183u/166s) v66_sc  draws=4  WR=0.122
+  [reuse] v64 44(36u/8s) - 353(191u/162s) v67_sc  draws=3  WR=0.114
+  [reuse] v61 202(127u/75s) - 185(116u/69s) v9  draws=13  WR=0.521
+  [reuse] v64 47(31u/16s) - 349(183u/166s) v66_sc  draws=4  WR=0.122
+  [reuse] v64 44(36u/8s) - 353(191u/162s) v67_sc  draws=3  WR=0.114
+  [reuse] v64 58(38u/20s) - 342(180u/162s) v68_sc  draws=0  WR=0.145
+  [reuse] v64 58(38u/20s) - 342(180u/162s) v68_sc  draws=0  WR=0.145
+  [reuse] v64 71(42u/29s) - 328(170u/158s) v69_sc  draws=1  WR=0.179
+  [reuse] v64 71(42u/29s) - 328(170u/158s) v69_sc  draws=1  WR=0.179
+  [reuse] v64 58(23u/35s) - 338(162u/176s) v70_sc  draws=4  WR=0.150
+  [reuse] v64 58(23u/35s) - 338(162u/176s) v70_sc  draws=4  WR=0.150
+
+[new 29/36] v64 vs v71_sc (400 games = 200/side, seed=99200) ...
+
+[new 29/36] v64 vs v71_sc (400 games = 200/side, seed=99200) ...
+  v64: 71(35u/36s)  v71_sc: 325(161u/164s)  draws: 4  WR(v64)=0.182  t=31.7s
+  v64: 71(35u/36s)  v71_sc: 325(161u/164s)  draws: 4  WR(v64)=0.182  t=31.7s
+  [reuse] v64 15(9u/6s) - 184(93u/91s) v8  draws=1  WR=0.077
+  [reuse] v64 27(17u/10s) - 370(188u/182s) v9  draws=3  WR=0.071
+  [reuse] v66_sc 191(116u/75s) - 192(115u/77s) v67_sc  draws=17  WR=0.499
+  [reuse] v66_sc 203(137u/66s) - 184(124u/60s) v68_sc  draws=13  WR=0.524
+  [reuse] v66_sc 238(159u/79s) - 153(114u/39s) v69_sc  draws=9  WR=0.606
+  [reuse] v66_sc 242(148u/94s) - 150(101u/49s) v70_sc  draws=8  WR=0.615
+
+[new 30/36] v66_sc vs v71_sc (400 games = 200/side, seed=99600) ...
+  [reuse] v64 15(9u/6s) - 184(93u/91s) v8  draws=1  WR=0.077
+  [reuse] v64 27(17u/10s) - 370(188u/182s) v9  draws=3  WR=0.071
+  [reuse] v66_sc 191(116u/75s) - 192(115u/77s) v67_sc  draws=17  WR=0.499
+  [reuse] v66_sc 203(137u/66s) - 184(124u/60s) v68_sc  draws=13  WR=0.524
+  [reuse] v66_sc 238(159u/79s) - 153(114u/39s) v69_sc  draws=9  WR=0.606
+  [reuse] v66_sc 242(148u/94s) - 150(101u/49s) v70_sc  draws=8  WR=0.615
+
+[new 30/36] v66_sc vs v71_sc (400 games = 200/side, seed=99600) ...
+  v66_sc: 253(156u/97s)  v71_sc: 134(93u/41s)  draws: 13  WR(v66_sc)=0.649  t=28.1s
+  v66_sc: 253(156u/97s)  v71_sc: 134(93u/41s)  draws: 13  WR(v66_sc)=0.649  t=28.1s
+  [reuse] v66_sc 230(162u/68s) - 164(127u/37s) v8  draws=6  WR=0.583
+  [reuse] v66_sc 190(147u/43s) - 203(152u/51s) v9  draws=7  WR=0.484
+  [reuse] v67_sc 205(124u/81s) - 177(111u/66s) v68_sc  draws=18  WR=0.535
+  [reuse] v66_sc 230(162u/68s) - 164(127u/37s) v8  draws=6  WR=0.583
+  [reuse] v66_sc 190(147u/43s) - 203(152u/51s) v9  draws=7  WR=0.484
+  [reuse] v67_sc 205(124u/81s) - 177(111u/66s) v68_sc  draws=18  WR=0.535
+  [reuse] v67_sc 260(144u/116s) - 131(81u/50s) v69_sc  draws=9  WR=0.661
+  [reuse] v67_sc 256(134u/122s) - 135(73u/62s) v70_sc  draws=9  WR=0.651
+
+[new 31/36] v67_sc vs v71_sc (400 games = 200/side, seed=100000) ...
+  [reuse] v67_sc 260(144u/116s) - 131(81u/50s) v69_sc  draws=9  WR=0.661
+  [reuse] v67_sc 256(134u/122s) - 135(73u/62s) v70_sc  draws=9  WR=0.651
+
+[new 31/36] v67_sc vs v71_sc (400 games = 200/side, seed=100000) ...
+  v67_sc: 232(137u/95s)  v71_sc: 152(96u/56s)  draws: 16  WR(v67_sc)=0.600  t=27.5s
+  v67_sc: 232(137u/95s)  v71_sc: 152(96u/56s)  draws: 16  WR(v67_sc)=0.600  t=27.5s
+  [reuse] v67_sc 240(157u/83s) - 150(111u/39s) v8  draws=10  WR=0.613
+  [reuse] v67_sc 203(141u/62s) - 190(136u/54s) v9  draws=7  WR=0.516
+  [reuse] v68_sc 217(136u/81s) - 167(113u/54s) v69_sc  draws=16  WR=0.562
+  [reuse] v68_sc 225(131u/94s) - 165(103u/62s) v70_sc  draws=10  WR=0.575
+
+[new 32/36] v68_sc vs v71_sc (400 games = 200/side, seed=100400) ...
+  [reuse] v67_sc 240(157u/83s) - 150(111u/39s) v8  draws=10  WR=0.613
+  [reuse] v67_sc 203(141u/62s) - 190(136u/54s) v9  draws=7  WR=0.516
+  [reuse] v68_sc 217(136u/81s) - 167(113u/54s) v69_sc  draws=16  WR=0.562
+  [reuse] v68_sc 225(131u/94s) - 165(103u/62s) v70_sc  draws=10  WR=0.575
+
+[new 32/36] v68_sc vs v71_sc (400 games = 200/side, seed=100400) ...
+  v68_sc: 203(111u/92s)  v71_sc: 183(101u/82s)  draws: 14  WR(v68_sc)=0.525  t=28.3s
+  v68_sc: 203(111u/92s)  v71_sc: 183(101u/82s)  draws: 14  WR(v68_sc)=0.525  t=28.3s
+  [reuse] v68_sc 203(120u/83s) - 188(112u/76s) v8  draws=9  WR=0.519
+  [reuse] v68_sc 203(120u/83s) - 188(112u/76s) v8  draws=9  WR=0.519
+  [reuse] v68_sc 209(124u/85s) - 184(113u/71s) v9  draws=7  WR=0.531
+  [reuse] v68_sc 209(124u/85s) - 184(113u/71s) v9  draws=7  WR=0.531
+  [reuse] v69_sc 165(95u/70s) - 220(122u/98s) v70_sc  draws=15  WR=0.431
+  [reuse] v69_sc 165(95u/70s) - 220(122u/98s) v70_sc  draws=15  WR=0.431
+
+[new 33/36] v69_sc vs v71_sc (400 games = 200/side, seed=100800) ...
+
+[new 33/36] v69_sc vs v71_sc (400 games = 200/side, seed=100800) ...
+  v69_sc: 184(101u/83s)  v71_sc: 199(108u/91s)  draws: 17  WR(v69_sc)=0.481  t=31.3s
+  v69_sc: 184(101u/83s)  v71_sc: 199(108u/91s)  draws: 17  WR(v69_sc)=0.481  t=31.3s
+  [reuse] v69_sc 165(100u/65s) - 223(129u/94s) v8  draws=12  WR=0.427
+  [reuse] v69_sc 165(100u/65s) - 223(129u/94s) v8  draws=12  WR=0.427
+  [reuse] v69_sc 139(87u/52s) - 256(147u/109s) v9  draws=5  WR=0.354
+
+[new 34/36] v70_sc vs v71_sc (400 games = 200/side, seed=101200) ...
+  [reuse] v69_sc 139(87u/52s) - 256(147u/109s) v9  draws=5  WR=0.354
+
+[new 34/36] v70_sc vs v71_sc (400 games = 200/side, seed=101200) ...
+  v70_sc: 180(99u/81s)  v71_sc: 205(110u/95s)  draws: 15  WR(v70_sc)=0.469  t=57.6s
+  v70_sc: 180(99u/81s)  v71_sc: 205(110u/95s)  draws: 15  WR(v70_sc)=0.469  t=57.6s
+  [reuse] v70_sc 182(108u/74s) - 210(122u/88s) v8  draws=8  WR=0.465
+  [reuse] v70_sc 151(94u/57s) - 240(139u/101s) v9  draws=9  WR=0.389
+
+[new 35/36] v71_sc vs v8 (400 games = 200/side, seed=101600) ...
+  [reuse] v70_sc 182(108u/74s) - 210(122u/88s) v8  draws=8  WR=0.465
+  [reuse] v70_sc 151(94u/57s) - 240(139u/101s) v9  draws=9  WR=0.389
+
+[new 35/36] v71_sc vs v8 (400 games = 200/side, seed=101600) ...
+  v71_sc: 176(101u/75s)  v8: 216(122u/94s)  draws: 8  WR(v71_sc)=0.450  t=55.3s
+  v71_sc: 176(101u/75s)  v8: 216(122u/94s)  draws: 8  WR(v71_sc)=0.450  t=55.3s
+
+[new 36/36] v71_sc vs v9 (400 games = 200/side, seed=102000) ...
+
+[new 36/36] v71_sc vs v9 (400 games = 200/side, seed=102000) ...
+  v71_sc: 175(113u/62s)  v9: 222(137u/85s)  draws: 3  WR(v71_sc)=0.441  t=52.5s
+  v71_sc: 175(113u/62s)  v9: 222(137u/85s)  draws: 3  WR(v71_sc)=0.441  t=52.5s
+  [reuse] v8 164(136u/28s) - 226(171u/55s) v9  draws=10  WR=0.422
+  [reuse] v8 164(136u/28s) - 226(171u/55s) v9  draws=10  WR=0.422
+
+Fitting BayesElo (combined) ...
+
+Fitting BayesElo (combined) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+Fitting BayesElo (bipartite per-side, anchor=v14_USSR=2015.0) ...
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v55                    2118   2110   2056  +54  [  2112,   2124]  +103
+v54                    2102   2113   2025  +88  [  2097,   2108]  +87
+v44                    2101   2099   2033  +65  [  2095,   2107]  +86
+v46                    2101   2108   2025  +83  [  2095,   2107]  +86
+v45                    2096   2127   2000  +127  [  2090,   2102]  +81
+v48                    2094   2079   2036  +43  [  2088,   2100]  +79
+v56                    2094   2086   2029  +58  [  2088,   2099]  +79
+v47                    2092   2078   2034  +45  [  2087,   2098]  +77
+v22                    2087   2087   2015  +72  [  2081,   2093]  +72
+v49                    2080   2065   2021  +45  [  2074,   2085]  +65
+v57                    2079   2073   2012  +61  [  2074,   2085]  +64
+v20                    2077   2106   1977  +129  [  2071,   2082]  +62
+v21                    2076   2101   1981  +120  [  2070,   2081]  +61
+v19                    2070   2068   1998  +69  [  2064,   2075]  +55
+v50                    2063   2041   2009  +32  [  2057,   2068]  +48
+v17                    2061   2104   1949  +155  [  2055,   2067]  +46
+v58                    2057   2057   1981  +76  [  2051,   2062]  +42
+v15                    2053   2080   1953  +127  [  2047,   2059]  +38
+v18                    2049   2080   1945  +136  [  2044,   2055]  +34
+v16                    2042   2065   1945  +120  [  2036,   2048]  +27
+v59                    2032   2024   1961  +63  [  2026,   2037]  +17
+v14                    2015   2015   1936  +79  [  2015,   2015]  +0
+v67_sc                 2015   2016   1934  +82  [  2009,   2020]  -0
+v60                    2013   2009   1937  +72  [  2008,   2019]  -2
+v66_sc                 2012   2044   1899  +145  [  2006,   2018]  -3
+v12                    2010   2035   1904  +131  [  2005,   2016]  -5
+v51                    2004   1989   1938  +51  [  1999,   2010]  -11
+v13                    2003   2045   1877  +168  [  1997,   2009]  -12
+v61                    1989   1981   1915  +66  [  1983,   1995]  -26
+v53                    1988   1975   1918  +57  [  1982,   1993]  -27
+v52                    1988   1979   1913  +66  [  1982,   1993]  -27
+v11                    1972   2019   1832  +188  [  1966,   1978]  -43
+v68_sc                 1965   1937   1909  +28  [  1959,   1971]  -50
+v9                     1957   1994   1826  +168  [  1952,   1963]  -58
+v10                    1951   1988   1819  +169  [  1946,   1957]  -64
+v8                     1919   1929   1814  +116  [  1913,   1925]  -96
+v71_sc                 1912   1861   1880  -20  [  1906,   1918]  -103
+v70_sc                 1902   1864   1854  +10  [  1896,   1908]  -113
+v69_sc                 1890   1861   1831  +30  [  1884,   1896]  -125
+heuristic              1766   1778   1628  +150  [  1759,   1773]  -249
+v64                    1642   1587   1600  -13  [  1633,   1651]  -373
+v55_sc                 1522   1553   1236  +317  [  1511,   1533]  -493
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+heuristic      vs v10              0.117    0.277     0.256    -0.159     -0.138
+heuristic      vs v11              0.177    0.259     0.234    -0.082     -0.056
+heuristic      vs v12              0.212    0.207     0.197    +0.005     +0.016
+heuristic      vs v13              0.220    0.222     0.203    -0.002     +0.017
+heuristic      vs v14              0.169    0.193     0.192    -0.024     -0.024
+heuristic      vs v15              0.096    0.168     0.161    -0.072     -0.064
+heuristic      vs v16              0.150    0.176     0.169    -0.026     -0.019
+heuristic      vs v17              0.113    0.167     0.154    -0.054     -0.042
+heuristic      vs v18              0.089    0.173     0.164    -0.084     -0.075
+heuristic      vs v19              0.135    0.147     0.148    -0.012     -0.013
+heuristic      vs v20              0.120    0.151     0.143    -0.031     -0.023
+heuristic      vs v21              0.122    0.150     0.144    -0.027     -0.021
+heuristic      vs v22              0.119    0.135     0.136    -0.016     -0.017
+heuristic      vs v44              0.134    0.125     0.127    +0.009     +0.007
+heuristic      vs v45              0.135    0.136     0.130    -0.001     +0.005
+heuristic      vs v46              0.125    0.127     0.127    -0.002     -0.002
+heuristic      vs v47              0.094    0.128     0.132    -0.034     -0.039
+heuristic      vs v48              0.107    0.127     0.131    -0.020     -0.024
+heuristic      vs v49              0.151    0.137     0.141    +0.015     +0.010
+heuristic      vs v50              0.181    0.147     0.153    +0.034     +0.028
+heuristic      vs v51              0.266    0.198     0.202    +0.068     +0.064
+heuristic      vs v52              0.310    0.216     0.218    +0.094     +0.092
+heuristic      vs v53              0.324    0.215     0.218    +0.109     +0.106
+heuristic      vs v54              0.104    0.126     0.126    -0.023     -0.022
+heuristic      vs v55_sc           0.970    0.782     0.803    +0.188     +0.167
+heuristic      vs v55              0.094    0.113     0.116    -0.020     -0.023
+heuristic      vs v56              0.102    0.129     0.132    -0.026     -0.029
+heuristic      vs v57              0.110    0.139     0.141    -0.029     -0.031
+heuristic      vs v58              0.168    0.158     0.158    +0.010     +0.010
+heuristic      vs v59              0.228    0.176     0.178    +0.052     +0.049
+heuristic      vs v60              0.233    0.193     0.194    +0.039     +0.039
+heuristic      vs v61              0.274    0.215     0.217    +0.059     +0.057
+heuristic      vs v64              0.378    0.648     0.671    -0.270     -0.294
+heuristic      vs v66_sc           0.271    0.208     0.195    +0.063     +0.076
+heuristic      vs v67_sc           0.270    0.193     0.193    +0.077     +0.077
+heuristic      vs v68_sc           0.328    0.232     0.241    +0.095     +0.086
+heuristic      vs v69_sc           0.394    0.316     0.328    +0.078     +0.065
+heuristic      vs v70_sc           0.367    0.299     0.314    +0.069     +0.054
+heuristic      vs v71_sc           0.427    0.282     0.301    +0.145     +0.127
+heuristic      vs v8               0.110    0.300     0.293    -0.190     -0.183
+heuristic      vs v9               0.199    0.270     0.249    -0.071     -0.050
+v10            vs v11              0.409    0.476     0.470    -0.067     -0.062
+v10            vs v12              0.393    0.422     0.416    -0.029     -0.023
+v10            vs v13              0.396    0.434     0.426    -0.038     -0.030
+v10            vs v14              0.405    0.410     0.409    -0.005     -0.004
+v10            vs v15              0.334    0.366     0.358    -0.032     -0.024
+v10            vs v16              0.378    0.379     0.372    -0.002     +0.005
+v10            vs v17              0.366    0.359     0.347    +0.007     +0.019
+v10            vs v18              0.354    0.372     0.363    -0.018     -0.009
+v10            vs v19              0.364    0.339     0.336    +0.025     +0.028
+v10            vs v20              0.384    0.338     0.327    +0.046     +0.057
+v10            vs v21              0.375    0.338     0.328    +0.037     +0.047
+v10            vs v22              0.269    0.318     0.314    -0.050     -0.045
+v10            vs v44              0.318    0.301     0.297    +0.016     +0.021
+v10            vs v45              0.320    0.314     0.303    +0.006     +0.017
+v10            vs v46              0.258    0.303     0.297    -0.046     -0.040
+v10            vs v47              0.312    0.309     0.308    +0.003     +0.005
+v10            vs v48              0.258    0.307     0.305    -0.049     -0.048
+v10            vs v49              0.311    0.324     0.323    -0.013     -0.012
+
+Model                   Elo    USSR*      US*    Gap                95% CI   vs anchor
+  (* bipartite per-side, single anchor: v14_USSR=2015)
+----------------------------------------------------------------------------------------
+v55                    2118   2110   2056  +54  [  2112,   2124]  +103
+v54                    2102   2113   2025  +88  [  2097,   2108]  +87
+v44                    2101   2099   2033  +65  [  2095,   2107]  +86
+v46                    2101   2108   2025  +83  [  2095,   2107]  +86
+v45                    2096   2127   2000  +127  [  2090,   2102]  +81
+v48                    2094   2079   2036  +43  [  2088,   2100]  +79
+v56                    2094   2086   2029  +58  [  2088,   2099]  +79
+v47                    2092   2078   2034  +45  [  2087,   2098]  +77
+v22                    2087   2087   2015  +72  [  2081,   2093]  +72
+v49                    2080   2065   2021  +45  [  2074,   2085]  +65
+v57                    2079   2073   2012  +61  [  2074,   2085]  +64
+v20                    2077   2106   1977  +129  [  2071,   2082]  +62
+v21                    2076   2101   1981  +120  [  2070,   2081]  +61
+v19                    2070   2068   1998  +69  [  2064,   2075]  +55
+v50                    2063   2041   2009  +32  [  2057,   2068]  +48
+v17                    2061   2104   1949  +155  [  2055,   2067]  +46
+v58                    2057   2057   1981  +76  [  2051,   2062]  +42
+v15                    2053   2080   1953  +127  [  2047,   2059]  +38
+v18                    2049   2080   1945  +136  [  2044,   2055]  +34
+v16                    2042   2065   1945  +120  [  2036,   2048]  +27
+v59                    2032   2024   1961  +63  [  2026,   2037]  +17
+v14                    2015   2015   1936  +79  [  2015,   2015]  +0
+v67_sc                 2015   2016   1934  +82  [  2009,   2020]  -0
+v60                    2013   2009   1937  +72  [  2008,   2019]  -2
+v66_sc                 2012   2044   1899  +145  [  2006,   2018]  -3
+v12                    2010   2035   1904  +131  [  2005,   2016]  -5
+v51                    2004   1989   1938  +51  [  1999,   2010]  -11
+v13                    2003   2045   1877  +168  [  1997,   2009]  -12
+v61                    1989   1981   1915  +66  [  1983,   1995]  -26
+v53                    1988   1975   1918  +57  [  1982,   1993]  -27
+v52                    1988   1979   1913  +66  [  1982,   1993]  -27
+v11                    1972   2019   1832  +188  [  1966,   1978]  -43
+v68_sc                 1965   1937   1909  +28  [  1959,   1971]  -50
+v9                     1957   1994   1826  +168  [  1952,   1963]  -58
+v10                    1951   1988   1819  +169  [  1946,   1957]  -64
+v8                     1919   1929   1814  +116  [  1913,   1925]  -96
+v71_sc                 1912   1861   1880  -20  [  1906,   1918]  -103
+v70_sc                 1902   1864   1854  +10  [  1896,   1908]  -113
+v69_sc                 1890   1861   1831  +30  [  1884,   1896]  -125
+heuristic              1766   1778   1628  +150  [  1759,   1773]  -249
+v64                    1642   1587   1600  -13  [  1633,   1651]  -373
+v55_sc                 1522   1553   1236  +317  [  1511,   1533]  -493
+
+Pair                              Obs WR   Bip WR   Comb WR   Bip err   Comb err
+------------------------------------------------------------------------------------
+heuristic      vs v10              0.117    0.277     0.256    -0.159     -0.138
+heuristic      vs v11              0.177    0.259     0.234    -0.082     -0.056
+heuristic      vs v12              0.212    0.207     0.197    +0.005     +0.016
+heuristic      vs v13              0.220    0.222     0.203    -0.002     +0.017
+heuristic      vs v14              0.169    0.193     0.192    -0.024     -0.024
+heuristic      vs v15              0.096    0.168     0.161    -0.072     -0.064
+heuristic      vs v16              0.150    0.176     0.169    -0.026     -0.019
+heuristic      vs v17              0.113    0.167     0.154    -0.054     -0.042
+heuristic      vs v18              0.089    0.173     0.164    -0.084     -0.075
+heuristic      vs v19              0.135    0.147     0.148    -0.012     -0.013
+heuristic      vs v20              0.120    0.151     0.143    -0.031     -0.023
+heuristic      vs v21              0.122    0.150     0.144    -0.027     -0.021
+heuristic      vs v22              0.119    0.135     0.136    -0.016     -0.017
+heuristic      vs v44              0.134    0.125     0.127    +0.009     +0.007
+heuristic      vs v45              0.135    0.136     0.130    -0.001     +0.005
+heuristic      vs v46              0.125    0.127     0.127    -0.002     -0.002
+heuristic      vs v47              0.094    0.128     0.132    -0.034     -0.039
+heuristic      vs v48              0.107    0.127     0.131    -0.020     -0.024
+heuristic      vs v49              0.151    0.137     0.141    +0.015     +0.010
+heuristic      vs v50              0.181    0.147     0.153    +0.034     +0.028
+heuristic      vs v51              0.266    0.198     0.202    +0.068     +0.064
+heuristic      vs v52              0.310    0.216     0.218    +0.094     +0.092
+heuristic      vs v53              0.324    0.215     0.218    +0.109     +0.106
+heuristic      vs v54              0.104    0.126     0.126    -0.023     -0.022
+heuristic      vs v55_sc           0.970    0.782     0.803    +0.188     +0.167
+heuristic      vs v55              0.094    0.113     0.116    -0.020     -0.023
+heuristic      vs v56              0.102    0.129     0.132    -0.026     -0.029
+heuristic      vs v57              0.110    0.139     0.141    -0.029     -0.031
+heuristic      vs v58              0.168    0.158     0.158    +0.010     +0.010
+heuristic      vs v59              0.228    0.176     0.178    +0.052     +0.049
+heuristic      vs v60              0.233    0.193     0.194    +0.039     +0.039
+heuristic      vs v61              0.274    0.215     0.217    +0.059     +0.057
+heuristic      vs v64              0.378    0.648     0.671    -0.270     -0.294
+heuristic      vs v66_sc           0.271    0.208     0.195    +0.063     +0.076
+heuristic      vs v67_sc           0.270    0.193     0.193    +0.077     +0.077
+heuristic      vs v68_sc           0.328    0.232     0.241    +0.095     +0.086
+heuristic      vs v69_sc           0.394    0.316     0.328    +0.078     +0.065
+heuristic      vs v70_sc           0.367    0.299     0.314    +0.069     +0.054
+heuristic      vs v71_sc           0.427    0.282     0.301    +0.145     +0.127
+heuristic      vs v8               0.110    0.300     0.293    -0.190     -0.183
+heuristic      vs v9               0.199    0.270     0.249    -0.071     -0.050
+v10            vs v11              0.409    0.476     0.470    -0.067     -0.062
+v10            vs v12              0.393    0.422     0.416    -0.029     -0.023
+v10            vs v13              0.396    0.434     0.426    -0.038     -0.030
+v10            vs v14              0.405    0.410     0.409    -0.005     -0.004
+v10            vs v15              0.334    0.366     0.358    -0.032     -0.024
+v10            vs v16              0.378    0.379     0.372    -0.002     +0.005
+v10            vs v17              0.366    0.359     0.347    +0.007     +0.019
+v10            vs v18              0.354    0.372     0.363    -0.018     -0.009
+v10            vs v19              0.364    0.339     0.336    +0.025     +0.028
+v10            vs v20              0.384    0.338     0.327    +0.046     +0.057
+v10            vs v21              0.375    0.338     0.328    +0.037     +0.047
+v10            vs v22              0.269    0.318     0.314    -0.050     -0.045
+v10            vs v44              0.318    0.301     0.297    +0.016     +0.021
+v10            vs v45              0.320    0.314     0.303    +0.006     +0.017
+v10            vs v46              0.258    0.303     0.297    -0.046     -0.040
+v10            vs v47              0.312    0.309     0.308    +0.003     +0.005
+v10            vs v48              0.258    0.307     0.305    -0.049     -0.048
+v10            vs v49              0.311    0.324     0.323    -0.013     -0.012
+v10            vs v50              0.349    0.344     0.345    +0.004     +0.004
+v10            vs v51              0.414    0.422     0.424    -0.008     -0.010
+v10            vs v52              0.436    0.445     0.448    -0.009     -0.012
+v10            vs v53              0.454    0.445     0.448    +0.009     +0.006
+v10            vs v54              0.319    0.302     0.295    +0.017     +0.023
+v10            vs v55_sc           0.890    0.905     0.922    -0.015     -0.032
+v10            vs v55              0.253    0.280     0.277    -0.028     -0.025
+v10            vs v56              0.326    0.309     0.306    +0.017     +0.020
+v10            vs v57              0.336    0.327     0.324    +0.009     +0.012
+v10            vs v58              0.389    0.356     0.353    +0.032     +0.036
+v10            vs v59              0.365    0.387     0.387    -0.022     -0.022
+v10            vs v60              0.391    0.412     0.412    -0.021     -0.021
+v10            vs v61              0.455    0.444     0.446    +0.011     +0.009
+v10            vs v64              0.879    0.848     0.856    +0.031     +0.023
+v10            vs v66_sc           0.386    0.420     0.414    -0.034     -0.027
+v10            vs v67_sc           0.407    0.411     0.410    -0.003     -0.002
+v10            vs v68_sc           0.497    0.474     0.481    +0.023     +0.017
+v10            vs v69_sc           0.624    0.576     0.587    +0.048     +0.037
+v10            vs v70_sc           0.586    0.560     0.571    +0.026     +0.016
+v10            vs v71_sc           0.600    0.545     0.556    +0.055     +0.044
+v10            vs v8               0.535    0.539     0.547    -0.004     -0.012
+v10            vs v9               0.514    0.492     0.491    +0.021     +0.022
+v11            vs v12              0.425    0.449     0.445    -0.024     -0.020
+v11            vs v13              0.482    0.460     0.455    +0.022     +0.027
+v11            vs v14              0.441    0.438     0.438    +0.003     +0.003
+v11            vs v15              0.393    0.394     0.385    -0.001     +0.007
+v11            vs v16              0.409    0.407     0.400    +0.002     +0.008
+v11            vs v17              0.399    0.386     0.374    +0.012     +0.024
+v11            vs v18              0.385    0.399     0.390    -0.014     -0.005
+v11            vs v19              0.347    0.367     0.363    -0.020     -0.015
+v11            vs v20              0.309    0.365     0.354    -0.057     -0.045
+v11            vs v21              0.346    0.366     0.355    -0.019     -0.009
+v11            vs v22              0.344    0.346     0.340    -0.003     +0.004
+v11            vs v44              0.326    0.329     0.322    -0.002     +0.004
+v11            vs v45              0.306    0.341     0.328    -0.035     -0.022
+v11            vs v46              0.352    0.331     0.322    +0.022     +0.030
+v11            vs v47              0.324    0.337     0.333    -0.013     -0.010
+v11            vs v48              0.343    0.335     0.331    +0.008     +0.011
+v11            vs v49              0.364    0.352     0.350    +0.011     +0.014
+v11            vs v50              0.383    0.373     0.372    +0.009     +0.010
+v11            vs v51              0.438    0.451     0.453    -0.014     -0.016
+v11            vs v52              0.411    0.474     0.477    -0.063     -0.066
+v11            vs v53              0.489    0.474     0.477    +0.015     +0.012
+v11            vs v54              0.326    0.329     0.321    -0.003     +0.006
+v11            vs v55_sc           0.915    0.911     0.930    +0.004     -0.015
+v11            vs v55              0.335    0.307     0.302    +0.028     +0.033
+v11            vs v56              0.305    0.337     0.332    -0.032     -0.027
+v11            vs v57              0.323    0.355     0.350    -0.033     -0.028
+v11            vs v58              0.385    0.385     0.380    +0.000     +0.005
+v11            vs v59              0.444    0.416     0.415    +0.028     +0.029
+v11            vs v60              0.454    0.440     0.441    +0.013     +0.013
+v11            vs v61              0.446    0.472     0.476    -0.026     -0.029
+v11            vs v64              0.875    0.861     0.870    +0.014     +0.005
+v11            vs v66_sc           0.469    0.447     0.443    +0.022     +0.026
+v11            vs v67_sc           0.443    0.439     0.439    +0.003     +0.004
+v11            vs v68_sc           0.461    0.503     0.510    -0.042     -0.049
+v11            vs v69_sc           0.608    0.603     0.616    +0.005     -0.008
+v11            vs v70_sc           0.580    0.588     0.599    -0.008     -0.019
+v11            vs v71_sc           0.580    0.574     0.585    +0.006     -0.005
+v11            vs v8               0.626    0.565     0.576    +0.062     +0.050
+v11            vs v9               0.564    0.517     0.521    +0.047     +0.043
+v12            vs v13              0.517    0.510     0.511    +0.008     +0.007
+v12            vs v14              0.460    0.492     0.493    -0.032     -0.033
+v12            vs v15              0.391    0.441     0.439    -0.049     -0.048
+v12            vs v16              0.390    0.455     0.454    -0.065     -0.064
+v12            vs v17              0.430    0.430     0.427    -0.000     +0.003
+v12            vs v18              0.414    0.446     0.444    -0.032     -0.030
+v12            vs v19              0.372    0.416     0.415    -0.043     -0.043
+v12            vs v20              0.386    0.410     0.406    -0.023     -0.020
+v12            vs v21              0.438    0.410     0.407    +0.027     +0.031
+v12            vs v22              0.383    0.393     0.391    -0.010     -0.009
+v12            vs v44              0.362    0.374     0.372    -0.011     -0.010
+v12            vs v45              0.396    0.383     0.379    +0.013     +0.017
+v12            vs v46              0.365    0.375     0.372    -0.010     -0.007
+v12            vs v47              0.369    0.385     0.384    -0.016     -0.015
+v12            vs v48              0.390    0.382     0.382    +0.008     +0.008
+v12            vs v49              0.394    0.401     0.401    -0.008     -0.008
+v12            vs v50              0.412    0.425     0.425    -0.012     -0.013
+v12            vs v51              0.492    0.507     0.508    -0.015     -0.016
+v12            vs v52              0.477    0.531     0.532    -0.053     -0.055
+v12            vs v53              0.507    0.531     0.532    -0.023     -0.025
+v12            vs v54              0.385    0.373     0.370    +0.012     +0.015
+v12            vs v55_sc           0.943    0.936     0.943    +0.006     -0.001
+v12            vs v55              0.364    0.351     0.350    +0.013     +0.014
+v12            vs v56              0.364    0.384     0.382    -0.020     -0.018
+v12            vs v57              0.395    0.403     0.402    -0.008     -0.007
+v12            vs v58              0.422    0.434     0.434    -0.012     -0.011
+v12            vs v59              0.562    0.469     0.469    +0.093     +0.093
+v12            vs v60              0.530    0.495     0.496    +0.035     +0.034
+v12            vs v61              0.559    0.529     0.531    +0.030     +0.028
+v12            vs v64              0.936    0.893     0.893    +0.044     +0.043
+v12            vs v66_sc           0.542    0.497     0.498    +0.045     +0.045
+v12            vs v67_sc           0.514    0.493     0.494    +0.021     +0.020
+v12            vs v68_sc           0.606    0.562     0.565    +0.044     +0.041
+v12            vs v69_sc           0.686    0.662     0.666    +0.024     +0.020
+v12            vs v70_sc           0.677    0.648     0.651    +0.030     +0.026
+v12            vs v71_sc           0.661    0.635     0.637    +0.026     +0.024
+v12            vs v8               0.615    0.622     0.629    -0.007     -0.014
+v12            vs v9               0.549    0.570     0.576    -0.022     -0.027
+v13            vs v14              0.485    0.482     0.483    +0.003     +0.002
+v13            vs v15              0.412    0.433     0.428    -0.021     -0.016
+v10            vs v50              0.349    0.344     0.345    +0.004     +0.004
+v10            vs v51              0.414    0.422     0.424    -0.008     -0.010
+v10            vs v52              0.436    0.445     0.448    -0.009     -0.012
+v10            vs v53              0.454    0.445     0.448    +0.009     +0.006
+v10            vs v54              0.319    0.302     0.295    +0.017     +0.023
+v10            vs v55_sc           0.890    0.905     0.922    -0.015     -0.032
+v10            vs v55              0.253    0.280     0.277    -0.028     -0.025
+v10            vs v56              0.326    0.309     0.306    +0.017     +0.020
+v10            vs v57              0.336    0.327     0.324    +0.009     +0.012
+v10            vs v58              0.389    0.356     0.353    +0.032     +0.036
+v10            vs v59              0.365    0.387     0.387    -0.022     -0.022
+v10            vs v60              0.391    0.412     0.412    -0.021     -0.021
+v10            vs v61              0.455    0.444     0.446    +0.011     +0.009
+v10            vs v64              0.879    0.848     0.856    +0.031     +0.023
+v10            vs v66_sc           0.386    0.420     0.414    -0.034     -0.027
+v10            vs v67_sc           0.407    0.411     0.410    -0.003     -0.002
+v10            vs v68_sc           0.497    0.474     0.481    +0.023     +0.017
+v10            vs v69_sc           0.624    0.576     0.587    +0.048     +0.037
+v10            vs v70_sc           0.586    0.560     0.571    +0.026     +0.016
+v10            vs v71_sc           0.600    0.545     0.556    +0.055     +0.044
+v10            vs v8               0.535    0.539     0.547    -0.004     -0.012
+v10            vs v9               0.514    0.492     0.491    +0.021     +0.022
+v11            vs v12              0.425    0.449     0.445    -0.024     -0.020
+v11            vs v13              0.482    0.460     0.455    +0.022     +0.027
+v11            vs v14              0.441    0.438     0.438    +0.003     +0.003
+v11            vs v15              0.393    0.394     0.385    -0.001     +0.007
+v11            vs v16              0.409    0.407     0.400    +0.002     +0.008
+v11            vs v17              0.399    0.386     0.374    +0.012     +0.024
+v11            vs v18              0.385    0.399     0.390    -0.014     -0.005
+v11            vs v19              0.347    0.367     0.363    -0.020     -0.015
+v11            vs v20              0.309    0.365     0.354    -0.057     -0.045
+v11            vs v21              0.346    0.366     0.355    -0.019     -0.009
+v11            vs v22              0.344    0.346     0.340    -0.003     +0.004
+v11            vs v44              0.326    0.329     0.322    -0.002     +0.004
+v11            vs v45              0.306    0.341     0.328    -0.035     -0.022
+v11            vs v46              0.352    0.331     0.322    +0.022     +0.030
+v11            vs v47              0.324    0.337     0.333    -0.013     -0.010
+v11            vs v48              0.343    0.335     0.331    +0.008     +0.011
+v11            vs v49              0.364    0.352     0.350    +0.011     +0.014
+v11            vs v50              0.383    0.373     0.372    +0.009     +0.010
+v11            vs v51              0.438    0.451     0.453    -0.014     -0.016
+v11            vs v52              0.411    0.474     0.477    -0.063     -0.066
+v11            vs v53              0.489    0.474     0.477    +0.015     +0.012
+v11            vs v54              0.326    0.329     0.321    -0.003     +0.006
+v11            vs v55_sc           0.915    0.911     0.930    +0.004     -0.015
+v11            vs v55              0.335    0.307     0.302    +0.028     +0.033
+v11            vs v56              0.305    0.337     0.332    -0.032     -0.027
+v11            vs v57              0.323    0.355     0.350    -0.033     -0.028
+v11            vs v58              0.385    0.385     0.380    +0.000     +0.005
+v11            vs v59              0.444    0.416     0.415    +0.028     +0.029
+v11            vs v60              0.454    0.440     0.441    +0.013     +0.013
+v11            vs v61              0.446    0.472     0.476    -0.026     -0.029
+v11            vs v64              0.875    0.861     0.870    +0.014     +0.005
+v11            vs v66_sc           0.469    0.447     0.443    +0.022     +0.026
+v11            vs v67_sc           0.443    0.439     0.439    +0.003     +0.004
+v11            vs v68_sc           0.461    0.503     0.510    -0.042     -0.049
+v11            vs v69_sc           0.608    0.603     0.616    +0.005     -0.008
+v11            vs v70_sc           0.580    0.588     0.599    -0.008     -0.019
+v11            vs v71_sc           0.580    0.574     0.585    +0.006     -0.005
+v11            vs v8               0.626    0.565     0.576    +0.062     +0.050
+v11            vs v9               0.564    0.517     0.521    +0.047     +0.043
+v12            vs v13              0.517    0.510     0.511    +0.008     +0.007
+v12            vs v14              0.460    0.492     0.493    -0.032     -0.033
+v12            vs v15              0.391    0.441     0.439    -0.049     -0.048
+v12            vs v16              0.390    0.455     0.454    -0.065     -0.064
+v12            vs v17              0.430    0.430     0.427    -0.000     +0.003
+v12            vs v18              0.414    0.446     0.444    -0.032     -0.030
+v12            vs v19              0.372    0.416     0.415    -0.043     -0.043
+v12            vs v20              0.386    0.410     0.406    -0.023     -0.020
+v12            vs v21              0.438    0.410     0.407    +0.027     +0.031
+v12            vs v22              0.383    0.393     0.391    -0.010     -0.009
+v12            vs v44              0.362    0.374     0.372    -0.011     -0.010
+v12            vs v45              0.396    0.383     0.379    +0.013     +0.017
+v12            vs v46              0.365    0.375     0.372    -0.010     -0.007
+v12            vs v47              0.369    0.385     0.384    -0.016     -0.015
+v12            vs v48              0.390    0.382     0.382    +0.008     +0.008
+v12            vs v49              0.394    0.401     0.401    -0.008     -0.008
+v12            vs v50              0.412    0.425     0.425    -0.012     -0.013
+v12            vs v51              0.492    0.507     0.508    -0.015     -0.016
+v12            vs v52              0.477    0.531     0.532    -0.053     -0.055
+v12            vs v53              0.507    0.531     0.532    -0.023     -0.025
+v12            vs v54              0.385    0.373     0.370    +0.012     +0.015
+v12            vs v55_sc           0.943    0.936     0.943    +0.006     -0.001
+v12            vs v55              0.364    0.351     0.350    +0.013     +0.014
+v12            vs v56              0.364    0.384     0.382    -0.020     -0.018
+v12            vs v57              0.395    0.403     0.402    -0.008     -0.007
+v12            vs v58              0.422    0.434     0.434    -0.012     -0.011
+v12            vs v59              0.562    0.469     0.469    +0.093     +0.093
+v12            vs v60              0.530    0.495     0.496    +0.035     +0.034
+v12            vs v61              0.559    0.529     0.531    +0.030     +0.028
+v12            vs v64              0.936    0.893     0.893    +0.044     +0.043
+v12            vs v66_sc           0.542    0.497     0.498    +0.045     +0.045
+v12            vs v67_sc           0.514    0.493     0.494    +0.021     +0.020
+v12            vs v68_sc           0.606    0.562     0.565    +0.044     +0.041
+v12            vs v69_sc           0.686    0.662     0.666    +0.024     +0.020
+v12            vs v70_sc           0.677    0.648     0.651    +0.030     +0.026
+v12            vs v71_sc           0.661    0.635     0.637    +0.026     +0.024
+v12            vs v8               0.615    0.622     0.629    -0.007     -0.014
+v12            vs v9               0.549    0.570     0.576    -0.022     -0.027
+v13            vs v14              0.485    0.482     0.483    +0.003     +0.002
+v13            vs v15              0.412    0.433     0.428    -0.021     -0.016
+v13            vs v16              0.429    0.447     0.444    -0.018     -0.015
+v13            vs v17              0.401    0.424     0.417    -0.023     -0.016
+v13            vs v18              0.386    0.439     0.434    -0.053     -0.047
+v13            vs v19              0.406    0.408     0.405    -0.002     +0.001
+v13            vs v20              0.383    0.404     0.396    -0.021     -0.013
+v13            vs v21              0.401    0.404     0.397    -0.003     +0.004
+v13            vs v22              0.351    0.386     0.381    -0.035     -0.030
+v13            vs v44              0.399    0.368     0.362    +0.031     +0.036
+v13            vs v45              0.311    0.378     0.369    -0.067     -0.058
+v13            vs v46              0.376    0.369     0.363    +0.007     +0.014
+v13            vs v47              0.381    0.378     0.374    +0.004     +0.007
+v13            vs v48              0.334    0.375     0.372    -0.042     -0.038
+v13            vs v49              0.381    0.394     0.391    -0.013     -0.010
+v13            vs v50              0.420    0.416     0.415    +0.004     +0.005
+v13            vs v51              0.500    0.497     0.498    +0.003     +0.002
+v13            vs v52              0.556    0.519     0.522    +0.037     +0.034
+v13            vs v53              0.515    0.519     0.522    -0.004     -0.007
+v13            vs v54              0.343    0.367     0.361    -0.025     -0.018
+v13            vs v55_sc           0.930    0.928     0.941    +0.002     -0.011
+v13            vs v55              0.299    0.346     0.340    -0.047     -0.042
+v13            vs v56              0.378    0.377     0.372    +0.000     +0.005
+v13            vs v57              0.404    0.396     0.392    +0.008     +0.012
+v13            vs v58              0.426    0.426     0.423    -0.000     +0.003
+v13            vs v59              0.485    0.460     0.459    +0.025     +0.026
+v13            vs v60              0.479    0.485     0.485    -0.006     -0.006
+v13            vs v61              0.552    0.517     0.520    +0.035     +0.032
+v13            vs v64              0.890    0.885     0.889    +0.005     +0.001
+v13            vs v66_sc           0.532    0.488     0.487    +0.045     +0.046
+v13            vs v67_sc           0.536    0.483     0.483    +0.054     +0.053
+v13            vs v68_sc           0.610    0.550     0.555    +0.060     +0.055
+v13            vs v69_sc           0.667    0.649     0.657    +0.019     +0.011
+v13            vs v70_sc           0.700    0.635     0.641    +0.065     +0.059
+v13            vs v71_sc           0.623    0.622     0.627    +0.000     -0.005
+v13            vs v8               0.600    0.609     0.619    -0.009     -0.019
+v13            vs v9               0.566    0.558     0.565    +0.008     +0.001
+v14            vs v15              0.466    0.446     0.445    +0.020     +0.021
+v14            vs v16              0.431    0.461     0.461    -0.030     -0.030
+v14            vs v17              0.445    0.435     0.434    +0.010     +0.011
+v14            vs v18              0.407    0.451     0.451    -0.044     -0.043
+v14            vs v19              0.404    0.421     0.422    -0.017     -0.018
+v14            vs v20              0.414    0.413     0.412    +0.001     +0.002
+v14            vs v21              0.386    0.414     0.413    -0.028     -0.027
+v14            vs v22              0.374    0.397     0.398    -0.023     -0.024
+v14            vs v44              0.385    0.378     0.378    +0.007     +0.007
+v14            vs v45              0.420    0.386     0.385    +0.034     +0.035
+v14            vs v46              0.366    0.378     0.379    -0.012     -0.012
+v14            vs v47              0.376    0.389     0.391    -0.013     -0.014
+v14            vs v48              0.343    0.387     0.388    -0.044     -0.045
+v14            vs v49              0.396    0.407     0.408    -0.010     -0.012
+v14            vs v50              0.385    0.431     0.432    -0.046     -0.047
+v14            vs v51              0.532    0.516     0.515    +0.016     +0.017
+v14            vs v52              0.521    0.540     0.539    -0.019     -0.018
+v14            vs v53              0.573    0.540     0.539    +0.032     +0.033
+v14            vs v54              0.346    0.376     0.377    -0.029     -0.030
+v14            vs v55_sc           0.948    0.945     0.945    +0.003     +0.003
+v14            vs v55              0.341    0.354     0.356    -0.013     -0.015
+v14            vs v56              0.371    0.388     0.389    -0.017     -0.017
+v14            vs v57              0.393    0.408     0.409    -0.016     -0.016
+v14            vs v58              0.455    0.440     0.440    +0.015     +0.015
+v14            vs v59              0.474    0.476     0.476    -0.003     -0.002
+v14            vs v60              0.491    0.503     0.502    -0.012     -0.011
+v14            vs v61              0.540    0.538     0.537    +0.002     +0.003
+v14            vs v64              0.890    0.899     0.896    -0.009     -0.006
+v14            vs v66_sc           0.552    0.505     0.504    +0.047     +0.048
+v14            vs v67_sc           0.547    0.501     0.500    +0.047     +0.047
+v14            vs v68_sc           0.620    0.573     0.572    +0.047     +0.048
+v14            vs v69_sc           0.710    0.674     0.672    +0.036     +0.038
+v14            vs v70_sc           0.670    0.659     0.657    +0.011     +0.013
+v14            vs v71_sc           0.733    0.645     0.643    +0.087     +0.089
+v14            vs v8               0.637    0.635     0.635    +0.002     +0.002
+v14            vs v9               0.639    0.582     0.582    +0.057     +0.057
+v15            vs v16              0.506    0.515     0.516    -0.009     -0.010
+v15            vs v17              0.448    0.488     0.488    -0.040     -0.041
+v15            vs v18              0.470    0.505     0.505    -0.035     -0.035
+v15            vs v19              0.429    0.478     0.476    -0.049     -0.047
+v15            vs v20              0.420    0.468     0.466    -0.048     -0.046
+v15            vs v21              0.456    0.469     0.467    -0.013     -0.011
+v15            vs v22              0.416    0.454     0.451    -0.038     -0.035
+v15            vs v44              0.398    0.435     0.431    -0.037     -0.034
+v15            vs v45              0.411    0.441     0.438    -0.030     -0.027
+v15            vs v46              0.417    0.435     0.432    -0.017     -0.014
+v15            vs v47              0.449    0.447     0.444    +0.002     +0.005
+v15            vs v48              0.446    0.444     0.441    +0.002     +0.005
+v15            vs v49              0.411    0.464     0.462    -0.053     -0.050
+v15            vs v50              0.496    0.489     0.486    +0.007     +0.010
+v15            vs v51              0.555    0.571     0.570    -0.016     -0.015
+v15            vs v52              0.608    0.593     0.593    +0.015     +0.015
+v15            vs v53              0.575    0.593     0.593    -0.018     -0.018
+v15            vs v54              0.404    0.432     0.429    -0.028     -0.026
+v15            vs v55_sc           0.958    0.951     0.955    +0.007     +0.002
+v15            vs v55              0.426    0.411     0.408    +0.015     +0.018
+v15            vs v56              0.445    0.445     0.442    -0.000     +0.003
+v15            vs v57              0.450    0.465     0.462    -0.015     -0.012
+v15            vs v58              0.499    0.496     0.495    +0.002     +0.004
+v15            vs v59              0.562    0.532     0.531    +0.030     +0.032
+v15            vs v60              0.574    0.557     0.557    +0.016     +0.017
+v15            vs v61              0.624    0.591     0.591    +0.033     +0.033
+v15            vs v64              0.948    0.916     0.914    +0.031     +0.033
+v15            vs v66_sc           0.593    0.556     0.559    +0.037     +0.034
+v15            vs v67_sc           0.545    0.555     0.555    -0.010     -0.010
+v15            vs v68_sc           0.621    0.625     0.624    -0.004     -0.003
+v13            vs v16              0.429    0.447     0.444    -0.018     -0.015
+v13            vs v17              0.401    0.424     0.417    -0.023     -0.016
+v13            vs v18              0.386    0.439     0.434    -0.053     -0.047
+v13            vs v19              0.406    0.408     0.405    -0.002     +0.001
+v13            vs v20              0.383    0.404     0.396    -0.021     -0.013
+v13            vs v21              0.401    0.404     0.397    -0.003     +0.004
+v13            vs v22              0.351    0.386     0.381    -0.035     -0.030
+v13            vs v44              0.399    0.368     0.362    +0.031     +0.036
+v13            vs v45              0.311    0.378     0.369    -0.067     -0.058
+v13            vs v46              0.376    0.369     0.363    +0.007     +0.014
+v13            vs v47              0.381    0.378     0.374    +0.004     +0.007
+v13            vs v48              0.334    0.375     0.372    -0.042     -0.038
+v13            vs v49              0.381    0.394     0.391    -0.013     -0.010
+v13            vs v50              0.420    0.416     0.415    +0.004     +0.005
+v13            vs v51              0.500    0.497     0.498    +0.003     +0.002
+v13            vs v52              0.556    0.519     0.522    +0.037     +0.034
+v13            vs v53              0.515    0.519     0.522    -0.004     -0.007
+v13            vs v54              0.343    0.367     0.361    -0.025     -0.018
+v13            vs v55_sc           0.930    0.928     0.941    +0.002     -0.011
+v13            vs v55              0.299    0.346     0.340    -0.047     -0.042
+v13            vs v56              0.378    0.377     0.372    +0.000     +0.005
+v13            vs v57              0.404    0.396     0.392    +0.008     +0.012
+v13            vs v58              0.426    0.426     0.423    -0.000     +0.003
+v13            vs v59              0.485    0.460     0.459    +0.025     +0.026
+v13            vs v60              0.479    0.485     0.485    -0.006     -0.006
+v13            vs v61              0.552    0.517     0.520    +0.035     +0.032
+v13            vs v64              0.890    0.885     0.889    +0.005     +0.001
+v13            vs v66_sc           0.532    0.488     0.487    +0.045     +0.046
+v13            vs v67_sc           0.536    0.483     0.483    +0.054     +0.053
+v13            vs v68_sc           0.610    0.550     0.555    +0.060     +0.055
+v13            vs v69_sc           0.667    0.649     0.657    +0.019     +0.011
+v13            vs v70_sc           0.700    0.635     0.641    +0.065     +0.059
+v13            vs v71_sc           0.623    0.622     0.627    +0.000     -0.005
+v13            vs v8               0.600    0.609     0.619    -0.009     -0.019
+v13            vs v9               0.566    0.558     0.565    +0.008     +0.001
+v14            vs v15              0.466    0.446     0.445    +0.020     +0.021
+v14            vs v16              0.431    0.461     0.461    -0.030     -0.030
+v14            vs v17              0.445    0.435     0.434    +0.010     +0.011
+v14            vs v18              0.407    0.451     0.451    -0.044     -0.043
+v14            vs v19              0.404    0.421     0.422    -0.017     -0.018
+v14            vs v20              0.414    0.413     0.412    +0.001     +0.002
+v14            vs v21              0.386    0.414     0.413    -0.028     -0.027
+v14            vs v22              0.374    0.397     0.398    -0.023     -0.024
+v14            vs v44              0.385    0.378     0.378    +0.007     +0.007
+v14            vs v45              0.420    0.386     0.385    +0.034     +0.035
+v14            vs v46              0.366    0.378     0.379    -0.012     -0.012
+v14            vs v47              0.376    0.389     0.391    -0.013     -0.014
+v14            vs v48              0.343    0.387     0.388    -0.044     -0.045
+v14            vs v49              0.396    0.407     0.408    -0.010     -0.012
+v14            vs v50              0.385    0.431     0.432    -0.046     -0.047
+v14            vs v51              0.532    0.516     0.515    +0.016     +0.017
+v14            vs v52              0.521    0.540     0.539    -0.019     -0.018
+v14            vs v53              0.573    0.540     0.539    +0.032     +0.033
+v14            vs v54              0.346    0.376     0.377    -0.029     -0.030
+v14            vs v55_sc           0.948    0.945     0.945    +0.003     +0.003
+v14            vs v55              0.341    0.354     0.356    -0.013     -0.015
+v14            vs v56              0.371    0.388     0.389    -0.017     -0.017
+v14            vs v57              0.393    0.408     0.409    -0.016     -0.016
+v14            vs v58              0.455    0.440     0.440    +0.015     +0.015
+v14            vs v59              0.474    0.476     0.476    -0.003     -0.002
+v14            vs v60              0.491    0.503     0.502    -0.012     -0.011
+v14            vs v61              0.540    0.538     0.537    +0.002     +0.003
+v14            vs v64              0.890    0.899     0.896    -0.009     -0.006
+v14            vs v66_sc           0.552    0.505     0.504    +0.047     +0.048
+v14            vs v67_sc           0.547    0.501     0.500    +0.047     +0.047
+v14            vs v68_sc           0.620    0.573     0.572    +0.047     +0.048
+v14            vs v69_sc           0.710    0.674     0.672    +0.036     +0.038
+v14            vs v70_sc           0.670    0.659     0.657    +0.011     +0.013
+v14            vs v71_sc           0.733    0.645     0.643    +0.087     +0.089
+v14            vs v8               0.637    0.635     0.635    +0.002     +0.002
+v14            vs v9               0.639    0.582     0.582    +0.057     +0.057
+v15            vs v16              0.506    0.515     0.516    -0.009     -0.010
+v15            vs v17              0.448    0.488     0.488    -0.040     -0.041
+v15            vs v18              0.470    0.505     0.505    -0.035     -0.035
+v15            vs v19              0.429    0.478     0.476    -0.049     -0.047
+v15            vs v20              0.420    0.468     0.466    -0.048     -0.046
+v15            vs v21              0.456    0.469     0.467    -0.013     -0.011
+v15            vs v22              0.416    0.454     0.451    -0.038     -0.035
+v15            vs v44              0.398    0.435     0.431    -0.037     -0.034
+v15            vs v45              0.411    0.441     0.438    -0.030     -0.027
+v15            vs v46              0.417    0.435     0.432    -0.017     -0.014
+v15            vs v47              0.449    0.447     0.444    +0.002     +0.005
+v15            vs v48              0.446    0.444     0.441    +0.002     +0.005
+v15            vs v49              0.411    0.464     0.462    -0.053     -0.050
+v15            vs v50              0.496    0.489     0.486    +0.007     +0.010
+v15            vs v51              0.555    0.571     0.570    -0.016     -0.015
+v15            vs v52              0.608    0.593     0.593    +0.015     +0.015
+v15            vs v53              0.575    0.593     0.593    -0.018     -0.018
+v15            vs v54              0.404    0.432     0.429    -0.028     -0.026
+v15            vs v55_sc           0.958    0.951     0.955    +0.007     +0.002
+v15            vs v55              0.426    0.411     0.408    +0.015     +0.018
+v15            vs v56              0.445    0.445     0.442    -0.000     +0.003
+v15            vs v57              0.450    0.465     0.462    -0.015     -0.012
+v15            vs v58              0.499    0.496     0.495    +0.002     +0.004
+v15            vs v59              0.562    0.532     0.531    +0.030     +0.032
+v15            vs v60              0.574    0.557     0.557    +0.016     +0.017
+v15            vs v61              0.624    0.591     0.591    +0.033     +0.033
+v15            vs v64              0.948    0.916     0.914    +0.031     +0.033
+v15            vs v66_sc           0.593    0.556     0.559    +0.037     +0.034
+v15            vs v67_sc           0.545    0.555     0.555    -0.010     -0.010
+v15            vs v68_sc           0.621    0.625     0.624    -0.004     -0.003
+v15            vs v69_sc           0.729    0.718     0.719    +0.010     +0.010
+v15            vs v70_sc           0.689    0.706     0.705    -0.017     -0.016
+v15            vs v71_sc           0.704    0.695     0.692    +0.009     +0.012
+v15            vs v8               0.699    0.678     0.684    +0.020     +0.015
+v15            vs v9               0.681    0.626     0.634    +0.055     +0.047
+v16            vs v17              0.465    0.473     0.473    -0.008     -0.008
+v16            vs v18              0.445    0.490     0.490    -0.045     -0.045
+v16            vs v19              0.471    0.462     0.460    +0.009     +0.011
+v16            vs v20              0.415    0.453     0.450    -0.038     -0.035
+v16            vs v21              0.380    0.454     0.452    -0.074     -0.072
+v16            vs v22              0.405    0.438     0.436    -0.033     -0.031
+v16            vs v44              0.378    0.418     0.416    -0.041     -0.038
+v16            vs v45              0.404    0.426     0.423    -0.022     -0.019
+v16            vs v46              0.420    0.419     0.416    +0.001     +0.004
+v16            vs v47              0.417    0.430     0.428    -0.013     -0.011
+v16            vs v48              0.378    0.428     0.426    -0.050     -0.048
+v16            vs v49              0.414    0.448     0.446    -0.034     -0.032
+v16            vs v50              0.460    0.472     0.470    -0.012     -0.010
+v16            vs v51              0.534    0.555     0.554    -0.021     -0.020
+v16            vs v52              0.549    0.578     0.578    -0.029     -0.029
+v16            vs v53              0.573    0.578     0.578    -0.006     -0.005
+v16            vs v54              0.394    0.416     0.414    -0.022     -0.020
+v16            vs v55_sc           0.950    0.948     0.952    +0.002     -0.002
+v16            vs v55              0.399    0.395     0.393    +0.004     +0.006
+v16            vs v56              0.441    0.429     0.426    +0.012     +0.015
+v16            vs v57              0.461    0.449     0.447    +0.012     +0.015
+v16            vs v58              0.514    0.481     0.479    +0.033     +0.035
+v16            vs v59              0.541    0.516     0.515    +0.025     +0.026
+v16            vs v60              0.560    0.542     0.541    +0.018     +0.019
+v16            vs v61              0.578    0.576     0.576    +0.002     +0.002
+v16            vs v64              0.941    0.911     0.909    +0.030     +0.032
+v16            vs v66_sc           0.552    0.541     0.543    +0.011     +0.009
+v16            vs v67_sc           0.501    0.539     0.539    -0.038     -0.038
+v16            vs v68_sc           0.644    0.610     0.609    +0.034     +0.034
+v16            vs v69_sc           0.726    0.706     0.706    +0.021     +0.021
+v16            vs v70_sc           0.689    0.692     0.691    -0.004     -0.003
+v16            vs v71_sc           0.713    0.680     0.678    +0.032     +0.034
+v16            vs v8               0.716    0.666     0.670    +0.051     +0.046
+v16            vs v9               0.642    0.613     0.620    +0.029     +0.023
+v17            vs v18              0.485    0.517     0.517    -0.032     -0.032
+v17            vs v19              0.434    0.491     0.488    -0.058     -0.054
+v17            vs v20              0.438    0.481     0.478    -0.044     -0.040
+v17            vs v21              0.458    0.483     0.479    -0.025     -0.021
+v17            vs v22              0.436    0.468     0.463    -0.032     -0.026
+v17            vs v44              0.459    0.449     0.443    +0.010     +0.016
+v17            vs v45              0.456    0.455     0.450    +0.002     +0.007
+v17            vs v46              0.456    0.449     0.443    +0.007     +0.013
+v17            vs v47              0.414    0.461     0.455    -0.047     -0.041
+v17            vs v48              0.479    0.458     0.453    +0.020     +0.026
+v17            vs v49              0.479    0.478     0.473    +0.001     +0.006
+v17            vs v50              0.509    0.502     0.498    +0.006     +0.011
+v17            vs v51              0.585    0.582     0.581    +0.003     +0.004
+v17            vs v52              0.575    0.603     0.604    -0.028     -0.029
+v17            vs v53              0.586    0.604     0.604    -0.018     -0.018
+v17            vs v54              0.429    0.446     0.441    -0.017     -0.012
+v17            vs v55_sc           0.945    0.950     0.957    -0.005     -0.012
+v17            vs v55              0.426    0.426     0.419    +0.001     +0.007
+v17            vs v56              0.429    0.459     0.453    -0.031     -0.024
+v17            vs v57              0.436    0.479     0.474    -0.043     -0.038
+v17            vs v58              0.504    0.509     0.506    -0.006     -0.003
+v17            vs v59              0.520    0.544     0.543    -0.024     -0.023
+v17            vs v60              0.566    0.569     0.568    -0.002     -0.002
+v17            vs v61              0.616    0.602     0.602    +0.015     +0.014
+v17            vs v64              0.912    0.919     0.918    -0.006     -0.005
+v17            vs v66_sc           0.603    0.566     0.570    +0.037     +0.032
+v17            vs v67_sc           0.600    0.566     0.566    +0.034     +0.034
+v17            vs v68_sc           0.645    0.636     0.635    +0.009     +0.010
+v17            vs v69_sc           0.740    0.726     0.728    +0.014     +0.012
+v17            vs v70_sc           0.741    0.714     0.714    +0.027     +0.027
+v17            vs v71_sc           0.686    0.704     0.702    -0.018     -0.016
+v17            vs v8               0.704    0.685     0.694    +0.019     +0.010
+v17            vs v9               0.715    0.633     0.645    +0.082     +0.070
+v18            vs v19              0.486    0.473     0.471    +0.013     +0.016
+v18            vs v20              0.455    0.463     0.461    -0.008     -0.006
+v18            vs v21              0.416    0.465     0.462    -0.048     -0.046
+v18            vs v22              0.385    0.449     0.446    -0.064     -0.061
+v18            vs v44              0.471    0.430     0.426    +0.042     +0.045
+v18            vs v45              0.441    0.436     0.433    +0.005     +0.008
+v18            vs v46              0.411    0.430     0.426    -0.019     -0.015
+v18            vs v47              0.375    0.442     0.438    -0.067     -0.063
+v18            vs v48              0.427    0.439     0.436    -0.012     -0.008
+v18            vs v49              0.466    0.459     0.456    +0.007     +0.010
+v18            vs v50              0.468    0.484     0.481    -0.016     -0.013
+v18            vs v51              0.529    0.565     0.564    -0.036     -0.035
+v18            vs v52              0.578    0.587     0.588    -0.010     -0.010
+v18            vs v53              0.580    0.588     0.588    -0.008     -0.008
+v18            vs v54              0.409    0.427     0.424    -0.019     -0.015
+v18            vs v55_sc           0.936    0.949     0.954    -0.012     -0.018
+v18            vs v55              0.378    0.406     0.403    -0.029     -0.025
+v18            vs v56              0.395    0.440     0.437    -0.045     -0.042
+v18            vs v57              0.432    0.460     0.457    -0.028     -0.025
+v18            vs v58              0.429    0.491     0.489    -0.062     -0.061
+v18            vs v59              0.491    0.527     0.526    -0.035     -0.034
+v18            vs v60              0.507    0.552     0.552    -0.044     -0.044
+v18            vs v61              0.520    0.585     0.586    -0.065     -0.066
+v18            vs v64              0.917    0.914     0.913    +0.004     +0.005
+v18            vs v66_sc           0.565    0.550     0.554    +0.015     +0.011
+v18            vs v67_sc           0.539    0.549     0.550    -0.010     -0.011
+v18            vs v68_sc           0.670    0.619     0.619    +0.051     +0.051
+v18            vs v69_sc           0.719    0.713     0.714    +0.006     +0.005
+v18            vs v70_sc           0.739    0.700     0.700    +0.039     +0.039
+v15            vs v69_sc           0.729    0.718     0.719    +0.010     +0.010
+v15            vs v70_sc           0.689    0.706     0.705    -0.017     -0.016
+v15            vs v71_sc           0.704    0.695     0.692    +0.009     +0.012
+v15            vs v8               0.699    0.678     0.684    +0.020     +0.015
+v15            vs v9               0.681    0.626     0.634    +0.055     +0.047
+v16            vs v17              0.465    0.473     0.473    -0.008     -0.008
+v16            vs v18              0.445    0.490     0.490    -0.045     -0.045
+v16            vs v19              0.471    0.462     0.460    +0.009     +0.011
+v16            vs v20              0.415    0.453     0.450    -0.038     -0.035
+v16            vs v21              0.380    0.454     0.452    -0.074     -0.072
+v16            vs v22              0.405    0.438     0.436    -0.033     -0.031
+v16            vs v44              0.378    0.418     0.416    -0.041     -0.038
+v16            vs v45              0.404    0.426     0.423    -0.022     -0.019
+v16            vs v46              0.420    0.419     0.416    +0.001     +0.004
+v16            vs v47              0.417    0.430     0.428    -0.013     -0.011
+v16            vs v48              0.378    0.428     0.426    -0.050     -0.048
+v16            vs v49              0.414    0.448     0.446    -0.034     -0.032
+v16            vs v50              0.460    0.472     0.470    -0.012     -0.010
+v16            vs v51              0.534    0.555     0.554    -0.021     -0.020
+v16            vs v52              0.549    0.578     0.578    -0.029     -0.029
+v16            vs v53              0.573    0.578     0.578    -0.006     -0.005
+v16            vs v54              0.394    0.416     0.414    -0.022     -0.020
+v16            vs v55_sc           0.950    0.948     0.952    +0.002     -0.002
+v16            vs v55              0.399    0.395     0.393    +0.004     +0.006
+v16            vs v56              0.441    0.429     0.426    +0.012     +0.015
+v16            vs v57              0.461    0.449     0.447    +0.012     +0.015
+v16            vs v58              0.514    0.481     0.479    +0.033     +0.035
+v16            vs v59              0.541    0.516     0.515    +0.025     +0.026
+v16            vs v60              0.560    0.542     0.541    +0.018     +0.019
+v16            vs v61              0.578    0.576     0.576    +0.002     +0.002
+v16            vs v64              0.941    0.911     0.909    +0.030     +0.032
+v16            vs v66_sc           0.552    0.541     0.543    +0.011     +0.009
+v16            vs v67_sc           0.501    0.539     0.539    -0.038     -0.038
+v16            vs v68_sc           0.644    0.610     0.609    +0.034     +0.034
+v16            vs v69_sc           0.726    0.706     0.706    +0.021     +0.021
+v16            vs v70_sc           0.689    0.692     0.691    -0.004     -0.003
+v16            vs v71_sc           0.713    0.680     0.678    +0.032     +0.034
+v16            vs v8               0.716    0.666     0.670    +0.051     +0.046
+v16            vs v9               0.642    0.613     0.620    +0.029     +0.023
+v17            vs v18              0.485    0.517     0.517    -0.032     -0.032
+v17            vs v19              0.434    0.491     0.488    -0.058     -0.054
+v17            vs v20              0.438    0.481     0.478    -0.044     -0.040
+v17            vs v21              0.458    0.483     0.479    -0.025     -0.021
+v17            vs v22              0.436    0.468     0.463    -0.032     -0.026
+v17            vs v44              0.459    0.449     0.443    +0.010     +0.016
+v17            vs v45              0.456    0.455     0.450    +0.002     +0.007
+v17            vs v46              0.456    0.449     0.443    +0.007     +0.013
+v17            vs v47              0.414    0.461     0.455    -0.047     -0.041
+v17            vs v48              0.479    0.458     0.453    +0.020     +0.026
+v17            vs v49              0.479    0.478     0.473    +0.001     +0.006
+v17            vs v50              0.509    0.502     0.498    +0.006     +0.011
+v17            vs v51              0.585    0.582     0.581    +0.003     +0.004
+v17            vs v52              0.575    0.603     0.604    -0.028     -0.029
+v17            vs v53              0.586    0.604     0.604    -0.018     -0.018
+v17            vs v54              0.429    0.446     0.441    -0.017     -0.012
+v17            vs v55_sc           0.945    0.950     0.957    -0.005     -0.012
+v17            vs v55              0.426    0.426     0.419    +0.001     +0.007
+v17            vs v56              0.429    0.459     0.453    -0.031     -0.024
+v17            vs v57              0.436    0.479     0.474    -0.043     -0.038
+v17            vs v58              0.504    0.509     0.506    -0.006     -0.003
+v17            vs v59              0.520    0.544     0.543    -0.024     -0.023
+v17            vs v60              0.566    0.569     0.568    -0.002     -0.002
+v17            vs v61              0.616    0.602     0.602    +0.015     +0.014
+v17            vs v64              0.912    0.919     0.918    -0.006     -0.005
+v17            vs v66_sc           0.603    0.566     0.570    +0.037     +0.032
+v17            vs v67_sc           0.600    0.566     0.566    +0.034     +0.034
+v17            vs v68_sc           0.645    0.636     0.635    +0.009     +0.010
+v17            vs v69_sc           0.740    0.726     0.728    +0.014     +0.012
+v17            vs v70_sc           0.741    0.714     0.714    +0.027     +0.027
+v17            vs v71_sc           0.686    0.704     0.702    -0.018     -0.016
+v17            vs v8               0.704    0.685     0.694    +0.019     +0.010
+v17            vs v9               0.715    0.633     0.645    +0.082     +0.070
+v18            vs v19              0.486    0.473     0.471    +0.013     +0.016
+v18            vs v20              0.455    0.463     0.461    -0.008     -0.006
+v18            vs v21              0.416    0.465     0.462    -0.048     -0.046
+v18            vs v22              0.385    0.449     0.446    -0.064     -0.061
+v18            vs v44              0.471    0.430     0.426    +0.042     +0.045
+v18            vs v45              0.441    0.436     0.433    +0.005     +0.008
+v18            vs v46              0.411    0.430     0.426    -0.019     -0.015
+v18            vs v47              0.375    0.442     0.438    -0.067     -0.063
+v18            vs v48              0.427    0.439     0.436    -0.012     -0.008
+v18            vs v49              0.466    0.459     0.456    +0.007     +0.010
+v18            vs v50              0.468    0.484     0.481    -0.016     -0.013
+v18            vs v51              0.529    0.565     0.564    -0.036     -0.035
+v18            vs v52              0.578    0.587     0.588    -0.010     -0.010
+v18            vs v53              0.580    0.588     0.588    -0.008     -0.008
+v18            vs v54              0.409    0.427     0.424    -0.019     -0.015
+v18            vs v55_sc           0.936    0.949     0.954    -0.012     -0.018
+v18            vs v55              0.378    0.406     0.403    -0.029     -0.025
+v18            vs v56              0.395    0.440     0.437    -0.045     -0.042
+v18            vs v57              0.432    0.460     0.457    -0.028     -0.025
+v18            vs v58              0.429    0.491     0.489    -0.062     -0.061
+v18            vs v59              0.491    0.527     0.526    -0.035     -0.034
+v18            vs v60              0.507    0.552     0.552    -0.044     -0.044
+v18            vs v61              0.520    0.585     0.586    -0.065     -0.066
+v18            vs v64              0.917    0.914     0.913    +0.004     +0.005
+v18            vs v66_sc           0.565    0.550     0.554    +0.015     +0.011
+v18            vs v67_sc           0.539    0.549     0.550    -0.010     -0.011
+v18            vs v68_sc           0.670    0.619     0.619    +0.051     +0.051
+v18            vs v69_sc           0.719    0.713     0.714    +0.006     +0.005
+v18            vs v70_sc           0.739    0.700     0.700    +0.039     +0.039
+v18            vs v71_sc           0.730    0.689     0.687    +0.041     +0.043
+v18            vs v8               0.679    0.673     0.680    +0.006     -0.001
+v18            vs v9               0.656    0.620     0.629    +0.036     +0.027
+v19            vs v20              0.506    0.488     0.490    +0.018     +0.016
+v19            vs v21              0.481    0.490     0.491    -0.009     -0.010
+v19            vs v22              0.460    0.475     0.475    -0.015     -0.015
+v19            vs v44              0.445    0.455     0.455    -0.010     -0.010
+v19            vs v45              0.459    0.460     0.462    -0.001     -0.003
+v19            vs v46              0.436    0.454     0.455    -0.018     -0.019
+v19            vs v47              0.415    0.468     0.467    -0.053     -0.052
+v19            vs v48              0.453    0.465     0.465    -0.013     -0.012
+v19            vs v49              0.515    0.486     0.485    +0.029     +0.030
+v19            vs v50              0.522    0.512     0.510    +0.011     +0.013
+v19            vs v51              0.551    0.596     0.593    -0.044     -0.041
+v19            vs v52              0.605    0.618     0.616    -0.013     -0.011
+v19            vs v53              0.588    0.619     0.616    -0.031     -0.028
+v19            vs v54              0.430    0.451     0.453    -0.021     -0.023
+v19            vs v55_sc           0.927    0.960     0.959    -0.033     -0.031
+v19            vs v55              0.394    0.431     0.431    -0.037     -0.037
+v19            vs v56              0.454    0.466     0.465    -0.012     -0.012
+v19            vs v57              0.477    0.487     0.486    -0.009     -0.009
+v19            vs v58              0.546    0.519     0.519    +0.027     +0.028
+v19            vs v59              0.547    0.556     0.555    -0.009     -0.007
+v19            vs v60              0.546    0.582     0.580    -0.036     -0.034
+v19            vs v61              0.585    0.616     0.614    -0.031     -0.029
+v19            vs v64              0.916    0.925     0.922    -0.009     -0.005
+v19            vs v66_sc           0.557    0.580     0.582    -0.023     -0.025
+v19            vs v67_sc           0.618    0.579     0.579    +0.038     +0.039
+v19            vs v68_sc           0.652    0.650     0.647    +0.002     +0.006
+v19            vs v69_sc           0.757    0.742     0.738    +0.015     +0.020
+v19            vs v70_sc           0.734    0.729     0.724    +0.005     +0.010
+v19            vs v71_sc           0.735    0.717     0.712    +0.018     +0.023
+v19            vs v8               0.714    0.705     0.704    +0.009     +0.009
+v19            vs v9               0.664    0.653     0.656    +0.010     +0.007
+v20            vs v21              0.472    0.502     0.501    -0.029     -0.029
+v20            vs v22              0.479    0.488     0.485    -0.009     -0.006
+v20            vs v44              0.445    0.468     0.465    -0.023     -0.020
+v20            vs v45              0.468    0.473     0.472    -0.005     -0.004
+v20            vs v46              0.444    0.468     0.465    -0.024     -0.021
+v20            vs v47              0.458    0.481     0.477    -0.023     -0.020
+v20            vs v48              0.438    0.478     0.475    -0.041     -0.037
+v20            vs v49              0.434    0.498     0.495    -0.064     -0.062
+v20            vs v50              0.496    0.523     0.520    -0.027     -0.024
+v20            vs v51              0.589    0.604     0.602    -0.015     -0.014
+v20            vs v52              0.599    0.625     0.625    -0.026     -0.026
+v20            vs v53              0.603    0.626     0.625    -0.023     -0.023
+v20            vs v54              0.485    0.465     0.463    +0.020     +0.022
+v20            vs v55_sc           0.912    0.957     0.961    -0.044     -0.048
+v20            vs v55              0.435    0.445     0.441    -0.010     -0.006
+v20            vs v56              0.515    0.479     0.475    +0.036     +0.040
+v20            vs v57              0.492    0.499     0.496    -0.006     -0.004
+v20            vs v58              0.504    0.530     0.529    -0.026     -0.025
+v20            vs v59              0.526    0.566     0.565    -0.039     -0.038
+v20            vs v60              0.593    0.590     0.590    +0.002     +0.002
+v20            vs v61              0.611    0.623     0.624    -0.012     -0.012
+v20            vs v64              0.910    0.926     0.924    -0.016     -0.014
+v20            vs v66_sc           0.598    0.586     0.592    +0.011     +0.006
+v20            vs v67_sc           0.645    0.587     0.588    +0.058     +0.057
+v20            vs v68_sc           0.686    0.657     0.656    +0.029     +0.031
+v20            vs v69_sc           0.756    0.746     0.745    +0.011     +0.011
+v20            vs v70_sc           0.743    0.734     0.732    +0.009     +0.010
+v20            vs v71_sc           0.729    0.724     0.720    +0.005     +0.009
+v20            vs v8               0.718    0.706     0.713    +0.011     +0.005
+v20            vs v9               0.666    0.655     0.665    +0.012     +0.001
+v21            vs v22              0.475    0.486     0.484    -0.011     -0.009
+v21            vs v44              0.468    0.466     0.464    +0.001     +0.004
+v21            vs v45              0.458    0.471     0.471    -0.013     -0.013
+v21            vs v46              0.453    0.466     0.464    -0.013     -0.011
+v21            vs v47              0.509    0.479     0.476    +0.030     +0.033
+v21            vs v48              0.532    0.477     0.474    +0.056     +0.059
+v21            vs v49              0.475    0.497     0.494    -0.022     -0.019
+v21            vs v50              0.465    0.522     0.519    -0.057     -0.054
+v21            vs v51              0.600    0.603     0.601    -0.003     -0.001
+v21            vs v52              0.632    0.624     0.624    +0.008     +0.008
+v21            vs v53              0.609    0.625     0.624    -0.016     -0.015
+v21            vs v54              0.398    0.463     0.462    -0.065     -0.064
+v21            vs v55_sc           0.948    0.957     0.960    -0.010     -0.013
+v21            vs v55              0.420    0.443     0.440    -0.023     -0.020
+v21            vs v56              0.446    0.477     0.474    -0.031     -0.028
+v21            vs v57              0.461    0.497     0.495    -0.036     -0.034
+v21            vs v58              0.470    0.528     0.527    -0.058     -0.057
+v21            vs v59              0.505    0.564     0.563    -0.059     -0.058
+v21            vs v60              0.591    0.589     0.589    +0.002     +0.002
+v21            vs v61              0.611    0.622     0.622    -0.011     -0.011
+v21            vs v64              0.938    0.926     0.924    +0.011     +0.013
+v21            vs v66_sc           0.581    0.586     0.591    -0.004     -0.009
+v21            vs v67_sc           0.596    0.586     0.587    +0.010     +0.009
+v21            vs v68_sc           0.657    0.656     0.655    +0.001     +0.003
+v21            vs v69_sc           0.719    0.745     0.744    -0.027     -0.026
+v21            vs v70_sc           0.719    0.733     0.731    -0.015     -0.012
+v21            vs v71_sc           0.723    0.723     0.719    -0.001     +0.003
+v21            vs v8               0.739    0.706     0.712    +0.033     +0.027
+v21            vs v9               0.701    0.655     0.664    +0.047     +0.037
+v22            vs v44              0.485    0.480     0.480    +0.005     +0.005
+v22            vs v45              0.472    0.484     0.487    -0.011     -0.014
+v22            vs v46              0.482    0.479     0.480    +0.003     +0.003
+v22            vs v47              0.465    0.493     0.492    -0.028     -0.027
+v22            vs v48              0.468    0.491     0.490    -0.023     -0.022
+v22            vs v49              0.514    0.511     0.510    +0.002     +0.003
+v22            vs v50              0.529    0.537     0.535    -0.008     -0.006
+v22            vs v51              0.580    0.620     0.617    -0.040     -0.037
+v18            vs v71_sc           0.730    0.689     0.687    +0.041     +0.043
+v18            vs v8               0.679    0.673     0.680    +0.006     -0.001
+v18            vs v9               0.656    0.620     0.629    +0.036     +0.027
+v19            vs v20              0.506    0.488     0.490    +0.018     +0.016
+v19            vs v21              0.481    0.490     0.491    -0.009     -0.010
+v19            vs v22              0.460    0.475     0.475    -0.015     -0.015
+v19            vs v44              0.445    0.455     0.455    -0.010     -0.010
+v19            vs v45              0.459    0.460     0.462    -0.001     -0.003
+v19            vs v46              0.436    0.454     0.455    -0.018     -0.019
+v19            vs v47              0.415    0.468     0.467    -0.053     -0.052
+v19            vs v48              0.453    0.465     0.465    -0.013     -0.012
+v19            vs v49              0.515    0.486     0.485    +0.029     +0.030
+v19            vs v50              0.522    0.512     0.510    +0.011     +0.013
+v19            vs v51              0.551    0.596     0.593    -0.044     -0.041
+v19            vs v52              0.605    0.618     0.616    -0.013     -0.011
+v19            vs v53              0.588    0.619     0.616    -0.031     -0.028
+v19            vs v54              0.430    0.451     0.453    -0.021     -0.023
+v19            vs v55_sc           0.927    0.960     0.959    -0.033     -0.031
+v19            vs v55              0.394    0.431     0.431    -0.037     -0.037
+v19            vs v56              0.454    0.466     0.465    -0.012     -0.012
+v19            vs v57              0.477    0.487     0.486    -0.009     -0.009
+v19            vs v58              0.546    0.519     0.519    +0.027     +0.028
+v19            vs v59              0.547    0.556     0.555    -0.009     -0.007
+v19            vs v60              0.546    0.582     0.580    -0.036     -0.034
+v19            vs v61              0.585    0.616     0.614    -0.031     -0.029
+v19            vs v64              0.916    0.925     0.922    -0.009     -0.005
+v19            vs v66_sc           0.557    0.580     0.582    -0.023     -0.025
+v19            vs v67_sc           0.618    0.579     0.579    +0.038     +0.039
+v19            vs v68_sc           0.652    0.650     0.647    +0.002     +0.006
+v19            vs v69_sc           0.757    0.742     0.738    +0.015     +0.020
+v19            vs v70_sc           0.734    0.729     0.724    +0.005     +0.010
+v19            vs v71_sc           0.735    0.717     0.712    +0.018     +0.023
+v19            vs v8               0.714    0.705     0.704    +0.009     +0.009
+v19            vs v9               0.664    0.653     0.656    +0.010     +0.007
+v20            vs v21              0.472    0.502     0.501    -0.029     -0.029
+v20            vs v22              0.479    0.488     0.485    -0.009     -0.006
+v20            vs v44              0.445    0.468     0.465    -0.023     -0.020
+v20            vs v45              0.468    0.473     0.472    -0.005     -0.004
+v20            vs v46              0.444    0.468     0.465    -0.024     -0.021
+v20            vs v47              0.458    0.481     0.477    -0.023     -0.020
+v20            vs v48              0.438    0.478     0.475    -0.041     -0.037
+v20            vs v49              0.434    0.498     0.495    -0.064     -0.062
+v20            vs v50              0.496    0.523     0.520    -0.027     -0.024
+v20            vs v51              0.589    0.604     0.602    -0.015     -0.014
+v20            vs v52              0.599    0.625     0.625    -0.026     -0.026
+v20            vs v53              0.603    0.626     0.625    -0.023     -0.023
+v20            vs v54              0.485    0.465     0.463    +0.020     +0.022
+v20            vs v55_sc           0.912    0.957     0.961    -0.044     -0.048
+v20            vs v55              0.435    0.445     0.441    -0.010     -0.006
+v20            vs v56              0.515    0.479     0.475    +0.036     +0.040
+v20            vs v57              0.492    0.499     0.496    -0.006     -0.004
+v20            vs v58              0.504    0.530     0.529    -0.026     -0.025
+v20            vs v59              0.526    0.566     0.565    -0.039     -0.038
+v20            vs v60              0.593    0.590     0.590    +0.002     +0.002
+v20            vs v61              0.611    0.623     0.624    -0.012     -0.012
+v20            vs v64              0.910    0.926     0.924    -0.016     -0.014
+v20            vs v66_sc           0.598    0.586     0.592    +0.011     +0.006
+v20            vs v67_sc           0.645    0.587     0.588    +0.058     +0.057
+v20            vs v68_sc           0.686    0.657     0.656    +0.029     +0.031
+v20            vs v69_sc           0.756    0.746     0.745    +0.011     +0.011
+v20            vs v70_sc           0.743    0.734     0.732    +0.009     +0.010
+v20            vs v71_sc           0.729    0.724     0.720    +0.005     +0.009
+v20            vs v8               0.718    0.706     0.713    +0.011     +0.005
+v20            vs v9               0.666    0.655     0.665    +0.012     +0.001
+v21            vs v22              0.475    0.486     0.484    -0.011     -0.009
+v21            vs v44              0.468    0.466     0.464    +0.001     +0.004
+v21            vs v45              0.458    0.471     0.471    -0.013     -0.013
+v21            vs v46              0.453    0.466     0.464    -0.013     -0.011
+v21            vs v47              0.509    0.479     0.476    +0.030     +0.033
+v21            vs v48              0.532    0.477     0.474    +0.056     +0.059
+v21            vs v49              0.475    0.497     0.494    -0.022     -0.019
+v21            vs v50              0.465    0.522     0.519    -0.057     -0.054
+v21            vs v51              0.600    0.603     0.601    -0.003     -0.001
+v21            vs v52              0.632    0.624     0.624    +0.008     +0.008
+v21            vs v53              0.609    0.625     0.624    -0.016     -0.015
+v21            vs v54              0.398    0.463     0.462    -0.065     -0.064
+v21            vs v55_sc           0.948    0.957     0.960    -0.010     -0.013
+v21            vs v55              0.420    0.443     0.440    -0.023     -0.020
+v21            vs v56              0.446    0.477     0.474    -0.031     -0.028
+v21            vs v57              0.461    0.497     0.495    -0.036     -0.034
+v21            vs v58              0.470    0.528     0.527    -0.058     -0.057
+v21            vs v59              0.505    0.564     0.563    -0.059     -0.058
+v21            vs v60              0.591    0.589     0.589    +0.002     +0.002
+v21            vs v61              0.611    0.622     0.622    -0.011     -0.011
+v21            vs v64              0.938    0.926     0.924    +0.011     +0.013
+v21            vs v66_sc           0.581    0.586     0.591    -0.004     -0.009
+v21            vs v67_sc           0.596    0.586     0.587    +0.010     +0.009
+v21            vs v68_sc           0.657    0.656     0.655    +0.001     +0.003
+v21            vs v69_sc           0.719    0.745     0.744    -0.027     -0.026
+v21            vs v70_sc           0.719    0.733     0.731    -0.015     -0.012
+v21            vs v71_sc           0.723    0.723     0.719    -0.001     +0.003
+v21            vs v8               0.739    0.706     0.712    +0.033     +0.027
+v21            vs v9               0.701    0.655     0.664    +0.047     +0.037
+v22            vs v44              0.485    0.480     0.480    +0.005     +0.005
+v22            vs v45              0.472    0.484     0.487    -0.011     -0.014
+v22            vs v46              0.482    0.479     0.480    +0.003     +0.003
+v22            vs v47              0.465    0.493     0.492    -0.028     -0.027
+v22            vs v48              0.468    0.491     0.490    -0.023     -0.022
+v22            vs v49              0.514    0.511     0.510    +0.002     +0.003
+v22            vs v50              0.529    0.537     0.535    -0.008     -0.006
+v22            vs v51              0.580    0.620     0.617    -0.040     -0.037
+v22            vs v52              0.609    0.642     0.639    -0.033     -0.030
+v22            vs v53              0.652    0.642     0.639    +0.010     +0.013
+v22            vs v54              0.472    0.476     0.478    -0.004     -0.005
+v22            vs v55_sc           0.939    0.964     0.963    -0.025     -0.024
+v22            vs v55              0.510    0.456     0.456    +0.054     +0.054
+v22            vs v56              0.451    0.491     0.490    -0.040     -0.039
+v22            vs v57              0.547    0.512     0.511    +0.036     +0.036
+v22            vs v58              0.534    0.544     0.544    -0.010     -0.010
+v22            vs v59              0.562    0.581     0.579    -0.018     -0.017
+v22            vs v60              0.574    0.606     0.605    -0.032     -0.031
+v22            vs v61              0.632    0.640     0.638    -0.007     -0.005
+v22            vs v64              0.912    0.932     0.928    -0.020     -0.016
+v22            vs v66_sc           0.593    0.603     0.606    -0.011     -0.014
+v22            vs v67_sc           0.586    0.603     0.603    -0.017     -0.016
+v22            vs v68_sc           0.576    0.673     0.669    -0.097     -0.093
+v22            vs v69_sc           0.724    0.761     0.756    -0.037     -0.033
+v22            vs v70_sc           0.703    0.749     0.744    -0.046     -0.041
+v22            vs v71_sc           0.715    0.738     0.732    -0.023     -0.017
+v22            vs v8               0.716    0.725     0.725    -0.009     -0.009
+v22            vs v9               0.649    0.674     0.678    -0.025     -0.030
+v44            vs v45              0.502    0.503     0.507    -0.001     -0.005
+v44            vs v46              0.500    0.499     0.500    +0.001     -0.000
+v44            vs v47              0.526    0.514     0.513    +0.012     +0.013
+v44            vs v48              0.466    0.511     0.510    -0.045     -0.044
+v44            vs v49              0.535    0.532     0.531    +0.003     +0.004
+v44            vs v50              0.562    0.558     0.555    +0.005     +0.008
+v44            vs v51              0.637    0.639     0.636    -0.002     +0.002
+v44            vs v52              0.639    0.661     0.658    -0.022     -0.019
+v44            vs v53              0.650    0.661     0.658    -0.011     -0.008
+v44            vs v54              0.426    0.496     0.498    -0.070     -0.072
+v44            vs v55_sc           0.960    0.967     0.966    -0.007     -0.006
+v44            vs v55              0.471    0.476     0.476    -0.004     -0.005
+v44            vs v56              0.519    0.512     0.511    +0.007     +0.008
+v44            vs v57              0.524    0.532     0.531    -0.009     -0.008
+v44            vs v58              0.564    0.564     0.564    -0.000     +0.000
+v44            vs v59              0.618    0.601     0.599    +0.017     +0.019
+v44            vs v60              0.625    0.626     0.624    -0.001     +0.001
+v44            vs v61              0.674    0.659     0.656    +0.015     +0.018
+v44            vs v64              0.944    0.938     0.934    +0.006     +0.010
+v44            vs v66_sc           0.609    0.622     0.626    -0.013     -0.017
+v44            vs v67_sc           0.552    0.623     0.622    -0.070     -0.069
+v44            vs v68_sc           0.655    0.692     0.687    -0.037     -0.032
+v44            vs v69_sc           0.810    0.776     0.771    +0.034     +0.039
+v44            vs v70_sc           0.775    0.765     0.759    +0.010     +0.016
+v44            vs v71_sc           0.738    0.754     0.748    -0.016     -0.010
+v44            vs v8               0.759    0.741     0.741    +0.017     +0.018
+v44            vs v9               0.723    0.691     0.696    +0.031     +0.027
+v45            vs v46              0.494    0.496     0.493    -0.002     +0.001
+v45            vs v47              0.542    0.510     0.506    +0.032     +0.037
+v45            vs v48              0.525    0.508     0.503    +0.017     +0.022
+v45            vs v49              0.527    0.528     0.524    -0.000     +0.004
+v45            vs v50              0.566    0.553     0.548    +0.013     +0.018
+v45            vs v51              0.589    0.632     0.629    -0.043     -0.040
+v45            vs v52              0.647    0.652     0.651    -0.004     -0.004
+v45            vs v53              0.621    0.653     0.651    -0.032     -0.030
+v45            vs v54              0.486    0.493     0.491    -0.007     -0.005
+v45            vs v55_sc           0.948    0.962     0.965    -0.014     -0.017
+v45            vs v55              0.468    0.473     0.469    -0.006     -0.001
+v45            vs v56              0.500    0.508     0.504    -0.008     -0.004
+v45            vs v57              0.540    0.528     0.524    +0.012     +0.016
+v45            vs v58              0.551    0.558     0.557    -0.007     -0.005
+v45            vs v59              0.529    0.594     0.592    -0.065     -0.063
+v45            vs v60              0.573    0.618     0.617    -0.045     -0.045
+v45            vs v61              0.588    0.650     0.650    -0.063     -0.062
+v45            vs v64              0.916    0.935     0.932    -0.018     -0.016
+v45            vs v66_sc           0.645    0.613     0.619    +0.032     +0.026
+v45            vs v67_sc           0.585    0.615     0.615    -0.030     -0.030
+v45            vs v68_sc           0.637    0.684     0.681    -0.046     -0.043
+v45            vs v69_sc           0.733    0.768     0.766    -0.036     -0.034
+v45            vs v70_sc           0.730    0.757     0.754    -0.027     -0.024
+v45            vs v71_sc           0.682    0.748     0.742    -0.065     -0.060
+v45            vs v8               0.779    0.730     0.735    +0.049     +0.044
+v45            vs v9               0.705    0.679     0.690    +0.026     +0.015
+v46            vs v47              0.510    0.515     0.512    -0.005     -0.002
+v46            vs v48              0.489    0.512     0.510    -0.023     -0.021
+v46            vs v49              0.481    0.533     0.530    -0.051     -0.049
+v46            vs v50              0.562    0.558     0.555    +0.004     +0.008
+v46            vs v51              0.620    0.639     0.635    -0.019     -0.015
+v46            vs v52              0.641    0.660     0.657    -0.019     -0.016
+v46            vs v53              0.636    0.661     0.657    -0.024     -0.021
+v46            vs v54              0.524    0.497     0.498    +0.027     +0.026
+v46            vs v55_sc           0.938    0.966     0.966    -0.028     -0.028
+v46            vs v55              0.479    0.477     0.476    +0.002     +0.003
+v46            vs v56              0.526    0.512     0.510    +0.014     +0.016
+v46            vs v57              0.521    0.533     0.531    -0.012     -0.010
+v46            vs v58              0.571    0.564     0.563    +0.007     +0.008
+v46            vs v59              0.600    0.601     0.599    -0.001     +0.001
+v46            vs v60              0.631    0.625     0.624    +0.006     +0.008
+v46            vs v61              0.626    0.658     0.656    -0.032     -0.030
+v46            vs v64              0.935    0.937     0.934    -0.002     +0.001
+v46            vs v66_sc           0.579    0.621     0.625    -0.042     -0.047
+v46            vs v67_sc           0.575    0.622     0.622    -0.047     -0.047
+v46            vs v68_sc           0.649    0.691     0.687    -0.042     -0.038
+v46            vs v69_sc           0.756    0.776     0.771    -0.019     -0.015
+v46            vs v70_sc           0.762    0.764     0.759    -0.002     +0.004
+v46            vs v71_sc           0.766    0.754     0.748    +0.012     +0.019
+v46            vs v8               0.755    0.740     0.741    +0.015     +0.014
+v46            vs v9               0.725    0.689     0.696    +0.036     +0.029
+v47            vs v48              0.520    0.498     0.497    +0.022     +0.023
+v47            vs v49              0.520    0.518     0.518    +0.002     +0.002
+v47            vs v50              0.502    0.545     0.542    -0.042     -0.040
+v22            vs v52              0.609    0.642     0.639    -0.033     -0.030
+v22            vs v53              0.652    0.642     0.639    +0.010     +0.013
+v22            vs v54              0.472    0.476     0.478    -0.004     -0.005
+v22            vs v55_sc           0.939    0.964     0.963    -0.025     -0.024
+v22            vs v55              0.510    0.456     0.456    +0.054     +0.054
+v22            vs v56              0.451    0.491     0.490    -0.040     -0.039
+v22            vs v57              0.547    0.512     0.511    +0.036     +0.036
+v22            vs v58              0.534    0.544     0.544    -0.010     -0.010
+v22            vs v59              0.562    0.581     0.579    -0.018     -0.017
+v22            vs v60              0.574    0.606     0.605    -0.032     -0.031
+v22            vs v61              0.632    0.640     0.638    -0.007     -0.005
+v22            vs v64              0.912    0.932     0.928    -0.020     -0.016
+v22            vs v66_sc           0.593    0.603     0.606    -0.011     -0.014
+v22            vs v67_sc           0.586    0.603     0.603    -0.017     -0.016
+v22            vs v68_sc           0.576    0.673     0.669    -0.097     -0.093
+v22            vs v69_sc           0.724    0.761     0.756    -0.037     -0.033
+v22            vs v70_sc           0.703    0.749     0.744    -0.046     -0.041
+v22            vs v71_sc           0.715    0.738     0.732    -0.023     -0.017
+v22            vs v8               0.716    0.725     0.725    -0.009     -0.009
+v22            vs v9               0.649    0.674     0.678    -0.025     -0.030
+v44            vs v45              0.502    0.503     0.507    -0.001     -0.005
+v44            vs v46              0.500    0.499     0.500    +0.001     -0.000
+v44            vs v47              0.526    0.514     0.513    +0.012     +0.013
+v44            vs v48              0.466    0.511     0.510    -0.045     -0.044
+v44            vs v49              0.535    0.532     0.531    +0.003     +0.004
+v44            vs v50              0.562    0.558     0.555    +0.005     +0.008
+v44            vs v51              0.637    0.639     0.636    -0.002     +0.002
+v44            vs v52              0.639    0.661     0.658    -0.022     -0.019
+v44            vs v53              0.650    0.661     0.658    -0.011     -0.008
+v44            vs v54              0.426    0.496     0.498    -0.070     -0.072
+v44            vs v55_sc           0.960    0.967     0.966    -0.007     -0.006
+v44            vs v55              0.471    0.476     0.476    -0.004     -0.005
+v44            vs v56              0.519    0.512     0.511    +0.007     +0.008
+v44            vs v57              0.524    0.532     0.531    -0.009     -0.008
+v44            vs v58              0.564    0.564     0.564    -0.000     +0.000
+v44            vs v59              0.618    0.601     0.599    +0.017     +0.019
+v44            vs v60              0.625    0.626     0.624    -0.001     +0.001
+v44            vs v61              0.674    0.659     0.656    +0.015     +0.018
+v44            vs v64              0.944    0.938     0.934    +0.006     +0.010
+v44            vs v66_sc           0.609    0.622     0.626    -0.013     -0.017
+v44            vs v67_sc           0.552    0.623     0.622    -0.070     -0.069
+v44            vs v68_sc           0.655    0.692     0.687    -0.037     -0.032
+v44            vs v69_sc           0.810    0.776     0.771    +0.034     +0.039
+v44            vs v70_sc           0.775    0.765     0.759    +0.010     +0.016
+v44            vs v71_sc           0.738    0.754     0.748    -0.016     -0.010
+v44            vs v8               0.759    0.741     0.741    +0.017     +0.018
+v44            vs v9               0.723    0.691     0.696    +0.031     +0.027
+v45            vs v46              0.494    0.496     0.493    -0.002     +0.001
+v45            vs v47              0.542    0.510     0.506    +0.032     +0.037
+v45            vs v48              0.525    0.508     0.503    +0.017     +0.022
+v45            vs v49              0.527    0.528     0.524    -0.000     +0.004
+v45            vs v50              0.566    0.553     0.548    +0.013     +0.018
+v45            vs v51              0.589    0.632     0.629    -0.043     -0.040
+v45            vs v52              0.647    0.652     0.651    -0.004     -0.004
+v45            vs v53              0.621    0.653     0.651    -0.032     -0.030
+v45            vs v54              0.486    0.493     0.491    -0.007     -0.005
+v45            vs v55_sc           0.948    0.962     0.965    -0.014     -0.017
+v45            vs v55              0.468    0.473     0.469    -0.006     -0.001
+v45            vs v56              0.500    0.508     0.504    -0.008     -0.004
+v45            vs v57              0.540    0.528     0.524    +0.012     +0.016
+v45            vs v58              0.551    0.558     0.557    -0.007     -0.005
+v45            vs v59              0.529    0.594     0.592    -0.065     -0.063
+v45            vs v60              0.573    0.618     0.617    -0.045     -0.045
+v45            vs v61              0.588    0.650     0.650    -0.063     -0.062
+v45            vs v64              0.916    0.935     0.932    -0.018     -0.016
+v45            vs v66_sc           0.645    0.613     0.619    +0.032     +0.026
+v45            vs v67_sc           0.585    0.615     0.615    -0.030     -0.030
+v45            vs v68_sc           0.637    0.684     0.681    -0.046     -0.043
+v45            vs v69_sc           0.733    0.768     0.766    -0.036     -0.034
+v45            vs v70_sc           0.730    0.757     0.754    -0.027     -0.024
+v45            vs v71_sc           0.682    0.748     0.742    -0.065     -0.060
+v45            vs v8               0.779    0.730     0.735    +0.049     +0.044
+v45            vs v9               0.705    0.679     0.690    +0.026     +0.015
+v46            vs v47              0.510    0.515     0.512    -0.005     -0.002
+v46            vs v48              0.489    0.512     0.510    -0.023     -0.021
+v46            vs v49              0.481    0.533     0.530    -0.051     -0.049
+v46            vs v50              0.562    0.558     0.555    +0.004     +0.008
+v46            vs v51              0.620    0.639     0.635    -0.019     -0.015
+v46            vs v52              0.641    0.660     0.657    -0.019     -0.016
+v46            vs v53              0.636    0.661     0.657    -0.024     -0.021
+v46            vs v54              0.524    0.497     0.498    +0.027     +0.026
+v46            vs v55_sc           0.938    0.966     0.966    -0.028     -0.028
+v46            vs v55              0.479    0.477     0.476    +0.002     +0.003
+v46            vs v56              0.526    0.512     0.510    +0.014     +0.016
+v46            vs v57              0.521    0.533     0.531    -0.012     -0.010
+v46            vs v58              0.571    0.564     0.563    +0.007     +0.008
+v46            vs v59              0.600    0.601     0.599    -0.001     +0.001
+v46            vs v60              0.631    0.625     0.624    +0.006     +0.008
+v46            vs v61              0.626    0.658     0.656    -0.032     -0.030
+v46            vs v64              0.935    0.937     0.934    -0.002     +0.001
+v46            vs v66_sc           0.579    0.621     0.625    -0.042     -0.047
+v46            vs v67_sc           0.575    0.622     0.622    -0.047     -0.047
+v46            vs v68_sc           0.649    0.691     0.687    -0.042     -0.038
+v46            vs v69_sc           0.756    0.776     0.771    -0.019     -0.015
+v46            vs v70_sc           0.762    0.764     0.759    -0.002     +0.004
+v46            vs v71_sc           0.766    0.754     0.748    +0.012     +0.019
+v46            vs v8               0.755    0.740     0.741    +0.015     +0.014
+v46            vs v9               0.725    0.689     0.696    +0.036     +0.029
+v47            vs v48              0.520    0.498     0.497    +0.022     +0.023
+v47            vs v49              0.520    0.518     0.518    +0.002     +0.002
+v47            vs v50              0.502    0.545     0.542    -0.042     -0.040
+v47            vs v51              0.599    0.628     0.624    -0.029     -0.025
+v47            vs v52              0.640    0.650     0.646    -0.010     -0.006
+v47            vs v53              0.595    0.650     0.646    -0.055     -0.051
+v47            vs v54              0.485    0.482     0.485    +0.003     -0.000
+v47            vs v55_sc           0.932    0.967     0.964    -0.034     -0.031
+v47            vs v55              0.431    0.462     0.463    -0.030     -0.032
+v47            vs v56              0.517    0.498     0.498    +0.020     +0.019
+v47            vs v57              0.499    0.519     0.519    -0.020     -0.020
+v47            vs v58              0.590    0.551     0.551    +0.039     +0.039
+v47            vs v59              0.556    0.588     0.587    -0.032     -0.030
+v47            vs v60              0.615    0.614     0.612    +0.001     +0.003
+v47            vs v61              0.611    0.648     0.645    -0.037     -0.033
+v47            vs v64              0.917    0.935     0.930    -0.017     -0.013
+v47            vs v66_sc           0.579    0.611     0.614    -0.033     -0.035
+v47            vs v67_sc           0.581    0.611     0.610    -0.030     -0.029
+v47            vs v68_sc           0.625    0.681     0.676    -0.056     -0.051
+v47            vs v69_sc           0.750    0.768     0.762    -0.018     -0.012
+v47            vs v70_sc           0.787    0.755     0.750    +0.032     +0.038
+v47            vs v71_sc           0.698    0.744     0.738    -0.046     -0.041
+v47            vs v8               0.739    0.734     0.731    +0.005     +0.008
+v47            vs v9               0.694    0.683     0.685    +0.010     +0.009
+v48            vs v49              0.499    0.521     0.521    -0.022     -0.022
+v48            vs v50              0.550    0.547     0.545    +0.003     +0.005
+v48            vs v51              0.588    0.630     0.626    -0.042     -0.039
+v48            vs v52              0.644    0.652     0.649    -0.008     -0.005
+v48            vs v53              0.629    0.652     0.649    -0.024     -0.020
+v48            vs v54              0.482    0.485     0.488    -0.002     -0.006
+v48            vs v55_sc           0.938    0.967     0.964    -0.029     -0.027
+v48            vs v55              0.502    0.464     0.466    +0.038     +0.037
+v48            vs v56              0.527    0.500     0.501    +0.027     +0.027
+v48            vs v57              0.495    0.521     0.521    -0.026     -0.026
+v48            vs v58              0.525    0.554     0.554    -0.029     -0.029
+v48            vs v59              0.616    0.591     0.589    +0.025     +0.027
+v48            vs v60              0.571    0.616     0.614    -0.045     -0.043
+v48            vs v61              0.616    0.650     0.647    -0.034     -0.031
+v48            vs v64              0.939    0.935     0.931    +0.004     +0.008
+v48            vs v66_sc           0.596    0.614     0.616    -0.018     -0.020
+v48            vs v67_sc           0.603    0.614     0.612    -0.011     -0.010
+v48            vs v68_sc           0.627    0.683     0.678    -0.055     -0.051
+v48            vs v69_sc           0.743    0.770     0.764    -0.027     -0.021
+v48            vs v70_sc           0.709    0.757     0.752    -0.049     -0.043
+v48            vs v71_sc           0.719    0.746     0.740    -0.027     -0.021
+v48            vs v8               0.743    0.736     0.733    +0.007     +0.010
+v48            vs v9               0.676    0.685     0.687    -0.009     -0.011
+v49            vs v50              0.476    0.526     0.524    -0.050     -0.048
+v49            vs v51              0.561    0.610     0.607    -0.049     -0.045
+v49            vs v52              0.615    0.633     0.629    -0.018     -0.014
+v49            vs v53              0.579    0.633     0.629    -0.055     -0.051
+v49            vs v54              0.514    0.464     0.467    +0.049     +0.046
+v49            vs v55_sc           0.948    0.964     0.961    -0.017     -0.014
+v49            vs v55              0.427    0.444     0.445    -0.016     -0.018
+v49            vs v56              0.514    0.480     0.480    +0.034     +0.034
+v49            vs v57              0.477    0.501     0.501    -0.023     -0.023
+v49            vs v58              0.556    0.533     0.533    +0.023     +0.023
+v49            vs v59              0.575    0.571     0.569    +0.004     +0.006
+v49            vs v60              0.576    0.597     0.595    -0.020     -0.018
+v49            vs v61              0.629    0.631     0.628    -0.002     +0.001
+v49            vs v64              0.931    0.930     0.926    +0.001     +0.006
+v49            vs v66_sc           0.541    0.595     0.596    -0.053     -0.055
+v49            vs v67_sc           0.555    0.594     0.593    -0.039     -0.038
+v49            vs v68_sc           0.675    0.664     0.660    +0.011     +0.015
+v49            vs v69_sc           0.721    0.754     0.749    -0.033     -0.027
+v49            vs v70_sc           0.701    0.741     0.736    -0.040     -0.034
+v49            vs v71_sc           0.674    0.729     0.724    -0.056     -0.050
+v49            vs v8               0.740    0.719     0.716    +0.021     +0.024
+v49            vs v9               0.672    0.668     0.669    +0.004     +0.003
+v50            vs v51              0.581    0.586     0.583    -0.004     -0.002
+v50            vs v52              0.631    0.609     0.606    +0.022     +0.025
+v50            vs v53              0.610    0.609     0.606    +0.001     +0.004
+v50            vs v54              0.446    0.439     0.443    +0.007     +0.003
+v50            vs v55_sc           0.954    0.961     0.957    -0.008     -0.004
+v50            vs v55              0.410    0.418     0.421    -0.008     -0.011
+v50            vs v56              0.436    0.454     0.456    -0.017     -0.019
+v50            vs v57              0.486    0.475     0.476    +0.012     +0.010
+v50            vs v58              0.492    0.508     0.509    -0.015     -0.016
+v50            vs v59              0.529    0.545     0.545    -0.017     -0.016
+v50            vs v60              0.568    0.572     0.571    -0.005     -0.003
+v50            vs v61              0.559    0.607     0.605    -0.048     -0.046
+v50            vs v64              0.922    0.923     0.919    -0.000     +0.004
+v50            vs v66_sc           0.516    0.571     0.573    -0.055     -0.056
+v50            vs v67_sc           0.531    0.569     0.569    -0.038     -0.038
+v50            vs v68_sc           0.631    0.641     0.637    -0.010     -0.006
+v50            vs v69_sc           0.703    0.735     0.730    -0.033     -0.027
+v50            vs v70_sc           0.691    0.721     0.716    -0.030     -0.025
+v50            vs v71_sc           0.681    0.708     0.704    -0.027     -0.023
+v50            vs v8               0.701    0.700     0.696    +0.002     +0.005
+v50            vs v9               0.682    0.648     0.647    +0.035     +0.035
+v51            vs v52              0.490    0.525     0.524    -0.035     -0.034
+v51            vs v53              0.530    0.525     0.524    +0.005     +0.006
+v51            vs v54              0.393    0.359     0.363    +0.034     +0.030
+v51            vs v55_sc           0.944    0.944     0.941    -0.001     +0.002
+v51            vs v55              0.340    0.338     0.342    +0.002     -0.002
+v51            vs v56              0.404    0.371     0.374    +0.033     +0.029
+v51            vs v57              0.388    0.391     0.394    -0.004     -0.006
+v51            vs v58              0.417    0.423     0.425    -0.006     -0.008
+v51            vs v59              0.490    0.460     0.461    +0.030     +0.029
+v51            vs v60              0.490    0.487     0.487    +0.003     +0.003
+v51            vs v61              0.525    0.523     0.522    +0.002     +0.003
+v51            vs v64              0.902    0.893     0.890    +0.009     +0.013
+v51            vs v66_sc           0.389    0.490     0.489    -0.101     -0.100
+v51            vs v67_sc           0.451    0.485     0.485    -0.033     -0.034
+v47            vs v51              0.599    0.628     0.624    -0.029     -0.025
+v47            vs v52              0.640    0.650     0.646    -0.010     -0.006
+v47            vs v53              0.595    0.650     0.646    -0.055     -0.051
+v47            vs v54              0.485    0.482     0.485    +0.003     -0.000
+v47            vs v55_sc           0.932    0.967     0.964    -0.034     -0.031
+v47            vs v55              0.431    0.462     0.463    -0.030     -0.032
+v47            vs v56              0.517    0.498     0.498    +0.020     +0.019
+v47            vs v57              0.499    0.519     0.519    -0.020     -0.020
+v47            vs v58              0.590    0.551     0.551    +0.039     +0.039
+v47            vs v59              0.556    0.588     0.587    -0.032     -0.030
+v47            vs v60              0.615    0.614     0.612    +0.001     +0.003
+v47            vs v61              0.611    0.648     0.645    -0.037     -0.033
+v47            vs v64              0.917    0.935     0.930    -0.017     -0.013
+v47            vs v66_sc           0.579    0.611     0.614    -0.033     -0.035
+v47            vs v67_sc           0.581    0.611     0.610    -0.030     -0.029
+v47            vs v68_sc           0.625    0.681     0.676    -0.056     -0.051
+v47            vs v69_sc           0.750    0.768     0.762    -0.018     -0.012
+v47            vs v70_sc           0.787    0.755     0.750    +0.032     +0.038
+v47            vs v71_sc           0.698    0.744     0.738    -0.046     -0.041
+v47            vs v8               0.739    0.734     0.731    +0.005     +0.008
+v47            vs v9               0.694    0.683     0.685    +0.010     +0.009
+v48            vs v49              0.499    0.521     0.521    -0.022     -0.022
+v48            vs v50              0.550    0.547     0.545    +0.003     +0.005
+v48            vs v51              0.588    0.630     0.626    -0.042     -0.039
+v48            vs v52              0.644    0.652     0.649    -0.008     -0.005
+v48            vs v53              0.629    0.652     0.649    -0.024     -0.020
+v48            vs v54              0.482    0.485     0.488    -0.002     -0.006
+v48            vs v55_sc           0.938    0.967     0.964    -0.029     -0.027
+v48            vs v55              0.502    0.464     0.466    +0.038     +0.037
+v48            vs v56              0.527    0.500     0.501    +0.027     +0.027
+v48            vs v57              0.495    0.521     0.521    -0.026     -0.026
+v48            vs v58              0.525    0.554     0.554    -0.029     -0.029
+v48            vs v59              0.616    0.591     0.589    +0.025     +0.027
+v48            vs v60              0.571    0.616     0.614    -0.045     -0.043
+v48            vs v61              0.616    0.650     0.647    -0.034     -0.031
+v48            vs v64              0.939    0.935     0.931    +0.004     +0.008
+v48            vs v66_sc           0.596    0.614     0.616    -0.018     -0.020
+v48            vs v67_sc           0.603    0.614     0.612    -0.011     -0.010
+v48            vs v68_sc           0.627    0.683     0.678    -0.055     -0.051
+v48            vs v69_sc           0.743    0.770     0.764    -0.027     -0.021
+v48            vs v70_sc           0.709    0.757     0.752    -0.049     -0.043
+v48            vs v71_sc           0.719    0.746     0.740    -0.027     -0.021
+v48            vs v8               0.743    0.736     0.733    +0.007     +0.010
+v48            vs v9               0.676    0.685     0.687    -0.009     -0.011
+v49            vs v50              0.476    0.526     0.524    -0.050     -0.048
+v49            vs v51              0.561    0.610     0.607    -0.049     -0.045
+v49            vs v52              0.615    0.633     0.629    -0.018     -0.014
+v49            vs v53              0.579    0.633     0.629    -0.055     -0.051
+v49            vs v54              0.514    0.464     0.467    +0.049     +0.046
+v49            vs v55_sc           0.948    0.964     0.961    -0.017     -0.014
+v49            vs v55              0.427    0.444     0.445    -0.016     -0.018
+v49            vs v56              0.514    0.480     0.480    +0.034     +0.034
+v49            vs v57              0.477    0.501     0.501    -0.023     -0.023
+v49            vs v58              0.556    0.533     0.533    +0.023     +0.023
+v49            vs v59              0.575    0.571     0.569    +0.004     +0.006
+v49            vs v60              0.576    0.597     0.595    -0.020     -0.018
+v49            vs v61              0.629    0.631     0.628    -0.002     +0.001
+v49            vs v64              0.931    0.930     0.926    +0.001     +0.006
+v49            vs v66_sc           0.541    0.595     0.596    -0.053     -0.055
+v49            vs v67_sc           0.555    0.594     0.593    -0.039     -0.038
+v49            vs v68_sc           0.675    0.664     0.660    +0.011     +0.015
+v49            vs v69_sc           0.721    0.754     0.749    -0.033     -0.027
+v49            vs v70_sc           0.701    0.741     0.736    -0.040     -0.034
+v49            vs v71_sc           0.674    0.729     0.724    -0.056     -0.050
+v49            vs v8               0.740    0.719     0.716    +0.021     +0.024
+v49            vs v9               0.672    0.668     0.669    +0.004     +0.003
+v50            vs v51              0.581    0.586     0.583    -0.004     -0.002
+v50            vs v52              0.631    0.609     0.606    +0.022     +0.025
+v50            vs v53              0.610    0.609     0.606    +0.001     +0.004
+v50            vs v54              0.446    0.439     0.443    +0.007     +0.003
+v50            vs v55_sc           0.954    0.961     0.957    -0.008     -0.004
+v50            vs v55              0.410    0.418     0.421    -0.008     -0.011
+v50            vs v56              0.436    0.454     0.456    -0.017     -0.019
+v50            vs v57              0.486    0.475     0.476    +0.012     +0.010
+v50            vs v58              0.492    0.508     0.509    -0.015     -0.016
+v50            vs v59              0.529    0.545     0.545    -0.017     -0.016
+v50            vs v60              0.568    0.572     0.571    -0.005     -0.003
+v50            vs v61              0.559    0.607     0.605    -0.048     -0.046
+v50            vs v64              0.922    0.923     0.919    -0.000     +0.004
+v50            vs v66_sc           0.516    0.571     0.573    -0.055     -0.056
+v50            vs v67_sc           0.531    0.569     0.569    -0.038     -0.038
+v50            vs v68_sc           0.631    0.641     0.637    -0.010     -0.006
+v50            vs v69_sc           0.703    0.735     0.730    -0.033     -0.027
+v50            vs v70_sc           0.691    0.721     0.716    -0.030     -0.025
+v50            vs v71_sc           0.681    0.708     0.704    -0.027     -0.023
+v50            vs v8               0.701    0.700     0.696    +0.002     +0.005
+v50            vs v9               0.682    0.648     0.647    +0.035     +0.035
+v51            vs v52              0.490    0.525     0.524    -0.035     -0.034
+v51            vs v53              0.530    0.525     0.524    +0.005     +0.006
+v51            vs v54              0.393    0.359     0.363    +0.034     +0.030
+v51            vs v55_sc           0.944    0.944     0.941    -0.001     +0.002
+v51            vs v55              0.340    0.338     0.342    +0.002     -0.002
+v51            vs v56              0.404    0.371     0.374    +0.033     +0.029
+v51            vs v57              0.388    0.391     0.394    -0.004     -0.006
+v51            vs v58              0.417    0.423     0.425    -0.006     -0.008
+v51            vs v59              0.490    0.460     0.461    +0.030     +0.029
+v51            vs v60              0.490    0.487     0.487    +0.003     +0.003
+v51            vs v61              0.525    0.523     0.522    +0.002     +0.003
+v51            vs v64              0.902    0.893     0.890    +0.009     +0.013
+v51            vs v66_sc           0.389    0.490     0.489    -0.101     -0.100
+v51            vs v67_sc           0.451    0.485     0.485    -0.033     -0.034
+v51            vs v68_sc           0.557    0.557     0.557    +0.000     +0.001
+v51            vs v69_sc           0.593    0.661     0.659    -0.069     -0.066
+v51            vs v70_sc           0.598    0.645     0.643    -0.048     -0.046
+v51            vs v71_sc           0.566    0.631     0.629    -0.064     -0.063
+v51            vs v8               0.609    0.623     0.621    -0.014     -0.012
+v51            vs v9               0.581    0.569     0.567    +0.012     +0.014
+v52            vs v53              0.489    0.500     0.500    -0.011     -0.011
+v52            vs v54              0.343    0.338     0.341    +0.005     +0.002
+v52            vs v55_sc           0.953    0.937     0.936    +0.015     +0.017
+v52            vs v55              0.334    0.317     0.321    +0.017     +0.013
+v52            vs v56              0.369    0.349     0.352    +0.019     +0.017
+v52            vs v57              0.416    0.369     0.371    +0.047     +0.045
+v52            vs v58              0.391    0.400     0.402    -0.009     -0.011
+v52            vs v59              0.461    0.436     0.437    +0.025     +0.024
+v52            vs v60              0.471    0.463     0.463    +0.009     +0.008
+v52            vs v61              0.534    0.498     0.498    +0.036     +0.035
+v52            vs v64              0.902    0.883     0.880    +0.020     +0.023
+v52            vs v66_sc           0.354    0.467     0.465    -0.113     -0.111
+v52            vs v67_sc           0.435    0.461     0.461    -0.026     -0.026
+v52            vs v68_sc           0.511    0.532     0.533    -0.021     -0.022
+v52            vs v69_sc           0.588    0.638     0.637    -0.050     -0.049
+v52            vs v70_sc           0.573    0.621     0.621    -0.049     -0.048
+v52            vs v71_sc           0.564    0.607     0.607    -0.043     -0.043
+v52            vs v8               0.620    0.599     0.598    +0.021     +0.022
+v52            vs v9               0.527    0.546     0.544    -0.019     -0.016
+v53            vs v54              0.380    0.337     0.341    +0.043     +0.039
+v53            vs v55_sc           0.934    0.938     0.936    -0.005     -0.002
+v53            vs v55              0.360    0.317     0.321    +0.043     +0.039
+v53            vs v56              0.360    0.349     0.352    +0.011     +0.008
+v53            vs v57              0.379    0.368     0.371    +0.010     +0.007
+v53            vs v58              0.470    0.400     0.402    +0.070     +0.068
+v53            vs v59              0.477    0.436     0.437    +0.042     +0.040
+v53            vs v60              0.436    0.463     0.463    -0.026     -0.027
+v53            vs v61              0.545    0.498     0.498    +0.047     +0.047
+v53            vs v64              0.892    0.883     0.880    +0.009     +0.013
+v53            vs v66_sc           0.430    0.467     0.465    -0.037     -0.035
+v53            vs v67_sc           0.400    0.461     0.461    -0.061     -0.061
+v53            vs v68_sc           0.496    0.533     0.533    -0.036     -0.037
+v53            vs v69_sc           0.554    0.638     0.637    -0.085     -0.083
+v53            vs v70_sc           0.571    0.622     0.621    -0.051     -0.050
+v53            vs v71_sc           0.574    0.607     0.607    -0.033     -0.033
+v53            vs v8               0.593    0.600     0.598    -0.007     -0.005
+v53            vs v9               0.527    0.546     0.544    -0.019     -0.016
+v54            vs v55_sc           0.930    0.966     0.966    -0.036     -0.036
+v54            vs v55              0.465    0.480     0.478    -0.015     -0.013
+v54            vs v56              0.497    0.515     0.513    -0.018     -0.015
+v54            vs v57              0.507    0.536     0.533    -0.028     -0.026
+v54            vs v58              0.578    0.567     0.566    +0.010     +0.012
+v54            vs v59              0.559    0.603     0.601    -0.045     -0.042
+v54            vs v60              0.605    0.628     0.626    -0.023     -0.021
+v54            vs v61              0.618    0.661     0.658    -0.043     -0.040
+v54            vs v64              0.949    0.938     0.934    +0.011     +0.015
+v54            vs v66_sc           0.584    0.623     0.627    -0.039     -0.044
+v54            vs v67_sc           0.588    0.625     0.624    -0.037     -0.036
+v54            vs v68_sc           0.685    0.693     0.688    -0.008     -0.003
+v54            vs v69_sc           0.802    0.777     0.772    +0.025     +0.030
+v54            vs v70_sc           0.757    0.766     0.760    -0.009     -0.003
+v54            vs v71_sc           0.740    0.756     0.749    -0.016     -0.009
+v54            vs v8               0.730    0.741     0.742    -0.011     -0.012
+v54            vs v9               0.711    0.691     0.698    +0.020     +0.014
+v55_sc         vs v55              0.058    0.029     0.031    +0.028     +0.026
+v55_sc         vs v56              0.072    0.034     0.036    +0.038     +0.037
+v55_sc         vs v57              0.052    0.037     0.039    +0.015     +0.014
+v55_sc         vs v58              0.051    0.044     0.044    +0.008     +0.007
+v55_sc         vs v59              0.080    0.049     0.051    +0.031     +0.029
+v55_sc         vs v60              0.072    0.055     0.056    +0.017     +0.017
+v55_sc         vs v61              0.059    0.062     0.064    -0.003     -0.005
+v55_sc         vs v64              0.125    0.275     0.334    -0.150     -0.209
+v55_sc         vs v66_sc           0.089    0.065     0.056    +0.024     +0.032
+v55_sc         vs v67_sc           0.086    0.056     0.055    +0.030     +0.031
+v55_sc         vs v68_sc           0.076    0.066     0.073    +0.011     +0.004
+v55_sc         vs v69_sc           0.095    0.097     0.107    -0.002     -0.012
+v55_sc         vs v70_sc           0.089    0.088     0.101    +0.001     -0.012
+v55_sc         vs v71_sc           0.079    0.079     0.096    -0.000     -0.017
+v55_sc         vs v8               0.048    0.100     0.093    -0.053     -0.045
+v55_sc         vs v9               0.025    0.092     0.076    -0.067     -0.051
+v55            vs v56              0.529    0.536     0.535    -0.007     -0.006
+v55            vs v57              0.531    0.557     0.555    -0.025     -0.024
+v55            vs v58              0.579    0.588     0.587    -0.009     -0.008
+v55            vs v59              0.613    0.624     0.622    -0.012     -0.009
+v55            vs v60              0.624    0.649     0.646    -0.025     -0.022
+v55            vs v61              0.661    0.681     0.677    -0.020     -0.016
+v55            vs v64              0.945    0.943     0.939    +0.002     +0.006
+v55            vs v66_sc           0.619    0.645     0.648    -0.026     -0.029
+v55            vs v67_sc           0.547    0.646     0.644    -0.099     -0.097
+v55            vs v68_sc           0.680    0.713     0.707    -0.033     -0.027
+v55            vs v69_sc           0.828    0.794     0.788    +0.034     +0.040
+v55            vs v70_sc           0.782    0.783     0.776    -0.000     +0.006
+v55            vs v71_sc           0.782    0.772     0.765    +0.010     +0.017
+v55            vs v8               0.723    0.761     0.759    -0.038     -0.036
+v55            vs v9               0.746    0.712     0.716    +0.034     +0.030
+v56            vs v57              0.551    0.521     0.521    +0.030     +0.031
+v56            vs v58              0.504    0.553     0.553    -0.049     -0.049
+v56            vs v59              0.576    0.590     0.589    -0.014     -0.012
+v56            vs v60              0.623    0.615     0.614    +0.007     +0.009
+v56            vs v61              0.619    0.649     0.646    -0.030     -0.028
+v56            vs v64              0.909    0.935     0.931    -0.026     -0.022
+v56            vs v66_sc           0.613    0.612     0.615    +0.000     -0.003
+v56            vs v67_sc           0.584    0.612     0.612    -0.029     -0.028
+v56            vs v68_sc           0.630    0.682     0.678    -0.052     -0.048
+v56            vs v69_sc           0.744    0.769     0.763    -0.025     -0.020
+v51            vs v68_sc           0.557    0.557     0.557    +0.000     +0.001
+v51            vs v69_sc           0.593    0.661     0.659    -0.069     -0.066
+v51            vs v70_sc           0.598    0.645     0.643    -0.048     -0.046
+v51            vs v71_sc           0.566    0.631     0.629    -0.064     -0.063
+v51            vs v8               0.609    0.623     0.621    -0.014     -0.012
+v51            vs v9               0.581    0.569     0.567    +0.012     +0.014
+v52            vs v53              0.489    0.500     0.500    -0.011     -0.011
+v52            vs v54              0.343    0.338     0.341    +0.005     +0.002
+v52            vs v55_sc           0.953    0.937     0.936    +0.015     +0.017
+v52            vs v55              0.334    0.317     0.321    +0.017     +0.013
+v52            vs v56              0.369    0.349     0.352    +0.019     +0.017
+v52            vs v57              0.416    0.369     0.371    +0.047     +0.045
+v52            vs v58              0.391    0.400     0.402    -0.009     -0.011
+v52            vs v59              0.461    0.436     0.437    +0.025     +0.024
+v52            vs v60              0.471    0.463     0.463    +0.009     +0.008
+v52            vs v61              0.534    0.498     0.498    +0.036     +0.035
+v52            vs v64              0.902    0.883     0.880    +0.020     +0.023
+v52            vs v66_sc           0.354    0.467     0.465    -0.113     -0.111
+v52            vs v67_sc           0.435    0.461     0.461    -0.026     -0.026
+v52            vs v68_sc           0.511    0.532     0.533    -0.021     -0.022
+v52            vs v69_sc           0.588    0.638     0.637    -0.050     -0.049
+v52            vs v70_sc           0.573    0.621     0.621    -0.049     -0.048
+v52            vs v71_sc           0.564    0.607     0.607    -0.043     -0.043
+v52            vs v8               0.620    0.599     0.598    +0.021     +0.022
+v52            vs v9               0.527    0.546     0.544    -0.019     -0.016
+v53            vs v54              0.380    0.337     0.341    +0.043     +0.039
+v53            vs v55_sc           0.934    0.938     0.936    -0.005     -0.002
+v53            vs v55              0.360    0.317     0.321    +0.043     +0.039
+v53            vs v56              0.360    0.349     0.352    +0.011     +0.008
+v53            vs v57              0.379    0.368     0.371    +0.010     +0.007
+v53            vs v58              0.470    0.400     0.402    +0.070     +0.068
+v53            vs v59              0.477    0.436     0.437    +0.042     +0.040
+v53            vs v60              0.436    0.463     0.463    -0.026     -0.027
+v53            vs v61              0.545    0.498     0.498    +0.047     +0.047
+v53            vs v64              0.892    0.883     0.880    +0.009     +0.013
+v53            vs v66_sc           0.430    0.467     0.465    -0.037     -0.035
+v53            vs v67_sc           0.400    0.461     0.461    -0.061     -0.061
+v53            vs v68_sc           0.496    0.533     0.533    -0.036     -0.037
+v53            vs v69_sc           0.554    0.638     0.637    -0.085     -0.083
+v53            vs v70_sc           0.571    0.622     0.621    -0.051     -0.050
+v53            vs v71_sc           0.574    0.607     0.607    -0.033     -0.033
+v53            vs v8               0.593    0.600     0.598    -0.007     -0.005
+v53            vs v9               0.527    0.546     0.544    -0.019     -0.016
+v54            vs v55_sc           0.930    0.966     0.966    -0.036     -0.036
+v54            vs v55              0.465    0.480     0.478    -0.015     -0.013
+v54            vs v56              0.497    0.515     0.513    -0.018     -0.015
+v54            vs v57              0.507    0.536     0.533    -0.028     -0.026
+v54            vs v58              0.578    0.567     0.566    +0.010     +0.012
+v54            vs v59              0.559    0.603     0.601    -0.045     -0.042
+v54            vs v60              0.605    0.628     0.626    -0.023     -0.021
+v54            vs v61              0.618    0.661     0.658    -0.043     -0.040
+v54            vs v64              0.949    0.938     0.934    +0.011     +0.015
+v54            vs v66_sc           0.584    0.623     0.627    -0.039     -0.044
+v54            vs v67_sc           0.588    0.625     0.624    -0.037     -0.036
+v54            vs v68_sc           0.685    0.693     0.688    -0.008     -0.003
+v54            vs v69_sc           0.802    0.777     0.772    +0.025     +0.030
+v54            vs v70_sc           0.757    0.766     0.760    -0.009     -0.003
+v54            vs v71_sc           0.740    0.756     0.749    -0.016     -0.009
+v54            vs v8               0.730    0.741     0.742    -0.011     -0.012
+v54            vs v9               0.711    0.691     0.698    +0.020     +0.014
+v55_sc         vs v55              0.058    0.029     0.031    +0.028     +0.026
+v55_sc         vs v56              0.072    0.034     0.036    +0.038     +0.037
+v55_sc         vs v57              0.052    0.037     0.039    +0.015     +0.014
+v55_sc         vs v58              0.051    0.044     0.044    +0.008     +0.007
+v55_sc         vs v59              0.080    0.049     0.051    +0.031     +0.029
+v55_sc         vs v60              0.072    0.055     0.056    +0.017     +0.017
+v55_sc         vs v61              0.059    0.062     0.064    -0.003     -0.005
+v55_sc         vs v64              0.125    0.275     0.334    -0.150     -0.209
+v55_sc         vs v66_sc           0.089    0.065     0.056    +0.024     +0.032
+v55_sc         vs v67_sc           0.086    0.056     0.055    +0.030     +0.031
+v55_sc         vs v68_sc           0.076    0.066     0.073    +0.011     +0.004
+v55_sc         vs v69_sc           0.095    0.097     0.107    -0.002     -0.012
+v55_sc         vs v70_sc           0.089    0.088     0.101    +0.001     -0.012
+v55_sc         vs v71_sc           0.079    0.079     0.096    -0.000     -0.017
+v55_sc         vs v8               0.048    0.100     0.093    -0.053     -0.045
+v55_sc         vs v9               0.025    0.092     0.076    -0.067     -0.051
+v55            vs v56              0.529    0.536     0.535    -0.007     -0.006
+v55            vs v57              0.531    0.557     0.555    -0.025     -0.024
+v55            vs v58              0.579    0.588     0.587    -0.009     -0.008
+v55            vs v59              0.613    0.624     0.622    -0.012     -0.009
+v55            vs v60              0.624    0.649     0.646    -0.025     -0.022
+v55            vs v61              0.661    0.681     0.677    -0.020     -0.016
+v55            vs v64              0.945    0.943     0.939    +0.002     +0.006
+v55            vs v66_sc           0.619    0.645     0.648    -0.026     -0.029
+v55            vs v67_sc           0.547    0.646     0.644    -0.099     -0.097
+v55            vs v68_sc           0.680    0.713     0.707    -0.033     -0.027
+v55            vs v69_sc           0.828    0.794     0.788    +0.034     +0.040
+v55            vs v70_sc           0.782    0.783     0.776    -0.000     +0.006
+v55            vs v71_sc           0.782    0.772     0.765    +0.010     +0.017
+v55            vs v8               0.723    0.761     0.759    -0.038     -0.036
+v55            vs v9               0.746    0.712     0.716    +0.034     +0.030
+v56            vs v57              0.551    0.521     0.521    +0.030     +0.031
+v56            vs v58              0.504    0.553     0.553    -0.049     -0.049
+v56            vs v59              0.576    0.590     0.589    -0.014     -0.012
+v56            vs v60              0.623    0.615     0.614    +0.007     +0.009
+v56            vs v61              0.619    0.649     0.646    -0.030     -0.028
+v56            vs v64              0.909    0.935     0.931    -0.026     -0.022
+v56            vs v66_sc           0.613    0.612     0.615    +0.000     -0.003
+v56            vs v67_sc           0.584    0.612     0.612    -0.029     -0.028
+v56            vs v68_sc           0.630    0.682     0.678    -0.052     -0.048
+v56            vs v69_sc           0.744    0.769     0.763    -0.025     -0.020
+v56            vs v70_sc           0.796    0.756     0.751    +0.040     +0.045
+v56            vs v71_sc           0.772    0.745     0.740    +0.027     +0.033
+v56            vs v8               0.738    0.734     0.732    +0.004     +0.005
+v56            vs v9               0.672    0.683     0.687    -0.011     -0.014
+v57            vs v58              0.541    0.532     0.532    +0.009     +0.009
+v57            vs v59              0.520    0.569     0.568    -0.049     -0.048
+v57            vs v60              0.570    0.595     0.594    -0.025     -0.024
+v57            vs v61              0.598    0.629     0.627    -0.032     -0.030
+v57            vs v64              0.895    0.929     0.925    -0.034     -0.030
+v57            vs v66_sc           0.579    0.593     0.596    -0.014     -0.017
+v57            vs v67_sc           0.608    0.592     0.592    +0.015     +0.016
+v57            vs v68_sc           0.647    0.663     0.659    -0.015     -0.012
+v57            vs v69_sc           0.720    0.753     0.748    -0.033     -0.028
+v57            vs v70_sc           0.731    0.740     0.735    -0.009     -0.004
+v57            vs v71_sc           0.688    0.728     0.723    -0.041     -0.036
+v57            vs v8               0.713    0.717     0.716    -0.004     -0.003
+v57            vs v9               0.635    0.665     0.669    -0.030     -0.034
+v58            vs v59              0.535    0.537     0.536    -0.002     -0.001
+v58            vs v60              0.554    0.563     0.562    -0.009     -0.008
+v58            vs v61              0.566    0.598     0.596    -0.031     -0.030
+v58            vs v64              0.905    0.920     0.916    -0.015     -0.011
+v58            vs v66_sc           0.581    0.562     0.564    +0.019     +0.017
+v58            vs v67_sc           0.564    0.560     0.560    +0.003     +0.004
+v58            vs v68_sc           0.588    0.632     0.629    -0.045     -0.042
+v58            vs v69_sc           0.729    0.726     0.723    +0.003     +0.006
+v58            vs v70_sc           0.704    0.713     0.709    -0.009     -0.005
+v58            vs v71_sc           0.705    0.701     0.696    +0.004     +0.009
+v58            vs v8               0.730    0.688     0.689    +0.042     +0.041
+v58            vs v9               0.614    0.636     0.639    -0.022     -0.025
+v59            vs v60              0.529    0.527     0.526    +0.002     +0.003
+v59            vs v61              0.583    0.562     0.561    +0.020     +0.022
+v59            vs v64              0.920    0.908     0.904    +0.012     +0.016
+v59            vs v66_sc           0.527    0.528     0.528    -0.000     -0.001
+v59            vs v67_sc           0.496    0.524     0.524    -0.028     -0.028
+v59            vs v68_sc           0.609    0.597     0.595    +0.012     +0.014
+v59            vs v69_sc           0.709    0.696     0.693    +0.013     +0.016
+v59            vs v70_sc           0.708    0.681     0.678    +0.026     +0.029
+v59            vs v71_sc           0.600    0.668     0.665    -0.068     -0.065
+v59            vs v8               0.639    0.658     0.657    -0.019     -0.018
+v59            vs v9               0.609    0.605     0.605    +0.004     +0.004
+v60            vs v61              0.510    0.535     0.535    -0.025     -0.025
+v60            vs v64              0.889    0.898     0.895    -0.009     -0.006
+v60            vs v66_sc           0.475    0.502     0.502    -0.027     -0.027
+v60            vs v67_sc           0.490    0.498     0.498    -0.008     -0.008
+v60            vs v68_sc           0.550    0.570     0.569    -0.020     -0.019
+v60            vs v69_sc           0.654    0.672     0.670    -0.018     -0.016
+v60            vs v70_sc           0.640    0.657     0.655    -0.017     -0.015
+v60            vs v71_sc           0.610    0.643     0.641    -0.033     -0.031
+v60            vs v8               0.632    0.633     0.633    -0.001     -0.000
+v60            vs v9               0.561    0.580     0.580    -0.019     -0.019
+v61            vs v64              0.905    0.884     0.881    +0.021     +0.024
+v61            vs v66_sc           0.422    0.469     0.467    -0.046     -0.044
+v61            vs v67_sc           0.436    0.463     0.463    -0.026     -0.027
+v61            vs v68_sc           0.516    0.534     0.535    -0.018     -0.019
+v61            vs v69_sc           0.620    0.640     0.638    -0.020     -0.018
+v61            vs v70_sc           0.591    0.623     0.623    -0.032     -0.031
+v61            vs v71_sc           0.588    0.609     0.608    -0.021     -0.021
+v61            vs v8               0.590    0.601     0.600    -0.011     -0.010
+v61            vs v9               0.521    0.548     0.545    -0.027     -0.024
+v64            vs v66_sc           0.122    0.107     0.106    +0.015     +0.016
+v64            vs v67_sc           0.114    0.102     0.105    +0.012     +0.009
+v64            vs v68_sc           0.145    0.130     0.135    +0.015     +0.010
+v64            vs v69_sc           0.179    0.190     0.193    -0.011     -0.014
+v64            vs v70_sc           0.150    0.178     0.183    -0.028     -0.033
+v64            vs v71_sc           0.182    0.169     0.174    +0.013     +0.009
+v64            vs v8               0.077    0.172     0.169    -0.095     -0.091
+v64            vs v9               0.071    0.148     0.140    -0.076     -0.069
+v66_sc         vs v67_sc           0.499    0.496     0.496    +0.003     +0.003
+v66_sc         vs v68_sc           0.524    0.565     0.568    -0.041     -0.044
+v66_sc         vs v69_sc           0.606    0.664     0.668    -0.057     -0.062
+v66_sc         vs v70_sc           0.615    0.649     0.653    -0.034     -0.038
+v66_sc         vs v71_sc           0.649    0.637     0.640    +0.012     +0.009
+v66_sc         vs v8               0.583    0.623     0.631    -0.041     -0.049
+v66_sc         vs v9               0.484    0.572     0.578    -0.088     -0.094
+v67_sc         vs v68_sc           0.535    0.572     0.571    -0.037     -0.036
+v67_sc         vs v69_sc           0.661    0.673     0.672    -0.012     -0.011
+v67_sc         vs v70_sc           0.651    0.658     0.657    -0.007     -0.006
+v67_sc         vs v71_sc           0.600    0.645     0.643    -0.045     -0.043
+v67_sc         vs v8               0.613    0.634     0.635    -0.022     -0.022
+v67_sc         vs v9               0.516    0.581     0.582    -0.065     -0.066
+v68_sc         vs v69_sc           0.562    0.608     0.606    -0.046     -0.043
+v68_sc         vs v70_sc           0.575    0.591     0.589    -0.016     -0.014
+v68_sc         vs v71_sc           0.525    0.575     0.575    -0.050     -0.050
+v68_sc         vs v8               0.519    0.571     0.566    -0.052     -0.047
+v68_sc         vs v9               0.531    0.517     0.511    +0.014     +0.021
+v69_sc         vs v70_sc           0.431    0.481     0.483    -0.050     -0.052
+v69_sc         vs v71_sc           0.481    0.465     0.468    +0.017     +0.013
+v69_sc         vs v8               0.427    0.465     0.459    -0.038     -0.031
+v69_sc         vs v9               0.354    0.415     0.405    -0.062     -0.051
+v70_sc         vs v71_sc           0.469    0.483     0.485    -0.015     -0.016
+v70_sc         vs v8               0.465    0.483     0.476    -0.018     -0.011
+v70_sc         vs v9               0.389    0.431     0.421    -0.043     -0.032
+v71_sc         vs v8               0.450    0.499     0.491    -0.049     -0.041
+v71_sc         vs v9               0.441    0.446     0.436    -0.004     +0.005
+v8             vs v9               0.422    0.452     0.445    -0.030     -0.022
+------------------------------------------------------------------------------------
+                                              RMSE    0.0351     0.0342
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/elo/elo_full_ladder.json
+v56            vs v70_sc           0.796    0.756     0.751    +0.040     +0.045
+v56            vs v71_sc           0.772    0.745     0.740    +0.027     +0.033
+v56            vs v8               0.738    0.734     0.732    +0.004     +0.005
+v56            vs v9               0.672    0.683     0.687    -0.011     -0.014
+v57            vs v58              0.541    0.532     0.532    +0.009     +0.009
+v57            vs v59              0.520    0.569     0.568    -0.049     -0.048
+v57            vs v60              0.570    0.595     0.594    -0.025     -0.024
+v57            vs v61              0.598    0.629     0.627    -0.032     -0.030
+v57            vs v64              0.895    0.929     0.925    -0.034     -0.030
+v57            vs v66_sc           0.579    0.593     0.596    -0.014     -0.017
+v57            vs v67_sc           0.608    0.592     0.592    +0.015     +0.016
+v57            vs v68_sc           0.647    0.663     0.659    -0.015     -0.012
+v57            vs v69_sc           0.720    0.753     0.748    -0.033     -0.028
+v57            vs v70_sc           0.731    0.740     0.735    -0.009     -0.004
+v57            vs v71_sc           0.688    0.728     0.723    -0.041     -0.036
+v57            vs v8               0.713    0.717     0.716    -0.004     -0.003
+v57            vs v9               0.635    0.665     0.669    -0.030     -0.034
+v58            vs v59              0.535    0.537     0.536    -0.002     -0.001
+v58            vs v60              0.554    0.563     0.562    -0.009     -0.008
+v58            vs v61              0.566    0.598     0.596    -0.031     -0.030
+v58            vs v64              0.905    0.920     0.916    -0.015     -0.011
+v58            vs v66_sc           0.581    0.562     0.564    +0.019     +0.017
+v58            vs v67_sc           0.564    0.560     0.560    +0.003     +0.004
+v58            vs v68_sc           0.588    0.632     0.629    -0.045     -0.042
+v58            vs v69_sc           0.729    0.726     0.723    +0.003     +0.006
+v58            vs v70_sc           0.704    0.713     0.709    -0.009     -0.005
+v58            vs v71_sc           0.705    0.701     0.696    +0.004     +0.009
+v58            vs v8               0.730    0.688     0.689    +0.042     +0.041
+v58            vs v9               0.614    0.636     0.639    -0.022     -0.025
+v59            vs v60              0.529    0.527     0.526    +0.002     +0.003
+v59            vs v61              0.583    0.562     0.561    +0.020     +0.022
+v59            vs v64              0.920    0.908     0.904    +0.012     +0.016
+v59            vs v66_sc           0.527    0.528     0.528    -0.000     -0.001
+v59            vs v67_sc           0.496    0.524     0.524    -0.028     -0.028
+v59            vs v68_sc           0.609    0.597     0.595    +0.012     +0.014
+v59            vs v69_sc           0.709    0.696     0.693    +0.013     +0.016
+v59            vs v70_sc           0.708    0.681     0.678    +0.026     +0.029
+v59            vs v71_sc           0.600    0.668     0.665    -0.068     -0.065
+v59            vs v8               0.639    0.658     0.657    -0.019     -0.018
+v59            vs v9               0.609    0.605     0.605    +0.004     +0.004
+v60            vs v61              0.510    0.535     0.535    -0.025     -0.025
+v60            vs v64              0.889    0.898     0.895    -0.009     -0.006
+v60            vs v66_sc           0.475    0.502     0.502    -0.027     -0.027
+v60            vs v67_sc           0.490    0.498     0.498    -0.008     -0.008
+v60            vs v68_sc           0.550    0.570     0.569    -0.020     -0.019
+v60            vs v69_sc           0.654    0.672     0.670    -0.018     -0.016
+v60            vs v70_sc           0.640    0.657     0.655    -0.017     -0.015
+v60            vs v71_sc           0.610    0.643     0.641    -0.033     -0.031
+v60            vs v8               0.632    0.633     0.633    -0.001     -0.000
+v60            vs v9               0.561    0.580     0.580    -0.019     -0.019
+v61            vs v64              0.905    0.884     0.881    +0.021     +0.024
+v61            vs v66_sc           0.422    0.469     0.467    -0.046     -0.044
+v61            vs v67_sc           0.436    0.463     0.463    -0.026     -0.027
+v61            vs v68_sc           0.516    0.534     0.535    -0.018     -0.019
+v61            vs v69_sc           0.620    0.640     0.638    -0.020     -0.018
+v61            vs v70_sc           0.591    0.623     0.623    -0.032     -0.031
+v61            vs v71_sc           0.588    0.609     0.608    -0.021     -0.021
+v61            vs v8               0.590    0.601     0.600    -0.011     -0.010
+v61            vs v9               0.521    0.548     0.545    -0.027     -0.024
+v64            vs v66_sc           0.122    0.107     0.106    +0.015     +0.016
+v64            vs v67_sc           0.114    0.102     0.105    +0.012     +0.009
+v64            vs v68_sc           0.145    0.130     0.135    +0.015     +0.010
+v64            vs v69_sc           0.179    0.190     0.193    -0.011     -0.014
+v64            vs v70_sc           0.150    0.178     0.183    -0.028     -0.033
+v64            vs v71_sc           0.182    0.169     0.174    +0.013     +0.009
+v64            vs v8               0.077    0.172     0.169    -0.095     -0.091
+v64            vs v9               0.071    0.148     0.140    -0.076     -0.069
+v66_sc         vs v67_sc           0.499    0.496     0.496    +0.003     +0.003
+v66_sc         vs v68_sc           0.524    0.565     0.568    -0.041     -0.044
+v66_sc         vs v69_sc           0.606    0.664     0.668    -0.057     -0.062
+v66_sc         vs v70_sc           0.615    0.649     0.653    -0.034     -0.038
+v66_sc         vs v71_sc           0.649    0.637     0.640    +0.012     +0.009
+v66_sc         vs v8               0.583    0.623     0.631    -0.041     -0.049
+v66_sc         vs v9               0.484    0.572     0.578    -0.088     -0.094
+v67_sc         vs v68_sc           0.535    0.572     0.571    -0.037     -0.036
+v67_sc         vs v69_sc           0.661    0.673     0.672    -0.012     -0.011
+v67_sc         vs v70_sc           0.651    0.658     0.657    -0.007     -0.006
+v67_sc         vs v71_sc           0.600    0.645     0.643    -0.045     -0.043
+v67_sc         vs v8               0.613    0.634     0.635    -0.022     -0.022
+v67_sc         vs v9               0.516    0.581     0.582    -0.065     -0.066
+v68_sc         vs v69_sc           0.562    0.608     0.606    -0.046     -0.043
+v68_sc         vs v70_sc           0.575    0.591     0.589    -0.016     -0.014
+v68_sc         vs v71_sc           0.525    0.575     0.575    -0.050     -0.050
+v68_sc         vs v8               0.519    0.571     0.566    -0.052     -0.047
+v68_sc         vs v9               0.531    0.517     0.511    +0.014     +0.021
+v69_sc         vs v70_sc           0.431    0.481     0.483    -0.050     -0.052
+v69_sc         vs v71_sc           0.481    0.465     0.468    +0.017     +0.013
+v69_sc         vs v8               0.427    0.465     0.459    -0.038     -0.031
+v69_sc         vs v9               0.354    0.415     0.405    -0.062     -0.051
+v70_sc         vs v71_sc           0.469    0.483     0.485    -0.015     -0.016
+v70_sc         vs v8               0.465    0.483     0.476    -0.018     -0.011
+v70_sc         vs v9               0.389    0.431     0.421    -0.043     -0.032
+v71_sc         vs v8               0.450    0.499     0.491    -0.049     -0.041
+v71_sc         vs v9               0.441    0.446     0.436    -0.004     +0.005
+v8             vs v9               0.422    0.452     0.445    -0.030     -0.022
+------------------------------------------------------------------------------------
+                                              RMSE    0.0351     0.0342
+  (bipartite RMSE >= combined RMSE → bipartite model not better fit)
+
+Saved to results/elo/elo_full_ladder.json
+[sql] Tournament logged: round_robin_20260412T143837Z_heuristic_v10 → results/metadata.sqlite3
+[sql] Tournament logged: round_robin_20260412T143837Z_heuristic_v10 → results/metadata.sqlite3

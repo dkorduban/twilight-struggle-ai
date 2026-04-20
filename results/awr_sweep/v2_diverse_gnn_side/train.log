@@ -1,0 +1,46 @@
+=== AWR Eval: control_feat_gnn_side_h256 ===
+  model: control_feat_gnn_side, hidden_dim=256
+  data: data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet
+  epochs: 30, lr: 0.0003, tau: 1.0
+
+  Loaded 69,783 rows from data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet
+  Per-model advantage normalization: 4 models
+  train: 62,805 rows, val: 6,978 rows
+  params: 532,635
+  epoch 1/30: pl=4.7373 vl=0.2241 card=0.492 mode=0.777 adv_card=0.489 | val_pl=4.3163 val_card=0.584 val_adv=0.588 (5.3s)
+  epoch 2/30: pl=4.0778 vl=0.1632 card=0.593 mode=0.806 adv_card=0.595 | val_pl=4.0373 val_card=0.606 val_adv=0.611 (2.3s)
+  epoch 3/30: pl=3.8324 vl=0.1356 card=0.617 mode=0.808 adv_card=0.623 | val_pl=3.8741 val_card=0.616 val_adv=0.621 (2.3s)
+  epoch 4/30: pl=3.6617 vl=0.1167 card=0.626 mode=0.819 adv_card=0.634 | val_pl=3.7313 val_card=0.622 val_adv=0.631 (2.5s)
+  epoch 5/30: pl=3.4919 vl=0.1025 card=0.636 mode=0.826 adv_card=0.645 | val_pl=3.5921 val_card=0.629 val_adv=0.636 (2.2s)
+  epoch 6/30: pl=3.3453 vl=0.0906 card=0.643 mode=0.833 adv_card=0.652 | val_pl=3.4922 val_card=0.640 val_adv=0.648 (2.3s)
+  epoch 7/30: pl=3.2197 vl=0.0840 card=0.651 mode=0.841 adv_card=0.663 | val_pl=3.4089 val_card=0.644 val_adv=0.650 (2.3s)
+  epoch 8/30: pl=3.1054 vl=0.0797 card=0.658 mode=0.848 adv_card=0.673 | val_pl=3.3289 val_card=0.648 val_adv=0.653 (2.3s)
+  epoch 9/30: pl=3.0029 vl=0.0738 card=0.666 mode=0.854 adv_card=0.681 | val_pl=3.2539 val_card=0.654 val_adv=0.658 (2.2s)
+  epoch 10/30: pl=2.9125 vl=0.0701 card=0.671 mode=0.860 adv_card=0.686 | val_pl=3.1922 val_card=0.656 val_adv=0.662 (2.3s)
+  epoch 11/30: pl=2.8325 vl=0.0687 card=0.676 mode=0.864 adv_card=0.693 | val_pl=3.1524 val_card=0.662 val_adv=0.670 (2.3s)
+  epoch 12/30: pl=2.7618 vl=0.0665 card=0.681 mode=0.868 adv_card=0.698 | val_pl=3.0973 val_card=0.659 val_adv=0.666 (2.4s)
+  epoch 13/30: pl=2.7089 vl=0.0658 card=0.683 mode=0.872 adv_card=0.701 | val_pl=3.0817 val_card=0.661 val_adv=0.668 (2.4s)
+  epoch 14/30: pl=2.6553 vl=0.0644 card=0.685 mode=0.874 adv_card=0.706 | val_pl=3.0578 val_card=0.663 val_adv=0.674 (4.1s)
+  epoch 15/30: pl=2.6064 vl=0.0616 card=0.689 mode=0.876 adv_card=0.710 | val_pl=3.0490 val_card=0.665 val_adv=0.673 (2.3s)
+  epoch 16/30: pl=2.5618 vl=0.0612 card=0.692 mode=0.879 adv_card=0.714 | val_pl=3.0369 val_card=0.666 val_adv=0.672 (2.3s)
+  epoch 17/30: pl=2.5253 vl=0.0586 card=0.693 mode=0.881 adv_card=0.717 | val_pl=3.0341 val_card=0.666 val_adv=0.671 (2.5s)
+  epoch 18/30: pl=2.4829 vl=0.0586 card=0.695 mode=0.883 adv_card=0.720 | val_pl=3.0239 val_card=0.665 val_adv=0.668 (2.4s)
+  epoch 19/30: pl=2.4495 vl=0.0569 card=0.698 mode=0.883 adv_card=0.725 | val_pl=3.0303 val_card=0.666 val_adv=0.672 (2.1s)
+  [early stop] no improvement in val_adv_card_acc for 5 epochs. Stopping.
+
+============================================================
+AWR Results: control_feat_gnn_side_h256
+============================================================
+  model: control_feat_gnn_side (532,635 params)
+  best epoch: 18
+  train card_acc: 0.6946
+  train adv_card_acc: 0.7198
+  val card_acc: 0.6649
+  val adv_card_acc: 0.6682
+  val policy_loss: 3.0239
+  val value_loss: 0.0605
+  val card_acc_early: 0.6785
+  val card_acc_mid: 0.6743
+  val card_acc_late: 0.6249
+  total time: 49.1s (0.8 min)
+============================================================
