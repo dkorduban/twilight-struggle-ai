@@ -3,8 +3,11 @@
     "checkpoint": "results/ppo_country_attn_v6/ppo_iter0020.pt",
     "combined": 0.459,
     "ussr": 0.718,
-    "us": 0.200,
-    "bench_seeds": [50000, 50500],
+    "us": 0.2,
+    "bench_seeds": [
+      50000,
+      50500
+    ],
     "note": "Also confirmed at seeds 60000/60500: combined=0.459"
   },
   "current_best_practical": {
@@ -32,14 +35,18 @@
     "v14_post_mortem": {
       "result": "FAILED combined=0.192 @ iter20 (USSR=0.336, US=0.048)",
       "root_cause": "BC warm-start from heuristic-only data too weak. GNN PPO v14 started at ~0.192 vs v56 PPO warm-start starting at ~0.441. PPO can't recover 25pp in 20 iters.",
-      "lesson": "For new architectures, BC warm-start MUST use data from a strong learned model, not just heuristic games."
+      "lesson": "For new architectures, BC warm-start MUST use data from a strong learned model, not just heuristic games.",
+      "opus_analysis": "results/analysis/opus_analysis_20260420_gnn_v14_failure_v15_plan.md",
+      "value_mse_root_cause": "BC v1 value_mse=0.77 (near-random). v13 game data in BC v2 already showing value_mse=0.58 at epoch4."
     },
     "v15_plan": {
       "status": "BC v2 RUNNING - pid=1024046 eta ~2026-04-20 09:09 UTC",
       "bc_data": "data/gnn_warmstart_v15_combined: 334K v13_iter20 games + 2.7M heuristic nash = 3M rows",
       "bc_script": "results/bc_gnn_side_v2/ (30 epochs, lr=0.0012, seed=42000)",
       "ppo_launch": "results/launch_gnn_ppo_v15.sh (monitor will auto-fire)",
-      "expected_improvement": "+4-8pp vs country_attn_side based on AWR sweep results"
+      "expected_improvement": "+4-8pp vs country_attn_side based on AWR sweep results",
+      "bc_v2_status": "RUNNING epoch 4/30, value_mse=0.58 (improved vs v14 0.77). Monitor will auto-launch PPO v15.",
+      "gate": "Bench BC v2 best.pt before PPO. Require panel combined >= 0.28 to proceed."
     },
     "v15_collection_details": {
       "v13_data": "data/selfplay/gnn_warmstart_v13/v13_3000g.parquet (334K rows, 3000 games learned-vs-heuristic with v13_iter20)",
@@ -54,10 +61,11 @@
     "PIVOT 3: Try adding MCTS data (data/selfplay_mcts_dir/) to training mix for v16 if v15 beats v13"
   ],
   "key_lessons": {
-    "bc_warmstart_quality": "BC warm-start quality = bottleneck for new architectures. v14 (heuristic BC) = 0.192. Always use games from best learned model for BC warm-start. v13 selfplay → BC → GNN PPO is the right sequence.",
+    "bc_warmstart_quality": "BC warm-start quality = bottleneck for new architectures. v14 (heuristic BC) = 0.192. Always use games from best learned model for BC warm-start. v13 selfplay \u2192 BC \u2192 GNN PPO is the right sequence.",
     "mcts_collection_speed": "collect_mcts_games_jsonl with n-sim=1 (direct policy, batched) is ~100x faster than collect_selfplay_rows_jsonl for learned models (batch vs sequential inference).",
-    "panel_unreliability": "30-game panel SE≈0.091. Never use as sole running_best selector. Always bench 500g/side.",
+    "panel_unreliability": "30-game panel SE\u22480.091. Never use as sole running_best selector. Always bench 500g/side.",
     "pfsp_echo_chamber": "PFSP peaks at iter20. External fixtures starved even with heuristic-floor=0.15.",
-    "seed_matters": "PPO ~10pp seed variance at iter20. Always use seed=42000."
+    "seed_matters": "PPO ~10pp seed variance at iter20. Always use seed=42000.",
+    "teacher_distillation": "For v16+: use teacher distillation from v13_iter20 logits. The value head (MSE 0.77) was the key failure mode. teacher_value_target from model inference >> winner_side binary target."
   }
 }
