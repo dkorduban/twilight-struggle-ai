@@ -464,6 +464,11 @@ def main():
              "but has no effect.",
     )
     p.add_argument(
+        "--no-cache", action="store_true", default=False,
+        help="Ignore SQL match cache and replay all matches fresh. Required for post-engine-fix "
+             "tournaments where cached pre-fix results would contaminate BayesElo ratings.",
+    )
+    p.add_argument(
         "--mode", default=None,
         help="Tournament mode tag for SQL provenance (e.g. 'incremental', 'full', 'sanity'). "
              "Defaults to --schedule value if not set.",
@@ -510,14 +515,17 @@ def main():
     prior_matches: dict[frozenset, dict] = {}
     # Load per-pair match cache from SQL (replaces results/matches/*.json files).
     cache_loaded = 0
-    try:
-        prior_matches = load_match_cache()
-        cache_loaded = len(prior_matches)
-        if cache_loaded:
-            print(f"Loaded {cache_loaded} match results from SQL match_cache", flush=True)
-    except Exception as e:
-        print(f"Warning: could not load SQL match cache: {e}", flush=True)
-        prior_matches = {}
+    if args.no_cache:
+        print("--no-cache: skipping SQL match cache (all matches will be played fresh)", flush=True)
+    else:
+        try:
+            prior_matches = load_match_cache()
+            cache_loaded = len(prior_matches)
+            if cache_loaded:
+                print(f"Loaded {cache_loaded} match results from SQL match_cache", flush=True)
+        except Exception as e:
+            print(f"Warning: could not load SQL match cache: {e}", flush=True)
+            prior_matches = {}
 
     if args.resume_from is not None and args.resume_from.exists():
         prev = json.loads(args.resume_from.read_text())
