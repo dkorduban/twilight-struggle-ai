@@ -1,0 +1,112 @@
+{
+  "_note": "Historical findings migrated from continuation_plan.json on 2026-04-18. These are archived discoveries, not live state.",
+
+  "critical_discovery_20260416": {
+    "scoring_card_bug": "ALL PPO models v55-v294 were degenerate. legal_cards() never enforced scoring-card-must-be-played rule. Models learned to hold scoring cards -> instant loss at end of turn. Fix: commit 5f8f4ea.",
+    "concern_separation_regression": "WIP commits (6902851..dc6d6aa) from Codex concern-separation removed DEFCON safety checks from decode_helpers.hpp. Models DEFCON-1'd themselves. v56 benchmark dropped from 45.1% to 6%. REVERTED: commit 90f663e.",
+    "pre_sc_models_strong": "Pre-sc models (v19-v61) remain legitimately strong. v56=45.1% combined at N=500 was best baseline pre-chain."
+  },
+
+  "critical_discovery_20260417": {
+    "ismcts_root_causes": {
+      "uaf_bug": "cpp/tscore/ismcts.cpp RawBatchOutputs used raw float* without Tensor keepalive -> intermittent free(): invalid pointer at scale. Transplanted _storage Tensor pattern from mcts_batched.cpp. Commit de43e27.",
+      "dirichlet_leak": "IsmctsConfig inherited dir_alpha=0.2 dir_epsilon=0.25 from MctsConfig default -> search noise during eval. Overrode IsmctsConfig default initializer to zero both. Commit de43e27.",
+      "state_distribution_mismatch": "Post-fix, v84 mined positions agreement NN-vs-ISMCTS jumped 96% -> 100%. But paired greedy-vs-ISMCTS stayed at -21/50 net. ISMCTS underperforms greedy on in-game rollout states. Root cause: value-head bias under determinization — NOT fixable by search-side patches."
+    }
+  },
+
+  "false_escalation_retracted_20260417": "Earlier claim of 'engine-model mat1=53 vs mat2=74 shape mismatch' blocking divergence diagnostic was FALSE. Root cause: broken torch install + stale build in worktree agent-a724a2e0. Verified on main HEAD de43e27: kScalarDim=32 (unchanged), tscore.benchmark_batched runs cleanly on v55 and v319.",
+
+  "ismcts_investigation_closed": {
+    "date": "2026-04-17",
+    "root_cause": "Value-head bias under determinization. The NN value head was trained on true-hand observations; ISMCTS feeds it determinized states with sampled opponent hands. Budget sweep (n_sim 50→800 on AR1 divergence state) confirms mode-3 wins all budgets with no convergence to greedy's mode-0. Root value degrades monotonically (-0.12 → -0.19).",
+    "search_quality": "ISMCTS vs greedy-self: 30-47% combined WR at budgets 50-800 rollouts (flat, post-UAF+Dirichlet fixes). Search is net-negative vs greedy because rollouts systematically over-prefer Space over Influence when opponent hand is sampled.",
+    "fix_required": "Training-side: train value head on determinized observations so head calibrates to hallucinated-hand uncertainty. Or: MC rollouts with heuristic at leaves (structural fix for vs-heuristic only).",
+    "scope": "Out of scope for search-only patch. Reopen when model trains with determinization-aware observations.",
+    "artifacts": [
+      "results/ismcts_fix/FINDINGS.md (comprehensive history)",
+      "results/ismcts_fix/budget_convergence.json (n_sim sweep, no convergence)",
+      "results/ismcts_fix/first_divergence_v55_ar.json (seed=12345 AR1 state)",
+      "scripts/ismcts_first_divergence.py",
+      "scripts/ismcts_budget_convergence.py"
+    ]
+  },
+
+  "value_calibration_finding_20260418": {
+    "model": "ppo_best_scripted (v319 era) on awr_panel_v5",
+    "brier": 0.1106,
+    "bias": "+0.116 (systematic overoptimism)",
+    "corr": 0.7794,
+    "by_stage": "early Brier=0.050, mid=0.108, late=0.211 (late game worst)",
+    "implication": "Value head systematically overestimates win probability by ~12%. Compounds with ISMCTS determinization bias. All models show positive bias (v56=+0.054, v319=+0.116)."
+  },
+
+  "value_calibration_trend_ppo_v2chain": {
+    "iter30": { "bias": -0.124, "brier": 0.033, "corr": 0.741 },
+    "iter70": { "bias": -0.182, "brier": 0.036, "corr": 0.747 },
+    "iter100": { "bias": -0.137, "brier": 0.036, "corr": 0.707 },
+    "trend": "Recovered at iter100 (-0.137 from worst -0.182 at iter70). Self-correcting.",
+    "implication": "MCTS/ISMCTS blocked until value head calibrated. Greedy NN unaffected.",
+    "fix": "Add value_calibration_loss = (mean(v_pred) - mean(returns))^2 to PPO objective in next run"
+  },
+
+  "jsd_probe_finding_20260418": {
+    "warmstart_vs_iter30": {
+      "card_jsd": 0.034,
+      "mode_jsd": 0.0724,
+      "country_jsd": 0.193,
+      "value_mae": 0.1699,
+      "top1_card_agree": 0.761,
+      "interpretation": "Country head diverged most (19.3%); card intent stable (3.4%)"
+    }
+  },
+
+  "mcts_findings_20260418": {
+    "mcts_search_from_state": "WORKS. agree_rate=38% vs greedy (expected — MCTS has full info)",
+    "benchmark_mcts": "Crashes at n_sims>=100 (C++ memory bug, ~3.4M edges). Works at n_sims=50 n_games<=3.",
+    "benchmark_mcts_vs_greedy": "Crashes (passes model object not path string previously; path string also segfaults at larger params)",
+    "jsd_probe": "IMPLEMENTED. 996 probe positions. iter30 vs warmstart: card_jsd=0.034, mode_jsd=0.072, country_jsd=0.193"
+  },
+
+  "ppo_v1_final_results": {
+    "iter300_vs_heuristic": { "ussr": 0.47, "us": 0.47, "combined": 0.47, "seeds": "50000/50500" },
+    "ppo_best_vs_heuristic": { "ussr": 0.51, "us": 0.36, "combined": 0.435 },
+    "v56_vs_heuristic": { "ussr": 0.585, "us": 0.385, "combined": 0.485, "seeds": "50000/50500" },
+    "conclusion": "PPO chain did not beat v56 (47.0% vs 48.5% combined). Optimizer reset regression was recovered but warmstart advantage not preserved. US side improved to parity (47%) vs warmstart US weakness.",
+    "next_run": "Need architecture improvement via gated_vs_parent comparison before v2 PPO chain"
+  },
+
+  "awr_sweep_v2_state_final": {
+    "status": "DONE",
+    "data": "data/awr_eval/awr_panel_v6.parquet (213933 rows, 28 groups)",
+    "winner": "control_feat_gnn_card_attn",
+    "sweep_v2_avg_8panel": 0.3844,
+    "v2b_retrain_avg_8panel": 0.4066,
+    "v2b_val_adv": 0.5758,
+    "warmstart_15iter_vs_heuristic": 0.45,
+    "warmstart_15iter_avg_8panel": 0.4096
+  },
+
+  "completed_sessions_log": {
+    "2026-04-18_session_a": [
+      "ISMCTS UAF root-caused and fixed (RawBatchOutputs + _storage Tensor keepalive)",
+      "ISMCTS Dirichlet-leak fixed (IsmctsConfig default override)",
+      "Added ismcts_search_from_state binding + scripts/ismcts_distribution_shape.py diagnostic",
+      "Confirmed post-fix NN-vs-ISMCTS top-1 agreement: 96% -> 100% on mined positions",
+      "Commit de43e27 landed",
+      "greedy_state_trace binding (commit e789c3a)",
+      "Budget sweep (n_sim 50→800) confirms no convergence; root cause: value-head bias under determinization"
+    ],
+    "2026-04-18_session_b": [
+      "Task #61 DONE: opp_unaccounted in fill_cards (commit c749ae0) — breaking change to card features",
+      "Task #65 CLOSED: main already complete, worktree stale",
+      "benchmark_mcts crash RESOLVED: de43e27 UAF fix + path-string fix",
+      "val_calib_coef added to first update loop in train_ppo.py",
+      "compare_gnn_card_attn_gated.sh bug fixed: --arch -> --model-type, PID=501141",
+      "Reverted opp_unaccounted (c263f21): reproducibility priority",
+      "US-win value loss weighting 2x added (commit 562331a)",
+      "AWR dataloader: 8 workers + prefetch_factor=4 (103s/epoch vs 176s baseline)",
+      "AWR epochs standard set to 30"
+    ]
+  }
+}

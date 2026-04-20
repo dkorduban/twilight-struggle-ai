@@ -1,33 +1,124 @@
 {
   "goals": [
-    "1. Complete correct engine — fix all GAPs, all choices policy-driven",
-    "2. Full policy control — every rng decision routes through PolicyCallback",
+    "1. Complete correct engine \u2014 fix all GAPs, all choices policy-driven",
+    "2. Full policy control \u2014 every rng decision routes through PolicyCallback",
     "3. Train model that plays reasonable 8-10 turn games with itself (no blunders)",
-    "4. Push combined WR vs heuristic to >0.50 (current best: v56=0.441)"
+    "4. Push combined WR vs heuristic to >0.50 (current best: v6_iter20=0.458, new project record)"
   ],
-  "current_task": "v6 PPO running (iter 1/80 done, rollout_wr=0.510). Elo tournament running (8/28 matches). v6 AWR collection running (pair 1/6).",
-  "current_strategy": "Killed v4 PPO (iter50, 0.330 combined) — wrong arch (control_feat_gnn_side) + damaged warmstart (v3_best=0.274). Opus analysis confirmed: v56 (country_attn_side) = 0.441 combined is current best. AWR is dead for policy training. Launched v6 PPO from v56 checkpoint directly — target >0.50 combined in 80 iters.",
+  "current_task": "v7 PPO COMPLETE (80/80 iters). Bench results collected. v8 design ready: launch from v6_iter20 with heuristic-floor=0.30 and trimmed fixtures. US overfit experiment running (PID 874033, iter 21/40).",
+  "current_strategy": "v7 completed cleanly (fadeout=999 fix worked — no panel collapse) but heuristic-combined WR REGRESSED vs v6_iter20: v7_iter80=0.423 combined, vs v6_iter20=0.458 and v56=0.441. USSR side gained +16pp (0.558→0.722, new all-time high) but US side collapsed −20pp (0.325→0.124, new all-time low). Candidate tournament: v7_iter40=1999 Elo (+99 vs v56) — strongest vs BC cluster. Diagnosis: US over-specialized to self-similar BC+past-self pool. v6_iter20 remains project record on stated heuristic-WR metric. v8 plan: warmstart from v6_iter20, heuristic-floor 0.15→0.30, drop BC-cluster near-duplicates (v20/v44/v54/v55), keep v56+specialists+heuristic. See opus_analysis_20260420_v7_results_next_steps.md.",
   "active_background": [
-    "v6 PPO (PID 796580): results/ppo_country_attn_v6/, iter 1/80, 51.9s/iter, warmstart=v56",
-    "Post-fix Elo tournament (PID 750631): match 8/28, --no-cache, results/elo/elo_post_fix_ladder.json",
-    "v6 AWR collection (PID 751649): pair 1/6 round-robin, data/awr_eval/v6_frame_ctx_v1/"
+    "v7 PPO COMPLETE",
+    "US overfit experiment (PID 874033, iter ~21/40, W&B 91d00f0d)"
   ],
+  "v6_final_results": {
+    "status": "COMPLETE \u2014 80 iters",
+    "true_best_checkpoint": "results/ppo_country_attn_v6/ppo_iter0020.pt",
+    "benchmark_by_iter": {
+      "iter20": {
+        "ussr": 0.582,
+        "us": 0.334,
+        "combined": 0.458,
+        "note": "TRUE BEST \u2014 new project record (+1.7pp over v56)"
+      },
+      "iter40": {
+        "ussr": 0.465,
+        "us": 0.15,
+        "combined": 0.307,
+        "note": "post-fadeout regression begins"
+      },
+      "iter60": {
+        "ussr": 0.405,
+        "us": 0.225,
+        "combined": 0.315
+      },
+      "iter80": {
+        "ussr": 0.33,
+        "us": 0.21,
+        "combined": 0.27,
+        "note": "WORST \u2014 ppo_best.pt incorrectly points here due to panel-masking bug"
+      }
+    },
+    "root_cause": "league_fixture_fadeout=50 caused 100% self-play echo chamber from iter 51+. All fixtures (scripted + __heuristic__) dropped from pool. US side (weaker) collapsed fastest.",
+    "running_best_bug": "panel-aggregate WR saturates near 0.5 once past-self dominates the panel, hiding heuristic-side regression. Manual checkpoint selection required.",
+    "candidate_tournament": {
+      "v6_iter20_vs_v56": "\u2248v56 (\u22123.3 Elo, within noise)",
+      "v6_iter40_vs_v56": "\u221232 Elo (confirmed regression)"
+    }
+  },
+  "v7_final_results": {
+    "status": "COMPLETE \u2014 80 iters. Fadeout fix worked (no panel collapse). Heuristic-combined REGRESSED vs v6_iter20.",
+    "benchmark_by_iter_500g_per_side": {
+      "iter20": {"ussr": 0.654, "us": 0.140, "combined": 0.397, "note": "iter 20 success_criterion (>=0.45) FAILED; abort_criterion (<0.40) MARGINAL"},
+      "iter40": {"ussr": 0.710, "us": 0.110, "combined": 0.410, "note": "highest league Elo but still below v6_iter20 on heuristic"},
+      "iter60": {"ussr": 0.652, "us": 0.100, "combined": 0.376},
+      "iter80": {"ussr": 0.722, "us": 0.124, "combined": 0.423, "note": "USSR all-time high; US all-time low; combined < v6_iter20"}
+    },
+    "panel_avg_trajectory": {"iter20": 0.550, "iter40": 0.552, "iter60": 0.554, "iter80": 0.579, "note": "monotone up but misleading \u2014 panel is 7:1 league-weighted vs heuristic"},
+    "candidate_tournament_elo_anchor_v56_1900": {
+      "iter40": {"elo": 1999.2, "elo_ussr": 2062.1, "elo_us": 1864.1, "note": "WINNER \u2014 +99 vs v56, strongest vs BC cluster ever"},
+      "iter60": {"elo": 1984.0, "elo_ussr": 2038.3, "elo_us": 1849.6},
+      "iter20": {"elo": 1925.1, "elo_ussr": 2018.7, "elo_us": 1736.7}
+    },
+    "ladder_placement": {"country_attn_v7": 1912, "vs_v56": "+12"},
+    "diagnosis": "US side over-specialized to self-similar BC-cluster+past-self pool. USSR generalized well (+16pp vs heuristic) but US lost generalization (-20pp vs heuristic). Same disease as v6, different symptom \u2014 fadeout fix prevented running-best bug, but league-style dominant pool produced directional US regression.",
+    "true_best_checkpoint_heuristic_metric": "results/ppo_country_attn_v6/ppo_iter0020.pt (v6_iter20) REMAINS project record at 0.458 combined",
+    "best_checkpoint_league_metric": "results/ppo_country_attn_v7/ppo_iter0040.pt (auto-selected as ppo_best by candidate tournament)"
+  },
   "next_tasks": [
-    "Monitor v6 PPO: first eval at iter 20 (--eval-every 20). Target: combined > 0.45",
-    "Abort criterion: if iter 30 combined < 0.41, abort and re-examine architecture",
-    "Read post-fix Elo ladder (results/elo/elo_post_fix_ladder.json) when tournament completes (~3-4h from now)",
-    "When v6 AWR data ready (~168k rows): decide whether to run AWR v6 sweep (low priority — AWR dead for policy training)",
-    "After v6 PPO exceeds v56 (0.441 combined): run formal benchmark sweep (v6 vs v20/v44/v54/v55/v56 + specialists + heuristic)",
-    "Month-3 priority: Dirichlet noise at MCTS root (CLAUDE.md priority #1) — after v6 stable"
+    "Launch v8 PPO from v6_iter20 with heuristic-floor=0.30, trimmed fixtures (v56 + ussr_only_v5 + us_only_v5 + __heuristic__). See opus_analysis_20260420_v7_results_next_steps.md for exact command.",
+    "Cross-check v6_iter20 with second-seed bench (60000/60500) to confirm 0.458 is not a lucky seed before anchoring v8 against it.",
+    "Monitor US overfit experiment to iter 40. Success: US WR vs heuristic >= 0.40 at 500-game bench (beats us_only_v5=0.360).",
+    "[DEFERRED] (v7 legacy) At v7 iter 20: verify combined >= v6_iter20 (>=0.45) \u2014 DONE: FAILED (0.397).",
+    "[DEFERRED] (v7 legacy) At v7 iter 80: verify no post-iter-50 regression \u2014 DONE: panel OK but heuristic-combined regressed.",
+    "Parallel/optional: US-specialist capacity test (ppo_us_overfit_v1) \u2014 WAIT until v7 iter 20 checkpoint is confirmed healthy.",
+    "Low priority: add heuristic-only gate to running-best selection to prevent echo-chamber best-selection bias.",
+    "Low priority: implement --league-past-self-cap K=10 flag (~20 lines).",
+    "Month-3 priority: Dirichlet noise at MCTS root (CLAUDE.md priority #1 \u2014 Phase 0a)."
   ],
   "benchmark_ladder": {
     "note": "All vs heuristic (500 games/side, post-DEFCON-1-fix engine, seed=50000/50500)",
+    "v6_iter20_country_attn": {
+      "ussr": 0.582,
+      "us": 0.334,
+      "combined": 0.458,
+      "checkpoint": "results/ppo_country_attn_v6/ppo_iter0020.pt",
+      "note": "PROJECT RECORD SYMMETRIC POLICY (CURRENT) \u2014 warmstart=v56, iter 20 of 80, fadeout bug. v7 FAILED to beat this."
+    },
+    "v7_iter20_country_attn": {
+      "ussr": 0.654,
+      "us": 0.140,
+      "combined": 0.397,
+      "checkpoint": "results/ppo_country_attn_v7/ppo_iter0020.pt",
+      "note": "v7 iter20 \u2014 success_criterion (>=0.45) FAILED. US collapse surfacing already. USSR gained; US lost."
+    },
+    "v7_iter40_country_attn": {
+      "ussr": 0.710,
+      "us": 0.110,
+      "combined": 0.410,
+      "checkpoint": "results/ppo_country_attn_v7/ppo_iter0040.pt",
+      "note": "Highest league Elo (1999, +99 vs v56) but heuristic-combined still below v6_iter20. Auto-selected as ppo_best."
+    },
+    "v7_iter60_country_attn": {
+      "ussr": 0.652,
+      "us": 0.100,
+      "combined": 0.376,
+      "checkpoint": "results/ppo_country_attn_v7/ppo_iter0060.pt",
+      "note": "US WR at new project low (0.10). League Elo=1984."
+    },
+    "v7_iter80_country_attn": {
+      "ussr": 0.722,
+      "us": 0.124,
+      "combined": 0.423,
+      "checkpoint": "results/ppo_country_attn_v7/ppo_iter0080.pt",
+      "note": "USSR all-time high (0.722, +16pp vs v56). US all-time low for symmetric policy (0.124). Combined < v6_iter20."
+    },
     "v56_country_attn_side": {
       "ussr": 0.558,
       "us": 0.325,
       "combined": 0.441,
       "source": "Opus analysis reading data/checkpoints/ppo_v56_league/ppo_best_6mode.pt",
-      "note": "CURRENT BEST SYMMETRIC POLICY"
+      "note": "Previous best; still the BC cluster anchor at ~2095 Elo"
     },
     "ussr_only_v5": {
       "ussr": 0.588,
@@ -37,51 +128,99 @@
     },
     "us_only_v5": {
       "ussr": 0.506,
-      "us": 0.360,
+      "us": 0.36,
       "combined": 0.433,
-      "note": "Single-side specialist, slightly below v56 in post-fix Elo (0.556 v56 wins)"
+      "note": "Single-side specialist, slightly below v56 in post-fix Elo (0.556 v56 wins). All-time US WR high."
+    },
+    "v6_iter40_country_attn": {
+      "ussr": 0.465,
+      "us": 0.15,
+      "combined": 0.307,
+      "note": "Post-fadeout regression (\u221213.4pp vs v56). Confirms root cause."
+    },
+    "v6_iter60_country_attn": {
+      "ussr": 0.405,
+      "us": 0.225,
+      "combined": 0.315
+    },
+    "v6_iter80_country_attn": {
+      "ussr": 0.33,
+      "us": 0.21,
+      "combined": 0.27,
+      "note": "WORST checkpoint, incorrectly selected as ppo_best due to running-best bug"
     },
     "v4_ppo_iter50": {
-      "ussr": 0.500,
-      "us": 0.160,
-      "combined": 0.330,
-      "note": "KILLED at iter50 — wrong arch (control_feat_gnn_side) + damaged warmstart",
+      "ussr": 0.5,
+      "us": 0.16,
+      "combined": 0.33,
+      "note": "KILLED at iter50 \u2014 wrong arch (control_feat_gnn_side) + damaged warmstart",
       "checkpoint": "data/checkpoints/scripted_for_elo/v4_iter50_scripted.pt"
     },
     "v3_best": {
       "ussr": 0.398,
-      "us": 0.150,
+      "us": 0.15,
       "combined": 0.274,
-      "note": "DAMAGED — AWR poisoned warmstart + US-side collapse in training"
+      "note": "DAMAGED \u2014 AWR poisoned warmstart + US-side collapse in training"
     },
-    "awr_gnn_side_v5": {"combined": 0.205, "note": "DEAD — AWR offline→online transfer failure"},
-    "awr_film_gated_v5": {"combined": 0.075, "note": "DEAD"},
-    "awr_gnn_card_attn_v5": {"combined": 0.022, "note": "DEAD — nearly random"}
+    "awr_gnn_side_v5": {
+      "combined": 0.205,
+      "note": "DEAD \u2014 AWR offline\u2192online transfer failure"
+    },
+    "awr_film_gated_v5": {
+      "combined": 0.075,
+      "note": "DEAD"
+    },
+    "awr_gnn_card_attn_v5": {
+      "combined": 0.022,
+      "note": "DEAD \u2014 nearly random"
+    }
   },
   "post_fix_elo": {
-    "status": "RUNNING — 8/28 matches complete",
+    "status": "COMPLETE \u2014 38/38 matches, results/elo/elo_post_fix_ladder.json",
     "anchor": "v56 = 2095 Elo",
-    "key_results_so_far": {
-      "v56_vs_v55": "0.500 (tied)",
-      "v56_vs_v54": "0.491 (tied)",
-      "v56_vs_v44": "0.500 (tied)",
-      "v56_vs_v20": "0.502 (tied)",
-      "v56_vs_v3_best": "0.647 (v56 wins — v3_best ~105 Elo below v56)",
-      "v56_vs_ussr_only_v5": "0.495 (tied)",
-      "v56_vs_us_only_v5": "0.556 (v56 slightly better)"
+    "top_cluster_elo_range": "2083\u20132097 (v20/v44/v54/v55/v56 BC cluster, 14 Elo band)",
+    "heuristic_elo": 1927.9,
+    "heuristic_delta_vs_v56": -167.1,
+    "specialists": {
+      "ussr_only_v5": 2064.6,
+      "us_only_v5": 2052.7
     },
-    "interpretation": "All BC models (v20/v44/v54/v55/v56) cluster at ~2095. Specialists also at ~2095. v3_best at ~1990, v4_iter50 at ~1960 (by extrapolation)"
+    "interpretation": "BC symmetric cluster tightly bunched at ~2095. Specialists ~30\u201342 Elo below. v6_iter20 \u2248 v56 in candidate tournament (within noise). No model has decisively separated from the BC cluster yet \u2014 Elo progress needs something beyond v7 (teacher search, multi-head, or dense reward).",
+    "v6_candidate_matches": {
+      "v6_iter20_vs_v56": "\u2248v56 (\u22123.3 Elo, within noise)",
+      "v6_iter40_vs_v56": "\u221232 Elo (regression confirmed)"
+    }
   },
   "awr_verdict": "DEAD for policy training. 52k v5 panel retained as diagnostic eval set only.",
   "frame_migration_plan": {
-    "status": "COMPLETE — all FrameKinds active, parity 79/79 GREEN",
-    "frame_context_in_neural_net": "LIVE — kModelScalarDim=40, FrameContextScalarEncoder auto-pads old 32-dim checkpoints"
+    "status": "COMPLETE \u2014 all FrameKinds active, parity 79/79 GREEN",
+    "frame_context_in_neural_net": "LIVE \u2014 kModelScalarDim=40, FrameContextScalarEncoder auto-pads old 32-dim checkpoints"
   },
   "ppo_chain": {
-    "v6_status": "RUNNING iter 1/80, rollout_wr=0.510, panel=0.592 at iter1",
-    "v6_warmstart": "data/checkpoints/ppo_v56_league/ppo_best_6mode.pt (country_attn_side, 6-mode, combined=0.441)",
-    "v6_abort_criterion": "If iter30 combined < 0.41 (below v56-3pp), abort and re-examine",
-    "target": ">0.50 combined WR vs heuristic within 80 iters"
+    "v6_status": "COMPLETE \u2014 80 iters. True best=iter20 (combined=0.458, project record). Post-iter-50 regression from fadeout=50.",
+    "v6_best_checkpoint": "results/ppo_country_attn_v6/ppo_iter0020.pt",
+    "v7_status": "COMPLETE \u2014 80 iters. Fadeout fix worked (no panel collapse). Heuristic-combined REGRESSED: iter80=0.423 < v6_iter20=0.458 < v56=0.441? (v7 is above v56 by 0.018 BUT below v6_iter20). USSR +16pp, US \u221220pp. League Elo +99 (iter40=1999).",
+    "v7_best_checkpoint_league": "results/ppo_country_attn_v7/ppo_iter0040.pt (auto-selected by candidate tournament)",
+    "v7_best_checkpoint_heuristic": "results/ppo_country_attn_v7/ppo_iter0080.pt (0.423 combined, best of v7 but still below v6_iter20)",
+    "v8_plan": {
+      "warmstart": "results/ppo_country_attn_v6/ppo_iter0020.pt (project record, NOT v7_iter80)",
+      "out_dir": "results/ppo_country_attn_v8",
+      "key_changes": [
+        "heuristic-floor: 0.15 \u2192 0.30 (double heuristic share of rollouts)",
+        "league-fixtures trimmed: drop v20/v44/v54/v55 (BC-cluster near-duplicates of v56). Keep v56 + ussr_only_v5 + us_only_v5 + __heuristic__.",
+        "eval-panel matched to 4 entries (faster eval + less self-similar masking)",
+        "seed 42000 \u2192 43000 (noise isolation from v7)"
+      ],
+      "other_hyperparams": "IDENTICAL to v7 (lr=5e-5, clip=0.12, ent_coef=0.01\u21920.003, vf_coef=0.5, val_calib_coef=0.1, 80 iters, games_per_iter=200, ppo_epochs=4, league_mix_k=6, pfsp_exponent=0.5, upgo=true, fadeout=999)",
+      "prefix": "OMP_NUM_THREADS=6 KMP_BLOCKTIME=0",
+      "exact_command": "See results/analysis/opus_analysis_20260420_v7_results_next_steps.md section 'V8 Launch Command'",
+      "success_criterion_iter20": "combined \u2265 0.46 (match/beat v6_iter20 baseline)",
+      "success_criterion_iter40": "combined \u2265 0.458 (new project record)",
+      "success_criterion_iter80": "US vs heuristic \u2265 0.30 (recovered from v7's 0.124 collapse); USSR \u2265 0.60 (hold v7 gain)",
+      "abort_criterion": "iter 20 combined < 0.40 \u2014 pool rebalancing insufficient; pivot to teacher search / dense reward",
+      "open_question_flag": "Verify --heuristic-floor semantics in train_ppo.py before launch (continuation_plan notes that --league-heuristic-pct had coin-flip semantics with P(zero heuristic games)=(1-pct)^k; --heuristic-floor may differ)"
+    },
+    "target": ">0.50 combined WR vs heuristic \u2014 v7 shows pool-composition alone insufficient. After v8, if <0.50 still, pivot to teacher search / dense reward / side-specific head."
   },
   "ismcts_verdict": {
     "result": "SHELVED",
@@ -96,6 +235,7 @@
     "E_mcts_batched_fast": "DEFERRED"
   },
   "gap_tracker": "ALL DONE (GAP-001 through GAP-043). GAP-044/45/46 WONTFIX (promo cards).",
-  "jsd_probe": "DONE — jsd_probe.py + probe set + train_ppo.py integration",
-  "last_updated": "2026-04-19T23:25:00Z"
+  "jsd_probe": "DONE \u2014 jsd_probe.py + probe set + train_ppo.py integration",
+  "last_updated": "2026-04-20T09:35:00Z",
+  "context": "v7 COMPLETE. Fadeout fix worked structurally (no panel collapse) but heuristic-combined metric regressed vs v6_iter20. Diagnosis: US over-specialized to self-similar BC-cluster+past-self pool (USSR +16pp, US -20pp vs heuristic). v7 fresh benches (500g/side): iter20=0.397, iter40=0.410, iter60=0.376, iter80=0.423. Candidate tournament: v7_iter40=1999 Elo (+99 vs v56), incremental ladder: country_attn_v7=1912 (+12 vs v56). v6_iter20=0.458 REMAINS project record. v8 plan: warmstart from v6_iter20, heuristic-floor 0.15\u21920.30, drop BC-cluster near-duplicates. US overfit experiment at iter 21/40, rollout_wr trending 0.40+."
 }

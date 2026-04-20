@@ -1,0 +1,25 @@
+MCTS full-info smoke test — iter030
+Model: results/ppo_gnn_card_attn_v1/ppo_iter0030_scripted.pt
+Date: 2026-04-18
+
+=== Action-level agreement (mcts_search_from_state, 50 sims/position) ===
+5 games × 5 positions per side (greedy trace states)
+
+USSR: agree_rate=44.0% (11/25)  mean_mcts_value=+0.016
+US:   agree_rate=32.0% (8/25)   mean_mcts_value=-0.008
+Combined: 38.0%
+
+INTERPRETATION: Low agree_rate expected — MCTS has full information (both hands known)
+while greedy NN does not. The divergence shows MCTS exploiting opponent hand knowledge.
+
+=== End-to-end MCTS WR test ===
+benchmark_mcts crashes at n_sims>=100 (C++ memory bug, ~3.4M edges threshold).
+benchmark_mcts works at n_sims=50 with n_games<=3.
+Crashes intermittently when PPO training is running concurrently (GPU memory pressure).
+
+Deferred: Run end-to-end MCTS comparison after PPO iter300 finishes.
+
+=== Known findings ===
+- Value head at iter30: bias=-0.124 (pessimistic), Brier=0.033, corr=0.741
+- Pessimistic bias suggests MCTS would undervalue positions (searches too defensively)
+- Expected to self-correct as PPO continues; re-run calibration at iter100

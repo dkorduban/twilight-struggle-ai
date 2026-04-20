@@ -359,12 +359,15 @@ def chain_schedule(names: list[str]) -> list[tuple[str, str]]:
     return [(names[i], names[i + 1]) for i in range(len(names) - 1)]
 
 
-def round_robin_schedule(names: list[str]) -> list[tuple[str, str]]:
-    """All pairs."""
+def round_robin_schedule(names: list[str], include_self: bool = False) -> list[tuple[str, str]]:
+    """All pairs. If include_self, also add diagonal (name, name) matches."""
     pairs = []
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
             pairs.append((names[i], names[j]))
+    if include_self:
+        for name in names:
+            pairs.append((name, name))
     return pairs
 
 
@@ -446,6 +449,14 @@ def main():
         help="Models as name:path pairs, in ascending strength order (best last)"
     )
     p.add_argument("--games", type=int, default=400, help="Games per match (must be even; half each side)")
+    p.add_argument("--num-threads", type=int, default=None,
+                   help="torch.set_num_threads(N). Default: let PyTorch use system default (physical core count). "
+                        "Set to 4-5 when co-running with train_ppo to avoid OMP oversubscription.")
+    p.add_argument("--include-self-matches", action="store_true", default=False,
+                   help="Add diagonal (model vs itself) matches to the schedule. Each self-match plays "
+                        "the model as USSR against itself as US, creating A_USSR<->A_US edges in the "
+                        "bipartite Elo graph. Required for accurate per-side Elo when USSR and US "
+                        "performance differ significantly across models.")
     p.add_argument("--anchor", required=True, help="Model name to anchor at --anchor-elo")
     p.add_argument("--anchor-elo", type=float, default=1500.0)
     p.add_argument("--schedule", choices=["chain", "round_robin"], default="chain")
@@ -478,6 +489,13 @@ def main():
         help="Name of the newly trained model being placed (for SQL provenance).",
     )
     args = p.parse_args()
+    # Bench shows CPU inference is inverse-scaling: 1 thread = 20 g/s, 10 threads = 12.5 g/s.
+    # Default to 1 unless caller explicitly overrides.
+    _n_threads = args.num_threads if args.num_threads is not None else 1
+    import os as _os
+    _os.environ.setdefault("OMP_WAIT_POLICY", "passive")
+    _os.environ.setdefault("KMP_BLOCKTIME", "0")
+    torch.set_num_threads(_n_threads)
     if args.mode is None:
         args.mode = args.schedule
 
@@ -540,7 +558,7 @@ def main():
 
     # Build match schedule
     if args.schedule == "round_robin":
-        schedule = round_robin_schedule(ordered_names)
+        schedule = round_robin_schedule(ordered_names, include_self=args.include_self_matches)
     else:
         schedule = chain_schedule(ordered_names)
 

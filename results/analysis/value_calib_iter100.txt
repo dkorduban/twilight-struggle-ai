@@ -1,0 +1,38 @@
+Loading model: results/ppo_gnn_card_attn_v1/ppo_iter0100_scripted.pt
+Loading data: data/awr_eval/awr_panel_v7.parquet
+
+=== Value Head Calibration Report ===
+Model:    ppo_iter0100_scripted.pt
+Samples:  3000
+Bias:     -0.1371  (model overestimates by -13.7%)
+MAE:      0.2816
+Brier:    0.0359
+Corr:     0.7068
+
+--- Per-phase ---
+  early (t1-3): n=1105, bias=-0.1055, Brier=0.0219, corr=0.5345
+  mid (t4-7): n=1238, bias=-0.1855, Brier=0.0414, corr=0.6745
+  late (t8-10): n=657, bias=-0.0989, Brier=0.0491, corr=0.7822
+
+--- Temperature scaling ---
+  Temperature T = 2.3808
+  Bias after:    -0.0000
+  Brier after:   0.0399  (+11.0%)
+
+--- Calibration curve (10 bins by predicted value) ---
+  pred=[-0.969,-0.808]: mean_pred=-0.876, mean_true=-0.750, n=300
+  pred=[-0.808,-0.627]: mean_pred=-0.722, mean_true=-0.512, n=300
+  pred=[-0.627,-0.441]: mean_pred=-0.532, mean_true=-0.307, n=300
+  pred=[-0.441,-0.288]: mean_pred=-0.357, mean_true=-0.146, n=300
+  pred=[-0.288,-0.186]: mean_pred=-0.234, mean_true=-0.067, n=300
+  pred=[-0.186,-0.111]: mean_pred=-0.147, mean_true=-0.032, n=300
+  pred=[-0.111,-0.032]: mean_pred=-0.073, mean_true=-0.023, n=300
+  pred=[-0.032,+0.055]: mean_pred=+0.006, mean_true=+0.067, n=300
+  pred=[+0.055,+0.218]: mean_pred=+0.125, mean_true=+0.207, n=300
+  pred=[+0.218,+0.891]: mean_pred=+0.445, mean_true=+0.570, n=299
+
+=== Interpretation ===
+SIGNIFICANT BIAS: -0.137. Causes ISMCTS overoptimism under determinization.
+Fix: Add value_calibration_loss = (mean(v_pred) - mean(returns))^2 to PPO loss
+  OR apply post-hoc divisor T=2.381 at inference.
+Correlation 0.707: Value head is informative.

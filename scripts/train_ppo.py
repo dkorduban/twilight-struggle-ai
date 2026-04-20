@@ -2729,6 +2729,7 @@ def _panel_eval_worker(
     n_games_per_opp: int,
     seed: int,
     result_path: str,
+    num_threads: int | None = None,
 ) -> None:
     """Module-level function (required for multiprocessing fork/spawn).
     Runs panel eval entirely on CPU, writes JSON result file.
@@ -2736,6 +2737,14 @@ def _panel_eval_worker(
     import json
     import sys
     from pathlib import Path as _Path
+
+    # Always cap to 1 thread by default (bench: 1 thread=20g/s, 10 threads=12.5g/s)
+    import os as _os
+    _nt = num_threads if num_threads is not None else 1
+    _os.environ.setdefault("OMP_WAIT_POLICY", "passive")
+    _os.environ.setdefault("KMP_BLOCKTIME", "0")
+    import torch as _torch
+    _torch.set_num_threads(_nt)
 
     try:
         import tscore as _tscore
@@ -2913,6 +2922,9 @@ def _write_compat_alias(src_path: str, alias_path: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="PPO fine-tuning for Twilight Struggle AI")
+    p.add_argument("--num-threads", type=int, default=None,
+                   help="torch.set_num_threads(N). Default: let PyTorch use system default (physical core count). "
+                        "Set to 4-5 when co-running with run_elo_tournament to avoid OMP oversubscription.")
     p.add_argument("--checkpoint", required=True, help="BC checkpoint to warm-start from")
     p.add_argument("--reset-optimizer", action="store_true",
                    help="Ignore optimizer state in checkpoint; start fresh Adam. "
@@ -3069,6 +3081,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.num_threads is not None:
+        torch.set_num_threads(args.num_threads)
     if args.version is None:
         args.version = _derive_version(args.out_dir)
 
@@ -3295,9 +3309,7 @@ def main() -> None:
                 return candidate
         return None
 
-    # Async panel eval state (non-blocking: runs in background Process)
-    import multiprocessing as _mp
-    _panel_proc: "_mp.Process | None" = None
+    # Panel eval state
     _panel_result_path: "str | None" = None
     _panel_script_path: "str | None" = None
     _panel_trigger_iter: int = 0
@@ -3320,7 +3332,7 @@ def main() -> None:
     _panel_best_wr: float = -1.0
     _running_best_path = os.path.join(args.out_dir, "ppo_running_best.pt")
     _running_best_provenance_path = os.path.join(args.out_dir, "ppo_running_best_provenance.json")
-    _panel_launch_time: float = 0.0  # wall time when panel eval subprocess was launched
+    _panel_launch_time: float = 0.0  # wall time when panel eval started
 
     # W&B chart history: accumulate per-iteration values for multi-line charts.
     _chart_iters: list[int] = []
@@ -3737,12 +3749,26 @@ def main() -> None:
         if args.league and ucb_metrics:
             log_dict.update(ucb_metrics)
 
-        # ── Async panel eval: collect result from previous run ────────────────
-        if _panel_proc is not None and not _panel_proc.is_alive():
-            _panel_proc.join()
-            _panel_proc = None
-            if _panel_result_path and os.path.exists(_panel_result_path):
-                try:
+        # ── Panel eval: run synchronously at milestone (no contention with training) ──
+        if _is_milestone(iteration) and args.eval_panel:
+            _panel_script_path = os.path.join(args.out_dir, f"panel_eval_{iteration:04d}.pt")
+            _panel_result_path = os.path.join(args.out_dir, f"panel_eval_{iteration:04d}_result.json")
+            _panel_trigger_iter = iteration
+            _panel_launch_time = time.time()
+            try:
+                _ema_orig = _apply_ema()
+                _export_torchscript_model(model, _panel_script_path, warn_only=False)
+                _restore_from_ema(_ema_orig)
+                panel_labels = [
+                    "heuristic" if p == HEURISTIC_FIXTURE else Path(p).stem.replace("_scripted", "")
+                    for p in args.eval_panel
+                ]
+                print(f"  [panel eval] running iter={iteration} panel={panel_labels}", flush=True)
+                _panel_eval_worker(
+                    _panel_script_path, args.eval_panel, 60, 70000 + iteration * 200,
+                    _panel_result_path, args.num_threads,
+                )
+                if os.path.exists(_panel_result_path):
                     with open(_panel_result_path) as f:
                         panel_res = json.load(f)
                     os.remove(_panel_result_path)
@@ -3756,103 +3782,66 @@ def main() -> None:
                         panel_log[f"panel/{opp_name}_us_wr"] = stats["us_wr"]
                         panel_log[f"panel/{opp_name}_combined_wr"] = stats["combined_wr"]
                     if valid_opps:
-                        # Uniform equal weight across all panel members (including heuristic).
-                        # Normalized over whichever opponents actually ran (some may error).
-                        # Default weight 1.0 so all opponents contribute equally unless
-                        # explicitly overridden.
                         _PANEL_WEIGHTS: dict[str, float] = {}
                         _scoring_opps = valid_opps
                         _wsum = sum(_PANEL_WEIGHTS.get(k, 1.0) for k in _scoring_opps) if _scoring_opps else 1.0
                         avg_combined = sum(
                             v["combined_wr"] * _PANEL_WEIGHTS.get(k, 1.0) for k, v in _scoring_opps.items()
                         ) / _wsum if _scoring_opps else 0.0
-                        _panel_elapsed = time.time() - _panel_launch_time if _panel_launch_time > 0 else 0.0
+                        _panel_elapsed = time.time() - _panel_launch_time
                         panel_log["panel/avg_combined_wr"] = avg_combined
                         panel_log["panel/eval_time_sec"] = _panel_elapsed
                         print(
-                            f"  [panel eval iter {_panel_trigger_iter}] avg={avg_combined:.3f} "
+                            f"  [panel eval iter {iteration}] avg={avg_combined:.3f} "
                             f"elapsed={_panel_elapsed:.0f}s: "
                             + " | ".join(f"{k}={v['combined_wr']:.3f}" for k, v in valid_opps.items()),
                             flush=True,
                         )
                     if wandb_run is not None and panel_log:
-                        wandb_run.log(panel_log, step=_panel_trigger_iter)
-                    # Persist to panel_eval_history.json for post-run checkpoint selection
+                        wandb_run.log(panel_log, step=iteration)
                     history_path = os.path.join(args.out_dir, "panel_eval_history.json")
                     try:
                         history: dict = {}
                         if os.path.exists(history_path):
                             with open(history_path) as f:
                                 history = json.load(f)
-                        history[str(_panel_trigger_iter)] = panel_res
+                        history[str(iteration)] = panel_res
                         _save_json_atomic(history_path, history)
                     except Exception as he:
                         print(f"  [panel eval] history save failed: {he}", flush=True)
-                    # Option F: save ppo_running_best.pt when panel avg is a new high-water mark.
-                    # The evaluated checkpoint is ppo_iter{_panel_trigger_iter:04d}.pt
-                    # (always retained since panel eval only fires at milestones).
                     if valid_opps and avg_combined > _panel_best_wr:
                         _panel_best_wr = avg_combined
-                        _hwm_ckpt = os.path.join(
-                            args.out_dir, f"ppo_iter{_panel_trigger_iter:04d}.pt"
-                        )
+                        _hwm_ckpt = os.path.join(args.out_dir, f"ppo_iter{iteration:04d}.pt")
                         if os.path.exists(_hwm_ckpt):
                             import shutil as _shutil
                             _shutil.copy2(_hwm_ckpt, _running_best_path)
                             _hwm_scripted = _hwm_ckpt.replace(".pt", "_scripted.pt")
                             if os.path.exists(_hwm_scripted):
                                 _shutil.copy2(_hwm_scripted, _running_best_path.replace(".pt", "_scripted.pt"))
-                            # Provenance sidecar: records which iter checkpoint became running_best.
                             _prov = {
                                 "source_checkpoint": os.path.basename(_hwm_ckpt),
                                 "source_path": _hwm_ckpt,
                                 "panel_avg_wr": round(avg_combined, 6),
-                                "panel_trigger_iter": _panel_trigger_iter,
+                                "panel_trigger_iter": iteration,
                                 "run_dir": args.out_dir,
                                 "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                                 "panel_opponents": list(valid_opps.keys()),
                             }
                             _save_json_atomic(_running_best_provenance_path, _prov)
                             print(
-                                f"  [panel eval] NEW HIGH-WATER MARK iter={_panel_trigger_iter} "
-                                f"avg_wr={avg_combined:.4f} → ppo_running_best.pt "
-                                f"(provenance: {os.path.basename(_hwm_ckpt)})",
+                                f"  [panel eval] NEW HIGH-WATER MARK iter={iteration} "
+                                f"avg_wr={avg_combined:.4f} → ppo_running_best.pt",
                                 flush=True,
                             )
-                except Exception as e:
-                    print(f"  [panel eval] result read failed: {e}", flush=True)
-            if _panel_script_path:
-                try:
-                    os.remove(_panel_script_path)
-                except OSError:
-                    pass
-
-        # ── Async panel eval: trigger new run at milestone ────────────────────
-        if _is_milestone(iteration) and args.eval_panel and _panel_proc is None:
-            _panel_script_path = os.path.join(args.out_dir, f"panel_eval_{iteration:04d}.pt")
-            _panel_result_path = os.path.join(args.out_dir, f"panel_eval_{iteration:04d}_result.json")
-            _panel_trigger_iter = iteration
-            _panel_launch_time = time.time()
-            try:
-                # Use EMA weights for panel eval (smoother, less noisy)
-                _ema_orig = _apply_ema()
-                _export_torchscript_model(model, _panel_script_path, warn_only=False)
-                _restore_from_ema(_ema_orig)
-                # Use "spawn" to avoid inheriting CUDA context from parent (fork + CUDA = deadlock).
-                _panel_proc = _mp.get_context("spawn").Process(
-                    target=_panel_eval_worker,
-                    args=(_panel_script_path, args.eval_panel, 60, 70000 + iteration * 200, _panel_result_path),
-                    daemon=True,
-                )
-                _panel_proc.start()
-                panel_labels = [
-                    "heuristic" if p == HEURISTIC_FIXTURE else Path(p).stem.replace("_scripted", "")
-                    for p in args.eval_panel
-                ]
-                print(f"  [panel eval] launched pid={_panel_proc.pid} iter={iteration} panel={panel_labels}", flush=True)
             except Exception as e:
-                print(f"  [panel eval] launch failed: {e}", flush=True)
-                _panel_proc = None
+                print(f"  [panel eval] failed: {e}", flush=True)
+            finally:
+                for _leftover in [_panel_script_path, _panel_result_path]:
+                    if _leftover and os.path.exists(_leftover):
+                        try:
+                            os.remove(_leftover)
+                        except OSError:
+                            pass
 
         if wandb_run is not None:
             log_dict.update(probe_metrics)
@@ -3981,95 +3970,7 @@ def main() -> None:
     except Exception as _promote_err:
         print(f"  Warning: ppo_best.pt promotion failed (non-fatal): {_promote_err}", flush=True)
 
-    # Wait for any still-running panel eval (e.g. final iteration) instead of
-    # killing it — the result is valuable for checkpoint selection and W&B.
-    if _panel_proc is not None and _panel_proc.is_alive():
-        print("  [panel eval] waiting for final panel eval to complete (up to 120s)...", flush=True)
-        _panel_proc.join(timeout=120)
-        if _panel_proc.is_alive():
-            print("  [panel eval] timed out — terminating", flush=True)
-            _panel_proc.terminate()
-            _panel_proc.join(timeout=5)
-    if _panel_proc is not None:
-        _panel_proc.join(timeout=1)
-        _panel_proc = None
-        # Process the result the same way the main loop does
-        if _panel_result_path and os.path.exists(_panel_result_path):
-            try:
-                with open(_panel_result_path) as f:
-                    panel_res = json.load(f)
-                valid_opps = {k: v for k, v in panel_res.items() if "error" not in v}
-                panel_log: dict = {}
-                for opp_name, stats in panel_res.items():
-                    if "error" in stats:
-                        print(f"  [panel eval] {opp_name}: ERROR {stats['error']}", flush=True)
-                        continue
-                    panel_log[f"panel/{opp_name}_ussr_wr"] = stats["ussr_wr"]
-                    panel_log[f"panel/{opp_name}_us_wr"] = stats["us_wr"]
-                    panel_log[f"panel/{opp_name}_combined_wr"] = stats["combined_wr"]
-                if valid_opps:
-                    # Uniform equal weight across all panel members (including heuristic).
-                    _scoring_opps = valid_opps
-                    _wsum = float(len(_scoring_opps)) if _scoring_opps else 1.0
-                    avg_combined = sum(v["combined_wr"] for v in _scoring_opps.values()) / _wsum if _scoring_opps else 0.0
-                    _panel_elapsed = time.time() - _panel_launch_time if _panel_launch_time > 0 else 0.0
-                    panel_log["panel/avg_combined_wr"] = avg_combined
-                    panel_log["panel/eval_time_sec"] = _panel_elapsed
-                    print(
-                        f"  [panel eval iter {_panel_trigger_iter}] avg={avg_combined:.3f} "
-                        f"elapsed={_panel_elapsed:.0f}s: "
-                        + " | ".join(f"{k}={v['combined_wr']:.3f}" for k, v in valid_opps.items()),
-                        flush=True,
-                    )
-                if wandb_run is not None and panel_log:
-                    wandb_run.log(panel_log, step=_panel_trigger_iter)
-                # Persist to panel_eval_history.json
-                history_path = os.path.join(args.out_dir, "panel_eval_history.json")
-                try:
-                    history: dict = {}
-                    if os.path.exists(history_path):
-                        with open(history_path) as f:
-                            history = json.load(f)
-                    history[str(_panel_trigger_iter)] = panel_res
-                    _save_json_atomic(history_path, history)
-                except Exception as he:
-                    print(f"  [panel eval] history save failed: {he}", flush=True)
-                # Update running best if this is a new high-water mark
-                if valid_opps and avg_combined > _panel_best_wr:
-                    _panel_best_wr = avg_combined
-                    _hwm_ckpt = os.path.join(
-                        args.out_dir, f"ppo_iter{_panel_trigger_iter:04d}.pt"
-                    )
-                    if os.path.exists(_hwm_ckpt):
-                        import shutil as _shutil
-                        _shutil.copy2(_hwm_ckpt, _running_best_path)
-                        _hwm_scripted = _hwm_ckpt.replace(".pt", "_scripted.pt")
-                        if os.path.exists(_hwm_scripted):
-                            _shutil.copy2(_hwm_scripted, _running_best_path.replace(".pt", "_scripted.pt"))
-                        _prov = {
-                            "source_checkpoint": os.path.basename(_hwm_ckpt),
-                            "source_path": _hwm_ckpt,
-                            "panel_avg_wr": round(avg_combined, 6),
-                            "panel_trigger_iter": _panel_trigger_iter,
-                            "run_dir": args.out_dir,
-                            "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                            "panel_opponents": list(valid_opps.keys()),
-                        }
-                        _save_json_atomic(_running_best_provenance_path, _prov)
-                        print(
-                            f"  [panel eval] NEW HIGH-WATER MARK iter={_panel_trigger_iter} "
-                            f"avg_wr={avg_combined:.4f} → ppo_running_best.pt "
-                            f"(provenance: {os.path.basename(_hwm_ckpt)})",
-                            flush=True,
-                        )
-            except Exception as e:
-                print(f"  [panel eval] final result read failed: {e}", flush=True)
-    for leftover in [_panel_result_path, _panel_script_path]:
-        if leftover:
-            try:
-                os.remove(leftover)
-            except OSError:
-                pass
+    # (panel eval is now synchronous — no cleanup needed here)
 
     if _TRACKING_AVAILABLE:
         try:
