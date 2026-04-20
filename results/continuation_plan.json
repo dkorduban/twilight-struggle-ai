@@ -40,7 +40,7 @@
       "value_mse_root_cause": "BC v1 value_mse=0.77 (near-random). v13 game data in BC v2 already showing value_mse=0.58 at epoch4."
     },
     "v15_plan": {
-      "status": "BC v3 RUNNING - pid=1034608, epoch ~13/80, auto-monitor has gate check",
+      "status": "PPO v15 RUNNING - pid=1052068. BC v3 gate failed (0.110). BC v4 (teacher distill, val_value_mse=0.675). PPO v15 iter1: panel=0.295, rollout_wr=0.449 (ussr=0.727, us=0.172). PROMISING.",
       "bc_v2_killed": "Mixed data contamination (0.77→0.80 value_mse). Killed at epoch 15.",
       "bc_v3_status": "RUNNING. Pure v13 3000g data. 80 epochs. Val_card_top1=0.686@ep12. Val_value_mse=0.81 (worsening - overfitting). BC v3 ep12 bench: combined=0.140 (gate FAIL at 0.20).",
       "bc_v3_root_cause": "winner_side target is too noisy for learned-model games. Value head memorizes train set (mse=0.09-0.17) but fails on val (mse=0.81+). Card accuracy improving but US side weak (0.040).",
@@ -56,7 +56,7 @@
     }
   },
   "next_tasks": [
-    "GNN PPO v15 (PENDING - BC v3 running @ep13/80; monitor auto-handles gate->BC v4 fallback->PPO)",
+    "ACTIVE: Monitor PPO v15 (pid=1052068). Check iter10 panel (eval fires ~09:50 UTC). Bench iter20 at ~11:00 UTC.",
     "Bench GNN PPO v15 at iter20 (500g/side, seeds 50000/50500). Target: >0.427 to beat country_attn_side",
     "If v15 combined > 0.427 + 3pp = 0.457: match record range; update current_best_practical",
     "Fix running_best selector: replace 30-game panel with 200g heuristic-only mini-bench",
