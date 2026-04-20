@@ -5,44 +5,51 @@
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "PPO v3 running (iter 50/200, combined=0.342). Waiting for v4 bc_diverse AWR benchmark result (PID 659525).",
-  "current_strategy": "v3 at iter50: combined=0.342 (ussr=0.347, us=0.337). US side improved vs AWR warmstart (0.248→0.337), USSR dropped (0.380→0.347). v4 AWR benchmark in progress. v4 PPO to launch after v3 shows plateau at ~iter 100. Key lesson: us_bc model (0% WR) diluted v4 AWR data quality (val_adv_card_acc dropped to 0.6152). For v5 AWR: exclude us_bc.",
-  "active_background": [
-    "PPO v3 — training active, iter ~55+/200 (slow due to CPU competition), last log at iter 50",
-    "v4 bc_diverse AWR benchmark — PID 659525 (reniced to 15), results/awr_sweep/v4_bc_diverse_gnn_side/bench_vs_heuristic.txt"
-  ],
+  "current_task": "Tests green. Dispatching v5 AWR sweep + v4 PPO. Frame-context features pending Codex dispatch.",
+  "current_strategy": "PPO v3 COMPLETE (iter200). Best = iter150, panel_avg_wr=0.481 (ussr=0.637, us=0.325). v56 BC still best combined at 0.492 (N=300). v5 AWR data collected: 52,876 rows from 3 models (v56, v3_iter50, v3_best), excluded us_bc (0% WR lesson). Next: AWR sweep on v5 data to find best architecture for v4 PPO warmstart. Frame-context features (FrameKind/budget/step_index) are the highest-leverage neural net gap — model sees ZERO frame context currently.",
+  "active_background": [],
   "next_tasks": [
-    "Wait for v4 bc_diverse AWR benchmark result (expect < 0.314 combined, us_bc dilution confirmed)",
-    "CountryAllocHead AWR ablation: train on v2_diverse data (cleaner signal), compare vs gnn_side",
-    "V3 iter100 benchmark: run when training reaches iter 100 (~2-4 hours)",
-    "V4 PPO: warmstart from v3 best checkpoint when available; decide warmstart after iter100",
-    "Run parity harness tests (79 tests)",
-    "For v5 AWR data: exclude us_bc, include v3 best checkpoints"
+    "Start v5 AWR architecture sweep on data/awr_eval/v5_v3best_v1/ (52k rows) — compare gnn_side, control_feat, country_alloc, film variants",
+    "Start v4 PPO: warmstart from v3_best (iter150) scripted checkpoint; run 200 iterations",
+    "Dispatch frame-context features to Codex — add 8 scalars (FrameKind, source_card, budget_remaining, step_index) to nn_features.cpp; requires model re-script; 5-min progress instructions",
+    "Run post-fix Elo tournament: invalidate old ladder (pre-DEFCON-1-fix), re-run 6x6 round-robin at N=500/side on fixed engine with v56 as ~2015 anchor",
+    "Commit: binary rebuilt, tests green"
   ],
   "frame_migration_plan": {
-    "design_decision_doc": "results/analysis/opus_analysis_20260419_062129_country_alloc_redesign.md",
-    "migration_audit_doc": "results/analysis/opus_analysis_20260419_060610_frame_migration_plan.md",
-    "rules_audit_doc": "results/analysis/opus_analysis_20260419_071025_frame_rules_audit.md",
-    "rules_fix_plan_doc": "results/analysis/opus_analysis_20260419_083500_rules_fix_plan.md",
-    "keep_frameaction_scalar": true,
-    "dormant_framekinds_to_activate": ["ForcedDiscard", "CancelChoice", "NoradInfluence", "FreeOpsInfluence", "DeferredOps"],
-    "dormant_framekinds_consider_deleting": ["SetupPlacement", "Headline"],
-    "unmigrated_cards": [32, 43, 45, 47, 52, 68, 78, 84],
-    "already_migrated_confirmed": [5, 7, 10, 14, 16, 19, 20, 23, 24, 26, 28, 29, 30, 33, 36, 37, 39, 46, 48, 49, 50, 52, 56, 59, 60, 67, 68, 71, 75, 76, 77, 83, 88, 90, 91, 94, 95, 97, 98, 101, 102, 105],
-    "apply_ops_randomly_impl_silent_divergence": "Cards 52/68 partially migrated — their CardSelect visible but nested ops uses apply_frame_ops_randomly_impl (random RNG) instead of surfacing frames. Slice E fixes.",
+    "status": "COMPLETE — all FrameKinds active, all Tier-1/2/3 cards fixed, parity 79/79 GREEN",
     "tier1_rules_fixed": [30, 33, 77, 98],
     "tier2_rules_done": [16, 76, 95, 60, 28],
-    "tier3_rules_deferred": [75, 50],
-    "parity_harness_status": "GREEN — 79/79 tests pass as of 2026-04-19"
+    "tier3_rules_done": [7, 20, 50, 68, 75],
+    "parity_harness_status": "GREEN — 79/79 tests pass as of 2026-04-19",
+    "frame_context_in_neural_net": "NOT YET — highest leverage gap. Model sees 0 frame context (FrameKind, source_card, budget_remaining, step_index). Stash has WIP code at nn_features.cpp, kModelScalarDim=40 (32+8)."
   },
   "ppo_chain": {
-    "status": "v2 COMPLETE iter 200/200. last20_avg rollout_wr=0.523 (ussr=0.698 us=0.348). v3 RUNNING from gnn_side AWR warmstart.",
+    "status": "v3 COMPLETE iter 200/200. Best = iter150, panel_avg_wr=0.481. v4 PPO NOT YET STARTED.",
     "v2_iter60": {"USSR": 0.660, "US": 0.510, "combined": 0.585, "panel": 0.667},
     "v2_final": {"last20_rollout_avg": {"combined": 0.523, "USSR": 0.698, "US": 0.348}, "best_rollout_iter": 96, "best_rollout_wr": 0.635},
-    "best_baseline": "gnn_card_attn_v1 post Tier-1+2 engine fixes (combined=0.448 @ N=200/side)",
-    "restart_conditions": "Only restart chain on explicit user request or after architecture/engine change requiring fresh run",
-    "awr_fixed_engine_data": "data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet — 73,981 rows, 4 models (all named ppo_best_scripted, dedup fix added to collector)",
-    "v3_warmstart_source": "results/awr_sweep/fixed_engine_full.json best checkpoint (to be selected by pipeline)"
+    "v3_benchmarks": {
+      "iter50": {"ussr": 0.347, "us": 0.337, "combined": 0.342},
+      "iter100": {"ussr": 0.360, "us": 0.147, "combined": 0.253},
+      "iter150": {"ussr": 0.637, "us": 0.325, "combined": 0.481, "note": "BEST — used for v4 warmstart"},
+      "iter200": "not benchmarked separately"
+    },
+    "best_baseline": "v56 BC (N=300): ussr=0.570, us=0.413, combined=0.492",
+    "v4_warmstart": "results/ppo_gnn_card_attn_v3/ppo_running_best.pt (iter150, panel=0.481)",
+    "restart_conditions": "Only restart chain on explicit user request or after architecture/engine change requiring fresh run"
+  },
+  "post_fix_panel": {
+    "note": "Post DEFCON-1 fix + Tier-1/2/3 engine fixes. All WRs vs heuristic (N=300/side).",
+    "v56_bc_baseline": {"ussr": 0.570, "us": 0.413, "combined": 0.492},
+    "v3_best_iter150": {"ussr": 0.637, "us": 0.325, "combined": 0.481},
+    "v3_iter50": {"ussr": 0.360, "us": 0.147, "combined": 0.253},
+    "gnv3_vs_panel_raw": "results/panel_wr_matrix.json",
+    "elo_ladder_status": "STALE — pre-DEFCON-1-fix (2026-04-14). Must re-run full Elo tournament."
+  },
+  "awr_datasets": {
+    "fixed_engine_v1": "data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet — 73,981 rows, 4 models (all ppo_best_scripted)",
+    "v2_diverse_v1": "data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet — 69,783 rows, 4 diverse v2 checkpoints",
+    "v4_bc_diverse_v1": "data/awr_eval/v4_bc_diverse_v1/awr_v4_bc_diverse.parquet — 65,519 rows, AVOID: includes us_bc (0% WR diluted val_adv_card_acc to 0.6152)",
+    "v5_v3best_v1": "data/awr_eval/v5_v3best_v1/awr_v5_v3best.parquet — 52,876 rows, 3 models: v56_scripted/v3_iter50_scripted/v3_best_scripted (excluded us_bc). BEST FOR SWEEP."
   },
   "ismcts_verdict": {
     "result": "SHELVED",
@@ -62,30 +69,15 @@
   "jsd_probe": "DONE — jsd_probe.py + probe set + train_ppo.py integration",
   "codex_mcp_discovery": {
     "pattern": "Call mcp__codex__codex directly from main session — no subagent needed. General-purpose bg agents also inherit MCP. Custom agent types do NOT.",
-    "reply_loop": "mcp__codex__codex-reply(threadId=...) up to 15 calls"
+    "reply_loop": "mcp__codex__codex-reply(threadId=...) up to 15 calls",
+    "5min_progress": "Always include in developer-instructions: 'Print a brief progress note every 5 minutes so the watchdog does not fire.'"
   },
   "new_models_implemented": {
-    "CountryAllocHead": "python/tsrl/policies/model.py:TSCountryAllocHeadModel — per-country per-ops score head + bounded_knapsack_dp decoder",
+    "CountryAllocHead": "python/tsrl/policies/model.py:TSCountryAllocHeadModel — per-country per-ops score head + bounded_knapsack_dp decoder (fast path for uniform budget)",
     "FiLM_variants": ["country_attn_film_normal_init", "country_attn_film_zero_beta_bias", "country_attn_film_gated", "country_attn_film_normal_init_zero_beta"],
     "gnn_card_attn_gated": "TSControlFeatGNNCardAttnGatedModel — combines GNN+card-attn+FiLM gate, val_adv_card_acc=0.5744 on v7 data"
   },
-  "collect_awr_fix": "Fixed collect_awr_data.py: dedup stems auto-adds parent dir prefix when multiple models share same filename (avoids all models named ppo_best_scripted)",
-  "ppo_v2_benchmarks": {
-    "iter100": {"ussr": 0.465, "us": 0.310, "combined": 0.388},
-    "iter150": {"ussr": 0.585, "us": 0.270, "combined": 0.427},
-    "iter200": {"ussr": 0.515, "us": 0.330, "combined": 0.422},
-    "ppo_best_rollout_selected": {"ussr": 0.406, "us": 0.388, "combined": 0.397},
-    "v56_bc_baseline": {"ussr": 0.558, "us": 0.325, "combined": 0.442},
-    "v3_iter1_warmstart": {"ussr": 0.380, "us": 0.230, "combined": 0.305},
-    "v2_diverse_awr_warmstart": {"ussr": 0.380, "us": 0.248, "combined": 0.314},
-    "v3_iter50": {"ussr": 0.347, "us": 0.337, "combined": 0.342},
-    "note": "No v2 checkpoint beats v56 BC combined. USSR peaked at iter150 (0.585) but US hurt (0.270). v56 BC still best combined (0.442). v3 iter50 (0.342): US improved over AWR warmstart (0.248→0.337), USSR dropped (0.380→0.347). Combined improving vs warmstart."
-  },
-  "torchscript_fix": "Fixed TorchScript __constants__ for _SIDE_SCALAR_IDX in all side-conditioned models (commit bed9e17). CountryAttnEncoder dynamic getattr replaced with stacked region_masks buffer. All models in MODEL_REGISTRY now scriptable.",
-  "awr_datasets": {
-    "fixed_engine_v1": "data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet — 73,981 rows, 4 models (single-bucket, all ppo_best_scripted)",
-    "v2_diverse_v1": "data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet — 69,783 rows, 4 diverse v2 checkpoints",
-    "v4_bc_diverse_v1": "data/awr_eval/v4_bc_diverse_v1/awr_v4_bc_diverse.parquet — 65,519 rows, includes v56 BC and us_bc specialist"
-  },
-  "last_updated": "2026-04-19T20:35:00Z"
+  "collect_awr_fix": "Fixed collect_awr_data.py: dedup stems auto-adds parent dir prefix when multiple models share same filename.",
+  "binary_status": "Rebuilt 2026-04-19T23:xx: binary matches source (kScalarDim=32). Stash@{0} has WIP frame-context (kModelScalarDim=40) — not applied.",
+  "last_updated": "2026-04-19T23:00:00Z"
 }
