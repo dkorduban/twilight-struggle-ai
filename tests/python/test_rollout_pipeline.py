@@ -120,11 +120,11 @@ class TestFeatureShapes:
                 f"cards shape {step['cards'].shape}, expected (448,)"
 
     def test_scalars_shape(self):
+        from tsrl.constants import SCALAR_DIM
         _, steps, _ = run_small_rollout(n_games=2)
         for step in steps[:5]:
-            # SCALAR_DIM is 32 for current models
-            assert step["scalars"].shape[0] == 32, \
-                f"scalars dim {step['scalars'].shape[0]}, expected 32"
+            assert step["scalars"].shape[0] == SCALAR_DIM, \
+                f"scalars dim {step['scalars'].shape[0]}, expected {SCALAR_DIM}"
 
     def test_mask_shapes(self):
         _, steps, _ = run_small_rollout(n_games=2)

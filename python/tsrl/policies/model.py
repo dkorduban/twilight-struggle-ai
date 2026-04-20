@@ -225,20 +225,23 @@ class FrameContextScalarEncoder(nn.Linear):
     When old inputs or checkpoints omit the 8 frame-context columns, insert
     zero frame features after the base scalar block and set is_top_level=1.
     """
+    __constants__ = ['in_features', 'out_features', '_frame_ctx_dim', '_base_scalar_dim']
+    _frame_ctx_dim: int = FRAME_CONTEXT_DIM
+    _base_scalar_dim: int = BASE_SCALAR_DIM
 
     def _pad_frame_context(self, scalars: torch.Tensor) -> torch.Tensor:
         if scalars.size(-1) == self.in_features:
             return scalars
-        if scalars.size(-1) != self.in_features - FRAME_CONTEXT_DIM:
+        if scalars.size(-1) != self.in_features - self._frame_ctx_dim:
             return scalars
 
-        frame_ctx = scalars.new_zeros((scalars.size(0), FRAME_CONTEXT_DIM))
-        frame_ctx[:, FRAME_CONTEXT_DIM - 1] = 1.0
+        frame_ctx = scalars.new_zeros((scalars.size(0), self._frame_ctx_dim))
+        frame_ctx[:, self._frame_ctx_dim - 1] = 1.0
         return torch.cat(
             (
-                scalars[:, :BASE_SCALAR_DIM],
+                scalars[:, :self._base_scalar_dim],
                 frame_ctx,
-                scalars[:, BASE_SCALAR_DIM:],
+                scalars[:, self._base_scalar_dim:],
             ),
             dim=-1,
         )
@@ -259,21 +262,21 @@ class FrameContextScalarEncoder(nn.Linear):
         weight_key = prefix + "weight"
         if weight_key in state_dict:
             old_weight = state_dict[weight_key]
-            expected_old_cols = self.weight.shape[1] - FRAME_CONTEXT_DIM
+            expected_old_cols = self.weight.shape[1] - self._frame_ctx_dim
             if (
                 old_weight.dim() == 2
                 and old_weight.shape[0] == self.weight.shape[0]
                 and old_weight.shape[1] == expected_old_cols
             ):
                 new_weight = torch.zeros_like(self.weight)
-                new_weight[:, :BASE_SCALAR_DIM] = old_weight[:, :BASE_SCALAR_DIM]
-                if old_weight.shape[1] > BASE_SCALAR_DIM:
-                    suffix_cols = old_weight.shape[1] - BASE_SCALAR_DIM
+                new_weight[:, :self._base_scalar_dim] = old_weight[:, :self._base_scalar_dim]
+                if old_weight.shape[1] > self._base_scalar_dim:
+                    suffix_cols = old_weight.shape[1] - self._base_scalar_dim
                     new_weight[
                         :,
-                        BASE_SCALAR_DIM + FRAME_CONTEXT_DIM:
-                        BASE_SCALAR_DIM + FRAME_CONTEXT_DIM + suffix_cols,
-                    ] = old_weight[:, BASE_SCALAR_DIM:]
+                        self._base_scalar_dim + self._frame_ctx_dim:
+                        self._base_scalar_dim + self._frame_ctx_dim + suffix_cols,
+                    ] = old_weight[:, self._base_scalar_dim:]
                 state_dict[weight_key] = new_weight
         super()._load_from_state_dict(
             state_dict,

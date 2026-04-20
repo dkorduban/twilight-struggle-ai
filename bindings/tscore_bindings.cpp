@@ -1527,19 +1527,24 @@ PYBIND11_MODULE(tscore, m) {
             model_a.eval();
             auto model_b = torch::jit::load(model_b_path, device);
             model_b.eval();
-            auto rollout = ts::rollout_model_vs_model_batched(
-                n_games,
-                model_a,
-                model_b,
-                pool_size,
-                seed.value_or(std::random_device{}()),
-                device,
-                temperature,
-                nash_temperatures,
-                dir_alpha,
-                dir_epsilon,
-                learned_side
-            );
+            ts::RolloutResult rollout;
+            {
+                // Release GIL so parallel ThreadPoolExecutor calls run truly concurrently.
+                py::gil_scoped_release release;
+                rollout = ts::rollout_model_vs_model_batched(
+                    n_games,
+                    model_a,
+                    model_b,
+                    pool_size,
+                    seed.value_or(std::random_device{}()),
+                    device,
+                    temperature,
+                    nash_temperatures,
+                    dir_alpha,
+                    dir_epsilon,
+                    learned_side
+                );
+            }  // GIL re-acquired here
 
             py::list steps_out;
             for (const auto& step : rollout.steps) {
