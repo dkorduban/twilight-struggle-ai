@@ -248,7 +248,7 @@ def extract_features(
 class Step:
     influence: torch.Tensor      # (1, 172) CPU
     cards: torch.Tensor          # (1, 448) CPU
-    scalars: torch.Tensor        # (1, SCALAR_DIM) CPU — 32-dim base + 28 region = 60 for GNN-side
+    scalars: torch.Tensor        # (1, SCALAR_DIM) CPU — 32 base + 8 frame-context features
     card_mask: torch.Tensor      # (111,) bool - True = legal
     mode_mask: torch.Tensor      # (5,) bool
     country_mask: Optional[torch.Tensor]  # (86,) bool or None for SPACE/EVENT
@@ -2541,12 +2541,13 @@ def _add_region_net_delta_stats(terminal_steps: list[Step], log_dict: dict) -> N
 def _add_scalar_weight_norms(model: nn.Module, log_dict: dict) -> None:
     """Add scalar_encoder weight norms to log_dict for W&B tracking.
 
-    Tracks three slices of scalar_encoder.weight:
+    Tracks scalar_encoder.weight slices:
       new_scalar_weight_norm  — L2 norm of cols 11:32 (the 21 new active-effect features)
                                 Should grow from ~0.05 (random init) as model learns to use them.
                                 If stays near initial value after 50 iters → features not learned.
       core_scalar_weight_norm — L2 norm of cols 0:11 (original 11 features, should stay stable)
-      region_scalar_weight_norm — L2 norm of cols 32:60 (region scalars, for GNN-side models)
+      frame_context_weight_norm — L2 norm of cols 32:40 (runtime frame context)
+      region_scalar_weight_norm — L2 norm of cols 40+ (region scalars, for GNN-side models)
     """
     if not hasattr(model, "scalar_encoder"):
         return
@@ -2555,8 +2556,10 @@ def _add_scalar_weight_norms(model: nn.Module, log_dict: dict) -> None:
     log_dict["core_scalar_weight_norm"] = float(w[:, :11].norm().item())
     if input_dim >= 32:
         log_dict["new_scalar_weight_norm"] = float(w[:, 11:32].norm().item())
-    if input_dim >= 60:
-        log_dict["region_scalar_weight_norm"] = float(w[:, 32:60].norm().item())
+    if input_dim >= SCALAR_DIM:
+        log_dict["frame_context_weight_norm"] = float(w[:, 32:SCALAR_DIM].norm().item())
+    if input_dim > SCALAR_DIM:
+        log_dict["region_scalar_weight_norm"] = float(w[:, SCALAR_DIM:].norm().item())
 
 
 def _save_rollout_parquet(
@@ -2810,7 +2813,7 @@ def _export_torchscript_model(model: nn.Module, script_path: str, *, warn_only: 
         try:
             scripted = torch.jit.script(model_cpu)
         except Exception:
-            # Use SCALAR_DIM (32) for trace — this is what C++ sends.
+            # Use SCALAR_DIM for trace — this is what C++ sends.
             # Models with region_encoder internally extend scalars before
             # scalar_encoder, so scalar_encoder.weight.shape[1] > SCALAR_DIM.
             example_inputs = (

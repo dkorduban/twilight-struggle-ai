@@ -7,14 +7,17 @@
 #include <algorithm>
 #include <stdexcept>
 
+#include "game_data.hpp"
+
 namespace ts::nn {
 namespace {
 
 // Active-effect features at indices 11-31 are now active (PPO v3 complete).
 // BC must be retrained from scratch; existing PPO v1-v3 checkpoints are incompatible.
-constexpr int kScalarDim = 32;
 constexpr int kCardMaskLen = kCardSlots;
 constexpr int kCountryMaskLen = kCountrySlots;
+constexpr int kModelScalarDim = kScalarDim + kFrameContextDim;
+constexpr int kRegionScalarDim = 42;
 
 void fill_card_mask(float* ptr, const CardSet& cards) {
     std::fill(ptr, ptr + kCardMaskLen, 0.0f);
@@ -80,6 +83,11 @@ void fill_scalars(float* ptr, const PublicState& pub, bool holds_china, Side sid
     ptr[31] = static_cast<float>(pub.ops_modifier[to_index(Side::US)]) / 3.0f;
 }
 
+void fill_frame_context(float* ptr, const GameState& gs) {
+    const auto ctx = extract_frame_context(gs);
+    std::copy(ctx.begin(), ctx.end(), ptr);
+}
+
 torch::Tensor influence_array(const PublicState& pub, Side side) {
     auto tensor = torch::zeros({kCountryMaskLen}, torch::TensorOptions().dtype(torch::kFloat32));
     fill_influence_array(tensor.data_ptr<float>(), pub, side);
@@ -97,6 +105,33 @@ torch::Tensor get_tensor(const c10::impl::GenericDict& dict, const char* key, bo
     return dict.at(key_value).toTensor();
 }
 
+int model_base_scalar_dim(torch::jit::script::Module& model) {
+    try {
+        const auto scalar_encoder = model.attr("scalar_encoder").toModule();
+        const auto weight = scalar_encoder.attr("weight").toTensor();
+        const auto input_dim = static_cast<int>(weight.size(1));
+        if (input_dim == kScalarDim || input_dim == kModelScalarDim) {
+            return input_dim;
+        }
+        if (input_dim == kScalarDim + kRegionScalarDim) {
+            return kScalarDim;
+        }
+        if (input_dim == kModelScalarDim + kRegionScalarDim) {
+            return kModelScalarDim;
+        }
+    } catch (const c10::Error&) {
+    }
+    return kModelScalarDim;
+}
+
+torch::Tensor scalars_for_model(torch::jit::script::Module& model, const torch::Tensor& scalars) {
+    const auto expected = model_base_scalar_dim(model);
+    if (expected > 0 && expected < scalars.size(1)) {
+        return scalars.narrow(/*dim=*/1, /*start=*/0, /*length=*/expected);
+    }
+    return scalars;
+}
+
 }  // namespace
 
 void BatchInputs::allocate(int batch_capacity, torch::Device dev) {
@@ -109,24 +144,57 @@ void BatchInputs::allocate(int batch_capacity, torch::Device dev) {
     const auto cpu_options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU);
     influence = torch::zeros({batch_capacity, 2 * kCountrySlots}, cpu_options);
     cards = torch::zeros({batch_capacity, 4 * kCardSlots}, cpu_options);
-    scalars = torch::zeros({batch_capacity, kScalarDim}, cpu_options);
+    scalars = torch::zeros({batch_capacity, kModelScalarDim}, cpu_options);
     capacity = batch_capacity;
     filled = 0;
 }
 
-void BatchInputs::fill_slot(int idx, const PublicState& pub, const CardSet& hand, bool holds_china, Side side) {
+void BatchInputs::fill_slot_no_count(
+    int idx,
+    const GameState& gs,
+    const CardSet& hand,
+    bool holds_china,
+    Side side
+) {
     if (idx < 0 || idx >= capacity) {
         throw std::out_of_range("batch slot index out of range");
     }
 
-    fill_influence_array(influence.data_ptr<float>() + (idx * 2 * kCountrySlots), pub, Side::USSR);
+    fill_influence_array(influence.data_ptr<float>() + (idx * 2 * kCountrySlots), gs.pub, Side::USSR);
     fill_influence_array(
         influence.data_ptr<float>() + (idx * 2 * kCountrySlots) + kCountrySlots,
-        pub,
+        gs.pub,
         Side::US
     );
-    fill_cards(cards.data_ptr<float>() + (idx * 4 * kCardSlots), pub, hand);
-    fill_scalars(scalars.data_ptr<float>() + (idx * kScalarDim), pub, holds_china, side);
+    fill_cards(cards.data_ptr<float>() + (idx * 4 * kCardSlots), gs.pub, hand);
+    auto* scalar_ptr = scalars.data_ptr<float>() + (idx * kModelScalarDim);
+    fill_scalars(scalar_ptr, gs.pub, holds_china, side);
+    fill_frame_context(scalar_ptr + kScalarDim, gs);
+}
+
+void BatchInputs::fill_slot_no_count(
+    int idx,
+    const PublicState& pub,
+    const CardSet& hand,
+    bool holds_china,
+    Side side
+) {
+    GameState gs;
+    gs.pub = pub;
+    fill_slot_no_count(idx, gs, hand, holds_china, side);
+}
+
+void BatchInputs::fill_slot_no_count(int idx, const Observation& obs) {
+    fill_slot_no_count(idx, obs.pub, obs.own_hand, obs.holds_china, obs.acting_side);
+}
+
+void BatchInputs::fill_slot(int idx, const GameState& gs, const CardSet& hand, bool holds_china, Side side) {
+    fill_slot_no_count(idx, gs, hand, holds_china, side);
+    filled = std::max(filled, idx + 1);
+}
+
+void BatchInputs::fill_slot(int idx, const PublicState& pub, const CardSet& hand, bool holds_china, Side side) {
+    fill_slot_no_count(idx, pub, hand, holds_china, side);
     filled = std::max(filled, idx + 1);
 }
 
@@ -162,6 +230,41 @@ torch::Tensor extract_scalars(const Observation& obs) {
     return extract_scalars(obs.pub, obs.holds_china, obs.acting_side);
 }
 
+std::array<float, kFrameContextDim> extract_frame_context(const GameState& gs) {
+    std::array<float, kFrameContextDim> ctx{};
+    if (!gs.frame_stack_mode || gs.frame_stack.empty()) {
+        ctx[7] = 1.0f;
+        return ctx;
+    }
+
+    const auto& frame = gs.frame_stack.back();
+    ctx[0] = frame.kind == FrameKind::CardSelect ? 1.0f : 0.0f;
+    ctx[1] = (
+        frame.kind == FrameKind::CountryPick ||
+        frame.kind == FrameKind::FreeOpsInfluence ||
+        frame.kind == FrameKind::NoradInfluence
+    ) ? 1.0f : 0.0f;
+    ctx[2] = (
+        frame.kind == FrameKind::ForcedDiscard ||
+        frame.kind == FrameKind::CancelChoice
+    ) ? 1.0f : 0.0f;
+    ctx[3] = frame.kind == FrameKind::DeferredOps ? 1.0f : 0.0f;
+    if (has_card_spec(frame.source_card)) {
+        ctx[4] = static_cast<float>(card_spec(frame.source_card).ops) / 4.0f;
+    }
+
+    const int budget = frame.budget_remaining >= 0
+        ? static_cast<int>(frame.budget_remaining)
+        : static_cast<int>(frame.criteria_bits & 0xFF);
+    const int step = frame.step_index > 0
+        ? static_cast<int>(frame.step_index)
+        : static_cast<int>((frame.criteria_bits >> 8) & 0xFF);
+    ctx[5] = static_cast<float>(budget) / 4.0f;
+    ctx[6] = static_cast<float>(step) / 10.0f;
+    ctx[7] = 0.0f;
+    return ctx;
+}
+
 BatchOutputs forward_model_batched(torch::jit::script::Module& model, const BatchInputs& inputs) {
     if (inputs.filled <= 0) {
         throw std::invalid_argument("batched forward requires at least one filled slot");
@@ -172,7 +275,8 @@ BatchOutputs forward_model_batched(torch::jit::script::Module& model, const Batc
     std::vector<torch::jit::IValue> model_inputs;
     model_inputs.push_back(inputs.influence.narrow(/*dim=*/0, /*start=*/0, /*length=*/inputs.filled).to(dev));
     model_inputs.push_back(inputs.cards.narrow(/*dim=*/0, /*start=*/0, /*length=*/inputs.filled).to(dev));
-    model_inputs.push_back(inputs.scalars.narrow(/*dim=*/0, /*start=*/0, /*length=*/inputs.filled).to(dev));
+    const auto scalar_batch = inputs.scalars.narrow(/*dim=*/0, /*start=*/0, /*length=*/inputs.filled);
+    model_inputs.push_back(scalars_for_model(model, scalar_batch).to(dev));
 
     torch::NoGradGuard no_grad;
     const auto outputs = model.forward(model_inputs).toGenericDict();
@@ -198,18 +302,34 @@ BatchOutputs forward_model_batched(torch::jit::script::Module& model, const Batc
 
 c10::impl::GenericDict forward_model(
     torch::jit::script::Module& model,
+    const GameState& gs,
+    const CardSet& hand,
+    bool holds_china,
+    Side side
+) {
+    auto scalars = torch::zeros({1, kModelScalarDim}, torch::TensorOptions().dtype(torch::kFloat32));
+    fill_scalars(scalars.data_ptr<float>(), gs.pub, holds_china, side);
+    fill_frame_context(scalars.data_ptr<float>() + kScalarDim, gs);
+
+    std::vector<torch::jit::IValue> inputs;
+    inputs.push_back(extract_influence(gs.pub));
+    inputs.push_back(extract_cards(gs.pub, hand));
+    inputs.push_back(scalars_for_model(model, scalars));
+
+    torch::NoGradGuard no_grad;
+    return model.forward(inputs).toGenericDict();
+}
+
+c10::impl::GenericDict forward_model(
+    torch::jit::script::Module& model,
     const PublicState& pub,
     const CardSet& hand,
     bool holds_china,
     Side side
 ) {
-    std::vector<torch::jit::IValue> inputs;
-    inputs.push_back(extract_influence(pub));
-    inputs.push_back(extract_cards(pub, hand));
-    inputs.push_back(extract_scalars(pub, holds_china, side));
-
-    torch::NoGradGuard no_grad;
-    return model.forward(inputs).toGenericDict();
+    GameState gs;
+    gs.pub = pub;
+    return forward_model(model, gs, hand, holds_china, side);
 }
 
 c10::impl::GenericDict forward_model(torch::jit::script::Module& model, const Observation& obs) {

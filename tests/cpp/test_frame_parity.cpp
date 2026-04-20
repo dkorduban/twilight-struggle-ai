@@ -844,11 +844,23 @@ void assert_game_result_equal(uint32_t seed, const GameResult& legacy, const Gam
 
 void assert_trace_equal(uint32_t seed, const GameRun& legacy, const GameRun& subframe) {
     INFO("seed=" << seed << " legacy_trace_size=" << legacy.trace.size() << " subframe_trace_size=" << subframe.trace.size());
-    REQUIRE(legacy.trace.size() == subframe.trace.size());
 
-    for (size_t idx = 0; idx < legacy.trace.size(); ++idx) {
+    const auto shared_size = std::min(legacy.trace.size(), subframe.trace.size());
+    for (size_t idx = 0; idx < shared_size; ++idx) {
         const auto& lhs = legacy.trace[idx];
         const auto& rhs = subframe.trace[idx];
+        std::string previous = "none";
+        if (idx > 0) {
+            const auto& prev_lhs = legacy.trace[idx - 1];
+            const auto& prev_rhs = subframe.trace[idx - 1];
+            std::ostringstream prev_out;
+            prev_out
+                << "legacy_prev=t" << prev_lhs.turn << "/AR" << prev_lhs.ar << "/" << side_to_string(prev_lhs.side)
+                << " {" << action_to_string(prev_lhs.action) << "}"
+                << " subframe_prev=t" << prev_rhs.turn << "/AR" << prev_rhs.ar << "/" << side_to_string(prev_rhs.side)
+                << " {" << action_to_string(prev_rhs.action) << "}";
+            previous = prev_out.str();
+        }
         INFO("seed=" << seed
             << " ar_index=" << idx
             << " legacy_slot=t" << lhs.turn << "/AR" << lhs.ar << "/" << side_to_string(lhs.side)
@@ -856,25 +868,464 @@ void assert_trace_equal(uint32_t seed, const GameRun& legacy, const GameRun& sub
             << " legacy_hash=" << hash_to_string(lhs.state_hash)
             << " subframe_hash=" << hash_to_string(rhs.state_hash)
             << " legacy_action={" << action_to_string(lhs.action) << "}"
-            << " subframe_action={" << action_to_string(rhs.action) << "}");
+            << " subframe_action={" << action_to_string(rhs.action) << "}"
+            << " previous=" << previous);
         REQUIRE(lhs.turn == rhs.turn);
         REQUIRE(lhs.ar == rhs.ar);
         REQUIRE(lhs.side == rhs.side);
         REQUIRE(lhs.action == rhs.action);
         REQUIRE(lhs.state_hash == rhs.state_hash);
     }
+
+    REQUIRE(legacy.trace.size() == subframe.trace.size());
 }
 
 struct FrameParityTest {
     static void assert_seed(uint32_t seed) {
         const auto legacy = play_with_policy_cb_trace(seed);
         const auto subframe = play_with_sub_policy_trace(seed);
-        assert_game_result_equal(seed, legacy.result, subframe.result);
         assert_trace_equal(seed, legacy, subframe);
+        assert_game_result_equal(seed, legacy.result, subframe.result);
     }
 };
 
+struct FrameParityScript {
+    std::vector<int> top_level_indices;
+    std::vector<int> subframe_indices;
+    std::vector<FrameAction> subframe_actions;
+};
+
+struct FrameParityHarnessRun {
+    GameResult result;
+    std::vector<TraceEntry> trace;
+    FrameParityScript script;
+};
+
+struct FrameParityReplayCursor {
+    size_t top_level = 0;
+    size_t subframe = 0;
+};
+
+int first_frame_order_callback_index(const EventDecision& decision) {
+    REQUIRE(decision.n_options > 0);
+    if (decision.kind == DecisionKind::SmallChoice) {
+        return 0;
+    }
+
+    int callback_index = 0;
+    int best_id = decision.eligible_ids[0];
+    for (int idx = 1; idx < decision.n_options; ++idx) {
+        if (decision.eligible_ids[idx] < best_id) {
+            best_id = decision.eligible_ids[idx];
+            callback_index = idx;
+        }
+    }
+    return callback_index;
+}
+
+PolicyCallbackFn first_legal_policy_callback() {
+    return [](const PublicState&, const EventDecision& decision) -> int {
+        return first_frame_order_callback_index(decision);
+    };
+}
+
+struct FirstLegalPolicy {
+    std::optional<ActionEncoding> operator()(
+        const PublicState& pub,
+        const CardSet& hand,
+        bool holds_china
+    ) const {
+        return first_legal_action(pub, hand, pub.phasing, holds_china);
+    }
+};
+
+int nth_set_bit_or_fail(const std::bitset<kCountrySlots>& bits, int action_index, const char* label) {
+    REQUIRE(action_index >= 0);
+    int seen = 0;
+    for (int idx = 0; idx < static_cast<int>(bits.size()); ++idx) {
+        if (!bits.test(static_cast<size_t>(idx))) {
+            continue;
+        }
+        if (seen == action_index) {
+            return idx;
+        }
+        ++seen;
+    }
+    FAIL(std::string("DecisionFrame action index out of range for ") + label);
+    return 0;
+}
+
+int nth_card_bit_or_fail(const CardSet& bits, int action_index, const char* label) {
+    REQUIRE(action_index >= 0);
+    int seen = 0;
+    for (int idx = 1; idx < static_cast<int>(bits.size()); ++idx) {
+        if (!bits.test(static_cast<size_t>(idx))) {
+            continue;
+        }
+        if (seen == action_index) {
+            return idx;
+        }
+        ++seen;
+    }
+    FAIL(std::string("DecisionFrame action index out of range for ") + label);
+    return 0;
+}
+
+FrameAction frame_action_at_index(const DecisionFrame& frame, int action_index) {
+    switch (frame.kind) {
+        case FrameKind::SmallChoice:
+        case FrameKind::CancelChoice:
+        case FrameKind::DeferredOps:
+            REQUIRE(action_index >= 0);
+            REQUIRE(action_index < frame.eligible_n);
+            return FrameAction{.option_index = action_index};
+
+        case FrameKind::CountryPick:
+        case FrameKind::FreeOpsInfluence:
+        case FrameKind::NoradInfluence:
+        case FrameKind::SetupPlacement:
+            return FrameAction{
+                .country_id = static_cast<CountryId>(
+                    nth_set_bit_or_fail(frame.eligible_countries, action_index, "eligible_countries")
+                ),
+            };
+
+        case FrameKind::CardSelect:
+        case FrameKind::ForcedDiscard:
+            return FrameAction{
+                .card_id = static_cast<CardId>(
+                    nth_card_bit_or_fail(frame.eligible_cards, action_index, "eligible_cards")
+                ),
+            };
+
+        case FrameKind::TopLevelAR:
+        case FrameKind::Headline:
+            FAIL("unsupported pending DecisionFrame kind in FrameParityHarness");
+            return FrameAction{};
+    }
+
+    FAIL("unknown pending DecisionFrame kind in FrameParityHarness");
+    return FrameAction{};
+}
+
+std::optional<ActionEncoding> choose_harness_action(
+    const GameState& gs,
+    Side side,
+    int action_index
+) {
+    REQUIRE(action_index == 0);
+    const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
+    return FirstLegalPolicy{}(gs.pub, gs.hands[to_index(side)], holds_china);
+}
+
+std::optional<ActionEncoding> choose_harness_headline_action(
+    const GameState& gs,
+    Side side,
+    int action_index
+) {
+    REQUIRE(action_index == 0);
+    const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
+    auto cards = legal_cards(gs.hands[to_index(side)], gs.pub, side, holds_china);
+    cards.erase(std::remove(cards.begin(), cards.end(), kChinaCardId), cards.end());
+    std::sort(cards.begin(), cards.end());
+    if (cards.empty()) {
+        return std::nullopt;
+    }
+    return ActionEncoding{.card_id = cards.front(), .mode = ActionMode::Event, .targets = {}};
+}
+
+std::tuple<bool, std::optional<Side>> apply_harness_policy_callback_action(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    FrameParityScript& script
+) {
+    std::vector<DecisionFrame> frames;
+    const auto policy_cb = first_legal_policy_callback();
+    auto [new_pub, over, winner] = apply_action_live(gs, action, side, rng, &policy_cb, false, &frames);
+    (void)new_pub;
+    for (const auto& frame : frames) {
+        script.subframe_indices.push_back(0);
+        script.subframe_actions.push_back(frame_action_at_index(frame, 0));
+    }
+    return {over, winner};
+}
+
+std::tuple<bool, std::optional<Side>> apply_harness_frame_stack_action(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    const FrameParityScript& script,
+    FrameParityReplayCursor& cursor
+) {
+    auto result = engine_step_toplevel(gs, action, side, rng);
+    int subframe_steps = 0;
+    while (auto frame = engine_peek(gs)) {
+        REQUIRE(subframe_steps < 512);
+        const auto action_index = cursor.subframe < script.subframe_indices.size()
+            ? script.subframe_indices[cursor.subframe]
+            : 0;
+        const auto frame_action = cursor.subframe < script.subframe_actions.size()
+            ? script.subframe_actions[cursor.subframe]
+            : frame_action_at_index(*frame, action_index);
+        ++cursor.subframe;
+        result = engine_step_subframe(gs, frame_action, rng);
+        ++subframe_steps;
+    }
+    return {result.game_over || gs.game_over, result.winner.has_value() ? result.winner : gs.winner};
+}
+
+std::tuple<bool, std::optional<Side>> apply_harness_action(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    bool frame_stack_path,
+    FrameParityScript& script,
+    FrameParityReplayCursor& cursor
+) {
+    if (!frame_stack_path) {
+        return apply_harness_policy_callback_action(gs, action, side, rng, script);
+    }
+    return apply_harness_frame_stack_action(gs, action, side, rng, script, cursor);
+}
+
+void record_harness_trace(
+    FrameParityHarnessRun& run,
+    const GameState& gs,
+    Side side,
+    const ActionEncoding& action
+) {
+    run.trace.push_back(TraceEntry{
+        .turn = gs.pub.turn,
+        .ar = gs.pub.ar,
+        .side = side,
+        .action = action,
+        .state_hash = per_ar_state_hash(gs),
+    });
+}
+
+std::optional<GameResult> run_harness_headline_phase(
+    GameState& gs,
+    Pcg64Rng& rng,
+    bool frame_stack_path,
+    FrameParityHarnessRun& run,
+    FrameParityReplayCursor& cursor
+) {
+    gs.phase = GamePhase::Headline;
+    gs.pub.ar = 0;
+
+    struct PendingHeadline {
+        Side side = Side::USSR;
+        ActionEncoding action;
+    };
+
+    std::array<std::optional<PendingHeadline>, 2> chosen = {};
+    for (const auto side : {Side::USSR, Side::US}) {
+        gs.pub.phasing = side;
+        const int action_index = frame_stack_path
+            ? run.script.top_level_indices.at(cursor.top_level++)
+            : 0;
+        if (!frame_stack_path) {
+            run.script.top_level_indices.push_back(action_index);
+        }
+        auto action = choose_harness_headline_action(gs, side, action_index);
+        if (!action.has_value()) {
+            continue;
+        }
+        gs.hands[to_index(side)].reset(action->card_id);
+        chosen[to_index(side)] = PendingHeadline{.side = side, .action = *action};
+    }
+
+    std::vector<PendingHeadline> ordered;
+    for (const auto side : {Side::USSR, Side::US}) {
+        if (chosen[to_index(side)].has_value()) {
+            ordered.push_back(*chosen[to_index(side)]);
+        }
+    }
+
+    if (chosen[to_index(Side::US)].has_value() && chosen[to_index(Side::US)]->action.card_id == 108) {
+        if (chosen[to_index(Side::USSR)].has_value()) {
+            gs.pub.discard.set(chosen[to_index(Side::USSR)]->action.card_id);
+            ordered.erase(
+                std::remove_if(
+                    ordered.begin(),
+                    ordered.end(),
+                    [](const PendingHeadline& pending) { return pending.side == Side::USSR; }
+                ),
+                ordered.end()
+            );
+        }
+    }
+
+    std::sort(ordered.begin(), ordered.end(), [](const auto& lhs, const auto& rhs) {
+        const auto lhs_ops = card_spec(lhs.action.card_id).ops;
+        const auto rhs_ops = card_spec(rhs.action.card_id).ops;
+        if (lhs_ops != rhs_ops) {
+            return lhs_ops > rhs_ops;
+        }
+        return static_cast<int>(lhs.side) < static_cast<int>(rhs.side);
+    });
+
+    for (const auto& pending : ordered) {
+        gs.pub.phasing = pending.side;
+        auto [over, winner] = apply_harness_action(
+            gs,
+            pending.action,
+            pending.side,
+            rng,
+            frame_stack_path,
+            run.script,
+            cursor
+        );
+        sync_china_for_test(gs);
+        record_harness_trace(run, gs, pending.side, pending.action);
+        if (over) {
+            return GameResult{
+                .winner = winner,
+                .final_vp = gs.pub.vp,
+                .end_turn = gs.pub.turn,
+                .end_reason = end_reason_for_test(gs.pub, winner, pending.action.card_id),
+            };
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<GameResult> run_harness_action_slot(
+    GameState& gs,
+    Side side,
+    Pcg64Rng& rng,
+    bool frame_stack_path,
+    FrameParityHarnessRun& run,
+    FrameParityReplayCursor& cursor
+) {
+    gs.pub.phasing = side;
+    const int action_index = frame_stack_path
+        ? run.script.top_level_indices.at(cursor.top_level++)
+        : 0;
+    auto action = choose_harness_action(gs, side, action_index);
+    if (!frame_stack_path) {
+        run.script.top_level_indices.push_back(action_index);
+    }
+    if (!action.has_value()) {
+        record_harness_trace(run, gs, side, ActionEncoding{});
+        return std::nullopt;
+    }
+
+    gs.hands[to_index(side)].reset(action->card_id);
+    auto [over, winner] = apply_harness_action(
+        gs,
+        *action,
+        side,
+        rng,
+        frame_stack_path,
+        run.script,
+        cursor
+    );
+    sync_china_for_test(gs);
+    record_harness_trace(run, gs, side, *action);
+    if (over) {
+        return GameResult{
+            .winner = winner,
+            .final_vp = gs.pub.vp,
+            .end_turn = gs.pub.turn,
+            .end_reason = end_reason_for_test(gs.pub, winner, action->card_id),
+        };
+    }
+    return std::nullopt;
+}
+
+std::optional<GameResult> run_harness_action_rounds(
+    GameState& gs,
+    Pcg64Rng& rng,
+    bool frame_stack_path,
+    FrameParityHarnessRun& run,
+    FrameParityReplayCursor& cursor
+) {
+    gs.phase = GamePhase::ActionRound;
+    for (int ar = 1; ar <= ars_for_turn(gs.pub.turn); ++ar) {
+        gs.pub.ar = ar;
+        for (const auto side : {Side::USSR, Side::US}) {
+            if (auto result = run_harness_action_slot(gs, side, rng, frame_stack_path, run, cursor);
+                result.has_value()) {
+                return result;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+FrameParityHarnessRun run_frame_parity_harness(
+    uint32_t seed,
+    bool frame_stack_path,
+    const FrameParityScript* replay_script = nullptr
+) {
+    FrameParityHarnessRun run;
+    if (replay_script != nullptr) {
+        run.script = *replay_script;
+    }
+    FrameParityReplayCursor cursor;
+    auto gs = reset_game(seed);
+    Pcg64Rng rng(seed);
+    run_deterministic_setup(gs);
+
+    constexpr int kHarnessTurns = 3;
+    for (int turn = 1; turn <= kHarnessTurns; ++turn) {
+        gs.pub.turn = turn;
+        deal_cards(gs, Side::USSR, rng);
+        deal_cards(gs, Side::US, rng);
+
+        if (auto result = run_harness_headline_phase(gs, rng, frame_stack_path, run, cursor);
+            result.has_value()) {
+            run.result = *result;
+            return run;
+        }
+        if (auto result = run_harness_action_rounds(gs, rng, frame_stack_path, run, cursor);
+            result.has_value()) {
+            run.result = *result;
+            return run;
+        }
+        if (auto result = end_of_turn_for_test(gs, turn); result.has_value()) {
+            run.result = *result;
+            return run;
+        }
+    }
+
+    run.result = GameResult{
+        .winner = gs.pub.vp >= 0 ? Side::USSR : Side::US,
+        .final_vp = gs.pub.vp,
+        .end_turn = kHarnessTurns,
+        .end_reason = "harness_turn_limit",
+    };
+    if (frame_stack_path) {
+        REQUIRE(cursor.top_level == run.script.top_level_indices.size());
+    }
+    return run;
+}
+
 }  // namespace
+
+TEST_CASE("FrameParityHarness", "[frame_parity]") {
+    constexpr uint32_t kSeed = 12345;
+
+    const auto policy_callback = run_frame_parity_harness(kSeed, false);
+    const auto frame_stack = run_frame_parity_harness(kSeed, true, &policy_callback.script);
+
+    const GameRun policy_trace{
+        .result = policy_callback.result,
+        .trace = policy_callback.trace,
+    };
+    const GameRun frame_trace{
+        .result = frame_stack.result,
+        .trace = frame_stack.trace,
+    };
+    assert_trace_equal(kSeed, policy_trace, frame_trace);
+    assert_game_result_equal(kSeed, policy_callback.result, frame_stack.result);
+}
 
 TEST_CASE("frame_parity FrameParity SingleGame_Seed0", "[frame_parity]") {
     FrameParityTest::assert_seed(0);

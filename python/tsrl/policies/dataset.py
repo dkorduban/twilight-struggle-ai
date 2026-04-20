@@ -8,7 +8,7 @@ Returned dict keys and shapes (all float32 except the int64 *_target keys)
   influence       : (172,)  — concat [ussr_influence, us_influence]
   cards           : (448,)  — concat [actor_known_in, actor_possible,
                                        discard_mask, removed_mask]
-  scalars         : (11,)   — normalised game scalars
+  scalars         : (40,)   — normalised game + frame-context scalars
   card_target     : ()      — int64, 0-indexed card (action_card_id - 1)
   mode_target     : ()      — int64, action mode 0..4
   country_ops_target : (86,) — float32, per-country ops counts for country ids 0..85
@@ -35,6 +35,7 @@ Scalar normalisation
   [8]  turn / 10
   [9]  ar / 8
   [10] phasing                (0=USSR, 1=US)
+  [32:40] frame context        offline rows use is_top_level=1
 """
 
 from __future__ import annotations
@@ -307,7 +308,7 @@ class TS_SelfPlayDataset(Dataset):
         )  # (N, 448) uint8
         del known_in, possible, discard, removed
 
-        # --- scalars (32,) — [0-10] core game state, [11-31] active effects ---
+        # --- scalars (40,) — [0-10] core, [11-31] active effects, [32-39] frame context ---
         core_scalars = [
             df["vp"].cast(pl.Float32).to_numpy() / 20.0,
             (df["defcon"].cast(pl.Float32).to_numpy() - 1.0) / 4.0,
@@ -344,7 +345,9 @@ class TS_SelfPlayDataset(Dataset):
             core_scalars.append(np.zeros(N, dtype=np.float32))
 
         scalars = np.stack(core_scalars, axis=1).astype(np.float32)  # (N, 32)
-        self._scalars = torch.from_numpy(scalars)
+        frame_ctx = np.zeros((N, 8), dtype=np.float32)
+        frame_ctx[:, 7] = 1.0
+        self._scalars = torch.from_numpy(np.concatenate([scalars, frame_ctx], axis=1))
 
         # --- integer targets ---
         self._card_target = torch.from_numpy(

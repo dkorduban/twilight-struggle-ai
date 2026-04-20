@@ -15,6 +15,7 @@ from pathlib import Path
 import torch
 
 from tsrl.policies.model import (
+    FRAME_CONTEXT_DIM,
     SCALAR_DIM,
     TSBaselineModel,
     TSCardEmbedModel,
@@ -65,10 +66,20 @@ def load_model(checkpoint_path: Path) -> tuple[torch.nn.Module, int]:
     ckpt_scalar_dim: int = int(scalar_w.shape[1]) if scalar_w is not None else SCALAR_DIM
     # Filter state_dict to only keys with matching shapes (skip size-mismatched heads)
     model_sd = model.state_dict()
-    filtered_sd = {
-        k: v for k, v in state_dict.items()
-        if k in model_sd and v.shape == model_sd[k].shape
-    }
+    filtered_sd = {}
+    for k, v in state_dict.items():
+        if k not in model_sd:
+            continue
+        if v.shape == model_sd[k].shape:
+            filtered_sd[k] = v
+        elif (
+            k == "scalar_encoder.weight"
+            and v.dim() == 2
+            and model_sd[k].dim() == 2
+            and v.shape[0] == model_sd[k].shape[0]
+            and v.shape[1] == model_sd[k].shape[1] - FRAME_CONTEXT_DIM
+        ):
+            filtered_sd[k] = v
     model.load_state_dict(filtered_sd, strict=False)
     model.eval()
     return model, ckpt_scalar_dim
@@ -82,7 +93,7 @@ def export_checkpoint(checkpoint_path: Path, output_path: Path) -> None:
         example_inputs = (
             torch.zeros((1, 172), dtype=torch.float32),
             torch.zeros((1, 448), dtype=torch.float32),
-            torch.zeros((1, SCALAR_DIM), dtype=torch.float32),  # C++ sends SCALAR_DIM; models with region_encoder extend internally
+            torch.zeros((1, SCALAR_DIM), dtype=torch.float32),  # C++ sends SCALAR_DIM; region models extend internally
         )
         scripted = torch.jit.trace(model, example_inputs, strict=False)
     output_path.parent.mkdir(parents=True, exist_ok=True)

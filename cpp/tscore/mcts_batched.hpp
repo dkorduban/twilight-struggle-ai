@@ -117,7 +117,7 @@ struct BatchedMctsConfig {
 struct RolloutStep {
     torch::Tensor influence;     // (172,) float32 on CPU
     torch::Tensor cards;         // (448,) float32 on CPU
-    torch::Tensor scalars;       // (11,) float32 on CPU
+    torch::Tensor scalars;       // (40,) float32 on CPU
 
     torch::Tensor card_mask;     // (111,) bool
     torch::Tensor mode_mask;     // (5,) bool

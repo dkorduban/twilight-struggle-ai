@@ -7,7 +7,7 @@ All inputs are batched tensors with shape (B, *).
   influence : (B, 172)  — concat [ussr_influence, us_influence], raw counts (86 countries × 2)
   cards     : (B, 448)  — concat [actor_known_in, actor_known_in,
                                    discard_mask, removed_mask], binary
-  scalars   : (B, 11)   — pre-normalised game scalars (see dataset.py)
+  scalars   : (B, 40)   — pre-normalised game + frame-context scalars (see dataset.py)
 
 Output contract
 ---------------
@@ -35,7 +35,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from tsrl.constants import (
+    BASE_SCALAR_DIM,
     CARD_DIM,
+    FRAME_CONTEXT_DIM,
     INFLUENCE_DIM,
     NUM_CARDS,
     NUM_COUNTRIES,
@@ -215,6 +217,73 @@ def _build_country_adjacency(spec_path: str | None = None) -> torch.Tensor:
 
 
 _COUNTRY_ADJACENCY: torch.Tensor = _build_country_adjacency()
+
+
+class FrameContextScalarEncoder(nn.Linear):
+    """Linear scalar encoder that accepts old 32-wide scalar tensors.
+
+    When old inputs or checkpoints omit the 8 frame-context columns, insert
+    zero frame features after the base scalar block and set is_top_level=1.
+    """
+
+    def _pad_frame_context(self, scalars: torch.Tensor) -> torch.Tensor:
+        if scalars.size(-1) == self.in_features:
+            return scalars
+        if scalars.size(-1) != self.in_features - FRAME_CONTEXT_DIM:
+            return scalars
+
+        frame_ctx = scalars.new_zeros((scalars.size(0), FRAME_CONTEXT_DIM))
+        frame_ctx[:, FRAME_CONTEXT_DIM - 1] = 1.0
+        return torch.cat(
+            (
+                scalars[:, :BASE_SCALAR_DIM],
+                frame_ctx,
+                scalars[:, BASE_SCALAR_DIM:],
+            ),
+            dim=-1,
+        )
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return F.linear(self._pad_frame_context(input), self.weight, self.bias)
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ) -> None:
+        weight_key = prefix + "weight"
+        if weight_key in state_dict:
+            old_weight = state_dict[weight_key]
+            expected_old_cols = self.weight.shape[1] - FRAME_CONTEXT_DIM
+            if (
+                old_weight.dim() == 2
+                and old_weight.shape[0] == self.weight.shape[0]
+                and old_weight.shape[1] == expected_old_cols
+            ):
+                new_weight = torch.zeros_like(self.weight)
+                new_weight[:, :BASE_SCALAR_DIM] = old_weight[:, :BASE_SCALAR_DIM]
+                if old_weight.shape[1] > BASE_SCALAR_DIM:
+                    suffix_cols = old_weight.shape[1] - BASE_SCALAR_DIM
+                    new_weight[
+                        :,
+                        BASE_SCALAR_DIM + FRAME_CONTEXT_DIM:
+                        BASE_SCALAR_DIM + FRAME_CONTEXT_DIM + suffix_cols,
+                    ] = old_weight[:, BASE_SCALAR_DIM:]
+                state_dict[weight_key] = new_weight
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
 
 @torch.jit.script
@@ -672,7 +741,7 @@ class TSBaselineModel(nn.Module):
 
         self.influence_encoder = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM, SCALAR_HIDDEN)
 
         # Project from TRUNK_IN -> hidden_dim, then two residual blocks.
         # Dropout is applied at the trunk input level (not per-block) to avoid
@@ -710,7 +779,7 @@ class TSBaselineModel(nn.Module):
         cards:
             Float tensor of shape (B, 448).
         scalars:
-            Float tensor of shape (B, 11), already normalised.
+            Float tensor of shape (B, 40), already normalised.
 
         Returns
         -------
@@ -769,7 +838,7 @@ class TSCardEmbedModel(nn.Module):
         self.influence_encoder = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.card_encoder_flat = nn.Linear(CARD_DIM, CARD_HIDDEN)
         self.card_encoder_embed = CardEmbedEncoder()
-        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
         self.trunk_dropout = nn.Dropout(p=dropout)
@@ -826,7 +895,7 @@ class TSCountryEmbedModel(nn.Module):
         self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.influence_encoder_embed = CountryEmbedEncoder()
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
         self.trunk_dropout = nn.Dropout(p=dropout)
@@ -879,7 +948,7 @@ class TSFullEmbedModel(nn.Module):
         self.influence_encoder_embed = CountryEmbedEncoder()
         self.card_encoder_flat = nn.Linear(CARD_DIM, CARD_HIDDEN)
         self.card_encoder_embed = CardEmbedEncoder()
-        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
         self.trunk_dropout = nn.Dropout(p=dropout)
@@ -937,7 +1006,7 @@ class TSDirectCountryModel(nn.Module):
 
         self.influence_encoder = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
         self.trunk_dropout = nn.Dropout(p=dropout)
@@ -1006,7 +1075,7 @@ class TSCountryAllocHeadModel(nn.Module):
 
         self.influence_encoder = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
         self.trunk_dropout = nn.Dropout(p=dropout)
@@ -1096,7 +1165,7 @@ class TSMarginalValueModel(nn.Module):
 
         self.influence_encoder = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
         self.trunk_dropout = nn.Dropout(p=dropout)
@@ -1296,8 +1365,8 @@ class TSControlFeatModel(nn.Module):
     - ussr_controls / us_controls binary per-country features
     - 28 region scoring scalars (BG/non-BG controlled fractions per region per side)
 
-    The 28 region scalars are concatenated with the 11 base scalars before
-    encoding, giving the scalar encoder 39 input dims total.
+    The region scalars are concatenated with the 40 base/frame scalars before
+    encoding.
 
     Input/output contract: same as TSBaselineModel.
     """
@@ -1313,7 +1382,7 @@ class TSControlFeatModel(nn.Module):
         self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.influence_encoder_embed = ControlFeatCountryEncoder()
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
         self.trunk_dropout = nn.Dropout(p=dropout)
@@ -1523,7 +1592,7 @@ class TSControlFeatGNNModel(nn.Module):
         self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.influence_encoder_embed = ControlFeatGNNEncoder()
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
         self.trunk_dropout = nn.Dropout(p=dropout)
@@ -1600,7 +1669,7 @@ class TSControlFeatGNNSideModel(nn.Module):
         self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.influence_encoder_embed = ControlFeatGNNEncoder()
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
 
         self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
 
@@ -1688,7 +1757,7 @@ class TSCountryAttnModel(nn.Module):
         self.influence_encoder_embed = CountryAttnEncoder()
         self.card_encoder_flat = nn.Linear(CARD_DIM, CARD_HIDDEN)
         self.card_encoder_embed = CardEmbedEncoder()
-        self.scalar_encoder = nn.Linear(SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM, SCALAR_HIDDEN)
 
         self.trunk_proj = nn.Linear(TRUNK_IN, hidden_dim)
         self.trunk_dropout = nn.Dropout(p=dropout)
@@ -1759,7 +1828,7 @@ class TSCountryAttnSideModel(nn.Module):
         self.region_encoder = ControlFeatGNNEncoder()
 
         # Scalar encoder: same input size as GNN-side (SCALAR_DIM + 42)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
 
         # Side embedding: same as GNN-side
         self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
@@ -1861,7 +1930,7 @@ class TSControlFeatGNNFiLMModel(nn.Module):
         self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.influence_encoder_embed = ControlFeatGNNEncoder()
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
 
         # FiLM: side embedding projects to gamma and beta for trunk modulation
         self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
@@ -1963,7 +2032,7 @@ class TSCountryAttnFiLMModel(nn.Module):
         self.influence_encoder_embed = CountryAttnEncoder()
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
         self.region_encoder = ControlFeatGNNEncoder()
-        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
 
         self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
         self.film_gamma = nn.Linear(SIDE_EMBED_DIM, hidden_dim)
@@ -2170,7 +2239,7 @@ class TSControlFeatGNNCardAttnModel(nn.Module):
         self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
         self.influence_encoder_embed = ControlFeatGNNEncoder()
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
-        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
 
         # Cross-attention: hand cards attend to per-country board features
         self.register_buffer("card_static", _CARD_FEATS.clone())          # (112, 8)
@@ -2394,7 +2463,7 @@ class TSCountryAttnSidePolicyModel(nn.Module):
         self.influence_encoder_embed = CountryAttnEncoder()
         self.card_encoder = nn.Linear(CARD_DIM, CARD_HIDDEN)
         self.region_encoder = ControlFeatGNNEncoder()
-        self.scalar_encoder = nn.Linear(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
+        self.scalar_encoder = FrameContextScalarEncoder(SCALAR_DIM + self._REGION_SCALAR_DIM, SCALAR_HIDDEN)
         self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
 
         # Shared trunk

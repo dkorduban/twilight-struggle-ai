@@ -66,7 +66,9 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
         return legal_actions[rng.choice_index(legal_actions.size())];
     }
 
-    const auto outputs = nn::forward_model(module_, pub, hand, holds_china, side);
+    GameState gs;
+    gs.pub = pub;
+    const auto outputs = nn::forward_model(module_, gs, hand, holds_china, side);
     const auto card_logits = get_tensor(outputs, "card_logits").index({0});
     const auto mode_logits = get_tensor(outputs, "mode_logits").index({0});
     const auto country_logits_raw = get_tensor(outputs, "country_logits", false);

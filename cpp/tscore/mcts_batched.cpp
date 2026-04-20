@@ -265,8 +265,6 @@ private:
     std::barrier<> barrier_;
 };
 
-constexpr int kFeatureScalarDim = 11;
-
 struct CommitPolicyTrace;
 
 PolicyCallbackFn make_commit_policy_callback(
@@ -277,15 +275,6 @@ PolicyCallbackFn make_commit_policy_callback(
     const torch::Tensor& small_choice_logits,
     CommitPolicyTrace* trace
 );
-
-void fill_card_mask(float* ptr, const CardSet& cards) {
-    std::fill(ptr, ptr + kCardSlots, 0.0f);
-    for (int card_id = 1; card_id <= kMaxCardId; ++card_id) {
-        if (cards.test(card_id)) {
-            ptr[card_id] = 1.0f;
-        }
-    }
-}
 
 Observation pending_observation(const PendingDecision& decision) {
     Observation obs;
@@ -299,39 +288,35 @@ Observation pending_observation(const PendingDecision& decision) {
     return obs;
 }
 
+DecisionFrame frame_context_from_event_decision(const EventDecision& decision) {
+    DecisionFrame frame;
+    frame.source_card = decision.source_card;
+    frame.acting_side = decision.acting_side;
+    frame.eligible_n = static_cast<uint8_t>(std::min(decision.n_options, 255));
+    switch (decision.kind) {
+        case DecisionKind::SmallChoice:
+            frame.kind = FrameKind::SmallChoice;
+            break;
+        case DecisionKind::CountrySelect:
+            frame.kind = FrameKind::CountryPick;
+            for (int i = 0; i < decision.n_options; ++i) {
+                frame.eligible_countries.set(static_cast<size_t>(decision.eligible_ids[i]));
+            }
+            break;
+        case DecisionKind::CardSelect:
+            frame.kind = FrameKind::CardSelect;
+            for (int i = 0; i < decision.n_options; ++i) {
+                frame.eligible_cards.set(static_cast<size_t>(decision.eligible_ids[i]));
+            }
+            break;
+    }
+    return frame;
+}
+
 // Write a single batch slot without touching any shared counters.
 // Each thread writes to its own disjoint slice of the batch buffer.
 void fill_batch_slot_no_count(nn::BatchInputs& batch_inputs, int idx, const Observation& obs) {
-    if (idx < 0 || idx >= batch_inputs.capacity) {
-        throw std::out_of_range("batch slot index out of range");
-    }
-
-    float* influence_ptr = batch_inputs.influence.data_ptr<float>() + (idx * 2 * kCountrySlots);
-    for (int country_id = 0; country_id <= kMaxCountryId; ++country_id) {
-        const auto country = static_cast<CountryId>(country_id);
-        influence_ptr[country_id] = static_cast<float>(obs.pub.influence_of(Side::USSR, country));
-        influence_ptr[kCountrySlots + country_id] =
-            static_cast<float>(obs.pub.influence_of(Side::US, country));
-    }
-
-    float* cards_ptr = batch_inputs.cards.data_ptr<float>() + (idx * 4 * kCardSlots);
-    fill_card_mask(cards_ptr, obs.own_hand);
-    fill_card_mask(cards_ptr + kCardSlots, obs.own_hand);
-    fill_card_mask(cards_ptr + (2 * kCardSlots), obs.pub.discard);
-    fill_card_mask(cards_ptr + (3 * kCardSlots), obs.pub.removed);
-
-    float* scalars_ptr = batch_inputs.scalars.data_ptr<float>() + (idx * kFeatureScalarDim);
-    scalars_ptr[0] = static_cast<float>(obs.pub.vp) / 20.0f;
-    scalars_ptr[1] = static_cast<float>(obs.pub.defcon - 1) / 4.0f;
-    scalars_ptr[2] = static_cast<float>(obs.pub.milops[to_index(Side::USSR)]) / 6.0f;
-    scalars_ptr[3] = static_cast<float>(obs.pub.milops[to_index(Side::US)]) / 6.0f;
-    scalars_ptr[4] = static_cast<float>(obs.pub.space[to_index(Side::USSR)]) / 9.0f;
-    scalars_ptr[5] = static_cast<float>(obs.pub.space[to_index(Side::US)]) / 9.0f;
-    scalars_ptr[6] = static_cast<float>(to_index(obs.pub.china_held_by));
-    scalars_ptr[7] = obs.holds_china ? 1.0f : 0.0f;
-    scalars_ptr[8] = static_cast<float>(obs.pub.turn) / 10.0f;
-    scalars_ptr[9] = static_cast<float>(obs.pub.ar) / 8.0f;
-    scalars_ptr[10] = static_cast<float>(to_index(obs.acting_side));
+    batch_inputs.fill_slot_no_count(idx, obs);
 }
 
 void compact_batch_tensor_rows(torch::Tensor& tensor, int src_row, int dst_row, int count) {
@@ -3569,10 +3554,15 @@ PolicyCallbackFn make_commit_policy_callback(
             if (!callback_outputs.has_value()) {
                 auto obs = make_observation(slot.root_state, decision.acting_side);
                 obs.pub = pub;
+                auto frame_context = slot.root_state;
+                frame_context.pub = pub;
+                frame_context.frame_stack_mode = true;
+                frame_context.frame_stack.clear();
+                frame_context.frame_stack.push_back(frame_context_from_event_decision(decision));
 
                 nn::BatchInputs callback_inputs;
                 callback_inputs.allocate(1, device);
-                callback_inputs.fill_slot(0, obs);
+                callback_inputs.fill_slot(0, frame_context, obs.own_hand, obs.holds_china, obs.acting_side);
                 callback_outputs = nn::forward_model_batched(model, callback_inputs);
             }
             return &*callback_outputs;

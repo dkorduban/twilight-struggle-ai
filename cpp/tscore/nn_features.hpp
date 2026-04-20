@@ -7,9 +7,14 @@
 #include <torch/script.h>
 #include <torch/torch.h>
 
+#include <array>
+
 #include "game_state.hpp"
 
 namespace ts::nn {
+
+constexpr int kScalarDim = 32;
+constexpr int kFrameContextDim = 8;
 
 struct BatchInputs {
     torch::Tensor influence;
@@ -20,6 +25,10 @@ struct BatchInputs {
     torch::Device device = torch::kCPU;
 
     void allocate(int batch_capacity, torch::Device dev = torch::kCPU);
+    void fill_slot_no_count(int idx, const GameState& gs, const CardSet& hand, bool holds_china, Side side);
+    void fill_slot_no_count(int idx, const PublicState& pub, const CardSet& hand, bool holds_china, Side side);
+    void fill_slot_no_count(int idx, const Observation& obs);
+    void fill_slot(int idx, const GameState& gs, const CardSet& hand, bool holds_china, Side side);
     void fill_slot(int idx, const PublicState& pub, const CardSet& hand, bool holds_china, Side side);
     void fill_slot(int idx, const Observation& obs);
     void reset() { filled = 0; }
@@ -42,7 +51,16 @@ torch::Tensor extract_cards(const PublicState& pub, const CardSet& hand);
 torch::Tensor extract_cards(const Observation& obs);
 torch::Tensor extract_scalars(const PublicState& pub, bool holds_china, Side side);
 torch::Tensor extract_scalars(const Observation& obs);
+std::array<float, kFrameContextDim> extract_frame_context(const GameState& gs);
 BatchOutputs forward_model_batched(torch::jit::script::Module& model, const BatchInputs& inputs);
+
+c10::impl::GenericDict forward_model(
+    torch::jit::script::Module& model,
+    const GameState& gs,
+    const CardSet& hand,
+    bool holds_china,
+    Side side
+);
 
 c10::impl::GenericDict forward_model(
     torch::jit::script::Module& model,
