@@ -1,122 +1,92 @@
 {
   "goals": [
-    "1. Complete correct engine \u2014 fix all GAPs, all choices policy-driven",
-    "2. Full policy control \u2014 every rng decision routes through PolicyCallback",
-    "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
-    "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
+    "1. Complete correct engine — fix all GAPs, all choices policy-driven",
+    "2. Full policy control — every rng decision routes through PolicyCallback",
+    "3. Train model that plays reasonable 8-10 turn games with itself (no blunders)",
+    "4. Push combined WR vs heuristic to >0.50 (current best: v56=0.441)"
   ],
-  "current_task": "Background jobs running: v4 PPO (iter14+), post-fix Elo (match 1/28), v3_best+AWR benchmarks, v6 AWR collection. All code committed. Tests green.",
-  "current_strategy": "Session 2026-04-19 accomplishments:\n  - GIL fix: rollout binding now releases Python GIL \u2192 5x parallel speedup (60min/iter \u2192 30s/iter)\n  - kModelScalarDim=40: frame-context features live (FrameKind, source_card, budget, step_index)\n  - FrameContextScalarEncoder: JIT-scriptable, auto-migrates old 32-dim checkpoints to 40-dim\n  - v4 PPO warmstart corrected: ppo_running_best.pt (iter150=best) instead of ppo_best.pt (iter50)\n  - AWR v5 winner: gnn_side (mid=0.6131) > gnn_card_attn (0.6079) > film_gated (0.6048) >> alloc_head (0.3096 FAILED)\n  - Post-fix Elo tournament: --no-cache flag added; 28-match round-robin running overnight\n  - v6 AWR data collection: 40-dim scalars, 4 models \u00d7 400 games, ~168k rows expected\n  - Tests: all green (SCALAR_DIM=40 fix, TorchScript fix)",
+  "current_task": "v6 PPO running (iter 1/80 done, rollout_wr=0.510). Elo tournament running (8/28 matches). v6 AWR collection running (pair 1/6).",
+  "current_strategy": "Killed v4 PPO (iter50, 0.330 combined) — wrong arch (control_feat_gnn_side) + damaged warmstart (v3_best=0.274). Opus analysis confirmed: v56 (country_attn_side) = 0.441 combined is current best. AWR is dead for policy training. Launched v6 PPO from v56 checkpoint directly — target >0.50 combined in 80 iters.",
   "active_background": [
-    "v4 PPO (PID 744633): iter 14/200, ~30-50s/iter, 40-dim scalars",
-    "Post-fix Elo tournament (PID 750624): match 1/28, --no-cache, 28 pairs \u00d7 500 games",
-    "v3_best benchmark (PID 749942): 500/side vs heuristic",
-    "AWR v5 benchmark (PID 750453): gnn_side/gnn_card_attn/film_gated, 300/side",
-    "v6 AWR collection (PID 751646): 4 models, ~168k rows to data/awr_eval/v6_frame_ctx_v1/"
+    "v6 PPO (PID 796580): results/ppo_country_attn_v6/, iter 1/80, 51.9s/iter, warmstart=v56",
+    "Post-fix Elo tournament (PID 750631): match 8/28, --no-cache, results/elo/elo_post_fix_ladder.json",
+    "v6 AWR collection (PID 751649): pair 1/6 round-robin, data/awr_eval/v6_frame_ctx_v1/"
   ],
   "next_tasks": [
-    "Wait for v4 PPO iter 50 eval (--eval-every 50): check panel_wr to confirm improvement over v3_best (0.481)",
-    "Read post-fix Elo ladder (results/elo/elo_post_fix_ladder.json) when tournament completes (~2-4h)",
-    "Read v3_best benchmark and AWR v5 benchmark results",
-    "When v6 AWR data ready (~168k rows): run arch sweep on v6 to confirm gnn_side still wins with frame-context features",
-    "Run FiLM experiment (scripts/run_film_experiment.sh) on v5_v3best data to compare 5 FiLM init variants"
+    "Monitor v6 PPO: first eval at iter 20 (--eval-every 20). Target: combined > 0.45",
+    "Abort criterion: if iter 30 combined < 0.41, abort and re-examine architecture",
+    "Read post-fix Elo ladder (results/elo/elo_post_fix_ladder.json) when tournament completes (~3-4h from now)",
+    "When v6 AWR data ready (~168k rows): decide whether to run AWR v6 sweep (low priority — AWR dead for policy training)",
+    "After v6 PPO exceeds v56 (0.441 combined): run formal benchmark sweep (v6 vs v20/v44/v54/v55/v56 + specialists + heuristic)",
+    "Month-3 priority: Dirichlet noise at MCTS root (CLAUDE.md priority #1) — after v6 stable"
   ],
+  "benchmark_ladder": {
+    "note": "All vs heuristic (500 games/side, post-DEFCON-1-fix engine, seed=50000/50500)",
+    "v56_country_attn_side": {
+      "ussr": 0.558,
+      "us": 0.325,
+      "combined": 0.441,
+      "source": "Opus analysis reading data/checkpoints/ppo_v56_league/ppo_best_6mode.pt",
+      "note": "CURRENT BEST SYMMETRIC POLICY"
+    },
+    "ussr_only_v5": {
+      "ussr": 0.588,
+      "us": 0.316,
+      "combined": 0.452,
+      "note": "Single-side specialist, barely above v56 in post-fix Elo (0.495 tied)"
+    },
+    "us_only_v5": {
+      "ussr": 0.506,
+      "us": 0.360,
+      "combined": 0.433,
+      "note": "Single-side specialist, slightly below v56 in post-fix Elo (0.556 v56 wins)"
+    },
+    "v4_ppo_iter50": {
+      "ussr": 0.500,
+      "us": 0.160,
+      "combined": 0.330,
+      "note": "KILLED at iter50 — wrong arch (control_feat_gnn_side) + damaged warmstart",
+      "checkpoint": "data/checkpoints/scripted_for_elo/v4_iter50_scripted.pt"
+    },
+    "v3_best": {
+      "ussr": 0.398,
+      "us": 0.150,
+      "combined": 0.274,
+      "note": "DAMAGED — AWR poisoned warmstart + US-side collapse in training"
+    },
+    "awr_gnn_side_v5": {"combined": 0.205, "note": "DEAD — AWR offline→online transfer failure"},
+    "awr_film_gated_v5": {"combined": 0.075, "note": "DEAD"},
+    "awr_gnn_card_attn_v5": {"combined": 0.022, "note": "DEAD — nearly random"}
+  },
+  "post_fix_elo": {
+    "status": "RUNNING — 8/28 matches complete",
+    "anchor": "v56 = 2095 Elo",
+    "key_results_so_far": {
+      "v56_vs_v55": "0.500 (tied)",
+      "v56_vs_v54": "0.491 (tied)",
+      "v56_vs_v44": "0.500 (tied)",
+      "v56_vs_v20": "0.502 (tied)",
+      "v56_vs_v3_best": "0.647 (v56 wins — v3_best ~105 Elo below v56)",
+      "v56_vs_ussr_only_v5": "0.495 (tied)",
+      "v56_vs_us_only_v5": "0.556 (v56 slightly better)"
+    },
+    "interpretation": "All BC models (v20/v44/v54/v55/v56) cluster at ~2095. Specialists also at ~2095. v3_best at ~1990, v4_iter50 at ~1960 (by extrapolation)"
+  },
+  "awr_verdict": "DEAD for policy training. 52k v5 panel retained as diagnostic eval set only.",
   "frame_migration_plan": {
-    "status": "COMPLETE \u2014 all FrameKinds active, all Tier-1/2/3 cards fixed, parity 79/79 GREEN",
-    "tier1_rules_fixed": [
-      30,
-      33,
-      77,
-      98
-    ],
-    "tier2_rules_done": [
-      16,
-      76,
-      95,
-      60,
-      28
-    ],
-    "tier3_rules_done": [
-      7,
-      20,
-      50,
-      68,
-      75
-    ],
-    "parity_harness_status": "GREEN \u2014 79/79 tests pass as of 2026-04-19",
-    "frame_context_in_neural_net": "NOT YET \u2014 highest leverage gap. Model sees 0 frame context (FrameKind, source_card, budget_remaining, step_index). Stash has WIP code at nn_features.cpp, kModelScalarDim=40 (32+8)."
+    "status": "COMPLETE — all FrameKinds active, parity 79/79 GREEN",
+    "frame_context_in_neural_net": "LIVE — kModelScalarDim=40, FrameContextScalarEncoder auto-pads old 32-dim checkpoints"
   },
   "ppo_chain": {
-    "status": "v3 COMPLETE iter 200/200. Best = iter150, panel_avg_wr=0.481. v4 PPO NOT YET STARTED.",
-    "v2_iter60": {
-      "USSR": 0.66,
-      "US": 0.51,
-      "combined": 0.585,
-      "panel": 0.667
-    },
-    "v2_final": {
-      "last20_rollout_avg": {
-        "combined": 0.523,
-        "USSR": 0.698,
-        "US": 0.348
-      },
-      "best_rollout_iter": 96,
-      "best_rollout_wr": 0.635
-    },
-    "v3_benchmarks": {
-      "iter50": {
-        "ussr": 0.347,
-        "us": 0.337,
-        "combined": 0.342
-      },
-      "iter100": {
-        "ussr": 0.36,
-        "us": 0.147,
-        "combined": 0.253
-      },
-      "iter150": {
-        "ussr": 0.637,
-        "us": 0.325,
-        "combined": 0.481,
-        "note": "BEST \u2014 used for v4 warmstart"
-      },
-      "iter200": "not benchmarked separately"
-    },
-    "best_baseline": "v56 BC (N=300): ussr=0.570, us=0.413, combined=0.492",
-    "v4_warmstart": "results/ppo_gnn_card_attn_v3/ppo_running_best.pt (iter150, panel=0.481)",
-    "restart_conditions": "Only restart chain on explicit user request or after architecture/engine change requiring fresh run"
-  },
-  "post_fix_panel": {
-    "note": "Post DEFCON-1 fix + Tier-1/2/3 engine fixes. All WRs vs heuristic (N=300/side).",
-    "v56_bc_baseline": {
-      "ussr": 0.57,
-      "us": 0.413,
-      "combined": 0.492
-    },
-    "v3_best_iter150": {
-      "ussr": 0.637,
-      "us": 0.325,
-      "combined": 0.481
-    },
-    "v3_iter50": {
-      "ussr": 0.36,
-      "us": 0.147,
-      "combined": 0.253
-    },
-    "gnv3_vs_panel_raw": "results/panel_wr_matrix.json",
-    "elo_ladder_status": "STALE \u2014 pre-DEFCON-1-fix (2026-04-14). Must re-run full Elo tournament."
-  },
-  "awr_datasets": {
-    "fixed_engine_v1": "data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet \u2014 73,981 rows, 4 models (all ppo_best_scripted)",
-    "v2_diverse_v1": "data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet \u2014 69,783 rows, 4 diverse v2 checkpoints",
-    "v4_bc_diverse_v1": "data/awr_eval/v4_bc_diverse_v1/awr_v4_bc_diverse.parquet \u2014 65,519 rows, AVOID: includes us_bc (0% WR diluted val_adv_card_acc to 0.6152)",
-    "v5_v3best_v1": "data/awr_eval/v5_v3best_v1/awr_v5_v3best.parquet \u2014 52,876 rows, 3 models: v56_scripted/v3_iter50_scripted/v3_best_scripted (excluded us_bc). BEST FOR SWEEP."
+    "v6_status": "RUNNING iter 1/80, rollout_wr=0.510, panel=0.592 at iter1",
+    "v6_warmstart": "data/checkpoints/ppo_v56_league/ppo_best_6mode.pt (country_attn_side, 6-mode, combined=0.441)",
+    "v6_abort_criterion": "If iter30 combined < 0.41 (below v56-3pp), abort and re-examine",
+    "target": ">0.50 combined WR vs heuristic within 80 iters"
   },
   "ismcts_verdict": {
     "result": "SHELVED",
     "delta_vs_greedy": -0.225,
-    "diagnosis": "Value head trained on partial-info states gives poor estimates on determinized states.",
-    "fix_required": "Train separate value head on determinized states, or use heuristic rollouts. High effort, deferred."
+    "diagnosis": "Value head trained on partial-info states gives poor estimates on determinized states."
   },
   "architecture_tasks": {
     "A_decode_unification": "DONE",
@@ -126,24 +96,6 @@
     "E_mcts_batched_fast": "DEFERRED"
   },
   "gap_tracker": "ALL DONE (GAP-001 through GAP-043). GAP-044/45/46 WONTFIX (promo cards).",
-  "pragmatic_heads": "ALL DONE (phases 1-4). Star Wars card 103 deck-choice low priority.",
-  "jsd_probe": "DONE \u2014 jsd_probe.py + probe set + train_ppo.py integration",
-  "codex_mcp_discovery": {
-    "pattern": "Call mcp__codex__codex directly from main session \u2014 no subagent needed. General-purpose bg agents also inherit MCP. Custom agent types do NOT.",
-    "reply_loop": "mcp__codex__codex-reply(threadId=...) up to 15 calls",
-    "5min_progress": "Always include in developer-instructions: 'Print a brief progress note every 5 minutes so the watchdog does not fire.'"
-  },
-  "new_models_implemented": {
-    "CountryAllocHead": "python/tsrl/policies/model.py:TSCountryAllocHeadModel \u2014 per-country per-ops score head + bounded_knapsack_dp decoder (fast path for uniform budget)",
-    "FiLM_variants": [
-      "country_attn_film_normal_init",
-      "country_attn_film_zero_beta_bias",
-      "country_attn_film_gated",
-      "country_attn_film_normal_init_zero_beta"
-    ],
-    "gnn_card_attn_gated": "TSControlFeatGNNCardAttnGatedModel \u2014 combines GNN+card-attn+FiLM gate, val_adv_card_acc=0.5744 on v7 data"
-  },
-  "collect_awr_fix": "Fixed collect_awr_data.py: dedup stems auto-adds parent dir prefix when multiple models share same filename.",
-  "binary_status": "Rebuilt 2026-04-19T23:xx: binary matches source (kScalarDim=32). Stash@{0} has WIP frame-context (kModelScalarDim=40) \u2014 not applied.",
-  "last_updated": "2026-04-19T23:00:00Z"
+  "jsd_probe": "DONE — jsd_probe.py + probe set + train_ppo.py integration",
+  "last_updated": "2026-04-19T23:25:00Z"
 }
