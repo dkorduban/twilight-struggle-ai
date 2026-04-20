@@ -43,8 +43,8 @@ class TestDimensionConstants:
         assert CARD_DIM == 4 * CARD_SLOTS, f"CARD_DIM={CARD_DIM}, expected {4*CARD_SLOTS}"
 
     def test_scalar_dim_matches_current(self):
-        """SCALAR_DIM should be 32 (11 core + 21 effects)."""
-        assert SCALAR_DIM == 32, f"SCALAR_DIM={SCALAR_DIM}, expected 32"
+        """SCALAR_DIM should be 40 (32 base scalars + 8 frame-context features)."""
+        assert SCALAR_DIM == 40, f"SCALAR_DIM={SCALAR_DIM}, expected 40"
 
     def test_num_playable_cards(self):
         """NUM_PLAYABLE_CARDS should be 111 (card IDs 1-111 map to indices 0-110)."""
