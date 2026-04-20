@@ -40,13 +40,15 @@
       "value_mse_root_cause": "BC v1 value_mse=0.77 (near-random). v13 game data in BC v2 already showing value_mse=0.58 at epoch4."
     },
     "v15_plan": {
-      "status": "BC v2 RUNNING - pid=1024046 eta ~2026-04-20 09:09 UTC",
-      "bc_data": "data/gnn_warmstart_v15_combined: 334K v13_iter20 games + 2.7M heuristic nash = 3M rows",
-      "bc_script": "results/bc_gnn_side_v2/ (30 epochs, lr=0.0012, seed=42000)",
-      "ppo_launch": "results/launch_gnn_ppo_v15.sh (monitor will auto-fire)",
-      "expected_improvement": "+4-8pp vs country_attn_side based on AWR sweep results",
-      "bc_v2_status": "RUNNING epoch 4/30, value_mse=0.58 (improved vs v14 0.77). Monitor will auto-launch PPO v15.",
-      "gate": "Bench BC v2 best.pt before PPO. Require panel combined >= 0.28 to proceed."
+      "status": "BC v3 RUNNING - pid=1034608, epoch ~13/80, auto-monitor has gate check",
+      "bc_v2_killed": "Mixed data contamination (0.77→0.80 value_mse). Killed at epoch 15.",
+      "bc_v3_status": "RUNNING. Pure v13 3000g data. 80 epochs. Val_card_top1=0.686@ep12. Val_value_mse=0.81 (worsening - overfitting). BC v3 ep12 bench: combined=0.140 (gate FAIL at 0.20).",
+      "bc_v3_root_cause": "winner_side target is too noisy for learned-model games. Value head memorizes train set (mse=0.09-0.17) but fails on val (mse=0.81+). Card accuracy improving but US side weak (0.040).",
+      "teacher_targets_ready": "data/teacher_targets/v13_3000g_soft_teacher.parquet (334K rows, SOFT card/mode/value from v13_iter20 model forward pass. Card=111-dim softmax, mode=6-dim softmax, value=tanh[-1,1])",
+      "bc_v4_plan": "If BC v3 fails gate: auto-launch BC v4 with --teacher-targets v13_3000g_soft_teacher.parquet + teacher-weight=0.5 + teacher-value-weight=1.0. Soft distillation from v13 should improve both policy and value quality.",
+      "monitor": "/tmp/watch_bc_v3.sh auto-handles: gate check -> BC v4 fallback -> PPO v15",
+      "ppo_launch": "results/launch_gnn_ppo_v15.sh (monitor will auto-fire from BC v3 or BC v4)",
+      "gate": "100g/side bench. combined >= 0.20 to launch PPO v15."
     },
     "v15_collection_details": {
       "v13_data": "data/selfplay/gnn_warmstart_v13/v13_3000g.parquet (334K rows, 3000 games learned-vs-heuristic with v13_iter20)",
@@ -54,8 +56,8 @@
     }
   },
   "next_tasks": [
-    "GNN PPO v15 (PENDING - BC v2 running, ETA 09:09 UTC, monitor auto-launches)",
-    "Bench GNN PPO v15 at iter20 (same protocol: 500g/side, seeds 50000/50500). Target: >0.427 to beat country_attn_side",
+    "GNN PPO v15 (PENDING - BC v3 running @ep13/80; monitor auto-handles gate->BC v4 fallback->PPO)",
+    "Bench GNN PPO v15 at iter20 (500g/side, seeds 50000/50500). Target: >0.427 to beat country_attn_side",
     "If v15 combined > 0.427 + 3pp = 0.457: match record range; update current_best_practical",
     "Fix running_best selector: replace 30-game panel with 200g heuristic-only mini-bench",
     "PIVOT 3: Try adding MCTS data (data/selfplay_mcts_dir/) to training mix for v16 if v15 beats v13"
@@ -66,6 +68,6 @@
     "panel_unreliability": "30-game panel SE\u22480.091. Never use as sole running_best selector. Always bench 500g/side.",
     "pfsp_echo_chamber": "PFSP peaks at iter20. External fixtures starved even with heuristic-floor=0.15.",
     "seed_matters": "PPO ~10pp seed variance at iter20. Always use seed=42000.",
-    "teacher_distillation": "For v16+: use teacher distillation from v13_iter20 logits. The value head (MSE 0.77) was the key failure mode. teacher_value_target from model inference >> winner_side binary target."
+    "teacher_distillation": "ACTIVE for BC v4. Use data/teacher_targets/v13_3000g_teacher.parquet (mcts_root_value = v13 value head predictions). teacher_value_weight=1.0 to maximize value signal. BC v3 confirmed: winner_side alone insufficient (val_value_mse=0.81 overfitting)."
   }
 }
