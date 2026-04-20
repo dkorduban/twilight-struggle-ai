@@ -1,36 +1,85 @@
 {
   "goals": [
-    "1. Complete correct engine — fix all GAPs, all choices policy-driven",
-    "2. Full policy control — every rng decision routes through PolicyCallback",
+    "1. Complete correct engine \u2014 fix all GAPs, all choices policy-driven",
+    "2. Full policy control \u2014 every rng decision routes through PolicyCallback",
     "3. Decouple engine/game_loop/policy/search per docs/architecture-refactoring.md tasks A-E",
     "4. Train model that plays reasonable 8-10 turn games with itself (no blunders)"
   ],
-  "current_task": "Tests green. Dispatching v5 AWR sweep + v4 PPO. Frame-context features pending Codex dispatch.",
-  "current_strategy": "PPO v3 COMPLETE (iter200). Best = iter150, panel_avg_wr=0.481 (ussr=0.637, us=0.325). v56 BC still best combined at 0.492 (N=300). v5 AWR data collected: 52,876 rows from 3 models (v56, v3_iter50, v3_best), excluded us_bc (0% WR lesson). Next: AWR sweep on v5 data to find best architecture for v4 PPO warmstart. Frame-context features (FrameKind/budget/step_index) are the highest-leverage neural net gap — model sees ZERO frame context currently.",
-  "active_background": [],
+  "current_task": "Background jobs running: v4 PPO (iter14+), post-fix Elo (match 1/28), v3_best+AWR benchmarks, v6 AWR collection. All code committed. Tests green.",
+  "current_strategy": "Session 2026-04-19 accomplishments:\n  - GIL fix: rollout binding now releases Python GIL \u2192 5x parallel speedup (60min/iter \u2192 30s/iter)\n  - kModelScalarDim=40: frame-context features live (FrameKind, source_card, budget, step_index)\n  - FrameContextScalarEncoder: JIT-scriptable, auto-migrates old 32-dim checkpoints to 40-dim\n  - v4 PPO warmstart corrected: ppo_running_best.pt (iter150=best) instead of ppo_best.pt (iter50)\n  - AWR v5 winner: gnn_side (mid=0.6131) > gnn_card_attn (0.6079) > film_gated (0.6048) >> alloc_head (0.3096 FAILED)\n  - Post-fix Elo tournament: --no-cache flag added; 28-match round-robin running overnight\n  - v6 AWR data collection: 40-dim scalars, 4 models \u00d7 400 games, ~168k rows expected\n  - Tests: all green (SCALAR_DIM=40 fix, TorchScript fix)",
+  "active_background": [
+    "v4 PPO (PID 744633): iter 14/200, ~30-50s/iter, 40-dim scalars",
+    "Post-fix Elo tournament (PID 750624): match 1/28, --no-cache, 28 pairs \u00d7 500 games",
+    "v3_best benchmark (PID 749942): 500/side vs heuristic",
+    "AWR v5 benchmark (PID 750453): gnn_side/gnn_card_attn/film_gated, 300/side",
+    "v6 AWR collection (PID 751646): 4 models, ~168k rows to data/awr_eval/v6_frame_ctx_v1/"
+  ],
   "next_tasks": [
-    "Start v5 AWR architecture sweep on data/awr_eval/v5_v3best_v1/ (52k rows) — compare gnn_side, control_feat, country_alloc, film variants",
-    "Start v4 PPO: warmstart from v3_best (iter150) scripted checkpoint; run 200 iterations",
-    "Dispatch frame-context features to Codex — add 8 scalars (FrameKind, source_card, budget_remaining, step_index) to nn_features.cpp; requires model re-script; 5-min progress instructions",
-    "Run post-fix Elo tournament: invalidate old ladder (pre-DEFCON-1-fix), re-run 6x6 round-robin at N=500/side on fixed engine with v56 as ~2015 anchor",
-    "Commit: binary rebuilt, tests green"
+    "Wait for v4 PPO iter 50 eval (--eval-every 50): check panel_wr to confirm improvement over v3_best (0.481)",
+    "Read post-fix Elo ladder (results/elo/elo_post_fix_ladder.json) when tournament completes (~2-4h)",
+    "Read v3_best benchmark and AWR v5 benchmark results",
+    "When v6 AWR data ready (~168k rows): run arch sweep on v6 to confirm gnn_side still wins with frame-context features",
+    "Run FiLM experiment (scripts/run_film_experiment.sh) on v5_v3best data to compare 5 FiLM init variants"
   ],
   "frame_migration_plan": {
-    "status": "COMPLETE — all FrameKinds active, all Tier-1/2/3 cards fixed, parity 79/79 GREEN",
-    "tier1_rules_fixed": [30, 33, 77, 98],
-    "tier2_rules_done": [16, 76, 95, 60, 28],
-    "tier3_rules_done": [7, 20, 50, 68, 75],
-    "parity_harness_status": "GREEN — 79/79 tests pass as of 2026-04-19",
-    "frame_context_in_neural_net": "NOT YET — highest leverage gap. Model sees 0 frame context (FrameKind, source_card, budget_remaining, step_index). Stash has WIP code at nn_features.cpp, kModelScalarDim=40 (32+8)."
+    "status": "COMPLETE \u2014 all FrameKinds active, all Tier-1/2/3 cards fixed, parity 79/79 GREEN",
+    "tier1_rules_fixed": [
+      30,
+      33,
+      77,
+      98
+    ],
+    "tier2_rules_done": [
+      16,
+      76,
+      95,
+      60,
+      28
+    ],
+    "tier3_rules_done": [
+      7,
+      20,
+      50,
+      68,
+      75
+    ],
+    "parity_harness_status": "GREEN \u2014 79/79 tests pass as of 2026-04-19",
+    "frame_context_in_neural_net": "NOT YET \u2014 highest leverage gap. Model sees 0 frame context (FrameKind, source_card, budget_remaining, step_index). Stash has WIP code at nn_features.cpp, kModelScalarDim=40 (32+8)."
   },
   "ppo_chain": {
     "status": "v3 COMPLETE iter 200/200. Best = iter150, panel_avg_wr=0.481. v4 PPO NOT YET STARTED.",
-    "v2_iter60": {"USSR": 0.660, "US": 0.510, "combined": 0.585, "panel": 0.667},
-    "v2_final": {"last20_rollout_avg": {"combined": 0.523, "USSR": 0.698, "US": 0.348}, "best_rollout_iter": 96, "best_rollout_wr": 0.635},
+    "v2_iter60": {
+      "USSR": 0.66,
+      "US": 0.51,
+      "combined": 0.585,
+      "panel": 0.667
+    },
+    "v2_final": {
+      "last20_rollout_avg": {
+        "combined": 0.523,
+        "USSR": 0.698,
+        "US": 0.348
+      },
+      "best_rollout_iter": 96,
+      "best_rollout_wr": 0.635
+    },
     "v3_benchmarks": {
-      "iter50": {"ussr": 0.347, "us": 0.337, "combined": 0.342},
-      "iter100": {"ussr": 0.360, "us": 0.147, "combined": 0.253},
-      "iter150": {"ussr": 0.637, "us": 0.325, "combined": 0.481, "note": "BEST — used for v4 warmstart"},
+      "iter50": {
+        "ussr": 0.347,
+        "us": 0.337,
+        "combined": 0.342
+      },
+      "iter100": {
+        "ussr": 0.36,
+        "us": 0.147,
+        "combined": 0.253
+      },
+      "iter150": {
+        "ussr": 0.637,
+        "us": 0.325,
+        "combined": 0.481,
+        "note": "BEST \u2014 used for v4 warmstart"
+      },
       "iter200": "not benchmarked separately"
     },
     "best_baseline": "v56 BC (N=300): ussr=0.570, us=0.413, combined=0.492",
@@ -39,17 +88,29 @@
   },
   "post_fix_panel": {
     "note": "Post DEFCON-1 fix + Tier-1/2/3 engine fixes. All WRs vs heuristic (N=300/side).",
-    "v56_bc_baseline": {"ussr": 0.570, "us": 0.413, "combined": 0.492},
-    "v3_best_iter150": {"ussr": 0.637, "us": 0.325, "combined": 0.481},
-    "v3_iter50": {"ussr": 0.360, "us": 0.147, "combined": 0.253},
+    "v56_bc_baseline": {
+      "ussr": 0.57,
+      "us": 0.413,
+      "combined": 0.492
+    },
+    "v3_best_iter150": {
+      "ussr": 0.637,
+      "us": 0.325,
+      "combined": 0.481
+    },
+    "v3_iter50": {
+      "ussr": 0.36,
+      "us": 0.147,
+      "combined": 0.253
+    },
     "gnv3_vs_panel_raw": "results/panel_wr_matrix.json",
-    "elo_ladder_status": "STALE — pre-DEFCON-1-fix (2026-04-14). Must re-run full Elo tournament."
+    "elo_ladder_status": "STALE \u2014 pre-DEFCON-1-fix (2026-04-14). Must re-run full Elo tournament."
   },
   "awr_datasets": {
-    "fixed_engine_v1": "data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet — 73,981 rows, 4 models (all ppo_best_scripted)",
-    "v2_diverse_v1": "data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet — 69,783 rows, 4 diverse v2 checkpoints",
-    "v4_bc_diverse_v1": "data/awr_eval/v4_bc_diverse_v1/awr_v4_bc_diverse.parquet — 65,519 rows, AVOID: includes us_bc (0% WR diluted val_adv_card_acc to 0.6152)",
-    "v5_v3best_v1": "data/awr_eval/v5_v3best_v1/awr_v5_v3best.parquet — 52,876 rows, 3 models: v56_scripted/v3_iter50_scripted/v3_best_scripted (excluded us_bc). BEST FOR SWEEP."
+    "fixed_engine_v1": "data/awr_eval/fixed_engine_v1/awr_fixed_engine.parquet \u2014 73,981 rows, 4 models (all ppo_best_scripted)",
+    "v2_diverse_v1": "data/awr_eval/v2_diverse_v1/awr_v2_diverse.parquet \u2014 69,783 rows, 4 diverse v2 checkpoints",
+    "v4_bc_diverse_v1": "data/awr_eval/v4_bc_diverse_v1/awr_v4_bc_diverse.parquet \u2014 65,519 rows, AVOID: includes us_bc (0% WR diluted val_adv_card_acc to 0.6152)",
+    "v5_v3best_v1": "data/awr_eval/v5_v3best_v1/awr_v5_v3best.parquet \u2014 52,876 rows, 3 models: v56_scripted/v3_iter50_scripted/v3_best_scripted (excluded us_bc). BEST FOR SWEEP."
   },
   "ismcts_verdict": {
     "result": "SHELVED",
@@ -66,18 +127,23 @@
   },
   "gap_tracker": "ALL DONE (GAP-001 through GAP-043). GAP-044/45/46 WONTFIX (promo cards).",
   "pragmatic_heads": "ALL DONE (phases 1-4). Star Wars card 103 deck-choice low priority.",
-  "jsd_probe": "DONE — jsd_probe.py + probe set + train_ppo.py integration",
+  "jsd_probe": "DONE \u2014 jsd_probe.py + probe set + train_ppo.py integration",
   "codex_mcp_discovery": {
-    "pattern": "Call mcp__codex__codex directly from main session — no subagent needed. General-purpose bg agents also inherit MCP. Custom agent types do NOT.",
+    "pattern": "Call mcp__codex__codex directly from main session \u2014 no subagent needed. General-purpose bg agents also inherit MCP. Custom agent types do NOT.",
     "reply_loop": "mcp__codex__codex-reply(threadId=...) up to 15 calls",
     "5min_progress": "Always include in developer-instructions: 'Print a brief progress note every 5 minutes so the watchdog does not fire.'"
   },
   "new_models_implemented": {
-    "CountryAllocHead": "python/tsrl/policies/model.py:TSCountryAllocHeadModel — per-country per-ops score head + bounded_knapsack_dp decoder (fast path for uniform budget)",
-    "FiLM_variants": ["country_attn_film_normal_init", "country_attn_film_zero_beta_bias", "country_attn_film_gated", "country_attn_film_normal_init_zero_beta"],
-    "gnn_card_attn_gated": "TSControlFeatGNNCardAttnGatedModel — combines GNN+card-attn+FiLM gate, val_adv_card_acc=0.5744 on v7 data"
+    "CountryAllocHead": "python/tsrl/policies/model.py:TSCountryAllocHeadModel \u2014 per-country per-ops score head + bounded_knapsack_dp decoder (fast path for uniform budget)",
+    "FiLM_variants": [
+      "country_attn_film_normal_init",
+      "country_attn_film_zero_beta_bias",
+      "country_attn_film_gated",
+      "country_attn_film_normal_init_zero_beta"
+    ],
+    "gnn_card_attn_gated": "TSControlFeatGNNCardAttnGatedModel \u2014 combines GNN+card-attn+FiLM gate, val_adv_card_acc=0.5744 on v7 data"
   },
   "collect_awr_fix": "Fixed collect_awr_data.py: dedup stems auto-adds parent dir prefix when multiple models share same filename.",
-  "binary_status": "Rebuilt 2026-04-19T23:xx: binary matches source (kScalarDim=32). Stash@{0} has WIP frame-context (kModelScalarDim=40) — not applied.",
+  "binary_status": "Rebuilt 2026-04-19T23:xx: binary matches source (kScalarDim=32). Stash@{0} has WIP frame-context (kModelScalarDim=40) \u2014 not applied.",
   "last_updated": "2026-04-19T23:00:00Z"
 }
