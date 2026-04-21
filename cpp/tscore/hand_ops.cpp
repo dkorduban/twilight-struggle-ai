@@ -359,6 +359,9 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                 if (chosen == 0) {
                     return {pub, false, std::nullopt};
                 }
+                if (side == Side::US) {
+                    pub.we_will_bury_you_pending = false;
+                }
                 const auto ops = effective_ops(chosen, pub, side);
                 discard_from_hand(gs, side, chosen, pub);
                 gs.pub = pub;
@@ -370,6 +373,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     return {gs.pub, false, std::nullopt};
                 }
                 apply_ops_randomly_impl(pub, side, ops, static_cast<CardId>(32), rng, policy_cb, frame_log);
+            } else if (side == Side::US) {
+                pub.we_will_bury_you_pending = false;
             }
             break;
         }
