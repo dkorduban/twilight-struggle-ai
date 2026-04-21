@@ -407,7 +407,8 @@ SubframePolicyFn deterministic_subframe_policy() {
     };
 }
 
-std::string end_reason_for_test(const PublicState& pub, std::optional<Side> winner, CardId card_id = 0) {
+std::string end_reason_for_test(const GameState& gs, std::optional<Side> winner, CardId card_id = 0) {
+    const auto& pub = gs.pub;
     if (pub.defcon <= 1) {
         return "defcon1";
     }
@@ -415,7 +416,7 @@ std::string end_reason_for_test(const PublicState& pub, std::optional<Side> winn
         return "wargames";
     }
     if (winner.has_value()) {
-        return "europe_control";
+        return gs.scoring_auto_win ? "europe_control" : "vp_threshold";
     }
     return "vp_threshold";
 }
@@ -557,7 +558,7 @@ std::optional<GameResult> resolve_pre_action_hooks_for_test(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason_for_test(gs.pub, winner),
+                .end_reason = end_reason_for_test(gs, winner),
             };
         }
         return std::nullopt;
@@ -571,7 +572,7 @@ std::optional<GameResult> resolve_pre_action_hooks_for_test(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason_for_test(gs.pub, winner),
+                .end_reason = end_reason_for_test(gs, winner),
             };
         }
         return std::nullopt;
@@ -663,7 +664,7 @@ std::optional<GameResult> run_headline_phase_for_test(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason_for_test(gs.pub, winner, pending.action.card_id),
+                .end_reason = end_reason_for_test(gs, winner, pending.action.card_id),
             };
         }
     }
@@ -703,7 +704,7 @@ std::optional<GameResult> run_one_action_slot_for_test(
             .winner = winner,
             .final_vp = gs.pub.vp,
             .end_turn = gs.pub.turn,
-            .end_reason = end_reason_for_test(gs.pub, winner, action->card_id),
+            .end_reason = end_reason_for_test(gs, winner, action->card_id),
         };
     }
 
@@ -716,7 +717,7 @@ std::optional<GameResult> run_one_action_slot_for_test(
                     .winner = norad_winner,
                     .final_vp = gs.pub.vp,
                     .end_turn = gs.pub.turn,
-                    .end_reason = end_reason_for_test(gs.pub, norad_winner),
+                    .end_reason = end_reason_for_test(gs, norad_winner),
                 };
             }
         }
@@ -1187,7 +1188,7 @@ std::optional<GameResult> run_harness_headline_phase(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason_for_test(gs.pub, winner, pending.action.card_id),
+                .end_reason = end_reason_for_test(gs, winner, pending.action.card_id),
             };
         }
     }
@@ -1233,7 +1234,7 @@ std::optional<GameResult> run_harness_action_slot(
             .winner = winner,
             .final_vp = gs.pub.vp,
             .end_turn = gs.pub.turn,
-            .end_reason = end_reason_for_test(gs.pub, winner, action->card_id),
+            .end_reason = end_reason_for_test(gs, winner, action->card_id),
         };
     }
     return std::nullopt;
