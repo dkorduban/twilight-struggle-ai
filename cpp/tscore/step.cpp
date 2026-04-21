@@ -1185,7 +1185,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
 
         case 53:
             next.defcon = std::max(1, next.defcon - 1);
-            next.vp += 3;
+            next.we_will_bury_you_pending = true;
             break;
 
         case 54:
