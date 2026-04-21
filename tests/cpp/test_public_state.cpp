@@ -554,7 +554,7 @@ TEST_CASE("final scoring includes Southeast Asia", "[scoring]") {
 
     REQUIRE_FALSE(base_score.game_over);
     REQUIRE_FALSE(thailand_score.game_over);
-    REQUIRE(thailand_score.vp_delta - base_score.vp_delta == 2);
+    REQUIRE(thailand_score.vp_delta - base_score.vp_delta == 4);
 }
 
 TEST_CASE("Cuban Missile Crisis battleground coup loses immediately", "[step]") {
@@ -681,6 +681,28 @@ TEST_CASE("Solidarity event is illegal before John Paul II is played", "[legal_a
     pub.john_paul_ii_played = true;
     const auto modes_after = legal_modes(104, pub, Side::US);
     REQUIRE(std::find(modes_after.begin(), modes_after.end(), ActionMode::Event) != modes_after.end());
+}
+
+TEST_CASE("Camp David blocks Arab-Israeli War event", "[legal_actions]") {
+    constexpr CardId kArabIsraeliWar = 13;
+    constexpr CardId kCampDavid = 66;
+
+    PublicState pub;
+    const ActionEncoding camp_david{
+        .card_id = kCampDavid,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action(pub, camp_david, Side::US, rng);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(next.camp_david_played);
+
+    const auto modes = legal_modes(kArabIsraeliWar, next, Side::USSR);
+    REQUIRE(std::find(modes.begin(), modes.end(), ActionMode::Event) == modes.end());
 }
 
 TEST_CASE("Glasnost with SALT grants four free ops", "[step]") {

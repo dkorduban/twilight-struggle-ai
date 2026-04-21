@@ -185,25 +185,23 @@ def test_apply_scoring_card_asia():
     assert result.vp_delta == 1
 
 
-def test_midgame_asia_scoring_excludes_se_asia():
-    """Mid-game Asia Scoring card (id=1) must NOT count SE Asia countries.
+def test_midgame_asia_scoring_includes_se_asia():
+    """Mid-game Asia Scoring card (id=1) must count SE Asia countries.
 
-    SE Asia countries (Thailand=79, Vietnam=80, etc.) count only for SE Asia
-    Scoring (card #41) and Turn-10 final scoring, per §10.3.2 and countries.csv.
+    SE Asia countries (Thailand=79, Vietnam=80, etc.) also count for standard
+    Asia Scoring. The SE Asia Scoring card has separate per-country values.
 
-    Board: USSR controls only Vietnam (id=80, SE Asia, stab=1, BG) — not in
-    standard Asia. Mid-game Asia Scoring must return 0 regional VP (only China
-    card bonus applies if USSR holds it).
+    Board: USSR controls only Vietnam (id=80, SE Asia, stab=1, non-BG).
+    Standard Asia Scoring returns Presence(3) regional VP.
     """
     pub = PublicState()
-    pub.china_held_by = Side.US   # neutral — no China bonus from either side
-    # USSR controls Vietnam (SE Asia BG, stab=1): influence=1
+    pub.china_held_by = Side.US
+    # USSR controls Vietnam (SE Asia non-BG, stab=1): influence=1
     pub.influence[(Side.USSR, 80)] = 1
     result = score_region(Region.ASIA, pub)
-    # Vietnam is in SE Asia; mid-game Asia Scoring must NOT count it.
-    assert result.vp_delta == 0, (
-        f"Mid-game Asia Scoring must exclude SE Asia countries (Vietnam id=80); "
-        f"expected vp_delta=0, got {result.vp_delta}"
+    assert result.vp_delta == 3, (
+        f"Mid-game Asia Scoring must include SE Asia countries (Vietnam id=80); "
+        f"expected vp_delta=3, got {result.vp_delta}"
     )
 
 
@@ -749,7 +747,7 @@ def test_final_scoring_all_regions_scored():
     _end_of_turn(gs, reset(seed=42).pub.__class__.__new__(reset(seed=42).pub.__class__)
                  .__class__.__new__ if False else make_rng(0),
                  turn=10)
-    # USSR Presence in all 6: Europe(1)+Asia(3)+ME(3)+CA(1)+SA(2)+Africa(1) = 11 VP minimum
+    # USSR Presence in all 6: Europe(3)+Asia(3)+ME(3)+CA(1)+SA(2)+Africa(1) = 13 VP minimum
     assert gs.pub.vp >= vp_before + 10, (
         f"Expected vp to increase by ≥10 (6-region Presence); "
         f"before={vp_before}, after={gs.pub.vp}"
@@ -825,8 +823,8 @@ def test_end_reason_europe_control_stays_distinct_from_vp_threshold():
 def test_final_scoring_se_asia_included_in_asia():
     """SE Asia countries count toward Asia Presence/Domination at Turn 10.
 
-    Board: USSR controls only Vietnam (id=80, SE Asia, stab=1, BG) — no standard Asia.
-    If SE Asia is included in final Asia scoring, USSR gets Asia Presence (+3 + 1 BG = +4).
+    Board: USSR controls only Vietnam (id=80, SE Asia, stab=1, non-BG) — no standard Asia.
+    If SE Asia is included in final Asia scoring, USSR gets Asia Presence (+3).
     If SE Asia is excluded (bug), USSR gets NONE for Asia (0).
     """
     from tsrl.engine.game_loop import _end_of_turn
@@ -834,13 +832,13 @@ def test_final_scoring_se_asia_included_in_asia():
 
     gs = _make_turn10_gs(vp=0)
     gs.pub.milops = [5, 5]
-    # USSR controls only Vietnam (SE Asia BG)
+    # USSR controls only Vietnam (SE Asia non-BG)
     gs.pub.influence[(Side.USSR, 80)] = 1  # stab=1, so influence=1 controls it
 
     _end_of_turn(gs, make_rng(0), turn=10)
 
     # If SE Asia excluded: Asia contribution = 0, total VP from all regions ≈ 0.
-    # If SE Asia included: Asia contribution = +3 (Presence) + 1 (BG) = +4.
+    # If SE Asia included: Asia contribution = +3 (Presence).
     # The vp after final scoring must be > 0 to confirm SE Asia is counted.
     assert gs.pub.vp > 0, (
         f"SE Asia (Vietnam) should count toward Asia final scoring; "

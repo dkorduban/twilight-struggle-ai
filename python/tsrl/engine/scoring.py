@@ -22,18 +22,16 @@ Scoring formula (§10.1.2) — BOTH sides score independently, net is the VP del
 
 VP base amounts:
   Region           Presence  Domination  Control
-  Europe           1         3           GAME WIN
+  Europe           3         7           GAME WIN
   Asia             3         7           9
   Middle East      3         5           7
   Central America  1         3           5
   South America    2         5           6
   Africa           1         4           6
 
-Asia scoring also awards +1 VP to whoever holds the China Card.
-
-SE Asia countries do NOT count for mid-game Asia Scoring (card #1).
-They are scored by Southeast Asia Scoring (card #41, special per-country rules)
-or included in Turn-10 final scoring via score_asia_final() — see §10.3.2.
+Asia scoring also awards +1 VP to whoever holds the China Card. Asia scoring
+includes Southeast Asia countries; Southeast Asia Scoring (card #41) is a
+separate overlapping scoring card with special per-country rules.
 
 Southeast Asia scoring (card #41 text):
   Each controlled country: 1 VP; Thailand: 2 VP.  No §10.1.2 BG/adj bonuses.
@@ -42,7 +40,7 @@ Notes:
   - Country id=64 (erroneous Libya/Africa duplicate) is excluded.
   - Superpower anchors (id=81, 82) are excluded from scoring but ARE used for
     adjacency checks (§10.1.2 "adjacent to enemy superpower").
-  - Congo/Zaire (id=60) IS a battleground (TS Deluxe has 7 Africa BGs).
+  - Congo/Zaire (id=60) IS a battleground (TS Deluxe has 5 Africa BGs).
 """
 from __future__ import annotations
 
@@ -78,7 +76,7 @@ GAME_WIN_EUROPE: int = 9999
 # VP tables: (presence_vp, domination_vp, control_vp)
 # Positive = USSR gain, negative = US gain applied by caller.
 _REGION_VP: dict[Region, tuple[int, int, int]] = {
-    Region.EUROPE:          (1, 3, GAME_WIN_EUROPE),
+    Region.EUROPE:          (3, 7, GAME_WIN_EUROPE),
     Region.ASIA:            (3, 7, 9),
     Region.MIDDLE_EAST:     (3, 5, 7),
     Region.CENTRAL_AMERICA: (1, 3, 5),
@@ -93,7 +91,7 @@ _REGION_VP: dict[Region, tuple[int, int, int]] = {
 # Coup logs confirm: Indonesia stab=1, Malaysia stab=2.
 _SE_ASIA_COUNTRY_VP: dict[int, int] = {
     75: 1,  # Burma
-    76: 1,  # Indonesia (stab=1, battleground)
+    76: 1,  # Indonesia (stab=1)
     77: 1,  # Laos/Cambodia
     78: 1,  # Philippines
     79: 2,  # Thailand (2 VP per card text)
@@ -199,15 +197,16 @@ def score_region(region: Region, pub: PublicState) -> ScoringResult:
 
     presence_vp, domination_vp, control_vp = vp_table
 
-    # Gather countries in this region (superpowers excluded from country lists).
-    # Mid-game Asia Scoring (card #1) covers only the ASIA region countries.
-    # SE Asia countries (Burma, Indonesia/Malaysia, Laos/Cambodia, Philippines,
-    # Thailand, Vietnam) do NOT count for mid-game Asia Scoring — they are scored
-    # separately via the Southeast Asia Scoring card (#41) or included in
-    # Turn-10 final scoring via score_asia_final().
+    # Gather countries in this scoring region (superpowers excluded from country
+    # lists). Asia Scoring includes the Southeast Asia subset; the dedicated
+    # Southeast Asia card uses score_southeast_asia() above instead.
     region_ids = [
         cid for cid, spec in countries.items()
-        if spec.region == region and cid not in _EXCLUDED_IDS
+        if (
+            spec.region == region
+            or (region == Region.ASIA and spec.region == Region.SOUTHEAST_ASIA)
+        )
+        and cid not in _EXCLUDED_IDS
     ]
     battleground_ids = [
         cid for cid in region_ids

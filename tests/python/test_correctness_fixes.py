@@ -904,10 +904,10 @@ def test_adj_bonus_for_non_bg_canada_adj_usa():
     # US controls nothing
 
     result = score_region(Region.EUROPE, pub)
-    # USSR: Domination(3) + BG_bonus(1 for France) + adj_bonus(1 for Canada adj USA) = 5
-    # With BG-only: Domination(3) + BG_bonus(1) + adj_bonus(0) = 4
-    assert result.vp_delta == 5, (
-        f"Expected vp_delta=+5 (Domination=3 + France BG=1 + Canada adj USA=1), "
+    # USSR: Domination(7) + BG_bonus(1 for France) + adj_bonus(1 for Canada adj USA) = 9
+    # With BG-only: Domination(7) + BG_bonus(1) + adj_bonus(0) = 8
+    assert result.vp_delta == 9, (
+        f"Expected vp_delta=+9 (Domination=7 + France BG=1 + Canada adj USA=1), "
         f"got {result.vp_delta}. "
         f"Canada is non-BG but adj to USA — must contribute adj_bonus."
     )
@@ -930,10 +930,10 @@ def test_adj_bonus_for_non_bg_finland_adj_ussr():
     # USSR controls nothing
 
     result = score_region(Region.EUROPE, pub)
-    # US: Domination(3) + BG_bonus(1 for Italy) + adj_bonus(1 for Finland adj USSR) = 5 → -5
-    # With BG-only: -(Domination(3) + BG_bonus(1) + adj_bonus(0)) = -4
-    assert result.vp_delta == -5, (
-        f"Expected vp_delta=-5 (US Domination=3 + Italy BG=1 + Finland adj USSR=1), "
+    # US: Domination(7) + BG_bonus(1 for Italy) + adj_bonus(1 for Finland adj USSR) = 9 -> -9
+    # With BG-only: -(Domination(7) + BG_bonus(1) + adj_bonus(0)) = -8
+    assert result.vp_delta == -9, (
+        f"Expected vp_delta=-9 (US Domination=7 + Italy BG=1 + Finland adj USSR=1), "
         f"got {result.vp_delta}. "
         f"Finland is non-BG but adj to USSR — must contribute adj_bonus."
     )
@@ -955,10 +955,10 @@ def test_adj_bonus_for_non_bg_romania_adj_ussr():
     # USSR controls nothing
 
     result = score_region(Region.EUROPE, pub)
-    # US: Domination(3) + BG_bonus(1 for Italy) + adj_bonus(1 for Romania adj USSR) = 5 → -5
-    # With BG-only: -(Domination(3) + BG_bonus(1) + adj_bonus(0)) = -4
-    assert result.vp_delta == -5, (
-        f"Expected vp_delta=-5 (US Domination=3 + Italy BG=1 + Romania adj USSR=1), "
+    # US: Domination(7) + BG_bonus(1 for Italy) + adj_bonus(1 for Romania adj USSR) = 9 -> -9
+    # With BG-only: -(Domination(7) + BG_bonus(1) + adj_bonus(0)) = -8
+    assert result.vp_delta == -9, (
+        f"Expected vp_delta=-9 (US Domination=7 + Italy BG=1 + Romania adj USSR=1), "
         f"got {result.vp_delta}. "
         f"Romania is non-BG but adj to USSR — must contribute adj_bonus."
     )

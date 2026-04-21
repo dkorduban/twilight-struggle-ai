@@ -426,7 +426,7 @@ def test_ca_scoring_ussr_domination_with_cuba_mexico():
 # Congo/Zaire battleground status (Africa scoring)
 # ---------------------------------------------------------------------------
 
-_CONGO = 60  # Congo/Zaire, Africa, stab=2, BG=true (NOT non-BG)
+_CONGO = 60  # Congo/Zaire, Africa, stab=1, BG=true (NOT non-BG)
 _ANGOLA = 57  # Africa, stab=1, BG=true
 _ALGERIA = 56  # Africa, stab=2, BG=true
 _SOUTH_AFRICA = 71  # Africa, stab=3, BG=true, US start=1
@@ -439,15 +439,15 @@ _SAHARAN = 68   # Africa, stab=1, non-BG
 def test_congo_zaire_is_battleground():
     """Congo/Zaire (id=60) must be a battleground country in Africa.
 
-    TS Deluxe has 7 Africa battlegrounds: Algeria, Angola, Congo/Zaire,
-    Ethiopia, Morocco, Nigeria, South Africa.
+    TS Deluxe has 5 Africa battlegrounds: Algeria, Angola, Congo/Zaire,
+    Nigeria, South Africa.
     Empirically: 20/23 Africa diff=+1 violations are fixed by this change.
     """
     from tsrl.etl.game_data import load_countries
     cs = load_countries()
     assert cs[_CONGO].is_battleground, (
         "Congo/Zaire (id=60) must be a battleground country in Africa "
-        "(TS Deluxe has 7 Africa BGs including Zaire)"
+        "(TS Deluxe has 5 Africa BGs including Zaire)"
     )
 
 
@@ -472,8 +472,8 @@ def test_africa_scoring_ussr_controls_congo():
     pub.influence[Side.US, _ANGOLA]   = 1
     pub.influence[Side.US, _NIGERIA]  = 1
     pub.influence[Side.US, _SAHARAN]  = 1
-    # USSR controls Congo(stab=2: need 2), Botswana(stab=2), Cameroon(stab=1)
-    pub.influence[Side.USSR, _CONGO]    = 2
+    # USSR controls Congo(stab=1), Botswana(stab=2), Cameroon(stab=1)
+    pub.influence[Side.USSR, _CONGO]    = 1
     pub.influence[Side.USSR, _BOTSWANA] = 2
     pub.influence[Side.USSR, _CAMEROON] = 1
 

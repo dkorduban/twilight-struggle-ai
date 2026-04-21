@@ -21,7 +21,7 @@ struct RegionVp {
 };
 
 constexpr std::array<RegionVp, 6> kRegionVp = {{
-    {1, 3, kGameWinEurope},
+    {3, 7, kGameWinEurope},
     {3, 7, 9},
     {3, 5, 7},
     {1, 3, 5},
@@ -144,7 +144,8 @@ ScoringResult score_region(Region region, const PublicState& pub) {
         if (cid == 64 || cid == kUsaAnchorId || cid == kUssrAnchorId) {
             continue;
         }
-        if (country_spec(cid).region != region) {
+        const auto country_region = country_spec(cid).region;
+        if (country_region != region && !(region == Region::Asia && country_region == Region::SoutheastAsia)) {
             continue;
         }
         region_ids.push_back(cid);
@@ -261,11 +262,8 @@ ScoringResult apply_final_scoring(PublicState pub) {
              Region::CentralAmerica,
              Region::SouthAmerica,
              Region::Africa,
-             Region::SoutheastAsia,
          }) {
-        auto result = region == Region::Asia
-            ? score_asia_final(pub)
-            : (region == Region::SoutheastAsia ? score_southeast_asia(pub) : score_region(region, pub));
+        auto result = region == Region::Asia ? score_asia_final(pub) : score_region(region, pub);
         total += result.vp_delta;
         if (result.clear_shuttle) {
             pub.shuttle_diplomacy_active = false;
