@@ -257,13 +257,22 @@ std::string end_reason(
     return "vp_threshold";
 }
 
-std::optional<GameResult> settle_we_will_bury_you_if_due(GameState& gs, Side side, bool pending_at_ar_start) {
-    if (side != Side::US || !pending_at_ar_start || !gs.pub.we_will_bury_you_pending) {
+int encoded_turn_ar(int turn, int ar) {
+    return (turn * 10) + ar;
+}
+
+std::optional<GameResult> settle_we_will_bury_you_if_due(GameState& gs, Side side) {
+    if (side != Side::US || !gs.pub.we_will_bury_you_pending) {
+        return std::nullopt;
+    }
+    if (gs.pub.we_will_bury_you_turn_ar >= 0 &&
+        encoded_turn_ar(gs.pub.turn, gs.pub.ar) < gs.pub.we_will_bury_you_turn_ar) {
         return std::nullopt;
     }
 
     gs.pub.vp += 3;
     gs.pub.we_will_bury_you_pending = false;
+    gs.pub.we_will_bury_you_turn_ar = -1;
 
     const auto [over, winner] = check_vp_win(gs.pub);
     if (!over) {
@@ -416,9 +425,8 @@ std::optional<GameResult> run_action_rounds(
                 continue;
             }
             gs.pub.phasing = side;
-            const bool wwby_pending_at_ar_start = side == Side::US && gs.pub.we_will_bury_you_pending;
             const auto settle_wwby = [&]() {
-                return settle_we_will_bury_you_if_due(gs, side, wwby_pending_at_ar_start);
+                return settle_we_will_bury_you_if_due(gs, side);
             };
             const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
             auto& hand = gs.hands[to_index(side)];
@@ -548,9 +556,8 @@ std::optional<GameResult> run_extra_action_round(
 ) {
     gs.pub.ar = std::max(gs.pub.ar, ars_for_turn(gs.pub.turn)) + 1;
     gs.pub.phasing = side;
-    const bool wwby_pending_at_ar_start = side == Side::US && gs.pub.we_will_bury_you_pending;
     const auto settle_wwby = [&]() {
-        return settle_we_will_bury_you_if_due(gs, side, wwby_pending_at_ar_start);
+        return settle_we_will_bury_you_if_due(gs, side);
     };
     const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
     auto& hand = gs.hands[to_index(side)];
@@ -2292,6 +2299,7 @@ void resume_card_32(GameState& gs, const DecisionFrame& frame, const FrameAction
 
     if (frame.acting_side == Side::US) {
         gs.pub.we_will_bury_you_pending = false;
+        gs.pub.we_will_bury_you_turn_ar = -1;
     }
     const auto ops = effective_ops(action.card_id, gs.pub, frame.acting_side);
     discard_frame_hand_card(gs, frame.acting_side, action.card_id);
