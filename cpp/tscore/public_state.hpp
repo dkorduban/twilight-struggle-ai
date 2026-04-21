@@ -43,6 +43,7 @@ struct PublicState {
     bool us_japan_pact_active = false;
     bool nuclear_subs_active = false;
     bool norad_active = false;
+    bool camp_david_played = false;
     bool shuttle_diplomacy_active = false;
     bool flower_power_active = false;
     bool flower_power_cancelled = false;
@@ -51,6 +52,7 @@ struct PublicState {
     bool awacs_active = false;
     bool north_sea_oil_extra_ar = false;
     bool we_will_bury_you_pending = false;
+    int we_will_bury_you_turn_ar = -1;
     int glasnost_free_ops = 0;
     bool formosan_active = false;
     bool cuban_missile_crisis_active = false;
