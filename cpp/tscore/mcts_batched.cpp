@@ -1997,12 +1997,17 @@ void mark_game_done(GameSlot& slot, GameResult result) {
     slot.root.reset();
 }
 
-std::string end_reason(const GameState& gs, std::optional<Side> winner, int card_id = -1) {
+std::string end_reason(
+    const GameState& gs,
+    std::optional<Side> winner,
+    int card_id = -1,
+    std::optional<ActionMode> mode = std::nullopt
+) {
     const auto& pub = gs.pub;
     if (pub.defcon <= 1) {
         return "defcon1";
     }
-    if (card_id == kWargamesCardId) {
+    if (card_id == kWargamesCardId && mode == ActionMode::Event) {
         return "wargames";
     }
     if (winner.has_value()) {
@@ -2262,7 +2267,7 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                         .winner = winner,
                         .final_vp = slot.root_state.pub.vp,
                         .end_turn = slot.root_state.pub.turn,
-                        .end_reason = end_reason(slot.root_state, winner, pending.action.card_id),
+                        .end_reason = end_reason(slot.root_state, winner, pending.action.card_id, pending.action.mode),
                     });
                 }
                 break;
@@ -2569,7 +2574,7 @@ void commit_best_action(
             .winner = winner,
             .final_vp = slot.root_state.pub.vp,
             .end_turn = slot.root_state.pub.turn,
-            .end_reason = end_reason(slot.root_state, winner, action.card_id),
+            .end_reason = end_reason(slot.root_state, winner, action.card_id, action.mode),
         });
         return;
     }
@@ -3712,7 +3717,7 @@ void commit_greedy_action(GameSlot& slot, const ActionEncoding& action, const Po
             .winner = winner,
             .final_vp = slot.root_state.pub.vp,
             .end_turn = slot.root_state.pub.turn,
-            .end_reason = end_reason(slot.root_state, winner, resolved.card_id),
+            .end_reason = end_reason(slot.root_state, winner, resolved.card_id, resolved.mode),
         });
         return;
     }

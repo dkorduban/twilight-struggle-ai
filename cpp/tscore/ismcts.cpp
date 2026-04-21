@@ -917,12 +917,17 @@ void run_setup_influence_heuristic(GameState& gs, Pcg64Rng& rng) {
     gs.phase = GamePhase::Headline;
 }
 
-std::string end_reason(const GameState& gs, std::optional<Side> winner, int card_id = -1) {
+std::string end_reason(
+    const GameState& gs,
+    std::optional<Side> winner,
+    int card_id = -1,
+    std::optional<ActionMode> mode = std::nullopt
+) {
     const auto& pub = gs.pub;
     if (pub.defcon <= 1) {
         return "defcon1";
     }
-    if (card_id == kWargamesCardId) {
+    if (card_id == kWargamesCardId && mode == ActionMode::Event) {
         return "wargames";
     }
     if (winner.has_value()) {
@@ -1169,7 +1174,7 @@ void commit_selected_action(IsmctsGameSlot& slot, ActionEncoding action) {
             .winner = winner,
             .final_vp = slot.game_state.pub.vp,
             .end_turn = slot.game_state.pub.turn,
-            .end_reason = end_reason(slot.game_state, winner, action.card_id),
+            .end_reason = end_reason(slot.game_state, winner, action.card_id, action.mode),
         });
         return;
     }
@@ -1551,7 +1556,7 @@ void advance_until_search_or_done(
                         .winner = winner,
                         .final_vp = slot.game_state.pub.vp,
                         .end_turn = slot.game_state.pub.turn,
-                        .end_reason = end_reason(slot.game_state, winner, pending.action.card_id),
+                        .end_reason = end_reason(slot.game_state, winner, pending.action.card_id, pending.action.mode),
                     });
                 }
                 break;

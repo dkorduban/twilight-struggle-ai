@@ -408,12 +408,17 @@ SubframePolicyFn deterministic_subframe_policy() {
     };
 }
 
-std::string end_reason_for_test(const GameState& gs, std::optional<Side> winner, CardId card_id = 0) {
+std::string end_reason_for_test(
+    const GameState& gs,
+    std::optional<Side> winner,
+    CardId card_id = 0,
+    std::optional<ActionMode> mode = std::nullopt
+) {
     const auto& pub = gs.pub;
     if (pub.defcon <= 1) {
         return "defcon1";
     }
-    if (card_id == 105) {
+    if (card_id == 103 && mode == ActionMode::Event) {
         return "wargames";
     }
     if (winner.has_value()) {
@@ -702,7 +707,7 @@ std::optional<GameResult> run_headline_phase_for_test(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason_for_test(gs, winner, pending.action.card_id),
+                .end_reason = end_reason_for_test(gs, winner, pending.action.card_id, pending.action.mode),
             };
         }
     }
@@ -742,7 +747,7 @@ std::optional<GameResult> run_one_action_slot_for_test(
             .winner = winner,
             .final_vp = gs.pub.vp,
             .end_turn = gs.pub.turn,
-            .end_reason = end_reason_for_test(gs, winner, action->card_id),
+            .end_reason = end_reason_for_test(gs, winner, action->card_id, action->mode),
         };
     }
 
@@ -1296,7 +1301,7 @@ std::optional<GameResult> run_harness_headline_phase(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason_for_test(gs, winner, pending.action.card_id),
+                .end_reason = end_reason_for_test(gs, winner, pending.action.card_id, pending.action.mode),
             };
         }
     }
@@ -1342,7 +1347,7 @@ std::optional<GameResult> run_harness_action_slot(
             .winner = winner,
             .final_vp = gs.pub.vp,
             .end_turn = gs.pub.turn,
-            .end_reason = end_reason_for_test(gs, winner, action->card_id),
+            .end_reason = end_reason_for_test(gs, winner, action->card_id, action->mode),
         };
     }
     return std::nullopt;

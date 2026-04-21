@@ -337,6 +337,38 @@ TEST_CASE("illegal headline events fizzle without executing", "[game_loop]") {
     }
 }
 
+TEST_CASE("Wargames played for ops reports VP threshold", "[game_loop]") {
+    constexpr CardId kWargamesCard = 103;
+    constexpr CountryId kPoland = 12;
+
+    GameState gs;
+    gs.phase = GamePhase::ActionRound;
+    gs.pub = PublicState{};
+    gs.pub.turn = 8;
+    gs.pub.ar = 1;
+    gs.pub.defcon = 4;
+    gs.pub.vp = 20;
+    gs.pub.set_influence(Side::USSR, kPoland, 1);
+    gs.hands[to_index(Side::USSR)].set(kWargamesCard);
+
+    const PolicyFn wargames_ops = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+        return ActionEncoding{
+            .card_id = kWargamesCard,
+            .mode = ActionMode::Influence,
+            .targets = {kPoland, kPoland, kPoland, kPoland},
+        };
+    };
+    const PolicyFn no_action = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+        return std::nullopt;
+    };
+
+    Pcg64Rng rng(0);
+    const auto result = run_action_rounds_live(gs, wargames_ops, no_action, rng, 1);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->end_reason == "vp_threshold");
+}
+
 TEST_CASE("final scoring includes Southeast Asia", "[scoring]") {
     constexpr CountryId kThailand = 79;
 
