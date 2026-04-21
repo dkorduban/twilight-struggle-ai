@@ -261,8 +261,11 @@ ScoringResult apply_final_scoring(PublicState pub) {
              Region::CentralAmerica,
              Region::SouthAmerica,
              Region::Africa,
+             Region::SoutheastAsia,
          }) {
-        auto result = region == Region::Asia ? score_asia_final(pub) : score_region(region, pub);
+        auto result = region == Region::Asia
+            ? score_asia_final(pub)
+            : (region == Region::SoutheastAsia ? score_southeast_asia(pub) : score_region(region, pub));
         total += result.vp_delta;
         if (result.clear_shuttle) {
             pub.shuttle_diplomacy_active = false;

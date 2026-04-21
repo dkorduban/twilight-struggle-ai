@@ -337,6 +337,21 @@ TEST_CASE("illegal headline events fizzle without executing", "[game_loop]") {
     }
 }
 
+TEST_CASE("final scoring includes Southeast Asia", "[scoring]") {
+    constexpr CountryId kThailand = 79;
+
+    PublicState base;
+    auto with_thailand = base;
+    with_thailand.set_influence(Side::USSR, kThailand, 2);
+
+    const auto base_score = apply_final_scoring(base);
+    const auto thailand_score = apply_final_scoring(with_thailand);
+
+    REQUIRE_FALSE(base_score.game_over);
+    REQUIRE_FALSE(thailand_score.game_over);
+    REQUIRE(thailand_score.vp_delta - base_score.vp_delta == 2);
+}
+
 TEST_CASE("Cuban Missile Crisis battleground coup loses immediately", "[step]") {
     constexpr CountryId kThailandId = 79;
 
