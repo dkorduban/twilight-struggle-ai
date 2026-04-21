@@ -41,3 +41,60 @@ TEST_CASE("Independent Reds equalizes only the chosen Eastern European country",
     REQUIRE(next.influence_of(Side::US, kRomaniaId) == 3);
     REQUIRE(next.influence_of(Side::US, kYugoslaviaId) == 0);
 }
+
+TEST_CASE("We Will Bury You waits for the next US action round and UN can cancel it", "[cards][game_loop]") {
+    constexpr CardId kWeWillBuryYou = 53;
+    constexpr CardId kUnIntervention = 32;
+    constexpr CardId kArabIsraeliWar = 13;
+
+    auto make_state = [] {
+        GameState gs;
+        gs.pub = PublicState{};
+        gs.pub.turn = 4;
+        gs.pub.defcon = 5;
+        gs.hands[to_index(Side::USSR)].set(kWeWillBuryYou);
+        return gs;
+    };
+
+    const PolicyFn ussr_wwby = [](const PublicState&, const CardSet& hand, bool, Pcg64Rng&)
+        -> std::optional<ActionEncoding> {
+        if (hand.test(kWeWillBuryYou)) {
+            return ActionEncoding{.card_id = kWeWillBuryYou, .mode = ActionMode::Event, .targets = {}};
+        }
+        return std::nullopt;
+    };
+    const PolicyFn no_us_action = [](const PublicState&, const CardSet&, bool, Pcg64Rng&)
+        -> std::optional<ActionEncoding> {
+        return std::nullopt;
+    };
+
+    auto awarded = make_state();
+    Pcg64Rng award_rng(0);
+    const auto award_result = run_action_rounds_live(awarded, ussr_wwby, no_us_action, award_rng, 1);
+
+    REQUIRE_FALSE(award_result.has_value());
+    REQUIRE(awarded.pub.defcon == 4);
+    REQUIRE(awarded.pub.vp == 3);
+    REQUIRE_FALSE(awarded.pub.we_will_bury_you_pending);
+    REQUIRE(awarded.pub.we_will_bury_you_turn_ar == -1);
+
+    auto canceled = make_state();
+    canceled.hands[to_index(Side::US)].set(kUnIntervention);
+    canceled.hands[to_index(Side::US)].set(kArabIsraeliWar);
+    const PolicyFn us_un = [](const PublicState&, const CardSet& hand, bool, Pcg64Rng&)
+        -> std::optional<ActionEncoding> {
+        if (hand.test(kUnIntervention)) {
+            return ActionEncoding{.card_id = kUnIntervention, .mode = ActionMode::Event, .targets = {}};
+        }
+        return std::nullopt;
+    };
+
+    Pcg64Rng cancel_rng(0);
+    const auto cancel_result = run_action_rounds_live(canceled, ussr_wwby, us_un, cancel_rng, 1);
+
+    REQUIRE_FALSE(cancel_result.has_value());
+    REQUIRE(canceled.pub.defcon == 4);
+    REQUIRE(canceled.pub.vp == 0);
+    REQUIRE_FALSE(canceled.pub.we_will_bury_you_pending);
+    REQUIRE(canceled.pub.we_will_bury_you_turn_ar == -1);
+}
