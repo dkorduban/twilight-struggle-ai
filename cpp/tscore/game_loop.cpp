@@ -213,9 +213,9 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr
 ) {
+    constexpr CardId kNoradCardId = 38;
     constexpr CountryId kCanadaId = 2;
     if (!controls_country(Side::US, kCanadaId, gs.pub)) {
-        gs.pub.norad_active = false;
         return std::nullopt;
     }
 
@@ -229,10 +229,10 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(
         return std::nullopt;
     }
     if (gs.frame_stack_mode && policy_cb == nullptr) {
-        push_typed_country_frame(gs, FrameKind::NoradInfluence, 106, Side::US, eligible, 0, 1);
+        push_typed_country_frame(gs, FrameKind::NoradInfluence, kNoradCardId, Side::US, eligible, 0, 1);
         return std::tuple{gs.pub, false, std::nullopt};
     }
-    const auto target = choose_country(gs.pub, 106, Side::US, eligible, rng, policy_cb);
+    const auto target = choose_country(gs.pub, kNoradCardId, Side::US, eligible, rng, policy_cb);
     gs.pub.set_influence(Side::US, target, gs.pub.influence_of(Side::US, target) + 1);
     const auto [over, winner] = check_vp_win(gs.pub);
     return std::tuple{gs.pub, over, winner};

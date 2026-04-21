@@ -437,7 +437,7 @@ TEST_CASE("Nuclear Subs expires before next-turn battleground coup", "[game_loop
     REQUIRE(result.winner == Side::USSR);
 }
 
-TEST_CASE("NORAD cancels when US does not control Canada", "[game_loop]") {
+TEST_CASE("NORAD stays active but does not trigger when US does not control Canada", "[game_loop]") {
     constexpr CountryId kCanada = 2;
     constexpr CountryId kMexico = 42;
 
@@ -452,8 +452,52 @@ TEST_CASE("NORAD cancels when US does not control Canada", "[game_loop]") {
     const auto result = resolve_norad_live(gs, rng);
 
     REQUIRE_FALSE(result.has_value());
-    REQUIRE_FALSE(gs.pub.norad_active);
+    REQUIRE(gs.pub.norad_active);
     REQUIRE(gs.pub.influence_of(Side::US, kMexico) == 1);
+}
+
+TEST_CASE("NORAD places influence after USSR action round at DEFCON 2", "[game_loop]") {
+    constexpr CardId kNoradCard = 38;
+    constexpr CardId kArabIsraeliWar = 13;
+    constexpr CountryId kCanada = 2;
+    constexpr CountryId kMexico = 42;
+
+    GameState gs;
+    gs.pub = PublicState{};
+    gs.pub.turn = 3;
+    gs.pub.defcon = 3;
+    gs.pub.set_influence(Side::US, kCanada, 4);
+
+    Pcg64Rng rng(0);
+    const auto [after_norad, norad_over, norad_winner] = apply_action_live(
+        gs,
+        ActionEncoding{.card_id = kNoradCard, .mode = ActionMode::Event, .targets = {}},
+        Side::US,
+        rng
+    );
+    (void)after_norad;
+    REQUIRE_FALSE(norad_over);
+    REQUIRE_FALSE(norad_winner.has_value());
+    REQUIRE(gs.pub.norad_active);
+
+    gs.hands[to_index(Side::USSR)].set(kArabIsraeliWar);
+    const PolicyFn ussr_policy = [=](const PublicState&, const CardSet& hand, bool, Pcg64Rng&)
+        -> std::optional<ActionEncoding> {
+        if (hand.test(kArabIsraeliWar)) {
+            return ActionEncoding{.card_id = kArabIsraeliWar, .mode = ActionMode::Coup, .targets = {kMexico}};
+        }
+        return std::nullopt;
+    };
+    const PolicyFn us_policy = [](const PublicState&, const CardSet&, bool, Pcg64Rng&)
+        -> std::optional<ActionEncoding> {
+        return std::nullopt;
+    };
+
+    const auto result = run_action_rounds_live(gs, ussr_policy, us_policy, rng, 1);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(gs.pub.defcon == 2);
+    REQUIRE(gs.pub.influence_of(Side::US, kCanada) == 5);
 }
 
 TEST_CASE("Bear Trap headline forces USSR discard before AR action", "[game_loop]") {
