@@ -22,7 +22,7 @@ bool is_cat_c_card(CardId card_id) {
 }
 
 void card_played(PublicState& pub, CardId card_id, Side side) {
-    if (pub.discard.test(card_id) || pub.removed.test(card_id)) {
+    if (pub.removed.test(card_id)) {
         return;
     }
     if (card_id == kChinaCardId) {
@@ -32,6 +32,7 @@ void card_played(PublicState& pub, CardId card_id, Side side) {
     }
     const auto& spec = card_spec(card_id);
     if (spec.starred) {
+        pub.discard.reset(card_id);
         pub.removed.set(card_id);
     } else {
         pub.discard.set(card_id);

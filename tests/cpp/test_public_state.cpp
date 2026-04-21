@@ -260,6 +260,31 @@ TEST_CASE("Realign legal countries exclude empty countries", "[legal_actions]") 
     REQUIRE(std::find(countries.begin(), countries.end(), kCanada) == countries.end());
 }
 
+TEST_CASE("opponent ops remove starred card after its event fires", "[game_loop]") {
+    constexpr CardId kUsJapanPactCard = 27;
+    constexpr CountryId kPoland = 12;
+    constexpr CountryId kJapan = 22;
+
+    GameState gs;
+    gs.pub = PublicState{};
+    gs.pub.defcon = 5;
+
+    const ActionEncoding action{
+        .card_id = kUsJapanPactCard,
+        .mode = ActionMode::Influence,
+        .targets = {kPoland, kPoland, kPoland, kPoland},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action_live(gs, action, Side::USSR, rng);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(next.influence_of(Side::US, kJapan) == 4);
+    REQUIRE(next.removed.test(kUsJapanPactCard));
+    REQUIRE_FALSE(next.discard.test(kUsJapanPactCard));
+}
+
 TEST_CASE("Cuban Missile Crisis battleground coup loses immediately", "[step]") {
     constexpr CountryId kThailandId = 79;
 

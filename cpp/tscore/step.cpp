@@ -419,7 +419,7 @@ void advance_space_track(PublicState& pub, Side side, int steps) {
 }
 
 void handle_card_played(PublicState& pub, CardId card_id, Side side, ActionMode mode) {
-    if (pub.discard.test(card_id) || pub.removed.test(card_id)) {
+    if (pub.removed.test(card_id)) {
         return;
     }
     if (card_id == kChinaCardId) {
@@ -429,6 +429,7 @@ void handle_card_played(PublicState& pub, CardId card_id, Side side, ActionMode 
     }
     const auto& spec = card_spec(card_id);
     if (mode == ActionMode::Event && spec.starred) {
+        pub.discard.reset(card_id);
         pub.removed.set(card_id);
     } else {
         pub.discard.set(card_id);

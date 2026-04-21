@@ -857,7 +857,7 @@ uint16_t aldrich_ames_region_key(CountryId country_id) {
 }
 
 void mark_frame_event_played(PublicState& pub, CardId card_id, Side side) {
-    if (pub.discard.test(card_id) || pub.removed.test(card_id)) {
+    if (pub.removed.test(card_id)) {
         return;
     }
     if (card_id == kChinaCardId) {
@@ -866,6 +866,7 @@ void mark_frame_event_played(PublicState& pub, CardId card_id, Side side) {
         return;
     }
     if (card_spec(card_id).starred) {
+        pub.discard.reset(card_id);
         pub.removed.set(card_id);
     } else {
         pub.discard.set(card_id);
