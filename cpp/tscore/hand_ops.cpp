@@ -789,7 +789,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
 
         case 108:
             if (side == Side::USSR) {
-                pub.vp -= 2;
+                pub.vp -= 1;
             }
             break;
 

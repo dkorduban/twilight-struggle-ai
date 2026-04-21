@@ -319,6 +319,7 @@ constexpr CountryId kSouthAfricaId = 71;
 constexpr CountryId kZimbabweId = 74;
 constexpr CountryId kFranceId = 7;
 constexpr CountryId kUkId = 17;
+constexpr CountryId kArgentinaId = 46;
 constexpr CountryId kWestGermanyId = 18;
 constexpr CountryId kPolandId = 12;
 constexpr CountryId kRomaniaId = 13;
@@ -1637,6 +1638,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
 
         case 86:
             next.vp -= 1;
+            add_influence(next, Side::USSR, kArgentinaId, 1);
             remove_all_influence(next, Side::USSR, kUkId);
             next.opec_cancelled = true;
             break;

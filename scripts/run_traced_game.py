@@ -126,9 +126,23 @@ def _make_terminal_post_snapshot(step, result) -> dict:
 
 
 def _post_snapshot_for_step(steps: list, idx: int, result) -> dict:
-    if idx + 1 < len(steps):
-        return _copy_state_dict(steps[idx + 1].pub_snapshot)
-    return _make_terminal_post_snapshot(steps[idx], result)
+    if idx + 1 >= len(steps):
+        return _make_terminal_post_snapshot(steps[idx], result)
+    step = steps[idx]
+    next_step = steps[idx + 1]
+    post = _copy_state_dict(next_step.pub_snapshot)
+    # At turn boundaries the next snapshot has had end-of-turn cleanup applied
+    # (DEFCON +1 capped at 5; milops/space_attempts/ops_modifier reset to 0).
+    # Attributing that cleanup to this step misreads the trace (e.g. "scoring
+    # card also improves DEFCON"). Undo the cleanup using step.vp_after /
+    # step.defcon_after (pre-cleanup) and the pre-step milops so no spurious
+    # reset delta is emitted for the turn-ending action.
+    if next_step.turn != step.turn:
+        post["vp"] = step.vp_after
+        post["defcon"] = step.defcon_after
+        post["milops"] = tuple(step.pub_snapshot["milops"])
+        post["space"] = tuple(step.pub_snapshot["space"])
+    return post
 
 
 def _rich_detail(
@@ -484,6 +498,32 @@ def _make_model_callback(model_path: Path, temperature: float = 0.0, seed: int =
     rng = torch.Generator()
     rng.manual_seed(seed ^ 0xDEADBEEF)
 
+    # DEFCON region thresholds matching cpp/tscore/legal_actions.cpp:14.
+    # Coup/realign target is restricted when pub.defcon <= threshold.
+    # Enum order: Europe=0, Asia=1, MiddleEast=2, CA=3, SA=4, Africa=5, SEAsia=6.
+    _region_thresholds = {
+        "Europe": 4, "Asia": 3, "MiddleEast": 2, "Middle East": 2,
+        "CentralAmerica": 1, "Central America": 1,
+        "SouthAmerica": 1, "South America": 1,
+        "Africa": 1, "SoutheastAsia": 3, "Southeast Asia": 3,
+    }
+    _country_region: dict[int, str] = {}
+    try:
+        import csv as _csv
+        with open("data/spec/countries.csv", newline="") as _f:
+            _lines = (ln for ln in _f if not ln.lstrip().startswith("#") and ln.strip())
+            for row in _csv.DictReader(_lines):
+                _country_region[int(row["country_id"])] = row["region"].strip()
+    except Exception:
+        pass
+
+    def _defcon_restricted(cid: int, defcon: int) -> bool:
+        region = _country_region.get(int(cid))
+        if region is None:
+            return False
+        thresh = _region_thresholds.get(region, 0)
+        return defcon <= thresh
+
     def _callback(state_dict, hand_list, holds_china: bool, side_int: int):
         if not hand_list:
             return None
@@ -539,7 +579,19 @@ def _make_model_callback(model_path: Path, temperature: float = 0.0, seed: int =
         if best_mode in (_MODE_INFLUENCE, _MODE_EVENT_FIRST):
             targets = _decode_influence_targets(best_card_id, country_logits, cards)
         elif best_mode in (_MODE_COUP, _MODE_REALIGN):
+            mode_enum = tscore.ActionMode.Coup if best_mode == _MODE_COUP else tscore.ActionMode.Realign
+            try:
+                legal_targets = set(int(c) for c in tscore.accessible_countries(side, state_dict, mode_enum))
+            except Exception:
+                legal_targets = None
             country_ids = _candidate_country_ids(country_logits)
+            if legal_targets is not None:
+                country_ids = [c for c in country_ids if int(c) in legal_targets]
+            # Filter DEFCON-restricted targets (region-dependent). Matches
+            # cpp/tscore/legal_actions.cpp:is_defcon_restricted to prevent the
+            # trace from showing illegal coups like US→S.Korea at DEFCON 2.
+            defcon = int(state_dict.get("defcon", 5))
+            country_ids = [c for c in country_ids if not _defcon_restricted(int(c), defcon)]
             best_target = max(
                 country_ids,
                 key=lambda cid: (_country_score(country_logits, cid), -cid),

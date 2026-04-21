@@ -94,7 +94,7 @@ void test_defectors_and_ops_trigger() {
     auto [pub, over, winner] = apply_live(gs, 108, ActionMode::Event, Side::USSR);
     (void)over;
     (void)winner;
-    require(pub.vp == -2, "Defectors fired by USSR should award 2 VP to US");
+    require(pub.vp == -1, "Defectors fired by USSR in action round should award 1 VP to US");
 
     gs = GameState{};
     gs.hands[ts::to_index(Side::USSR)].set(4);
