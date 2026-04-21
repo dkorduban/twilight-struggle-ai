@@ -25,6 +25,7 @@
 #include "decode_helpers.hpp"
 #include "game_data.hpp"
 #include "game_loop.hpp"
+#include "hand_ops.hpp"
 #include "human_openings.hpp"
 #include "mcts.hpp"
 #include "nn_features.hpp"

@@ -27,6 +27,7 @@
 #include "card_properties.hpp"
 #include "game_data.hpp"
 #include "game_loop.hpp"
+#include "hand_ops.hpp"
 #include "human_openings.hpp"
 #include "nn_features.hpp"
 #include "policies.hpp"
