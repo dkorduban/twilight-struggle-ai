@@ -2048,6 +2048,7 @@ std::optional<GameResult> finish_turn(GameState& gs, int turn) {
     gs.pub.ops_modifier = {0, 0};
     gs.pub.vietnam_revolts_active = false;
     gs.pub.nuclear_subs_active = false;
+    gs.pub.yuri_samantha_active = false;
     gs.pub.north_sea_oil_extra_ar = false;
     gs.pub.glasnost_free_ops = 0;
     gs.pub.cuban_missile_crisis_active = false;

@@ -1848,7 +1848,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         }
 
         case 106:
-            next.vp += next.space_attempts[to_index(Side::US)];
+            next.yuri_samantha_active = true;
             break;
 
         case 107:
@@ -1991,6 +1991,9 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
                 next.vp += side == Side::USSR ? vp : -vp;
             }
             next.space_attempts[to_index(side)] += 1;
+            if (next.yuri_samantha_active && side == Side::USSR) {
+                next.vp -= 1;
+            }
             handle_card_played(next, action.card_id, side, ActionMode::Space);
             break;
         }

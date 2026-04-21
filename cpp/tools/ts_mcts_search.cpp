@@ -468,6 +468,7 @@ std::optional<ts::GameResult> end_of_turn_cleanup(ts::GameState& gs, int turn) {
     gs.pub.space_attempts = {0, 0};
     gs.pub.ops_modifier = {0, 0};
     gs.pub.vietnam_revolts_active = false;
+    gs.pub.yuri_samantha_active = false;
     gs.pub.north_sea_oil_extra_ar = false;
     gs.pub.glasnost_free_ops = 0;
     gs.pub.chernobyl_blocked_region.reset();

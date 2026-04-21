@@ -215,9 +215,21 @@ void test_iron_lady_and_yuri() {
     require(next.opec_cancelled, "Iron Lady should cancel OPEC");
 
     pub = PublicState{};
-    pub.space_attempts[ts::to_index(Side::US)] = 2;
     next = apply_event(pub, 106, Side::USSR, 21U);
-    require(next.vp == 2, "Yuri and Samantha should award USSR VP equal to US space attempts");
+    require(next.vp == 0, "Yuri and Samantha should not score past space attempts immediately");
+    require(next.yuri_samantha_active, "Yuri and Samantha should set its active flag");
+
+    next.space[ts::to_index(Side::USSR)] = 8;
+    ts::Pcg64Rng yuri_rng(22U);
+    const auto [spaced, over, winner] = ts::apply_action(
+        next,
+        ActionEncoding{.card_id = 1, .mode = ActionMode::Space, .targets = {}},
+        Side::USSR,
+        yuri_rng
+    );
+    (void)over;
+    (void)winner;
+    require(spaced.vp == -1, "Yuri and Samantha should award 1 VP to US for a future USSR space attempt");
 }
 
 void test_flower_power_cancel() {

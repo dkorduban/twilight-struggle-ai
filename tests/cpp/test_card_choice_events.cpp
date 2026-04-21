@@ -63,6 +63,63 @@ TEST_CASE("Independent Reds equalizes only the chosen Eastern European country",
     REQUIRE(next.influence_of(Side::US, kYugoslaviaId) == 0);
 }
 
+TEST_CASE("Yuri and Samantha scores future USSR space attempts and clears at turn end", "[cards][game_loop]") {
+    constexpr CardId kYuriSamantha = 106;
+    constexpr CardId kSpaceCard = 1;
+
+    PublicState pub;
+    pub.space_attempts[to_index(Side::USSR)] = 2;
+    pub.space_attempts[to_index(Side::US)] = 3;
+
+    Pcg64Rng rng(0);
+    const auto [after_yuri, event_over, event_winner] = apply_action(
+        pub,
+        ActionEncoding{.card_id = kYuriSamantha, .mode = ActionMode::Event, .targets = {}},
+        Side::USSR,
+        rng
+    );
+
+    REQUIRE_FALSE(event_over);
+    REQUIRE_FALSE(event_winner.has_value());
+    REQUIRE(after_yuri.vp == 0);
+    REQUIRE(after_yuri.yuri_samantha_active);
+
+    auto before_space = after_yuri;
+    before_space.space[to_index(Side::USSR)] = 8;
+    const auto [after_space, space_over, space_winner] = apply_action(
+        before_space,
+        ActionEncoding{.card_id = kSpaceCard, .mode = ActionMode::Space, .targets = {}},
+        Side::USSR,
+        rng
+    );
+
+    REQUIRE_FALSE(space_over);
+    REQUIRE_FALSE(space_winner.has_value());
+    REQUIRE(after_space.vp == -1);
+    REQUIRE(after_space.space_attempts[to_index(Side::USSR)] == 3);
+
+    GameState gs;
+    gs.phase = GamePhase::Headline;
+    gs.setup_influence_remaining = {0, 0};
+    gs.pub.yuri_samantha_active = true;
+
+    const PolicyFn no_action = [](const PublicState&, const CardSet&, bool, Pcg64Rng&)
+        -> std::optional<ActionEncoding> {
+        return std::nullopt;
+    };
+
+    Pcg64Rng loop_rng(1);
+    (void)play_game_traced_from_state_ref_with_rng(
+        gs,
+        no_action,
+        no_action,
+        loop_rng,
+        GameLoopConfig{.skip_setup_influence = true}
+    );
+
+    REQUIRE_FALSE(gs.pub.yuri_samantha_active);
+}
+
 TEST_CASE("We Will Bury You waits for the next US action round and UN can cancel it", "[cards][game_loop]") {
     constexpr CardId kWeWillBuryYou = 53;
     constexpr CardId kUnIntervention = 32;

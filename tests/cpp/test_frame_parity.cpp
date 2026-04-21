@@ -135,6 +135,7 @@ uint64_t per_ar_state_hash(const GameState& gs) {
     hash_bool(hash, pub.salt_active);
     hash_bool(hash, pub.opec_cancelled);
     hash_bool(hash, pub.awacs_active);
+    hash_bool(hash, pub.yuri_samantha_active);
     hash_bool(hash, pub.north_sea_oil_extra_ar);
     hash_bool(hash, pub.we_will_bury_you_pending);
     hash_i64(hash, pub.we_will_bury_you_turn_ar);
@@ -455,6 +456,7 @@ std::optional<GameResult> end_of_turn_for_test(GameState& gs, int turn) {
     gs.pub.space_attempts = {0, 0};
     gs.pub.ops_modifier = {0, 0};
     gs.pub.vietnam_revolts_active = false;
+    gs.pub.yuri_samantha_active = false;
     gs.pub.north_sea_oil_extra_ar = false;
     gs.pub.glasnost_free_ops = 0;
     gs.pub.cuban_missile_crisis_active = false;
