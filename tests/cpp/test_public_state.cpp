@@ -410,6 +410,25 @@ TEST_CASE("Nuclear Subs expires before next-turn battleground coup", "[game_loop
     REQUIRE(result.winner == Side::USSR);
 }
 
+TEST_CASE("NORAD cancels when US does not control Canada", "[game_loop]") {
+    constexpr CountryId kCanada = 2;
+    constexpr CountryId kMexico = 42;
+
+    GameState gs;
+    gs.pub = PublicState{};
+    gs.pub.defcon = 2;
+    gs.pub.norad_active = true;
+    gs.pub.set_influence(Side::US, kCanada, 1);
+    gs.pub.set_influence(Side::US, kMexico, 1);
+
+    Pcg64Rng rng(0);
+    const auto result = resolve_norad_live(gs, rng);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE_FALSE(gs.pub.norad_active);
+    REQUIRE(gs.pub.influence_of(Side::US, kMexico) == 1);
+}
+
 TEST_CASE("final scoring includes Southeast Asia", "[scoring]") {
     constexpr CountryId kThailand = 79;
 

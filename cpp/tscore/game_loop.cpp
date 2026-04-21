@@ -213,6 +213,12 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb = nullptr
 ) {
+    constexpr CountryId kCanadaId = 2;
+    if (!controls_country(Side::US, kCanadaId, gs.pub)) {
+        gs.pub.norad_active = false;
+        return std::nullopt;
+    }
+
     std::vector<CountryId> eligible;
     for (const auto cid : all_country_ids()) {
         if (gs.pub.influence_of(Side::US, cid) > 0) {
