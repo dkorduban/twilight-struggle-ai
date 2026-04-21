@@ -263,11 +263,21 @@ def run_match(script_a: str, script_b: str, n_games: int, seed: int) -> MatchRes
     half = n_games // 2
 
     if script_a == HEURISTIC_SENTINEL and script_b == HEURISTIC_SENTINEL:
+        # Heuristic is deterministic, so one game per (side-assignment, seed) is all
+        # that differs. Real 2000g bid+2 run: 1439 USSR wins / 561 US wins (72/28).
+        # Naively returning 50/50 biases Elo fits by hiding the bid+2 side asymmetry
+        # — every per-side solver was inferring US > USSR for non-heuristic players.
+        # Split the 72/28 ratio symmetrically across the two side-assignments.
+        ussr_wr = 0.7195  # 1439/2000 from the 2000g bid+2 heur-vs-heur run
+        wins_a_ussr = round(half * ussr_wr)
+        wins_b_us = half - wins_a_ussr
+        wins_b_ussr = round(half * ussr_wr)
+        wins_a_us = half - wins_b_ussr
         return MatchResult(
             player_a="", player_b="",
-            wins_a=half, wins_b=half,
-            wins_a_ussr=half // 2, wins_b_ussr=half // 2,
-            wins_a_us=half - half // 2, wins_b_us=half - half // 2,
+            wins_a=wins_a_ussr + wins_a_us, wins_b=wins_b_us + wins_b_ussr,
+            wins_a_ussr=wins_a_ussr, wins_b_ussr=wins_b_ussr,
+            wins_a_us=wins_a_us, wins_b_us=wins_b_us,
         )
 
     if script_a == HEURISTIC_SENTINEL:
