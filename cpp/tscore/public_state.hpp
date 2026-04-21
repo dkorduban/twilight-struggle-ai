@@ -50,6 +50,7 @@ struct PublicState {
     bool opec_cancelled = false;
     bool awacs_active = false;
     bool north_sea_oil_extra_ar = false;
+    bool we_will_bury_you_pending = false;
     int glasnost_free_ops = 0;
     bool formosan_active = false;
     bool cuban_missile_crisis_active = false;
