@@ -850,6 +850,47 @@ TEST_CASE("Card 14 routes repeated country picks through the policy callback", "
     REQUIRE(next.influence_of(Side::USSR, 9) == 0);
 }
 
+TEST_CASE("Independent Reds equalizes US influence in one chosen Eastern European country", "[step]") {
+    constexpr CountryId kRomaniaId = 13;
+    constexpr CountryId kYugoslaviaId = 19;
+
+    PublicState pub;
+    pub.set_influence(Side::USSR, kRomaniaId, 3);
+    pub.set_influence(Side::US, kRomaniaId, 1);
+    pub.set_influence(Side::USSR, kYugoslaviaId, 2);
+
+    int country_select_calls = 0;
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+        REQUIRE(decision.kind == DecisionKind::CountrySelect);
+        REQUIRE(decision.source_card == static_cast<CardId>(22));
+        REQUIRE(decision.acting_side == Side::US);
+        for (int idx = 0; idx < decision.n_options; ++idx) {
+            if (decision.eligible_ids[idx] == kRomaniaId) {
+                ++country_select_calls;
+                return idx;
+            }
+        }
+        FAIL("Romania was not eligible for Independent Reds");
+        return 0;
+    };
+
+    const ActionEncoding action{
+        .card_id = 22,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action(pub, action, Side::US, rng, &policy_cb);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(country_select_calls == 1);
+    REQUIRE(next.influence_of(Side::US, kRomaniaId) == next.influence_of(Side::USSR, kRomaniaId));
+    REQUIRE(next.influence_of(Side::US, kRomaniaId) == 3);
+    REQUIRE(next.influence_of(Side::US, kYugoslaviaId) == 0);
+}
+
 TEST_CASE("Pershing II routes repeated country removals through the policy callback", "[step]") {
     PublicState pub;
     for (const auto cid : std::array<CountryId, 12>{1, 2, 4, 7, 8, 10, 11, 14, 15, 16, 17, 18}) {
