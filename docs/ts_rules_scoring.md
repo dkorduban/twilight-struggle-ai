@@ -123,7 +123,7 @@ Card 35: Formosan Resolution (US, 2 ops, Early War, starred).
 
 Effect: Taiwan is treated as a battleground country for Asia scoring purposes while US controls it. Cancelled if USSR plays the China Card for its event.
 
-**Implementation status:** Taiwan is not yet in countries.csv as a board country. The `formosan_active` flag is set when the card fires, but scoring.py does not yet use it. Adding Taiwan as a country (stability=3, SoutheastAsia, non-BG by default) is required to fully implement this.
+**Implementation status (2026-04-21):** FULLY IMPLEMENTED. Taiwan is in countries.csv (id=85, Asia, stability=3, non-BG). Both `cpp/tscore/scoring.cpp:33` and `python/tsrl/engine/scoring.py:150` gate Taiwan's BG status on `pub.formosan_active` via `country_id == kTaiwanId && pub.formosan_active`. The flag is cleared by USSR playing the China Card for its event (per card effect).
 
 ## SHUTTLE DIPLOMACY (Historical Reference)
 
