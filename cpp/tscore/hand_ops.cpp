@@ -1220,7 +1220,10 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     }
 
     if (action.mode == ActionMode::Event && is_cat_c_card(action.card_id)) {
-        return apply_hand_event(gs, action.card_id, side, rng, policy_cb, effective_frame_log);
+        auto [event_pub, over, winner] =
+            apply_hand_event(gs, action.card_id, side, rng, policy_cb, effective_frame_log);
+        gs.pub = event_pub;
+        return {event_pub, over, winner};
     }
 
     auto [new_pub, over, winner] = apply_action(
