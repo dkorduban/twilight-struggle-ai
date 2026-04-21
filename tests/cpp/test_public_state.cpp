@@ -245,6 +245,21 @@ TEST_CASE("Cuban Missile Crisis keeps coup mode legal", "[legal_actions]") {
     REQUIRE(std::find(modes.begin(), modes.end(), ActionMode::Coup) != modes.end());
 }
 
+TEST_CASE("Realign legal countries exclude empty countries", "[legal_actions]") {
+    constexpr CardId kOlympicGames = 20;
+    constexpr CountryId kPoland = 12;
+    constexpr CountryId kCanada = 2;
+
+    PublicState pub;
+    pub.defcon = 5;
+    pub.set_influence(Side::US, kPoland, 1);
+
+    const auto countries = legal_countries(kOlympicGames, ActionMode::Realign, pub, Side::USSR);
+
+    REQUIRE(std::find(countries.begin(), countries.end(), kPoland) != countries.end());
+    REQUIRE(std::find(countries.begin(), countries.end(), kCanada) == countries.end());
+}
+
 TEST_CASE("Cuban Missile Crisis battleground coup loses immediately", "[step]") {
     constexpr CountryId kThailandId = 79;
 

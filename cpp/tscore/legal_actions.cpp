@@ -79,7 +79,9 @@ std::vector<CountryId> filtered_accessible_countries(Side side, const PublicStat
             base.begin(),
             base.end(),
             [&](CountryId cid) {
-                return is_defcon_restricted(cid, pub) ||
+                return (mode == ActionMode::Realign &&
+                           pub.influence_of(Side::USSR, cid) + pub.influence_of(Side::US, cid) == 0) ||
+                    is_defcon_restricted(cid, pub) ||
                     (side == Side::USSR && (nato_protected(cid, pub) || (pub.us_japan_pact_active && cid == 22)));
             }
         ),

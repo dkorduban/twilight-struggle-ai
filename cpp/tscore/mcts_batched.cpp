@@ -462,11 +462,12 @@ CompactLegalCardsResult collect_compact_legal_cards(const Observation& obs) {
 // edge/child/resolved_targets vectors can be reserved precisely (no reallocations).
 int exact_edge_count(const CompactLegalCardsResult& legal) {
     const int coup_count = static_cast<int>(legal.cache.coup.size());
+    const int realign_count = static_cast<int>(legal.cache.realign.size());
     int total = 0;
     for (const auto& card : legal.cards) {
         total += card.has_influence ? 1 : 0;
         total += card.has_coup ? coup_count : 0;
-        total += card.has_realign ? coup_count : 0;  // realign uses same country set as coup
+        total += card.has_realign ? realign_count : 0;
         total += card.has_space ? 1 : 0;
         total += card.has_event ? 1 : 0;
     }
@@ -1312,7 +1313,7 @@ ExpansionResult expand_from_raw_fast(
 
     // --- Pre-compute country softmax ONCE outside card loop ---
     // influence_probs[i] = softmax probability for cache.influence[i]
-    // military_probs[i]  = softmax probability for cache.coup[i] (same set as realign)
+    // military_probs[i]  = softmax probability for cache.coup[i]
     float influence_probs[kMaxCountryLogits];
     int inf_count = 0;
     float military_probs[kMaxCountryLogits];
