@@ -23,6 +23,7 @@ add_executable(test_tscore
     test_frame_parity.cpp
     test_frame_regression.cpp
     test_ismcts_regression.cpp
+    test_card_choice_events.cpp
     test_observation.cpp
     test_public_state.cpp
     test_adjacency.cpp
