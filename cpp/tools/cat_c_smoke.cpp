@@ -57,7 +57,7 @@ void test_salt_draw() {
     auto [pub, over, winner] = apply_live(gs, 46, ActionMode::Event, Side::USSR);
     (void)over;
     (void)winner;
-    require(pub.defcon == 4, "SALT Negotiations should raise DEFCON by 1");
+    require(pub.defcon == 5, "SALT Negotiations should raise DEFCON by 2 and clamp at 5");
     require(pub.salt_active, "SALT Negotiations should set salt_active");
     require(!pub.discard.test(7), "SALT Negotiations should remove the chosen discard card from the discard pile");
     require(gs.hands[ts::to_index(Side::USSR)].test(7), "SALT Negotiations should move one discard card into the phasing hand");

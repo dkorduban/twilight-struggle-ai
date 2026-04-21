@@ -426,7 +426,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             break;
 
         case 46: {
-            pub.defcon = std::min(5, pub.defcon + 1);
+            pub.defcon = std::min(5, pub.defcon + 2);
             pub.salt_active = true;
             auto discarded = hand_to_vector(pub.discard);
             if (!discarded.empty()) {

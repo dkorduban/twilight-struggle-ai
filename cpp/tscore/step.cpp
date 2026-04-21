@@ -1100,7 +1100,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 46:
-            next.defcon = std::min(5, next.defcon + 1);
+            next.defcon = std::min(5, next.defcon + 2);
             next.salt_active = true;
             break;
 

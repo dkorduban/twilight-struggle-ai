@@ -1,3 +1,5 @@
+#include <array>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "game_loop.hpp"
@@ -6,6 +8,25 @@
 #include "types.hpp"
 
 using namespace ts;
+
+TEST_CASE("SALT Negotiations raises DEFCON by two and clamps at five", "[cards][step]") {
+    constexpr CardId kSaltNegotiations = 46;
+    constexpr std::array<std::pair<int, int>, 2> kCases = {{{2, 4}, {4, 5}}};
+
+    for (const auto [initial_defcon, expected_defcon] : kCases) {
+        PublicState pub;
+        pub.defcon = initial_defcon;
+
+        const ActionEncoding action{.card_id = kSaltNegotiations, .mode = ActionMode::Event, .targets = {}};
+        Pcg64Rng rng(0);
+        const auto [next, over, winner] = apply_action(pub, action, Side::USSR, rng);
+
+        REQUIRE_FALSE(over);
+        REQUIRE_FALSE(winner.has_value());
+        REQUIRE(next.defcon == expected_defcon);
+        REQUIRE(next.salt_active);
+    }
+}
 
 TEST_CASE("Independent Reds equalizes only the chosen Eastern European country", "[cards][step]") {
     constexpr CountryId kRomaniaId = 13;
