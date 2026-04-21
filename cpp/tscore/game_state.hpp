@@ -134,6 +134,7 @@ struct GameState {
     std::array<CardId, 2> headline_card = {0, 0};
     bool game_over = false;
     std::optional<Side> winner;
+    bool scoring_auto_win = false;
     std::vector<DecisionFrame> frame_stack;  // pending sub-decisions
     bool frame_stack_mode = false;  // choose_* pushes to frame_stack and suspends
     // Remaining setup-phase influence placements: index 0 = USSR, index 1 = US.

@@ -1993,7 +1993,8 @@ void mark_game_done(GameSlot& slot, GameResult result) {
     slot.root.reset();
 }
 
-std::string end_reason(const PublicState& pub, std::optional<Side> winner, int card_id = -1) {
+std::string end_reason(const GameState& gs, std::optional<Side> winner, int card_id = -1) {
+    const auto& pub = gs.pub;
     if (pub.defcon <= 1) {
         return "defcon1";
     }
@@ -2001,7 +2002,7 @@ std::string end_reason(const PublicState& pub, std::optional<Side> winner, int c
         return "wargames";
     }
     if (winner.has_value()) {
-        return "europe_control";
+        return gs.scoring_auto_win ? "europe_control" : "vp_threshold";
     }
     return "vp_threshold";
 }
@@ -2256,7 +2257,7 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                         .winner = winner,
                         .final_vp = slot.root_state.pub.vp,
                         .end_turn = slot.root_state.pub.turn,
-                        .end_reason = end_reason(slot.root_state.pub, winner, pending.action.card_id),
+                        .end_reason = end_reason(slot.root_state, winner, pending.action.card_id),
                     });
                 }
                 break;
@@ -2288,7 +2289,7 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                             .winner = winner,
                             .final_vp = slot.root_state.pub.vp,
                             .end_turn = slot.root_state.pub.turn,
-                            .end_reason = end_reason(slot.root_state.pub, winner),
+                            .end_reason = end_reason(slot.root_state, winner),
                         });
                         break;
                     }
@@ -2303,7 +2304,7 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                             .winner = winner,
                             .final_vp = slot.root_state.pub.vp,
                             .end_turn = slot.root_state.pub.turn,
-                            .end_reason = end_reason(slot.root_state.pub, winner),
+                            .end_reason = end_reason(slot.root_state, winner),
                         });
                         break;
                     }
@@ -2337,7 +2338,7 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                             .winner = winner,
                             .final_vp = slot.root_state.pub.vp,
                             .end_turn = slot.root_state.pub.turn,
-                            .end_reason = end_reason(slot.root_state.pub, winner),
+                            .end_reason = end_reason(slot.root_state, winner),
                         });
                         break;
                     }
@@ -2356,7 +2357,7 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                             .winner = winner,
                             .final_vp = slot.root_state.pub.vp,
                             .end_turn = slot.root_state.pub.turn,
-                            .end_reason = end_reason(slot.root_state.pub, winner),
+                            .end_reason = end_reason(slot.root_state, winner),
                         });
                         break;
                     }
@@ -2563,7 +2564,7 @@ void commit_best_action(
             .winner = winner,
             .final_vp = slot.root_state.pub.vp,
             .end_turn = slot.root_state.pub.turn,
-            .end_reason = end_reason(slot.root_state.pub, winner),
+            .end_reason = end_reason(slot.root_state, winner, action.card_id),
         });
         return;
     }
@@ -2577,7 +2578,7 @@ void commit_best_action(
                     .winner = norad_winner,
                     .final_vp = slot.root_state.pub.vp,
                     .end_turn = slot.root_state.pub.turn,
-                    .end_reason = end_reason(slot.root_state.pub, norad_winner),
+                    .end_reason = end_reason(slot.root_state, norad_winner),
                 });
                 return;
             }
@@ -3706,7 +3707,7 @@ void commit_greedy_action(GameSlot& slot, const ActionEncoding& action, const Po
             .winner = winner,
             .final_vp = slot.root_state.pub.vp,
             .end_turn = slot.root_state.pub.turn,
-            .end_reason = end_reason(slot.root_state.pub, winner, resolved.card_id),
+            .end_reason = end_reason(slot.root_state, winner, resolved.card_id),
         });
         return;
     }
@@ -3720,7 +3721,7 @@ void commit_greedy_action(GameSlot& slot, const ActionEncoding& action, const Po
                     .winner = norad_winner,
                     .final_vp = slot.root_state.pub.vp,
                     .end_turn = slot.root_state.pub.turn,
-                    .end_reason = end_reason(slot.root_state.pub, norad_winner),
+                    .end_reason = end_reason(slot.root_state, norad_winner),
                 });
                 return;
             }

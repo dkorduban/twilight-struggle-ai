@@ -232,7 +232,8 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_norad(
     return std::tuple{gs.pub, over, winner};
 }
 
-std::string end_reason(const PublicState& pub, std::optional<Side> winner, int card_id = -1) {
+std::string end_reason(const GameState& gs, std::optional<Side> winner, int card_id = -1) {
+    const auto& pub = gs.pub;
     if (pub.defcon <= 1) {
         return "defcon1";
     }
@@ -240,7 +241,7 @@ std::string end_reason(const PublicState& pub, std::optional<Side> winner, int c
         return "wargames";
     }
     if (winner.has_value()) {
-        return "europe_control";
+        return gs.scoring_auto_win ? "europe_control" : "vp_threshold";
     }
     return "vp_threshold";
 }
@@ -359,7 +360,7 @@ std::optional<GameResult> run_headline_phase(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason(gs.pub, winner, action.card_id),
+                .end_reason = end_reason(gs, winner, action.card_id),
             };
         }
     }
@@ -394,7 +395,7 @@ std::optional<GameResult> run_action_rounds(
                         .winner = winner,
                         .final_vp = gs.pub.vp,
                         .end_turn = gs.pub.turn,
-                        .end_reason = end_reason(gs.pub, winner),
+                        .end_reason = end_reason(gs, winner),
                     };
                 }
                 continue;
@@ -407,7 +408,7 @@ std::optional<GameResult> run_action_rounds(
                         .winner = winner,
                         .final_vp = gs.pub.vp,
                         .end_turn = gs.pub.turn,
-                        .end_reason = end_reason(gs.pub, winner),
+                        .end_reason = end_reason(gs, winner),
                     };
                 }
                 continue;
@@ -465,7 +466,7 @@ std::optional<GameResult> run_action_rounds(
                     .winner = winner,
                     .final_vp = gs.pub.vp,
                     .end_turn = gs.pub.turn,
-                    .end_reason = end_reason(gs.pub, winner, action->card_id),
+                    .end_reason = end_reason(gs, winner, action->card_id),
                 };
             }
             if (side == Side::USSR && gs.pub.norad_active && gs.pub.defcon == 2) {
@@ -477,7 +478,7 @@ std::optional<GameResult> run_action_rounds(
                             .winner = norad_winner,
                             .final_vp = gs.pub.vp,
                             .end_turn = gs.pub.turn,
-                            .end_reason = end_reason(gs.pub, norad_winner),
+                            .end_reason = end_reason(gs, norad_winner),
                         };
                     }
                 }
@@ -507,7 +508,7 @@ std::optional<GameResult> run_extra_action_round(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason(gs.pub, winner),
+                .end_reason = end_reason(gs, winner),
             };
         }
         return std::nullopt;
@@ -523,7 +524,7 @@ std::optional<GameResult> run_extra_action_round(
                 .winner = winner,
                 .final_vp = gs.pub.vp,
                 .end_turn = gs.pub.turn,
-                .end_reason = end_reason(gs.pub, winner),
+                .end_reason = end_reason(gs, winner),
             };
         }
         return std::nullopt;
@@ -573,7 +574,7 @@ std::optional<GameResult> run_extra_action_round(
             .winner = winner,
             .final_vp = gs.pub.vp,
             .end_turn = gs.pub.turn,
-            .end_reason = end_reason(gs.pub, winner),
+            .end_reason = end_reason(gs, winner),
         };
     }
     if (side == Side::USSR && gs.pub.norad_active && gs.pub.defcon == 2) {
@@ -585,7 +586,7 @@ std::optional<GameResult> run_extra_action_round(
                     .winner = norad_winner,
                     .final_vp = gs.pub.vp,
                     .end_turn = gs.pub.turn,
-                    .end_reason = end_reason(gs.pub, norad_winner),
+                    .end_reason = end_reason(gs, norad_winner),
                 };
             }
         }
@@ -1741,6 +1742,7 @@ void resume_card_5(GameState& gs, const DecisionFrame& frame, const FrameAction&
             mark_frame_event_played(gs.pub, frame.source_card, frame.acting_side);
             gs.game_over = true;
             gs.winner = result.winner;
+            gs.scoring_auto_win = true;
             return;
         }
     } else if (card_spec(action.card_id).side == Side::US) {

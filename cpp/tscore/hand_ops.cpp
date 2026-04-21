@@ -113,6 +113,9 @@ std::tuple<PublicState, bool, std::optional<Side>> fire_event_with_state(
         gs.frame_stack_mode
     );
     gs.pub = new_pub;
+    if (over && card_spec(card_id).is_scoring) {
+        gs.scoring_auto_win = true;
+    }
     return {new_pub, over, winner};
 }
 
@@ -271,6 +274,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
                     if (result.game_over) {
                         card_played(pub, 5, side);
                         gs.pub = pub;
+                        gs.scoring_auto_win = true;
                         return {pub, true, result.winner};
                     }
                 } else if (card_spec(target).side == Side::US) {
@@ -1215,6 +1219,9 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
         gs.frame_stack_mode
     );
     gs.pub = new_pub;
+    if (over && action.mode == ActionMode::Event && card_spec(action.card_id).is_scoring) {
+        gs.scoring_auto_win = true;
+    }
     if (!over && action.mode == ActionMode::Space) {
         const auto opponent = other_side(side);
         const auto l6_holder = gs.pub.space_level6_first;

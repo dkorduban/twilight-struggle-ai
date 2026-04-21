@@ -123,6 +123,7 @@ GameState reset_game_impl(std::span<const CardId> shuffled_deck) {
     gs.phase = GamePhase::Setup;
     gs.current_side = Side::USSR;
     gs.ar_index = 1;
+    gs.scoring_auto_win = false;
     gs.setup_influence_remaining = {kUSSRSetupInfluence, kUSSetupInfluence};
     return gs;
 }
