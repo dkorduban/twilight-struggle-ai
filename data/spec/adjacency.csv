@@ -12,18 +12,20 @@
 # id=64 (Libya/Africa conflict in countries.csv) is intentionally unused here.
 # Libya is a MiddleEast country only (id=33).
 #
-# Total adjacency pairs: 140
+# Total adjacency pairs: 141
 #
 # Spec retraction 2026-04-21 (parallel to #116 UK/Turkey Europe-BG retraction):
 # Prior adjacency.csv diverged from the TS Deluxe official map. User-authoritative
 # corrections applied:
-#   - Nicaragua neighbors: Cuba, Costa Rica only (was: El Salvador, Honduras, Costa Rica)
+#   - Nicaragua neighbors: Cuba, Honduras, Costa Rica (was missing Cuba)
 #   - South Africa neighbors: Angola, Botswana only (was: Botswana, SE African, Zimbabwe)
 #   - Spain/Portugal neighbors: France, Italy, Morocco (was missing Italy)
 #   - Zimbabwe neighbors: Zaire, Botswana, SE African (was: Botswana, Mozambique, SA)
 #   - SE African States neighbors: Kenya, Zimbabwe (was: Angola, Zaire, Kenya, Mozambique, SA)
-# Removed: 38,43 | 41,43 | 57,69 | 60,69 | 66,69 | 66,74 | 69,71 | 71,74
+# Removed: 38,43 | 57,69 | 60,69 | 66,69 | 66,74 | 69,71 | 71,74
 # Added:   10,14 | 36,43 | 57,71 | 60,74 | 69,74
+# (Note 41,43 Honduras-Nicaragua was incorrectly removed initially and restored after
+#  tsreplayer corpus evidence + user re-audit confirmed it is standard TS Deluxe.)
 #
 country_a,country_b
 0,3  # Austria -- Czechoslovakia
@@ -109,6 +111,7 @@ country_a,country_b
 38,41  # El Salvador -- Honduras
 39,41  # Guatemala -- Honduras
 39,42  # Guatemala -- Mexico
+41,43  # Honduras -- Nicaragua
 41,45  # Honduras -- Costa Rica
 42,81  # Mexico -- USA
 43,45  # Nicaragua -- Costa Rica
