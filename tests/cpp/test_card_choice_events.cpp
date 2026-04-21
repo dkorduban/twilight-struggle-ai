@@ -63,6 +63,57 @@ TEST_CASE("Independent Reds equalizes only the chosen Eastern European country",
     REQUIRE(next.influence_of(Side::US, kYugoslaviaId) == 0);
 }
 
+TEST_CASE("South African Unrest applies only the selected mode", "[cards][step]") {
+    constexpr CardId kSouthAfricanUnrest = 56;
+    constexpr CountryId kAngolaId = 57;
+    constexpr CountryId kBotswanaId = 58;
+    constexpr CountryId kSouthAfricaId = 71;
+
+    auto apply_with_mode = [=](int mode_choice, CountryId country_choice) {
+        int option_calls = 0;
+        int country_calls = 0;
+        PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+            REQUIRE(decision.source_card == static_cast<CardId>(56));
+            REQUIRE(decision.acting_side == Side::USSR);
+            if (decision.kind == DecisionKind::SmallChoice) {
+                ++option_calls;
+                REQUIRE(decision.n_options == 2);
+                return mode_choice;
+            }
+            REQUIRE(decision.kind == DecisionKind::CountrySelect);
+            ++country_calls;
+            for (int idx = 0; idx < decision.n_options; ++idx) {
+                if (decision.eligible_ids[idx] == country_choice) {
+                    return idx;
+                }
+            }
+            FAIL("Requested South African Unrest neighbor was not eligible");
+            return 0;
+        };
+
+        PublicState pub;
+        const ActionEncoding action{.card_id = kSouthAfricanUnrest, .mode = ActionMode::Event, .targets = {}};
+        Pcg64Rng rng(0);
+        const auto [next, over, winner] = apply_action(pub, action, Side::USSR, rng, &policy_cb);
+
+        REQUIRE_FALSE(over);
+        REQUIRE_FALSE(winner.has_value());
+        REQUIRE(option_calls == 1);
+        REQUIRE(country_calls == (mode_choice == 0 ? 0 : 1));
+        return next;
+    };
+
+    const auto south_africa_only = apply_with_mode(0, kAngolaId);
+    REQUIRE(south_africa_only.influence_of(Side::USSR, kSouthAfricaId) == 2);
+    REQUIRE(south_africa_only.influence_of(Side::USSR, kAngolaId) == 0);
+    REQUIRE(south_africa_only.influence_of(Side::USSR, kBotswanaId) == 0);
+
+    const auto split = apply_with_mode(1, kBotswanaId);
+    REQUIRE(split.influence_of(Side::USSR, kSouthAfricaId) == 1);
+    REQUIRE(split.influence_of(Side::USSR, kAngolaId) == 0);
+    REQUIRE(split.influence_of(Side::USSR, kBotswanaId) == 2);
+}
+
 TEST_CASE("Yuri and Samantha scores future USSR space attempts and clears at turn end", "[cards][game_loop]") {
     constexpr CardId kYuriSamantha = 106;
     constexpr CardId kSpaceCard = 1;

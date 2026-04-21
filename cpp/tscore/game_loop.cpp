@@ -891,6 +891,8 @@ constexpr CountryId kFrameFranceId = 7;
 constexpr CountryId kFrameUkId = 17;
 constexpr CountryId kFrameIsraelId = 30;
 constexpr CountryId kFrameLebanonId = 32;
+constexpr CountryId kFrameAngolaId = 57;
+constexpr CountryId kFrameBotswanaId = 58;
 constexpr CountryId kFrameSouthAfricaId = 71;
 constexpr std::array<CountryId, 3> kFrameSuezTargets = {kFrameFranceId, kFrameUkId, kFrameIsraelId};
 
@@ -2766,6 +2768,24 @@ void resume_suez_crisis(GameState& gs, const DecisionFrame& frame, const FrameAc
 }
 
 void resume_south_african_unrest(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
+    if (frame.kind == FrameKind::SmallChoice) {
+        const auto mode = std::clamp(action.option_index, 0, 1);
+        if (mode == 0) {
+            add_frame_influence(gs.pub, Side::USSR, kFrameSouthAfricaId, 2);
+            finish_frame_event(gs, frame.source_card, frame.acting_side);
+            return;
+        }
+
+        add_frame_influence(gs.pub, Side::USSR, kFrameSouthAfricaId, 1);
+        std::bitset<kCountrySlots> eligible;
+        eligible.set(static_cast<size_t>(kFrameAngolaId));
+        eligible.set(static_cast<size_t>(kFrameBotswanaId));
+        push_country_frame(gs, frame.source_card, frame.acting_side, eligible, 1, 2, static_cast<uint16_t>(mode));
+        if (gs.frame_stack.empty()) {
+            finish_frame_event(gs, frame.source_card, frame.acting_side);
+        }
+        return;
+    }
     if (frame.kind == FrameKind::CountryPick &&
         frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
         add_frame_influence(gs.pub, Side::USSR, action.country_id, 2);

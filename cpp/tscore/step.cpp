@@ -1213,24 +1213,32 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 56: {
-            // South African Unrest: +2 to South Africa, +2 to chosen neighbor
-            add_influence(next, Side::USSR, kSouthAfricaId, 2);
-            static constexpr std::array<CountryId, 3> kSaNeighbors = {kBotswanaId, 69, kZimbabweId};
-            const auto neighbor = choose_country(
-                next,
-                56,
-                Side::USSR,
-                kSaNeighbors,
-                rng,
-                policy_cb,
-                frame_log,
-                frame_stack_mode
-            );
-            if (neighbor == kInvalidCountryId) {
-                annotate_latest_frame(frame_log, 0, 1);
+            const auto mode = choose_option(next, 56, Side::USSR, 2, rng, policy_cb, frame_log, frame_stack_mode);
+            if (mode < 0) {
+                annotate_latest_frame(frame_log, 0, 2);
                 return {next, false, std::nullopt};
             }
-            add_influence(next, Side::USSR, neighbor, 2);
+            if (mode == 0) {
+                add_influence(next, Side::USSR, kSouthAfricaId, 2);
+            } else {
+                add_influence(next, Side::USSR, kSouthAfricaId, 1);
+                static constexpr std::array<CountryId, 2> kSaNeighbors = {kAngolaId, kBotswanaId};
+                const auto neighbor = choose_country(
+                    next,
+                    56,
+                    Side::USSR,
+                    kSaNeighbors,
+                    rng,
+                    policy_cb,
+                    frame_log,
+                    frame_stack_mode
+                );
+                if (neighbor == kInvalidCountryId) {
+                    annotate_latest_frame(frame_log, 1, 2, static_cast<uint16_t>(mode));
+                    return {next, false, std::nullopt};
+                }
+                add_influence(next, Side::USSR, neighbor, 2);
+            }
             break;
         }
 

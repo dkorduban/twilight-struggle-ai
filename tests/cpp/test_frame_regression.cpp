@@ -227,7 +227,7 @@ TEST_CASE("frame_regression Independent Reds records a CountryPick frame", "[fra
     );
 }
 
-TEST_CASE("frame_regression CIA Created records a CountryPick frame", "[frame_regression]") {
+TEST_CASE("frame_regression South African Unrest records a SmallChoice frame", "[frame_regression]") {
     expect_first_frame_kind(
         {
             .card_id = 56,
@@ -235,7 +235,7 @@ TEST_CASE("frame_regression CIA Created records a CountryPick frame", "[frame_re
             .turn = 4,
             .extra_hand_cards = {{Side::USSR, 7}, {Side::USSR, 11}},
         },
-        ExpectedFrameKind::CountryPick
+        ExpectedFrameKind::SmallChoice
     );
 }
 
@@ -279,7 +279,7 @@ TEST_CASE("frame_regression Terrorism country choice records a CountryPick frame
     );
 }
 
-TEST_CASE("frame_regression CIA Created influence placement remains a CountryPick frame", "[frame_regression]") {
+TEST_CASE("frame_regression South African Unrest influence placement starts with mode choice", "[frame_regression]") {
     expect_first_frame_kind(
         {
             .card_id = 56,
@@ -288,7 +288,7 @@ TEST_CASE("frame_regression CIA Created influence placement remains a CountryPic
             .extra_hand_cards = {{Side::USSR, 7}, {Side::USSR, 11}},
             .influence = {{Side::US, 22, 1}},
         },
-        ExpectedFrameKind::CountryPick
+        ExpectedFrameKind::SmallChoice
     );
 }
 
@@ -381,7 +381,7 @@ TEST_CASE("engine_step_subframe Socialist Governments resolves influence removal
 #endif
 }
 
-TEST_CASE("engine_step_subframe CIA Created resolves influence placement", "[frame_regression]") {
+TEST_CASE("engine_step_subframe South African Unrest resolves split influence mode", "[frame_regression]") {
 #if TS_FRAME_REGRESSION_HAS_FRAME_API
     GameState gs = make_action_round_state({
         .card_id = 56,
@@ -401,10 +401,21 @@ TEST_CASE("engine_step_subframe CIA Created resolves influence placement", "[fra
     const auto top = engine_step_toplevel(gs, action, Side::USSR, rng);
     REQUIRE(top.pushed_subframe);
 
+    const auto option_frame = engine_peek(gs);
+    REQUIRE(option_frame.has_value());
+    REQUIRE(option_frame->kind == FrameKind::SmallChoice);
+    REQUIRE(option_frame->source_card == 56);
+
+    const auto option = engine_step_subframe(gs, FrameAction{.option_index = 1}, rng);
+    REQUIRE(option.pushed_subframe);
+    REQUIRE(gs.pub.influence_of(Side::USSR, 71) == south_africa_before + 1);
+
     const auto frame = engine_peek(gs);
     REQUIRE(frame.has_value());
     REQUIRE(frame->kind == FrameKind::CountryPick);
     REQUIRE(frame->source_card == 56);
+    REQUIRE(frame->step_index == 1);
+    REQUIRE(frame->total_steps == 2);
 
     CountryId chosen = 0;
     for (int raw = 1; raw < kCountrySlots; ++raw) {
@@ -419,7 +430,7 @@ TEST_CASE("engine_step_subframe CIA Created resolves influence placement", "[fra
     const auto sub = engine_step_subframe(gs, FrameAction{.country_id = chosen}, rng);
     REQUIRE_FALSE(sub.pushed_subframe);
     REQUIRE(gs.frame_stack.empty());
-    REQUIRE(gs.pub.influence_of(Side::USSR, 71) == south_africa_before + 2);
+    REQUIRE(gs.pub.influence_of(Side::USSR, 71) == south_africa_before + 1);
     REQUIRE(gs.pub.influence_of(Side::USSR, chosen) == chosen_before + 2);
 #else
     SUCCEED("DecisionFrame frame stack API is not available in this worktree");
