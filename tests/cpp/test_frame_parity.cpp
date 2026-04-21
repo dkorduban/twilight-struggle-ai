@@ -136,6 +136,8 @@ uint64_t per_ar_state_hash(const GameState& gs) {
     hash_bool(hash, pub.opec_cancelled);
     hash_bool(hash, pub.awacs_active);
     hash_bool(hash, pub.north_sea_oil_extra_ar);
+    hash_bool(hash, pub.we_will_bury_you_pending);
+    hash_i64(hash, pub.we_will_bury_you_turn_ar);
     hash_i64(hash, pub.glasnost_free_ops);
     hash_bool(hash, pub.formosan_active);
     hash_bool(hash, pub.cuban_missile_crisis_active);
