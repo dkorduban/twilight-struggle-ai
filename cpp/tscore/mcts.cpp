@@ -29,6 +29,7 @@ constexpr int kMaxCardLogits = 112;   // kCardSlots
 constexpr int kMaxModeLogits = 8;     // generous upper bound for ActionMode values
 constexpr int kMaxCountryLogits = 86; // kCountrySlots
 constexpr int kMaxStrategies = 8;     // generous upper bound
+constexpr int kMaxChoiceLogits = 8;   // small-choice frame options
 
 /// Extract a contiguous float tensor slice into a stack array.
 /// tensor must be 1-D and contiguous.  Returns element count (== tensor.size(0)).
@@ -55,6 +56,190 @@ torch::Tensor get_tensor(const c10::impl::GenericDict& dict, const char* key, bo
         return {};
     }
     return dict.at(key_value).toTensor();
+}
+
+[[nodiscard]] std::optional<DecisionFrame> pending_frame(const GameState& state) {
+    if (!state.frame_stack_mode || state.frame_stack.empty()) {
+        return std::nullopt;
+    }
+    return engine_peek(state);
+}
+
+[[nodiscard]] Side actor_side(const GameState& state) {
+    if (const auto frame = pending_frame(state); frame.has_value()) {
+        return frame->acting_side;
+    }
+    return state.pub.phasing;
+}
+
+[[nodiscard]] std::vector<FrameAction> collect_frame_actions(const DecisionFrame& frame) {
+    std::vector<FrameAction> actions;
+    switch (frame.kind) {
+        case FrameKind::SmallChoice:
+        case FrameKind::CancelChoice:
+            actions.reserve(frame.eligible_n);
+            for (int option = 0; option < static_cast<int>(frame.eligible_n); ++option) {
+                actions.push_back(FrameAction{.option_index = option});
+            }
+            break;
+        case FrameKind::DeferredOps:
+            if (frame.eligible_countries.none()) {
+                actions.reserve(frame.eligible_n);
+                for (int option = 0; option < static_cast<int>(frame.eligible_n); ++option) {
+                    actions.push_back(FrameAction{.option_index = option});
+                }
+            } else {
+                actions.reserve(frame.eligible_countries.count());
+                for (int raw = 0; raw < static_cast<int>(frame.eligible_countries.size()); ++raw) {
+                    if (frame.eligible_countries.test(static_cast<size_t>(raw))) {
+                        actions.push_back(FrameAction{.country_id = static_cast<CountryId>(raw)});
+                    }
+                }
+            }
+            break;
+        case FrameKind::CountryPick:
+        case FrameKind::FreeOpsInfluence:
+        case FrameKind::NoradInfluence:
+            actions.reserve(frame.eligible_countries.count());
+            for (int raw = 0; raw < static_cast<int>(frame.eligible_countries.size()); ++raw) {
+                if (frame.eligible_countries.test(static_cast<size_t>(raw))) {
+                    actions.push_back(FrameAction{.country_id = static_cast<CountryId>(raw)});
+                }
+            }
+            break;
+        case FrameKind::CardSelect:
+        case FrameKind::ForcedDiscard:
+            actions.reserve(frame.eligible_cards.count());
+            for (int raw = 1; raw <= kMaxCardId; ++raw) {
+                if (frame.eligible_cards.test(static_cast<size_t>(raw))) {
+                    actions.push_back(FrameAction{.card_id = static_cast<CardId>(raw)});
+                }
+            }
+            break;
+        case FrameKind::TopLevelAR:
+        case FrameKind::SetupPlacement:
+        case FrameKind::Headline:
+            // TODO(task-118): these frame kinds do not yet expose enough
+            // frame-local action data for the legacy MCTS ActionEncoding API.
+            break;
+    }
+    return actions;
+}
+
+[[nodiscard]] ActionEncoding encode_frame_action(const DecisionFrame& frame, const FrameAction& action) {
+    switch (frame.kind) {
+        case FrameKind::SmallChoice:
+        case FrameKind::CancelChoice:
+            return ActionEncoding{
+                .card_id = frame.source_card,
+                .mode = ActionMode::EventFirst,
+                .targets = {static_cast<CountryId>(std::max(0, action.option_index))},
+            };
+        case FrameKind::DeferredOps:
+            if (frame.eligible_countries.none()) {
+                return ActionEncoding{
+                    .card_id = frame.source_card,
+                    .mode = ActionMode::EventFirst,
+                    .targets = {static_cast<CountryId>(std::max(0, action.option_index))},
+                };
+            }
+            return ActionEncoding{
+                .card_id = frame.source_card,
+                .mode = static_cast<ActionMode>(frame.criteria_bits),
+                .targets = {action.country_id},
+            };
+        case FrameKind::CountryPick:
+        case FrameKind::FreeOpsInfluence:
+        case FrameKind::NoradInfluence:
+            return ActionEncoding{
+                .card_id = frame.source_card,
+                .mode = ActionMode::Influence,
+                .targets = {action.country_id},
+            };
+        case FrameKind::CardSelect:
+        case FrameKind::ForcedDiscard:
+            return ActionEncoding{.card_id = action.card_id, .mode = ActionMode::Event, .targets = {}};
+        case FrameKind::TopLevelAR:
+        case FrameKind::SetupPlacement:
+        case FrameKind::Headline:
+            return ActionEncoding{};
+    }
+    return ActionEncoding{};
+}
+
+[[nodiscard]] FrameAction decode_frame_action(const DecisionFrame& frame, const ActionEncoding& action) {
+    switch (frame.kind) {
+        case FrameKind::SmallChoice:
+        case FrameKind::CancelChoice:
+            return FrameAction{.option_index = action.targets.empty() ? 0 : static_cast<int>(action.targets.front())};
+        case FrameKind::DeferredOps:
+            if (frame.eligible_countries.none()) {
+                return FrameAction{.option_index = action.targets.empty() ? 0 : static_cast<int>(action.targets.front())};
+            }
+            return FrameAction{.country_id = action.targets.empty() ? CountryId{0} : action.targets.front()};
+        case FrameKind::CountryPick:
+        case FrameKind::FreeOpsInfluence:
+        case FrameKind::NoradInfluence:
+            return FrameAction{.country_id = action.targets.empty() ? CountryId{0} : action.targets.front()};
+        case FrameKind::CardSelect:
+        case FrameKind::ForcedDiscard:
+            return FrameAction{.card_id = action.card_id};
+        case FrameKind::TopLevelAR:
+        case FrameKind::SetupPlacement:
+        case FrameKind::Headline:
+            return FrameAction{};
+    }
+    return FrameAction{};
+}
+
+[[nodiscard]] double frame_action_logit(
+    const DecisionFrame& frame,
+    const FrameAction& action,
+    const float* card_logits_ptr,
+    int card_logits_n,
+    const float* country_logits_ptr,
+    int country_logits_n,
+    const float* choice_logits_ptr,
+    int choice_logits_n
+) {
+    switch (frame.kind) {
+        case FrameKind::SmallChoice:
+        case FrameKind::CancelChoice:
+            if (action.option_index >= 0 && action.option_index < choice_logits_n) {
+                return static_cast<double>(choice_logits_ptr[action.option_index]);
+            }
+            return 0.0;
+        case FrameKind::DeferredOps:
+            if (frame.eligible_countries.none()) {
+                if (action.option_index >= 0 && action.option_index < choice_logits_n) {
+                    return static_cast<double>(choice_logits_ptr[action.option_index]);
+                }
+                return 0.0;
+            }
+            [[fallthrough]];
+        case FrameKind::CountryPick:
+        case FrameKind::FreeOpsInfluence:
+        case FrameKind::NoradInfluence: {
+            const int idx = static_cast<int>(action.country_id);
+            if (idx >= 0 && idx < country_logits_n) {
+                return static_cast<double>(country_logits_ptr[idx]);
+            }
+            return 0.0;
+        }
+        case FrameKind::CardSelect:
+        case FrameKind::ForcedDiscard: {
+            const int idx = static_cast<int>(action.card_id) - 1;
+            if (idx >= 0 && idx < card_logits_n) {
+                return static_cast<double>(card_logits_ptr[idx]);
+            }
+            return 0.0;
+        }
+        case FrameKind::TopLevelAR:
+        case FrameKind::SetupPlacement:
+        case FrameKind::Headline:
+            return 0.0;
+    }
+    return 0.0;
 }
 
 ActionEncoding build_action_from_country_logits_raw(
@@ -217,22 +402,86 @@ ActionEncoding resolve_edge_action_raw(
     return fallback_resolved_action(action, pub, side);
 }
 
+void finish_tree_step(GameState& state, Side top_level_side, bool over, std::optional<Side> winner) {
+    sync_china_flags(state);
+    state.game_over = over;
+    state.winner = winner;
+    if (over) {
+        state.current_side = top_level_side;
+        return;
+    }
+    if (state.frame_stack_mode && !state.frame_stack.empty()) {
+        state.pub.phasing = top_level_side;
+        state.current_side = state.frame_stack.back().acting_side;
+        return;
+    }
+    state.frame_stack_mode = false;
+    state.pub.phasing = other_side(top_level_side);
+    state.current_side = other_side(top_level_side);
+}
+
+void apply_frame_tree_action(GameState& state, const ActionEncoding& encoded_action, Pcg64Rng& rng) {
+    const auto frame = pending_frame(state);
+    if (!frame.has_value()) {
+        return;
+    }
+    const auto top_level_side = state.pub.phasing;
+    const auto action = decode_frame_action(*frame, encoded_action);
+    const auto result = engine_step_subframe(state, action, rng);
+    finish_tree_step(state, top_level_side, result.game_over, result.winner);
+}
+
 void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng& rng) {
+    if (pending_frame(state).has_value()) {
+        apply_frame_tree_action(state, action, rng);
+        return;
+    }
+
     const auto side = state.pub.phasing;
     auto& hand = state.hands[to_index(side)];
     if (hand.test(action.card_id)) {
         hand.reset(action.card_id);
     }
 
-    auto [new_pub, over, winner] = apply_action_live(state, action, side, rng);
-    state.pub = new_pub;
-    sync_china_flags(state);
-    state.game_over = over;
-    state.winner = winner;
-    state.current_side = over ? side : other_side(side);
-    if (!over) {
-        state.pub.phasing = other_side(side);
+    const auto previous_frame_stack_mode = state.frame_stack_mode;
+    state.frame_stack_mode = true;
+    const auto result = engine_step_toplevel(state, action, side, rng);
+    state.frame_stack_mode = previous_frame_stack_mode || result.pushed_subframe;
+    finish_tree_step(state, side, result.game_over, result.winner);
+}
+
+[[nodiscard]] double rollout_value_frame_aware(
+    const GameState& state,
+    const MctsConfig& config,
+    Pcg64Rng& rng
+) {
+    if (!pending_frame(state).has_value()) {
+        return rollout_value(state, config, rng);
     }
+
+    auto rollout_state = clone_game_state(state);
+    int frame_steps = 0;
+    while (pending_frame(rollout_state).has_value() && !rollout_state.game_over && frame_steps < 512) {
+        const auto frame = pending_frame(rollout_state);
+        if (!frame.has_value()) {
+            break;
+        }
+        const auto actions = collect_frame_actions(*frame);
+        if (actions.empty()) {
+            break;
+        }
+        apply_frame_tree_action(
+            rollout_state,
+            encode_frame_action(*frame, actions[rng.choice_index(actions.size())]),
+            rng
+        );
+        ++frame_steps;
+    }
+
+    if (rollout_state.game_over) {
+        return winner_value(rollout_state.winner);
+    }
+    return rollout_value(rollout_state, config, rng);
 }
 
 double evaluate(
@@ -245,14 +494,14 @@ double evaluate(
     // Model outputs actor-relative value (positive = good for the side to move).
     // Backup and select_edge assume USSR-perspective (positive = good for USSR).
     // Convert here at the leaf boundary: flip sign when US is the actor.
-    if (state.pub.phasing == Side::US) {
+    if (actor_side(state) == Side::US) {
         value = -value;
     }
     value = calibrate_value(value, config);
     if (!config.use_rollout_backup) {
         return value;
     }
-    const auto rollout = rollout_value(state, config, rng);
+    const auto rollout = rollout_value_frame_aware(state, config, rng);
     return static_cast<double>(config.value_weight) * value +
         static_cast<double>(1.0f - config.value_weight) * rollout;
 }
@@ -303,6 +552,94 @@ std::vector<CardDraft> collect_card_drafts(const GameState& state) {
     );
 }
 
+ExpansionResult expand_frame(
+    const GameState& state,
+    const DecisionFrame& frame,
+    torch::jit::script::Module& model,
+    const MctsConfig& config,
+    Pcg64Rng& rng
+) {
+    auto node = std::make_unique<MctsNode>();
+    node->side_to_move = frame.acting_side;
+
+    const auto actions = collect_frame_actions(frame);
+    if (actions.empty()) {
+        node->is_terminal = true;
+        return {.node = std::move(node), .leaf_value = 0.0};
+    }
+
+    const auto side = frame.acting_side;
+    const auto outputs = nn::forward_model(
+        model,
+        state,
+        state.hands[to_index(side)],
+        holds_china_for(state, side),
+        side
+    );
+
+    const auto card_logits_t = get_tensor(outputs, "card_logits").index({0}).contiguous();
+    const auto country_logits_raw_t = get_tensor(outputs, "country_logits", false);
+    const auto small_choice_logits_raw_t = get_tensor(outputs, "small_choice_logits", false);
+
+    float card_logits_arr[kMaxCardLogits];
+    float country_logits_arr[kMaxCountryLogits];
+    float small_choice_logits_arr[kMaxChoiceLogits];
+
+    const int n_card = extract_float_array(card_logits_t, card_logits_arr, kMaxCardLogits);
+
+    const float* country_logits_ptr = nullptr;
+    int n_country = 0;
+    if (country_logits_raw_t.defined()) {
+        auto cl = country_logits_raw_t.index({0}).contiguous();
+        n_country = extract_float_array(cl, country_logits_arr, kMaxCountryLogits);
+        country_logits_ptr = country_logits_arr;
+    }
+
+    const float* small_choice_logits_ptr = nullptr;
+    int n_choice = 0;
+    if (small_choice_logits_raw_t.defined()) {
+        auto scl = small_choice_logits_raw_t.index({0}).contiguous();
+        n_choice = extract_float_array(scl, small_choice_logits_arr, kMaxChoiceLogits);
+        small_choice_logits_ptr = small_choice_logits_arr;
+    }
+
+    std::vector<double> logits;
+    logits.reserve(actions.size());
+    for (const auto& action : actions) {
+        logits.push_back(frame_action_logit(
+            frame,
+            action,
+            card_logits_arr,
+            n_card,
+            country_logits_ptr,
+            n_country,
+            small_choice_logits_ptr,
+            n_choice
+        ));
+    }
+
+    const auto max_logit = *std::max_element(logits.begin(), logits.end());
+    double total_prior = 0.0;
+    for (auto& logit : logits) {
+        logit = std::exp(logit - max_logit);
+        total_prior += logit;
+    }
+
+    const auto uniform = 1.0 / static_cast<double>(actions.size());
+    for (size_t idx = 0; idx < actions.size(); ++idx) {
+        const auto prior = total_prior > 0.0 ? logits[idx] / total_prior : uniform;
+        const auto encoded = encode_frame_action(frame, actions[idx]);
+        node->edges.push_back(MctsEdge{
+            .action = encoded,
+            .prior = static_cast<float>(prior),
+        });
+        node->children.emplace_back(nullptr);
+        node->applied_actions.push_back(encoded);
+    }
+
+    return {.node = std::move(node), .leaf_value = evaluate(state, outputs, config, rng)};
+}
+
 ExpansionResult expand(
     const GameState& state,
     torch::jit::script::Module& model,
@@ -317,6 +654,10 @@ ExpansionResult expand(
         const auto terminal_value = winner_value(state.winner);
         node->terminal_value = terminal_value;
         return {.node = std::move(node), .leaf_value = terminal_value};
+    }
+
+    if (const auto frame = pending_frame(state); frame.has_value()) {
+        return expand_frame(state, *frame, model, config, rng);
     }
 
     const auto drafts = collect_card_drafts(state);
@@ -342,7 +683,7 @@ ExpansionResult expand(
     // --- NN forward (only torch call in hot path) ---
     const auto outputs = nn::forward_model(
         model,
-        state.pub,
+        state,
         state.hands[to_index(state.pub.phasing)],
         holds_china_for(state, state.pub.phasing),
         state.pub.phasing
