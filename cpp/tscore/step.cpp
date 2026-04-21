@@ -317,14 +317,25 @@ constexpr CountryId kBotswanaId = 58;
 constexpr CountryId kMozambiqueId = 66;
 constexpr CountryId kSouthAfricaId = 71;
 constexpr CountryId kZimbabweId = 74;
+constexpr CountryId kCzechoslovakiaId = 3;
+constexpr CountryId kHungaryId = 9;
 constexpr CountryId kFranceId = 7;
 constexpr CountryId kUkId = 17;
 constexpr CountryId kArgentinaId = 46;
 constexpr CountryId kWestGermanyId = 18;
 constexpr CountryId kPolandId = 12;
 constexpr CountryId kRomaniaId = 13;
+constexpr CountryId kYugoslaviaId = 19;
+constexpr CountryId kBulgariaId = 83;
 constexpr CountryId kVietnamId = 80;
 constexpr std::array<CountryId, 7> kOpecIds = {kEgyptId, kIranId, kLibyaId, kSaudiArabiaId, kIraqId, 27, kVenezuelaId};
+constexpr std::array<CountryId, 5> kIndependentRedsTargets = {
+    kYugoslaviaId,
+    kRomaniaId,
+    kBulgariaId,
+    kHungaryId,
+    kCzechoslovakiaId,
+};
 
 bool contains(std::span<const CardId> values, CardId value) {
     return std::find(values.begin(), values.end(), value) != values.end();
@@ -729,11 +740,25 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             next.nato_active = true;
             break;
 
-        case 22:
-            for (const auto cid : {CountryId{19}, CountryId{13}, CountryId{83}, CountryId{9}, CountryId{3}}) {
-                add_influence(next, Side::US, cid, 1);
+        case 22: {
+            const auto target = choose_country(
+                next,
+                static_cast<CardId>(22),
+                Side::US,
+                kIndependentRedsTargets,
+                rng,
+                policy_cb,
+                frame_log,
+                frame_stack_mode
+            );
+            if (target == kInvalidCountryId && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                annotate_latest_frame(frame_log, 0, 1);
+                return {next, false, std::nullopt};
             }
+            const auto delta = next.influence_of(Side::USSR, target) - next.influence_of(Side::US, target);
+            add_influence(next, Side::US, target, delta);
             break;
+        }
 
         case 23: {
             std::vector<CountryId> pool;
