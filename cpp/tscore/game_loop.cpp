@@ -1249,6 +1249,35 @@ std::vector<CardId> cmc_cancel_cards(const GameState& gs, Side side) {
     return eligible;
 }
 
+CardSet debt_crisis_discard_cards(const GameState& gs) {
+    CardSet eligible;
+    for (int raw = 1; raw <= kMaxCardId; ++raw) {
+        const auto candidate = static_cast<CardId>(raw);
+        if (
+            gs.hands[to_index(Side::US)].test(candidate) &&
+            candidate != kChinaCardId &&
+            !card_spec(candidate).is_scoring &&
+            card_spec(candidate).ops >= 3
+        ) {
+            eligible.set(candidate);
+        }
+    }
+    return eligible;
+}
+
+void double_ussr_latin_america_influence(PublicState& pub) {
+    for (const auto cid : all_country_ids()) {
+        const auto region = country_spec(cid).region;
+        if (region != Region::CentralAmerica && region != Region::SouthAmerica) {
+            continue;
+        }
+        const auto influence = pub.influence_of(Side::USSR, cid);
+        if (influence > 0) {
+            pub.set_influence(Side::USSR, cid, influence * 2);
+        }
+    }
+}
+
 void discard_random_terrorism_cards(GameState& gs, Side acting_side, Pcg64Rng& rng) {
     const auto opponent = other_side(acting_side);
     const auto discard_count = opponent == Side::US && gs.pub.iran_hostage_crisis_active ? 2 : 1;
@@ -3097,28 +3126,32 @@ void resume_card_97(GameState& gs, const DecisionFrame& frame, const FrameAction
 }
 
 void resume_card_98(GameState& gs, const DecisionFrame& frame, const FrameAction& action) {
-    if (frame.kind != FrameKind::CountryPick) {
-        return;
-    }
-    auto eligible = frame.eligible_countries;
-    for (const auto cid : all_country_ids()) {
-        const auto region = country_spec(cid).region;
-        if ((region != Region::CentralAmerica && region != Region::SouthAmerica) ||
-            gs.pub.influence_of(Side::USSR, cid) <= 0) {
-            eligible.reset(static_cast<size_t>(cid));
-        }
-    }
-    if (eligible.test(static_cast<size_t>(action.country_id))) {
-        add_frame_influence(gs.pub, Side::USSR, action.country_id, gs.pub.influence_of(Side::USSR, action.country_id));
-        eligible.reset(static_cast<size_t>(action.country_id));
-    }
-    const auto next_step = static_cast<int>(frame.step_index) + 1;
-    const auto total_steps = static_cast<int>(frame.total_steps);
-    if (next_step < total_steps) {
-        push_country_frame(gs, frame.source_card, frame.acting_side, eligible, next_step, total_steps);
-        if (!gs.frame_stack.empty()) {
+    if (frame.kind == FrameKind::SmallChoice) {
+        const auto choice = std::clamp(action.option_index, 0, 1);
+        if (choice == 0) {
+            const auto eligible = debt_crisis_discard_cards(gs);
+            if (eligible.none()) {
+                double_ussr_latin_america_influence(gs.pub);
+                finish_frame_event(gs, frame.source_card, frame.acting_side);
+                return;
+            }
+            push_card_frame(gs, frame.source_card, Side::US, eligible, 1, 2);
+            if (gs.frame_stack.empty()) {
+                finish_frame_event(gs, frame.source_card, frame.acting_side);
+            }
             return;
         }
+        double_ussr_latin_america_influence(gs.pub);
+        finish_frame_event(gs, frame.source_card, frame.acting_side);
+        return;
+    }
+
+    if (frame.kind != FrameKind::CardSelect) {
+        return;
+    }
+
+    if (frame.eligible_cards.test(action.card_id)) {
+        discard_frame_hand_card(gs, Side::US, action.card_id);
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }

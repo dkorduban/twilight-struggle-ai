@@ -254,6 +254,35 @@ std::vector<CardId> cmc_cancel_cards(const GameState& gs, Side side) {
     return eligible;
 }
 
+std::vector<CardId> debt_crisis_discard_cards(const GameState& gs) {
+    std::vector<CardId> eligible;
+    for (int raw = 1; raw <= kMaxCardId; ++raw) {
+        const auto candidate = static_cast<CardId>(raw);
+        if (
+            gs.hands[to_index(Side::US)].test(candidate) &&
+            candidate != kChinaCardId &&
+            !card_spec(candidate).is_scoring &&
+            card_spec(candidate).ops >= 3
+        ) {
+            eligible.push_back(candidate);
+        }
+    }
+    return eligible;
+}
+
+void double_ussr_latin_america_influence(PublicState& pub) {
+    for (const auto cid : all_country_ids()) {
+        const auto region = country_spec(cid).region;
+        if (region != Region::CentralAmerica && region != Region::SouthAmerica) {
+            continue;
+        }
+        const auto influence = pub.influence_of(Side::USSR, cid);
+        if (influence > 0) {
+            pub.set_influence(Side::USSR, cid, influence * 2);
+        }
+    }
+}
+
 std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     GameState& gs,
     CardId card_id,
@@ -750,28 +779,27 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
         }
 
         case 98: {
-            std::vector<CountryId> pool;
-            for (const auto cid : all_country_ids()) {
-                const auto region = country_spec(cid).region;
-                if ((region == Region::CentralAmerica || region == Region::SouthAmerica) &&
-                    pub.influence_of(Side::USSR, cid) > 0) {
-                    pool.push_back(cid);
-                }
-            }
-            const int total_steps_98 = std::min<int>(2, static_cast<int>(pool.size()));
-            for (int i = 0; i < 2; ++i) {
-                if (pool.empty()) {
-                    break;
-                }
-                const auto cid = choose_country(pub, 98, Side::USSR, pool, rng, policy_cb, frame_log, gs.frame_stack_mode);
-                if (cid == kInvalidCountryId && gs.frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
-                    frame_log->back().step_index = static_cast<uint8_t>(i);
-                    frame_log->back().total_steps = static_cast<uint8_t>(total_steps_98);
+            const auto eligible = debt_crisis_discard_cards(gs);
+            if (!eligible.empty()) {
+                if (gs.frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    push_option_frame(frame_log, FrameKind::SmallChoice, 98, Side::US, 2, 0, 2);
                     return {pub, false, std::nullopt};
                 }
-                pub.set_influence(Side::USSR, cid, pub.influence_of(Side::USSR, cid) * 2);
-                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
+
+                bool discard_card = true;
+                if (policy_cb != nullptr) {
+                    discard_card = choose_option(pub, 98, Side::US, 2, rng, policy_cb, frame_log, gs.frame_stack_mode) == 0;
+                }
+                if (discard_card) {
+                    const auto chosen = choose_card(pub, 98, Side::US, eligible, rng, policy_cb, frame_log, gs.frame_stack_mode);
+                    if (chosen == 0) {
+                        return {pub, false, std::nullopt};
+                    }
+                    discard_from_hand(gs, Side::US, chosen, pub);
+                    break;
+                }
             }
+            double_ussr_latin_america_influence(pub);
             break;
         }
 

@@ -114,6 +114,35 @@ TEST_CASE("South African Unrest applies only the selected mode", "[cards][step]"
     REQUIRE(split.influence_of(Side::USSR, kBotswanaId) == 2);
 }
 
+TEST_CASE("Latin American Debt Crisis doubles all USSR LatAm influence when US cannot pay", "[cards][game_loop]") {
+    constexpr CardId kLatinAmericanDebtCrisis = 98;
+    constexpr CountryId kArgentinaId = 46;
+    constexpr CountryId kBrazilId = 48;
+    constexpr CountryId kVenezuelaId = 55;
+
+    GameState gs;
+    gs.pub.set_influence(Side::USSR, kBrazilId, 2);
+    gs.pub.set_influence(Side::USSR, kArgentinaId, 1);
+    gs.hands[to_index(Side::US)].set(12);
+    gs.hands[to_index(Side::US)].set(15);
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action_live(
+        gs,
+        ActionEncoding{.card_id = kLatinAmericanDebtCrisis, .mode = ActionMode::Event, .targets = {}},
+        Side::USSR,
+        rng
+    );
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(next.influence_of(Side::USSR, kBrazilId) == 4);
+    REQUIRE(next.influence_of(Side::USSR, kArgentinaId) == 2);
+    REQUIRE(next.influence_of(Side::USSR, kVenezuelaId) == 0);
+    REQUIRE(gs.hands[to_index(Side::US)].test(12));
+    REQUIRE(gs.hands[to_index(Side::US)].test(15));
+}
+
 TEST_CASE("Yuri and Samantha scores future USSR space attempts and clears at turn end", "[cards][game_loop]") {
     constexpr CardId kYuriSamantha = 106;
     constexpr CardId kSpaceCard = 1;

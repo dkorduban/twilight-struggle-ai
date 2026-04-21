@@ -70,8 +70,10 @@ void test_ladc_and_terrorism() {
     auto [pub, over, winner] = apply_live(gs, 98, ActionMode::Event, Side::USSR);
     (void)over;
     (void)winner;
-    require(!gs.hands[ts::to_index(Side::US)].test(4) && !gs.hands[ts::to_index(Side::US)].test(25), "Debt Crisis should discard a valid US pair");
-    require(pub.vp == 0, "Debt Crisis should not award USSR VP when US can pay");
+    const auto us_hand = gs.hands[ts::to_index(Side::US)];
+    require(ts::hand_count(us_hand) == 1, "Debt Crisis should discard one valid US 3+ ops card");
+    require((!us_hand.test(4) || !us_hand.test(25)), "Debt Crisis should discard one of the eligible US cards");
+    require(pub.vp == 0, "Debt Crisis should not affect VP when US can pay");
 
     gs = GameState{};
     gs.pub.iran_hostage_crisis_active = true;

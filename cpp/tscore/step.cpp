@@ -355,6 +355,19 @@ bool contains(std::span<const CardId> values, CardId value) {
     return std::find(values.begin(), values.end(), value) != values.end();
 }
 
+void double_ussr_latin_america_influence(PublicState& pub) {
+    for (const auto cid : all_country_ids()) {
+        const auto region = country_spec(cid).region;
+        if (region != Region::CentralAmerica && region != Region::SouthAmerica) {
+            continue;
+        }
+        const auto influence = pub.influence_of(Side::USSR, cid);
+        if (influence > 0) {
+            pub.set_influence(Side::USSR, cid, influence * 2);
+        }
+    }
+}
+
 template <typename T>
 const T& sample_one(std::span<const T> values, Pcg64Rng& rng) {
     return values[rng.choice_index(values.size())];
@@ -1731,28 +1744,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 98: {
-            std::vector<CountryId> pool;
-            for (const auto cid : all_country_ids()) {
-                const auto region = country_spec(cid).region;
-                if ((region == Region::CentralAmerica || region == Region::SouthAmerica) &&
-                    next.influence_of(Side::USSR, cid) > 0) {
-                    pool.push_back(cid);
-                }
-            }
-            const int total_steps_98 = std::min<int>(2, static_cast<int>(pool.size()));
-            for (int i = 0; i < 2; ++i) {
-                if (pool.empty()) {
-                    break;
-                }
-                const auto cid =
-                    choose_country(next, static_cast<CardId>(98), Side::USSR, pool, rng, policy_cb, frame_log, frame_stack_mode);
-                if (cid == kInvalidCountryId && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
-                    annotate_latest_frame(frame_log, i, total_steps_98);
-                    return {next, false, std::nullopt};
-                }
-                add_influence(next, Side::USSR, cid, next.influence_of(Side::USSR, cid));
-                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
-            }
+            double_ussr_latin_america_influence(next);
             break;
         }
 
