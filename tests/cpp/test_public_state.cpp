@@ -165,7 +165,32 @@ TEST_CASE("Vietnam Revolts adds one coup op only in Southeast Asia", "[step]") {
     const auto [with_bonus, ___, ____] = apply_action(bonus, coup, Side::USSR, bonus_rng);
 
     REQUIRE(with_bonus.influence_of(Side::US, kVietnamId) == without_bonus.influence_of(Side::US, kVietnamId) - 1);
-    REQUIRE(with_bonus.milops[to_index(Side::USSR)] == without_bonus.milops[to_index(Side::USSR)] + 1);
+    REQUIRE(with_bonus.milops[to_index(Side::USSR)] == without_bonus.milops[to_index(Side::USSR)]);
+}
+
+TEST_CASE("Coup MilOps use printed card ops under Red Scare", "[step]") {
+    constexpr CardId kNoradCardId = 38;
+    constexpr CountryId kPanamaId = 44;
+
+    PublicState pub;
+    pub.defcon = 5;
+    pub.ops_modifier[to_index(Side::US)] = -1;
+    pub.set_influence(Side::USSR, kPanamaId, 1);
+
+    const ActionEncoding coup{
+        .card_id = kNoradCardId,
+        .mode = ActionMode::Coup,
+        .targets = {kPanamaId},
+    };
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action(pub, coup, Side::US, rng);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(effective_ops(kNoradCardId, pub, Side::US) == 2);
+    REQUIRE(card_spec(kNoradCardId).ops == 3);
+    REQUIRE(next.milops[to_index(Side::US)] == 3);
 }
 
 TEST_CASE("Vietnam Revolts enumerates SEA-only influence actions with one extra op", "[legal_actions]") {

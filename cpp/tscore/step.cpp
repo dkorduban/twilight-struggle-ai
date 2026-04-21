@@ -1886,7 +1886,8 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action(
             if (country_spec(target).is_battleground && !(side == Side::US && next.nuclear_subs_active)) {
                 next.defcon = std::max(1, next.defcon - 1);
             }
-            next.milops[to_index(side)] = std::max(next.milops[to_index(side)], ops);
+            const auto printed_ops = card_spec(action.card_id).ops;
+            next.milops[to_index(side)] = std::max(next.milops[to_index(side)], printed_ops);
             handle_card_played(next, action.card_id, side, ActionMode::Coup);
             break;
         }
