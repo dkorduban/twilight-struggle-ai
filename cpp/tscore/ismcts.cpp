@@ -358,7 +358,7 @@ void resolve_tree_headlines_and_advance(TreeState& state, Pcg64Rng& rng) {
             .mode = ActionMode::Event,
             .targets = {},
         };
-        auto [new_pub, over, winner] = apply_action_live(game, headline, side, rng);
+        auto [new_pub, over, winner] = apply_headline_event_with_hands(game, headline, side, rng);
         (void)new_pub;
         sync_china_flags(game);
         if (over) {
@@ -1541,7 +1541,8 @@ void advance_until_search_or_done(
                 }
 
                 const auto pending = slot.headline_order[slot.headline_order_index++];
-                auto [new_pub, over, winner] = apply_action_live(slot.game_state, pending.action, pending.side, slot.rng, nullptr, /*log_real_move=*/true);
+                auto [new_pub, over, winner] =
+                    apply_headline_event_with_hands(slot.game_state, pending.action, pending.side, slot.rng);
                 (void)new_pub;
                 sync_china_flags(slot.game_state);
                 if (over) {

@@ -40,6 +40,15 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     std::vector<DecisionFrame>* frame_log = nullptr
 );
 
+std::tuple<PublicState, bool, std::optional<Side>> apply_headline_event_with_hands(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb = nullptr,
+    std::vector<DecisionFrame>* frame_log = nullptr
+);
+
 std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_ar(
     GameState& gs,
     Side side,

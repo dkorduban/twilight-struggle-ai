@@ -285,6 +285,58 @@ TEST_CASE("opponent ops remove starred card after its event fires", "[game_loop]
     REQUIRE_FALSE(next.discard.test(kUsJapanPactCard));
 }
 
+TEST_CASE("illegal headline events fizzle without executing", "[game_loop]") {
+    constexpr CardId kNatoCard = 21;
+    constexpr CardId kWargamesCard = 103;
+
+    {
+        GameState gs;
+        gs.pub = PublicState{};
+        gs.pub.turn = 1;
+        gs.pub.defcon = 5;
+        gs.hands[to_index(Side::US)].set(kNatoCard);
+
+        const PolicyFn no_headline = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+            return std::nullopt;
+        };
+        const PolicyFn nato_headline = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+            return ActionEncoding{.card_id = kNatoCard, .mode = ActionMode::Event, .targets = {}};
+        };
+
+        Pcg64Rng rng(0);
+        const auto result = run_headline_phase_live(gs, no_headline, nato_headline, rng);
+
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE_FALSE(gs.pub.nato_active);
+        REQUIRE(gs.pub.discard.test(kNatoCard));
+        REQUIRE_FALSE(gs.pub.removed.test(kNatoCard));
+    }
+
+    {
+        GameState gs;
+        gs.pub = PublicState{};
+        gs.pub.turn = 1;
+        gs.pub.defcon = 3;
+        gs.pub.vp = 10;
+        gs.hands[to_index(Side::USSR)].set(kWargamesCard);
+
+        const PolicyFn wargames_headline = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+            return ActionEncoding{.card_id = kWargamesCard, .mode = ActionMode::Event, .targets = {}};
+        };
+        const PolicyFn no_headline = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+            return std::nullopt;
+        };
+
+        Pcg64Rng rng(0);
+        const auto result = run_headline_phase_live(gs, wargames_headline, no_headline, rng);
+
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(gs.pub.vp == 10);
+        REQUIRE(gs.pub.discard.test(kWargamesCard));
+        REQUIRE_FALSE(gs.pub.removed.test(kWargamesCard));
+    }
+}
+
 TEST_CASE("Cuban Missile Crisis battleground coup loses immediately", "[step]") {
     constexpr CountryId kThailandId = 79;
 

@@ -351,7 +351,9 @@ void apply_tree_action(GameState& state, const ActionEncoding& action, Pcg64Rng&
         hand.reset(action.card_id);
     }
 
-    auto [new_pub, over, winner] = apply_action_live(state, action, side, rng);
+    auto [new_pub, over, winner] = (state.pub.ar == 0 && action.mode == ActionMode::Event)
+        ? apply_headline_event_with_hands(state, action, side, rng)
+        : apply_action_live(state, action, side, rng);
     (void)new_pub;
     sync_china_flags(state);
     state.game_over = over;
@@ -2229,7 +2231,8 @@ void advance_until_decision(GameSlot& slot, const BatchedMctsConfig& config) {
                 const auto pub_snapshot = slot.root_state.pub;
                 const auto vp_before = slot.root_state.pub.vp;
                 const auto defcon_before = slot.root_state.pub.defcon;
-                auto [new_pub, over, winner] = apply_action_live(slot.root_state, pending.action, pending.side, slot.rng);
+                auto [new_pub, over, winner] =
+                    apply_headline_event_with_hands(slot.root_state, pending.action, pending.side, slot.rng);
                 (void)new_pub;
                 if (slot.record_history) {
                     // Full-info MCTS: OK to access both hands (self-play only).

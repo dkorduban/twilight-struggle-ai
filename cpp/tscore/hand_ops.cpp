@@ -9,6 +9,7 @@
 
 #include "dice.hpp"
 #include "game_data.hpp"
+#include "rule_queries.hpp"
 #include "step.hpp"
 
 namespace ts {
@@ -37,6 +38,18 @@ void card_played(PublicState& pub, CardId card_id, Side side) {
     } else {
         pub.discard.set(card_id);
     }
+}
+
+void discard_without_event(PublicState& pub, CardId card_id, Side side) {
+    if (pub.removed.test(card_id)) {
+        return;
+    }
+    if (card_id == kChinaCardId) {
+        pub.china_held_by = other_side(side);
+        pub.china_playable = false;
+        return;
+    }
+    pub.discard.set(card_id);
 }
 
 void discard_from_hand(GameState& gs, Side side, CardId card_id, PublicState& pub) {
@@ -1242,6 +1255,26 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
         }
     }
     return {new_pub, over, winner};
+}
+
+std::tuple<PublicState, bool, std::optional<Side>> apply_headline_event_with_hands(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
+) {
+    ActionEncoding headline{
+        .card_id = action.card_id,
+        .mode = ActionMode::Event,
+        .targets = {},
+    };
+    if (!is_event_play_allowed(gs.pub, side, headline.card_id)) {
+        discard_without_event(gs.pub, headline.card_id, side);
+        return {gs.pub, false, std::nullopt};
+    }
+    return apply_action_with_hands(gs, headline, side, rng, policy_cb, frame_log);
 }
 
 }  // namespace ts

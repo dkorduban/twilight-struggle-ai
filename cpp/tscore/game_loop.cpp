@@ -334,7 +334,7 @@ std::optional<GameResult> run_headline_phase(
         const auto vp_before = gs.pub.vp;
         const auto defcon_before = gs.pub.defcon;
         gs.pub.phasing = side;
-        auto [new_pub, over, winner] = apply_action_with_hands(gs, action, side, rng);
+        auto [new_pub, over, winner] = apply_headline_event_with_hands(gs, action, side, rng);
         if (trace_steps != nullptr) {
             trace_steps->push_back(StepTrace{
                 .turn = gs.pub.turn,
