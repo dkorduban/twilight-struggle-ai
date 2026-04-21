@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <set>
+#include <vector>
 #include <catch2/catch_test_macros.hpp>
 
 #include "public_state.hpp"
@@ -367,6 +368,46 @@ TEST_CASE("Wargames played for ops reports VP threshold", "[game_loop]") {
 
     REQUIRE(result.has_value());
     REQUIRE(result->end_reason == "vp_threshold");
+}
+
+TEST_CASE("Nuclear Subs expires before next-turn battleground coup", "[game_loop]") {
+    constexpr CardId kUssrCoupCard = 34;
+    constexpr CardId kUsCoupCard = 38;
+    constexpr CountryId kAngola = 57;
+    constexpr CountryId kPanama = 44;
+
+    GameState gs;
+    gs.phase = GamePhase::Headline;
+    gs.setup_influence_remaining = {0, 0};
+    gs.pub = PublicState{};
+    gs.pub.turn = 6;
+    gs.pub.defcon = 2;
+    gs.pub.nuclear_subs_active = true;
+    gs.pub.set_influence(Side::US, kAngola, 1);
+    gs.pub.set_influence(Side::USSR, kPanama, 1);
+    gs.deck = std::vector<CardId>{
+        kUsCoupCard, 4, 7, 8, 9, 10, 12, 14, 15,
+        kUssrCoupCard, 16, 18, 19, 21, 22, 23, 24, 25,
+    };
+
+    const PolicyFn ussr_policy = [](const PublicState& pub, const CardSet& hand, bool, Pcg64Rng&) {
+        if (pub.turn == 7 && pub.ar == 1 && hand.test(kUssrCoupCard)) {
+            return ActionEncoding{.card_id = kUssrCoupCard, .mode = ActionMode::Coup, .targets = {kAngola}};
+        }
+        return std::optional<ActionEncoding>{};
+    };
+    const PolicyFn us_policy = [](const PublicState& pub, const CardSet& hand, bool, Pcg64Rng&) {
+        if (pub.turn == 7 && pub.ar == 1 && hand.test(kUsCoupCard)) {
+            return ActionEncoding{.card_id = kUsCoupCard, .mode = ActionMode::Coup, .targets = {kPanama}};
+        }
+        return std::optional<ActionEncoding>{};
+    };
+
+    const auto result = play_game_from_mid_state_fn(gs, ussr_policy, us_policy, 0);
+
+    REQUIRE(result.end_turn == 7);
+    REQUIRE(result.end_reason == "defcon1");
+    REQUIRE(result.winner == Side::USSR);
 }
 
 TEST_CASE("final scoring includes Southeast Asia", "[scoring]") {
