@@ -257,6 +257,26 @@ std::string end_reason(
     return "vp_threshold";
 }
 
+std::optional<GameResult> settle_we_will_bury_you_if_due(GameState& gs, Side side, bool pending_at_ar_start) {
+    if (side != Side::US || !pending_at_ar_start || !gs.pub.we_will_bury_you_pending) {
+        return std::nullopt;
+    }
+
+    gs.pub.vp += 3;
+    gs.pub.we_will_bury_you_pending = false;
+
+    const auto [over, winner] = check_vp_win(gs.pub);
+    if (!over) {
+        return std::nullopt;
+    }
+    return GameResult{
+        .winner = winner,
+        .final_vp = gs.pub.vp,
+        .end_turn = gs.pub.turn,
+        .end_reason = end_reason(gs, winner),
+    };
+}
+
 std::optional<GameResult> run_headline_phase(
     GameState& gs,
     const PolicyFn& ussr_policy,
@@ -396,6 +416,10 @@ std::optional<GameResult> run_action_rounds(
                 continue;
             }
             gs.pub.phasing = side;
+            const bool wwby_pending_at_ar_start = side == Side::US && gs.pub.we_will_bury_you_pending;
+            const auto settle_wwby = [&]() {
+                return settle_we_will_bury_you_if_due(gs, side, wwby_pending_at_ar_start);
+            };
             const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
             auto& hand = gs.hands[to_index(side)];
             if (auto cmc_result = resolve_cuban_missile_crisis_cancel(gs, side, rng); cmc_result.has_value()) {
@@ -408,6 +432,9 @@ std::optional<GameResult> run_action_rounds(
                         .end_turn = gs.pub.turn,
                         .end_reason = end_reason(gs, winner),
                     };
+                }
+                if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+                    return wwby_result;
                 }
                 continue;
             }
@@ -422,9 +449,15 @@ std::optional<GameResult> run_action_rounds(
                         .end_reason = end_reason(gs, winner),
                     };
                 }
+                if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+                    return wwby_result;
+                }
                 continue;
             }
             if (!has_legal_action(hand, gs.pub, side, holds_china)) {
+                if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+                    return wwby_result;
+                }
                 continue;
             }
             auto action = choose_action_with_config(
@@ -437,6 +470,9 @@ std::optional<GameResult> run_action_rounds(
                 config
             );
             if (!action.has_value()) {
+                if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+                    return wwby_result;
+                }
                 continue;
             }
             const auto pub_snapshot = gs.pub;
@@ -494,6 +530,9 @@ std::optional<GameResult> run_action_rounds(
                     }
                 }
             }
+            if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+                return wwby_result;
+            }
         }
     }
     return std::nullopt;
@@ -509,6 +548,10 @@ std::optional<GameResult> run_extra_action_round(
 ) {
     gs.pub.ar = std::max(gs.pub.ar, ars_for_turn(gs.pub.turn)) + 1;
     gs.pub.phasing = side;
+    const bool wwby_pending_at_ar_start = side == Side::US && gs.pub.we_will_bury_you_pending;
+    const auto settle_wwby = [&]() {
+        return settle_we_will_bury_you_if_due(gs, side, wwby_pending_at_ar_start);
+    };
     const auto holds_china = side == Side::USSR ? gs.ussr_holds_china : gs.us_holds_china;
     auto& hand = gs.hands[to_index(side)];
     if (auto cmc_result = resolve_cuban_missile_crisis_cancel(gs, side, rng); cmc_result.has_value()) {
@@ -522,9 +565,15 @@ std::optional<GameResult> run_extra_action_round(
                 .end_reason = end_reason(gs, winner),
             };
         }
+        if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+            return wwby_result;
+        }
         return std::nullopt;
     }
     if (hand.none()) {
+        if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+            return wwby_result;
+        }
         return std::nullopt;
     }
     if (auto trap_result = resolve_trap_ar(gs, side, rng); trap_result.has_value()) {
@@ -538,13 +587,22 @@ std::optional<GameResult> run_extra_action_round(
                 .end_reason = end_reason(gs, winner),
             };
         }
+        if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+            return wwby_result;
+        }
         return std::nullopt;
     }
     if (!has_legal_action(hand, gs.pub, side, holds_china)) {
+        if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+            return wwby_result;
+        }
         return std::nullopt;
     }
     auto action = choose_action_with_config(policy, gs.pub, hand, side, holds_china, rng, config);
     if (!action.has_value()) {
+        if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+            return wwby_result;
+        }
         return std::nullopt;
     }
     const auto pub_snapshot = gs.pub;
@@ -601,6 +659,9 @@ std::optional<GameResult> run_extra_action_round(
                 };
             }
         }
+    }
+    if (auto wwby_result = settle_wwby(); wwby_result.has_value()) {
+        return wwby_result;
     }
     return std::nullopt;
 }
@@ -2229,6 +2290,9 @@ void resume_card_32(GameState& gs, const DecisionFrame& frame, const FrameAction
         return;
     }
 
+    if (frame.acting_side == Side::US) {
+        gs.pub.we_will_bury_you_pending = false;
+    }
     const auto ops = effective_ops(action.card_id, gs.pub, frame.acting_side);
     discard_frame_hand_card(gs, frame.acting_side, action.card_id);
     if (apply_frame_ops_impl(gs, &gs.frame_stack, frame.source_card, frame.acting_side, ops, rng)) {
