@@ -337,6 +337,20 @@ constexpr std::array<CountryId, 5> kIndependentRedsTargets = {
     kCzechoslovakiaId,
 };
 
+int encoded_turn_ar(int turn, int ar) {
+    return (turn * 10) + ar;
+}
+
+int next_us_action_round_after(const PublicState& pub) {
+    if (pub.ar <= 0) {
+        return encoded_turn_ar(pub.turn, 1);
+    }
+    if (pub.phasing == Side::USSR) {
+        return encoded_turn_ar(pub.turn, pub.ar);
+    }
+    return encoded_turn_ar(pub.turn, pub.ar + 1);
+}
+
 bool contains(std::span<const CardId> values, CardId value) {
     return std::find(values.begin(), values.end(), value) != values.end();
 }
@@ -1186,6 +1200,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
         case 53:
             next.defcon = std::max(1, next.defcon - 1);
             next.we_will_bury_you_pending = true;
+            next.we_will_bury_you_turn_ar = next_us_action_round_after(next);
             break;
 
         case 54:
@@ -1327,6 +1342,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 66:
+            next.camp_david_played = true;
             apply_vp_delta(next, Side::US, 1);
             add_influence(next, Side::US, kIsraelId, 1);
             add_influence(next, Side::US, kEgyptId, 1);
