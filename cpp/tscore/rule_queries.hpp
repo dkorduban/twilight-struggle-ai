@@ -79,6 +79,9 @@ inline constexpr std::array<CountryId, 12> kNatoWesternEurope = {1, 2, 4, 7, 8, 
     if (card_id == kNatoCardId && !nato_prerequisite_met(pub)) {
         return false;
     }
+    if (card_id == static_cast<CardId>(13) && pub.camp_david_played) {
+        return false;
+    }
     if (card_id == kWargamesCardId && !is_wargames_event_legal(pub)) {
         return false;
     }

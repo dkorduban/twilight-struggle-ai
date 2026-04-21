@@ -288,6 +288,9 @@ std::vector<ActionMode> legal_modes(CardId card_id, const PublicState& pub, Side
     if (card_id == kSolidarityCardId && !is_solidarity_event_legal(pub)) {
         modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
     }
+    if (!is_event_play_allowed(pub, side, card_id)) {
+        modes.erase(std::remove(modes.begin(), modes.end(), ActionMode::Event), modes.end());
+    }
 
     std::sort(modes.begin(), modes.end(), [](ActionMode lhs, ActionMode rhs) {
         return static_cast<int>(lhs) < static_cast<int>(rhs);
