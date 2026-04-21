@@ -14,6 +14,7 @@
 #include "game_data.hpp"
 #include "game_loop.hpp"
 #include "game_state.hpp"
+#include "hand_ops.hpp"
 #include "legal_actions.hpp"
 #include "scoring.hpp"
 #include "step.hpp"
@@ -544,6 +545,43 @@ std::tuple<bool, std::optional<Side>> apply_top_level_for_test(
     return {result.game_over || gs.game_over, result.winner.has_value() ? result.winner : gs.winner};
 }
 
+std::tuple<bool, std::optional<Side>> apply_headline_for_test(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    ExecutionPath path,
+    const PolicyCallbackFn& policy_cb,
+    const SubframePolicyFn& sub_policy
+) {
+    if (path == ExecutionPath::LegacyPolicyCallback) {
+        auto [new_pub, over, winner] = apply_headline_event_with_hands(gs, action, side, rng, &policy_cb, nullptr);
+        (void)new_pub;
+        return {over, winner};
+    }
+
+    gs.frame_stack.clear();
+    const auto previous_frame_stack_mode = gs.frame_stack_mode;
+    gs.frame_stack_mode = true;
+    auto [new_pub, over, winner] = apply_headline_event_with_hands(gs, action, side, rng, nullptr, &gs.frame_stack);
+    gs.frame_stack_mode = previous_frame_stack_mode;
+    (void)new_pub;
+
+    StepResult result{
+        .pushed_subframe = !gs.frame_stack.empty(),
+        .side_changed = false,
+        .game_over = over,
+        .winner = winner,
+    };
+    int subframe_steps = 0;
+    for (auto frame = engine_peek(gs); frame.has_value(); frame = engine_peek(gs)) {
+        REQUIRE(subframe_steps < 512);
+        result = engine_step_subframe(gs, sub_policy(gs, *frame), rng);
+        ++subframe_steps;
+    }
+    return {result.game_over || gs.game_over, result.winner.has_value() ? result.winner : gs.winner};
+}
+
 std::optional<GameResult> resolve_pre_action_hooks_for_test(
     GameState& gs,
     Side side,
@@ -656,7 +694,7 @@ std::optional<GameResult> run_headline_phase_for_test(
 
     for (const auto& pending : ordered) {
         gs.pub.phasing = pending.side;
-        auto [over, winner] = apply_top_level_for_test(gs, pending.action, pending.side, rng, path, policy_cb, sub_policy);
+        auto [over, winner] = apply_headline_for_test(gs, pending.action, pending.side, rng, path, policy_cb, sub_policy);
         sync_china_for_test(gs);
         record_trace(run, gs, pending.side, pending.action);
         if (over) {
@@ -1093,6 +1131,76 @@ std::tuple<bool, std::optional<Side>> apply_harness_action(
     return apply_harness_frame_stack_action(gs, action, side, rng, script, cursor);
 }
 
+std::tuple<bool, std::optional<Side>> apply_harness_policy_callback_headline(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    FrameParityScript& script
+) {
+    std::vector<DecisionFrame> frames;
+    const auto policy_cb = first_legal_policy_callback();
+    auto [new_pub, over, winner] = apply_headline_event_with_hands(gs, action, side, rng, &policy_cb, &frames);
+    (void)new_pub;
+    for (const auto& frame : frames) {
+        script.subframe_indices.push_back(0);
+        script.subframe_actions.push_back(frame_action_at_index(frame, 0));
+    }
+    return {over, winner};
+}
+
+std::tuple<bool, std::optional<Side>> apply_harness_frame_stack_headline(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    const FrameParityScript& script,
+    FrameParityReplayCursor& cursor
+) {
+    gs.frame_stack.clear();
+    const auto previous_frame_stack_mode = gs.frame_stack_mode;
+    gs.frame_stack_mode = true;
+    auto [new_pub, over, winner] = apply_headline_event_with_hands(gs, action, side, rng, nullptr, &gs.frame_stack);
+    gs.frame_stack_mode = previous_frame_stack_mode;
+    (void)new_pub;
+
+    StepResult result{
+        .pushed_subframe = !gs.frame_stack.empty(),
+        .side_changed = false,
+        .game_over = over,
+        .winner = winner,
+    };
+    int subframe_steps = 0;
+    while (auto frame = engine_peek(gs)) {
+        REQUIRE(subframe_steps < 512);
+        const auto action_index = cursor.subframe < script.subframe_indices.size()
+            ? script.subframe_indices[cursor.subframe]
+            : 0;
+        const auto frame_action = cursor.subframe < script.subframe_actions.size()
+            ? script.subframe_actions[cursor.subframe]
+            : frame_action_at_index(*frame, action_index);
+        ++cursor.subframe;
+        result = engine_step_subframe(gs, frame_action, rng);
+        ++subframe_steps;
+    }
+    return {result.game_over || gs.game_over, result.winner.has_value() ? result.winner : gs.winner};
+}
+
+std::tuple<bool, std::optional<Side>> apply_harness_headline(
+    GameState& gs,
+    const ActionEncoding& action,
+    Side side,
+    Pcg64Rng& rng,
+    bool frame_stack_path,
+    FrameParityScript& script,
+    FrameParityReplayCursor& cursor
+) {
+    if (!frame_stack_path) {
+        return apply_harness_policy_callback_headline(gs, action, side, rng, script);
+    }
+    return apply_harness_frame_stack_headline(gs, action, side, rng, script, cursor);
+}
+
 void record_harness_trace(
     FrameParityHarnessRun& run,
     const GameState& gs,
@@ -1172,7 +1280,7 @@ std::optional<GameResult> run_harness_headline_phase(
 
     for (const auto& pending : ordered) {
         gs.pub.phasing = pending.side;
-        auto [over, winner] = apply_harness_action(
+        auto [over, winner] = apply_harness_headline(
             gs,
             pending.action,
             pending.side,
