@@ -24,18 +24,18 @@ Players score additional points during Regional Scoring, as follows:
 
 - **+1 VP per country** they Control in the scoring region that is adjacent to the enemy superpower
 - **+1 VP per Battleground country** that they Control in the scoring region.
-- **Tier bonuses** (region-specific; the PDF VP table is in a graphical format not extractable as text — see table below verified empirically from 51 TSEspionage logs):
+- **Tier bonuses** (region-specific; VP table transcribed from the TS Deluxe rulebook scoring panel):
 
 | Region         | Presence | Domination | Control  |
 |----------------|----------|------------|----------|
-| Europe         | 1        | 3          | GAME WIN |
+| Europe         | 3        | 7          | GAME WIN |
 | Asia           | 3        | 7          | 9        |
 | Middle East    | 3        | 5          | 7        |
 | Central America| 1        | 3          | 5        |
 | South America  | 2        | 5          | 6        |
 | Africa         | 1        | 4          | 6        |
 
-**Note:** South America Domination=5 (not 4 as in some printed rules) — confirmed empirically from 51 TSEspionage/ITS competitive logs where every SA Domination scoring event gave 5 as the base VP.
+**Authoritative source:** `cpp/tscore/scoring.cpp` `kRegionVp` array. A prior version of this doc showed Europe as `1/3/GAME WIN` with a bogus "verified empirically" note — that was an LLM-authored transcription error that silently contradicted the engine for weeks. If you change this table, also edit `scoring.cpp` in the same commit.
 
 Victory points are then cumulated for both players, and the net difference between the two scores is marked on the Victory Point Track.
 
