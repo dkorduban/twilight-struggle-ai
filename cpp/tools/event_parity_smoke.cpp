@@ -80,7 +80,8 @@ void test_we_will_bury_you() {
     pub.defcon = 4;
     const auto next = apply_event(pub, 53, Side::USSR, 2U);
     require(next.defcon == 3, "We Will Bury You should lower DEFCON by 1");
-    require(next.vp == 3, "We Will Bury You should award 3 VP to USSR");
+    require(next.vp == 0, "We Will Bury You should defer its 3 VP award");
+    require(next.we_will_bury_you_pending, "We Will Bury You should leave a pending VP flag");
     require(next.removed.test(53), "We Will Bury You should be removed");
 }
 
