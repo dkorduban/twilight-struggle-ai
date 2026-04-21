@@ -429,6 +429,48 @@ TEST_CASE("NORAD cancels when US does not control Canada", "[game_loop]") {
     REQUIRE(gs.pub.influence_of(Side::US, kMexico) == 1);
 }
 
+TEST_CASE("Bear Trap headline forces USSR discard before AR action", "[game_loop]") {
+    constexpr CardId kBearTrap = 47;
+    constexpr CardId kForcedDiscard = 34;
+    constexpr CountryId kAngola = 57;
+
+    GameState gs;
+    gs.phase = GamePhase::Headline;
+    gs.pub = PublicState{};
+    gs.pub.turn = 4;
+    gs.pub.defcon = 5;
+    gs.pub.set_influence(Side::US, kAngola, 1);
+    gs.hands[to_index(Side::US)].set(kBearTrap);
+
+    const PolicyFn no_headline = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+        return std::nullopt;
+    };
+    const PolicyFn bear_trap_headline = [](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+        return ActionEncoding{.card_id = kBearTrap, .mode = ActionMode::Event, .targets = {}};
+    };
+
+    Pcg64Rng rng(0);
+    const auto headline_result = run_headline_phase_live(gs, no_headline, bear_trap_headline, rng);
+    REQUIRE_FALSE(headline_result.has_value());
+    REQUIRE(gs.pub.bear_trap_active);
+
+    bool policy_called = false;
+    gs.hands[to_index(Side::USSR)].set(kForcedDiscard);
+    const PolicyFn trapped_ussr_policy = [&](const PublicState&, const CardSet&, bool, Pcg64Rng&) {
+        policy_called = true;
+        return ActionEncoding{.card_id = kForcedDiscard, .mode = ActionMode::Coup, .targets = {kAngola}};
+    };
+
+    const auto ar_result = run_action_rounds_live(gs, trapped_ussr_policy, no_headline, rng, 1);
+
+    REQUIRE_FALSE(ar_result.has_value());
+    REQUIRE_FALSE(policy_called);
+    REQUIRE_FALSE(gs.hands[to_index(Side::USSR)].test(kForcedDiscard));
+    REQUIRE(gs.pub.discard.test(kForcedDiscard));
+    REQUIRE(gs.pub.influence_of(Side::US, kAngola) == 1);
+    REQUIRE(gs.pub.milops[to_index(Side::USSR)] == 0);
+}
+
 TEST_CASE("final scoring includes Southeast Asia", "[scoring]") {
     constexpr CountryId kThailand = 79;
 

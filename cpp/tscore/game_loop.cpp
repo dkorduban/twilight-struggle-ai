@@ -1891,7 +1891,7 @@ void resume_trap_forced_discard(GameState& gs, const DecisionFrame& frame, const
     }
 
     discard_frame_hand_card(gs, frame.acting_side, action.card_id);
-    if (roll_d6(rng) <= 4) {
+    if (roll_d6(rng) >= 5) {
         if (frame.source_card == 47) {
             gs.pub.bear_trap_active = false;
         } else if (frame.source_card == 45) {

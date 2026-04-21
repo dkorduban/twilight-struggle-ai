@@ -1117,12 +1117,18 @@ std::optional<std::tuple<PublicState, bool, std::optional<Side>>> resolve_trap_a
 
     const auto chosen = choose_card(pub, source_card, side, eligible, rng, policy_cb, effective_frame_log);
     discard_from_hand(gs, side, chosen, pub);
-    if (roll_d6(rng) <= 4) {
+    if (roll_d6(rng) >= 5) {
         if (bear_trap) {
             pub.bear_trap_active = false;
         } else {
             pub.quagmire_active = false;
         }
+        gs.pub = pub;
+        const auto [over, winner] = check_vp_win(pub);
+        if (over) {
+            return std::tuple{pub, over, winner};
+        }
+        return std::nullopt;
     }
     gs.pub = pub;
     const auto [over, winner] = check_vp_win(pub);
