@@ -415,13 +415,15 @@ TEST_CASE("Nuclear Subs expires before next-turn battleground coup", "[game_loop
         kUssrCoupCard, 16, 18, 19, 21, 22, 23, 24, 25,
     };
 
-    const PolicyFn ussr_policy = [](const PublicState& pub, const CardSet& hand, bool, Pcg64Rng&) {
+    const PolicyFn ussr_policy = [](const PublicState& pub, const CardSet& hand, bool, Pcg64Rng&)
+        -> std::optional<ActionEncoding> {
         if (pub.turn == 7 && pub.ar == 1 && hand.test(kUssrCoupCard)) {
             return ActionEncoding{.card_id = kUssrCoupCard, .mode = ActionMode::Coup, .targets = {kAngola}};
         }
         return std::optional<ActionEncoding>{};
     };
-    const PolicyFn us_policy = [](const PublicState& pub, const CardSet& hand, bool, Pcg64Rng&) {
+    const PolicyFn us_policy = [](const PublicState& pub, const CardSet& hand, bool, Pcg64Rng&)
+        -> std::optional<ActionEncoding> {
         if (pub.turn == 7 && pub.ar == 1 && hand.test(kUsCoupCard)) {
             return ActionEncoding{.card_id = kUsCoupCard, .mode = ActionMode::Coup, .targets = {kPanama}};
         }
