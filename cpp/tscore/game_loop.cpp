@@ -1878,7 +1878,7 @@ void resume_card_105(GameState& gs, const DecisionFrame& frame, const FrameActio
         return;
     }
     if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
-        apply_war_card(gs.pub, frame.acting_side, action.country_id, 2, 2, rng);
+        apply_war_card(gs.pub, frame.acting_side, action.country_id, 105, 2, 2, rng);
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
@@ -2072,7 +2072,7 @@ void resume_card_24(GameState& gs, const DecisionFrame& frame, const FrameAction
         return;
     }
     if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
-        apply_war_card(gs.pub, frame.acting_side, action.country_id, 2, 2, rng);
+        apply_war_card(gs.pub, frame.acting_side, action.country_id, 24, 2, 2, rng);
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }
@@ -2248,7 +2248,7 @@ void resume_card_39(GameState& gs, const DecisionFrame& frame, const FrameAction
         return;
     }
     if (frame.eligible_countries.test(static_cast<size_t>(action.country_id))) {
-        apply_war_card(gs.pub, frame.acting_side, action.country_id, 3, 3, rng);
+        apply_war_card(gs.pub, frame.acting_side, action.country_id, 39, 3, 3, rng);
     }
     finish_frame_event(gs, frame.source_card, frame.acting_side);
 }

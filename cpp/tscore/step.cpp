@@ -221,26 +221,42 @@ WarResult apply_war_card(
     PublicState& next,
     Side attacker,
     CountryId target,
+    CardId card_id,
     int card_ops,
     int influence_on_success,
     Pcg64Rng& rng
 ) {
     const auto defender = other_side(attacker);
     const auto die_roll = static_cast<int>((rng() % 6) + 1);
-    const auto threshold = 2 * country_spec(target).stability;
-    const auto success = (die_roll + card_ops) >= threshold;
+    int opponent_controlled_neighbors = 0;
+    for (const auto neighbor : adjacency()[target]) {
+        if (neighbor == kUsaAnchorId || neighbor == kUssrAnchorId) {
+            continue;
+        }
+        if (controls_country(defender, neighbor, next)) {
+            ++opponent_controlled_neighbors;
+        }
+    }
+
+    const auto threshold = card_id == 39 ? 3 : 4;
+    const auto modified_roll = die_roll - opponent_controlled_neighbors;
+    const auto success = modified_roll >= threshold;
     if (success) {
         next.set_influence(attacker, target, next.influence_of(attacker, target) + influence_on_success);
         next.set_influence(defender, target, 0);
+        next.milops[to_index(attacker)] = std::max(next.milops[to_index(attacker)], card_ops);
+        const auto vp = card_id == 39 ? 1 : 2;
         if (attacker == Side::USSR) {
-            next.vp += 2;
+            next.vp += vp;
         } else {
-            next.vp -= 2;
+            next.vp -= vp;
         }
-    } else if (attacker == Side::USSR) {
-        next.vp -= 1;
-    } else {
-        next.vp += 1;
+    } else if (card_id != 39) {
+        if (attacker == Side::USSR) {
+            next.vp -= 1;
+        } else {
+            next.vp += 1;
+        }
     }
     return WarResult{
         .success = success,
@@ -528,7 +544,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 11: {
-            apply_war_card(next, Side::USSR, kSouthKoreaId, 2, 2, rng);
+            apply_war_card(next, Side::USSR, kSouthKoreaId, 11, 2, 2, rng);
             break;
         }
 
@@ -538,7 +554,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 13: {
-            apply_war_card(next, Side::USSR, kIsraelId, 2, 2, rng);
+            apply_war_card(next, Side::USSR, kIsraelId, 13, 2, 2, rng);
             break;
         }
 
@@ -751,7 +767,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 annotate_latest_frame(frame_log, 0, 1);
                 return {next, false, std::nullopt};
             }
-            apply_war_card(next, side, target, 2, 2, rng);
+            apply_war_card(next, side, target, 24, 2, 2, rng);
             break;
         }
 
@@ -1020,7 +1036,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                     annotate_latest_frame(frame_log, 0, 1);
                     return {next, false, std::nullopt};
                 }
-                apply_war_card(next, side, target, 3, 3, rng);
+                apply_war_card(next, side, target, 39, 3, 3, rng);
             }
             break;
         }
@@ -1784,7 +1800,7 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
                 annotate_latest_frame(frame_log, 0, 1);
                 return {next, false, std::nullopt};
             }
-            apply_war_card(next, side, target, 2, 2, rng);
+            apply_war_card(next, side, target, 105, 2, 2, rng);
             break;
         }
 

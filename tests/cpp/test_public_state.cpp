@@ -1109,9 +1109,21 @@ ActionEncoding build_war_event_action(const WarCardCase& spec) {
     };
 }
 
+int war_success_vp_delta(const WarCardCase& spec) {
+    const auto vp = spec.card_id == 39 ? 1 : 2;
+    return spec.attacker_side == Side::USSR ? vp : -vp;
+}
+
+int war_failure_vp_delta(const WarCardCase& spec) {
+    if (spec.card_id == 39) {
+        return 0;
+    }
+    return spec.attacker_side == Side::USSR ? -1 : 1;
+}
+
 }  // namespace
 
-TEST_CASE("War cards apply success effects without DEFCON or milops changes", "[step]") {
+TEST_CASE("War cards apply success effects and printed MilOps without DEFCON changes", "[step]") {
     for (const auto& spec : kWarCardCases) {
         PublicState pub;
         pub.defcon = 2;
@@ -1119,12 +1131,13 @@ TEST_CASE("War cards apply success effects without DEFCON or milops changes", "[
         pub.set_influence(other_side(spec.attacker_side), spec.target, 4);
 
         const auto action = build_war_event_action(spec);
-        const auto success_possible = (6 + spec.card_ops) >= (2 * country_spec(spec.target).stability);
+        const auto threshold = spec.card_id == 39 ? 3 : 4;
+        const auto success_possible = 6 >= threshold;
         bool found_success = false;
         for (uint64_t seed = 0; seed < 128; ++seed) {
             Pcg64Rng rng(seed);
             const auto [next, over, winner] = apply_action(pub, action, spec.acting_side, rng);
-            const auto expected_vp = spec.attacker_side == Side::USSR ? 2 : -2;
+            const auto expected_vp = war_success_vp_delta(spec);
             if (next.vp != expected_vp) {
                 continue;
             }
@@ -1132,8 +1145,9 @@ TEST_CASE("War cards apply success effects without DEFCON or milops changes", "[
             REQUIRE_FALSE(over);
             REQUIRE_FALSE(winner.has_value());
             REQUIRE(next.defcon == pub.defcon);
-            REQUIRE(next.milops[to_index(Side::USSR)] == pub.milops[to_index(Side::USSR)]);
-            REQUIRE(next.milops[to_index(Side::US)] == pub.milops[to_index(Side::US)]);
+            REQUIRE(next.milops[to_index(spec.attacker_side)] == spec.card_ops);
+            REQUIRE(next.milops[to_index(other_side(spec.attacker_side))] ==
+                pub.milops[to_index(other_side(spec.attacker_side))]);
             REQUIRE(next.influence_of(spec.attacker_side, spec.target) == 1 + spec.influence_on_success);
             REQUIRE(next.influence_of(other_side(spec.attacker_side), spec.target) == 0);
             found_success = true;
@@ -1153,12 +1167,13 @@ TEST_CASE("War cards award opponent VP and leave board state unchanged on failur
         pub.set_influence(other_side(spec.attacker_side), spec.target, 4);
 
         const auto action = build_war_event_action(spec);
-        const auto failure_possible = (1 + spec.card_ops) < (2 * country_spec(spec.target).stability);
+        const auto threshold = spec.card_id == 39 ? 3 : 4;
+        const auto failure_possible = 1 < threshold;
         bool found_failure = false;
         for (uint64_t seed = 0; seed < 128; ++seed) {
             Pcg64Rng rng(seed);
             const auto [next, over, winner] = apply_action(pub, action, spec.acting_side, rng);
-            const auto expected_vp = spec.attacker_side == Side::USSR ? -1 : 1;
+            const auto expected_vp = war_failure_vp_delta(spec);
             if (next.vp != expected_vp) {
                 continue;
             }
@@ -1178,6 +1193,54 @@ TEST_CASE("War cards award opponent VP and leave board state unchanged on failur
         INFO("card_id=" << static_cast<int>(spec.card_id) << " failure_possible=" << failure_possible);
         REQUIRE(found_failure == failure_possible);
     }
+}
+
+TEST_CASE("Brush War applies adjacent opponent-control roll modifiers", "[step]") {
+    constexpr CountryId kAngolaId = static_cast<CountryId>(57);
+    constexpr CountryId kBotswanaId = static_cast<CountryId>(58);
+    constexpr CountryId kCongoZaireId = static_cast<CountryId>(60);
+
+    PublicState base;
+    base.defcon = 2;
+    base.set_influence(Side::US, kAngolaId, 1);
+
+    PublicState blocked = base;
+    blocked.set_influence(Side::US, kBotswanaId, 2);
+    blocked.set_influence(Side::US, kCongoZaireId, 2);
+
+    const ActionEncoding action{
+        .card_id = 39,
+        .mode = ActionMode::Event,
+        .targets = {kAngolaId},
+    };
+
+    bool found_modified_failure = false;
+    for (uint64_t seed = 0; seed < 128; ++seed) {
+        Pcg64Rng base_rng(seed);
+        const auto [base_next, base_over, base_winner] = apply_action(base, action, Side::USSR, base_rng);
+        if (base_next.vp != 1) {
+            continue;
+        }
+
+        Pcg64Rng blocked_rng(seed);
+        const auto [blocked_next, blocked_over, blocked_winner] = apply_action(blocked, action, Side::USSR, blocked_rng);
+        if (blocked_next.vp != 0) {
+            continue;
+        }
+
+        REQUIRE_FALSE(base_over);
+        REQUIRE_FALSE(base_winner.has_value());
+        REQUIRE_FALSE(blocked_over);
+        REQUIRE_FALSE(blocked_winner.has_value());
+        REQUIRE(base_next.milops[to_index(Side::USSR)] == 3);
+        REQUIRE(blocked_next.milops[to_index(Side::USSR)] == 0);
+        REQUIRE(base_next.influence_of(Side::US, kAngolaId) == 0);
+        REQUIRE(blocked_next.influence_of(Side::US, kAngolaId) == base.influence_of(Side::US, kAngolaId));
+        found_modified_failure = true;
+        break;
+    }
+
+    REQUIRE(found_modified_failure);
 }
 
 TEST_CASE("War cards remain legal at DEFCON 2", "[legal_actions]") {
