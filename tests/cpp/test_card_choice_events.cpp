@@ -348,3 +348,27 @@ TEST_CASE("Colonial Rear Guards adds US influence to four distinct Africa or Sou
     REQUIRE(next.discard.test(kColonialRearGuards));
     REQUIRE_FALSE(next.removed.test(kColonialRearGuards));
 }
+
+TEST_CASE("Panama Canal Returned adds US influence to Panama Costa Rica and Venezuela", "[cards][step]") {
+    constexpr CardId kPanamaCanalReturned = 111;
+    constexpr CountryId kPanama = 44;
+    constexpr CountryId kCostaRica = 45;
+    constexpr CountryId kVenezuela = 55;
+
+    PublicState pub;
+    const auto panama_before = pub.influence_of(Side::US, kPanama);
+    const auto costa_rica_before = pub.influence_of(Side::US, kCostaRica);
+    const auto venezuela_before = pub.influence_of(Side::US, kVenezuela);
+
+    const ActionEncoding action{.card_id = kPanamaCanalReturned, .mode = ActionMode::Event, .targets = {}};
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action(pub, action, Side::US, rng);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(next.influence_of(Side::US, kPanama) == panama_before + 1);
+    REQUIRE(next.influence_of(Side::US, kCostaRica) == costa_rica_before + 1);
+    REQUIRE(next.influence_of(Side::US, kVenezuela) == venezuela_before + 1);
+    REQUIRE(next.removed.test(kPanamaCanalReturned));
+    REQUIRE_FALSE(next.discard.test(kPanamaCanalReturned));
+}

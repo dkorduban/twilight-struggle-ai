@@ -317,6 +317,8 @@ constexpr CountryId kLibyaId = 33;
 constexpr CountryId kSaudiArabiaId = 34;
 constexpr CountryId kCubaId = 36;
 constexpr CountryId kNicaraguaId = 43;
+constexpr CountryId kPanamaId = 44;
+constexpr CountryId kCostaRicaId = 45;
 constexpr CountryId kChileId = 49;
 constexpr CountryId kVenezuelaId = 55;
 constexpr CountryId kAngolaId = 57;
@@ -1895,6 +1897,12 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             }
             break;
         }
+
+        case 111:
+            add_influence(next, Side::US, kPanamaId, 1);
+            add_influence(next, Side::US, kCostaRicaId, 1);
+            add_influence(next, Side::US, kVenezuelaId, 1);
+            break;
 
         case kChinaCardId:
             if (side == Side::USSR) {
