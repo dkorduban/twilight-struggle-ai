@@ -54,6 +54,7 @@ class _LazyModelRegistry(dict[str, type]):
             TSDirectCountryModel,
             TSFullEmbedModel,
             TSMarginalValueModel,
+            TSNovelModel,
         )
 
         dict.update(
@@ -68,6 +69,7 @@ class _LazyModelRegistry(dict[str, type]):
                 "country_attn_side": TSCountryAttnSideModel,
                 "country_attn_side_policy": TSCountryAttnSidePolicyModel,
                 "country_attn_subframe": TSCountryAttnSubframeModel,
+                "tsnovel": TSNovelModel,
                 "country_attn_film": TSCountryAttnFiLMModel,
                 "country_attn_film_normal_init": TSCountryAttnFiLMNormalInitModel,
                 "country_attn_film_zero_beta_bias": TSCountryAttnFiLMZeroBetaBiasModel,
