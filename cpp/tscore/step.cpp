@@ -1866,6 +1866,36 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             next.awacs_active = true;
             break;
 
+        case 110: {
+            std::vector<CountryId> pool;
+            for (const auto cid : all_country_ids()) {
+                const auto region = country_spec(cid).region;
+                if (region == Region::Africa || region == Region::SoutheastAsia) {
+                    pool.push_back(cid);
+                }
+            }
+            const int total_steps = std::min<int>(4, static_cast<int>(pool.size()));
+            for (int i = 0; i < total_steps; ++i) {
+                const auto cid = choose_country(
+                    next,
+                    static_cast<CardId>(110),
+                    Side::USSR,
+                    pool,
+                    rng,
+                    policy_cb,
+                    frame_log,
+                    frame_stack_mode
+                );
+                if (cid == kInvalidCountryId && frame_stack_mode && policy_cb == nullptr && frame_log != nullptr) {
+                    annotate_latest_frame(frame_log, i, total_steps);
+                    return {next, false, std::nullopt};
+                }
+                add_influence(next, Side::US, cid, 1);
+                pool.erase(std::remove(pool.begin(), pool.end(), cid), pool.end());
+            }
+            break;
+        }
+
         case kChinaCardId:
             if (side == Side::USSR) {
                 next.formosan_active = false;

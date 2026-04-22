@@ -1,7 +1,10 @@
+#include <algorithm>
 #include <array>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "game_data.hpp"
 #include "game_loop.hpp"
 #include "rng.hpp"
 #include "step.hpp"
@@ -302,4 +305,46 @@ TEST_CASE("Lone Gunman lets USSR use this card for one operation", "[cards][game
     REQUIRE(gs.hands[to_index(Side::US)].test(kUsHeldCard));
     REQUIRE(gs.pub.removed.test(kLoneGunman));
     REQUIRE_FALSE(gs.pub.discard.test(kLoneGunman));
+}
+
+TEST_CASE("Colonial Rear Guards adds US influence to four distinct Africa or Southeast Asia countries", "[cards][step]") {
+    constexpr CardId kColonialRearGuards = 110;
+    const std::array<CountryId, 4> picks = {57, 75, 79, 84};
+    std::vector<CountryId> chosen;
+
+    PolicyCallbackFn policy_cb = [&](const PublicState&, const EventDecision& decision) {
+        REQUIRE(decision.kind == DecisionKind::CountrySelect);
+        REQUIRE(decision.source_card == kColonialRearGuards);
+        REQUIRE(decision.acting_side == Side::USSR);
+        REQUIRE(chosen.size() < picks.size());
+        const auto wanted = picks[chosen.size()];
+        for (int idx = 0; idx < decision.n_options; ++idx) {
+            const auto candidate = static_cast<CountryId>(decision.eligible_ids[idx]);
+            const auto region = country_spec(candidate).region;
+            REQUIRE((region == Region::Africa || region == Region::SoutheastAsia));
+            REQUIRE(std::find(chosen.begin(), chosen.end(), candidate) == chosen.end());
+            if (candidate == wanted) {
+                chosen.push_back(candidate);
+                return idx;
+            }
+        }
+        FAIL("Colonial Rear Guards expected country was not eligible");
+        return 0;
+    };
+
+    PublicState pub;
+    const ActionEncoding action{.card_id = kColonialRearGuards, .mode = ActionMode::Event, .targets = {}};
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action(pub, action, Side::USSR, rng, &policy_cb);
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    const std::vector<CountryId> expected{picks.begin(), picks.end()};
+    REQUIRE(chosen == expected);
+    for (const auto cid : picks) {
+        REQUIRE(next.influence_of(Side::US, cid) == 1);
+    }
+    REQUIRE(next.influence_of(Side::US, 45) == 0);
+    REQUIRE(next.discard.test(kColonialRearGuards));
+    REQUIRE_FALSE(next.removed.test(kColonialRearGuards));
 }
