@@ -24,6 +24,16 @@ enum class FrameKind : uint8_t {
     Headline = 10,
 };
 
+// Thin action for one frame. Fill the relevant field for the frame kind:
+// SmallChoice/CancelChoice/DeferredOps: option_index
+// CountryPick/FreeOpsInfluence/NoradInfluence: country_id
+// CardSelect/ForcedDiscard: card_id
+struct FrameAction {
+    int option_index = 0;
+    CardId card_id = 0;
+    CountryId country_id = 0;
+};
+
 struct DecisionFrame {
     FrameKind kind = FrameKind::TopLevelAR;
     Side acting_side = Side::USSR;
@@ -37,16 +47,7 @@ struct DecisionFrame {
     std::bitset<kCountrySlots> eligible_countries;
     uint8_t eligible_n = 0;
     uint16_t criteria_bits = 0;
-};
-
-// Thin action for one frame. Fill the relevant field for the frame kind:
-// SmallChoice/CancelChoice/DeferredOps: option_index
-// CountryPick/FreeOpsInfluence/NoradInfluence: country_id
-// CardSelect/ForcedDiscard: card_id
-struct FrameAction {
-    int option_index = 0;
-    CardId card_id = 0;
-    CountryId country_id = 0;
+    FrameAction chosen_action{};
 };
 
 struct StepResult {

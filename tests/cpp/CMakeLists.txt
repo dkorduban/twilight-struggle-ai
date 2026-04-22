@@ -28,6 +28,7 @@ add_executable(test_tscore
     test_public_state.cpp
     test_adjacency.cpp
     test_experimental_heuristic.cpp
+    test_subframe_logging.cpp
 )
 
 target_link_libraries(test_tscore

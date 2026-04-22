@@ -21,6 +21,12 @@ bool apply_frame_ops_impl(
     Pcg64Rng& rng
 );
 
+DecisionFrame logged_frame_copy(
+    const DecisionFrame& frame,
+    std::vector<DecisionFrame>* frame_log,
+    const FrameAction& action
+);
+
 std::tuple<PublicState, bool, std::optional<Side>> apply_action_with_hands(
     GameState& gs,
     const ActionEncoding& action,

@@ -301,26 +301,6 @@ FrameAction choose_frame_action(
     }
 }
 
-DecisionFrame logged_frame_copy(
-    const DecisionFrame& frame,
-    std::vector<DecisionFrame>* frame_log,
-    const FrameAction& action
-) {
-    auto logged = frame;
-    if (frame_log != nullptr) {
-        logged.stack_depth = frame_count(frame_log->size());
-    }
-    if (logged.kind == FrameKind::SmallChoice) {
-        const auto ops = std::max(0, static_cast<int>(logged.budget_remaining));
-        const auto mode_index = std::clamp(action.option_index, 0, std::max(0, static_cast<int>(logged.eligible_n) - 1));
-        const auto country_steps = mode_index == 2 ? 1 : ops;
-        logged.step_index = 0;
-        logged.total_steps = frame_count(static_cast<size_t>(std::max(1, country_steps + 1)));
-        logged.criteria_bits = static_cast<uint16_t>(mode_index);
-    }
-    return logged;
-}
-
 bool apply_frame_ops_or_resolve(
     GameState& gs,
     std::vector<DecisionFrame>* frame_log,
@@ -1043,6 +1023,32 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
 }
 
 }  // namespace
+
+DecisionFrame logged_frame_copy(
+    const DecisionFrame& frame,
+    std::vector<DecisionFrame>* frame_log,
+    const FrameAction& action
+) {
+    auto logged = frame;
+    if (frame_log != nullptr) {
+        logged.stack_depth = frame_count(frame_log->size());
+    }
+    logged.chosen_action = action;
+
+    if (logged.kind == FrameKind::SmallChoice) {
+        const auto ops = std::max(0, static_cast<int>(logged.budget_remaining));
+        const auto mode_index = std::clamp(
+            action.option_index,
+            0,
+            std::max(0, static_cast<int>(logged.eligible_n) - 1)
+        );
+        const auto country_steps = mode_index == 2 ? 1 : ops;
+        logged.step_index = 0;
+        logged.total_steps = frame_count(static_cast<size_t>(std::max(1, country_steps + 1)));
+        logged.criteria_bits = static_cast<uint16_t>(mode_index);
+    }
+    return logged;
+}
 
 bool apply_frame_ops_impl(
     GameState& gs,
