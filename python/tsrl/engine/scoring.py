@@ -214,19 +214,29 @@ def score_region(region: Region, pub: PublicState) -> ScoringResult:
     ]
     total_bgs = len(battleground_ids)
 
-    # Shuttle Diplomacy (74): when active, exclude the highest-stability BG from
-    # Asia or Middle East scoring for BOTH sides (competitive / ITS ruling).
-    # The excluded BG is removed from BOTH battleground_ids AND region_ids so it
-    # does not contribute to tier totals as a non-BG country either.
+    # Shuttle Diplomacy (engine card_id 74; GMT print card #73): when active,
+    # subtract one USSR-controlled Battleground country from the USSR total for
+    # Asia or Middle East scoring.  Verbatim card text (twilightstrategy.com):
+    #   "If this card's Event is in effect, subtract (-1) a Battleground country
+    #    from the USSR total and then discard this card during the next scoring
+    #    of the Middle East or Asia (which ever comes first)."
+    # US counts are unaffected; the BG remains in the region for US's tier math.
+    # The excluded BG does not contribute to USSR's BG count, USSR's total, or
+    # USSR's adjacency bonus.  total_bgs is unchanged — this is what lets USSR
+    # lose Control (can no longer reach bgs == total_bgs).
+    # Highest-stability USSR-controlled BG is the community heuristic for which
+    # BG the US chooses (the rules leave the choice to the US; this is a tie-
+    # break convention, not card text).
     # The flag is cleared by apply_scoring_card after one Asia or ME scoring card.
+    shuttle_excluded_bg: int | None = None
     shuttle_used = False
     if pub.shuttle_diplomacy_active and region in (Region.ASIA, Region.MIDDLE_EAST):
-        if battleground_ids:
-            top_bg = max(battleground_ids, key=lambda cid: countries[cid].stability)
-            battleground_ids = [cid for cid in battleground_ids if cid != top_bg]
-            region_ids = [cid for cid in region_ids if cid != top_bg]
-            total_bgs -= 1
-            shuttle_used = True
+        shuttle_used = True
+        ussr_ctrl_bgs = [cid for cid in battleground_ids if _controls(Side.USSR, cid, pub)]
+        if ussr_ctrl_bgs:
+            shuttle_excluded_bg = max(
+                ussr_ctrl_bgs, key=lambda cid: countries[cid].stability
+            )
 
     # Pre-compute control counts for both sides (used in tier and scoring).
     def _counts(side: Side) -> tuple[int, int, int]:
@@ -236,6 +246,8 @@ def score_region(region: Region, pub: PublicState) -> ScoringResult:
             1 for cid in region_ids
             if cid not in battleground_ids and _controls(side, cid, pub)
         )
+        if side == Side.USSR and shuttle_excluded_bg is not None:
+            bgs -= 1
         return bgs, non_bgs, bgs + non_bgs
 
     ussr_bgs, ussr_non_bgs, ussr_total = _counts(Side.USSR)
@@ -286,6 +298,12 @@ def score_region(region: Region, pub: PublicState) -> ScoringResult:
             1 for cid in region_ids
             if cid in enemy_neighbors and _controls(side, cid, pub)
         )
+        if (
+            side == Side.USSR
+            and shuttle_excluded_bg is not None
+            and shuttle_excluded_bg in enemy_neighbors
+        ):
+            adj_bonus -= 1
 
         return base + bg_bonus + adj_bonus
 

@@ -7,6 +7,7 @@
 
 #include "adjacency.hpp"
 #include "game_data.hpp"
+#include "step.hpp"
 
 namespace ts {
 namespace {
@@ -69,7 +70,8 @@ int side_score(
     int control,
     int battlegrounds,
     std::span<const CountryId> region_ids,
-    const PublicState& pub
+    const PublicState& pub,
+    CountryId shuttle_excluded_bg = kInvalidCountryId
 ) {
     if (tier == Tier::None) {
         return 0;
@@ -94,6 +96,12 @@ int side_score(
             controls_country(side, cid, pub)
         ) {
             ++adjacency_bonus;
+        }
+    }
+    if (side == Side::USSR && shuttle_excluded_bg != kInvalidCountryId) {
+        const auto& neighbors = graph[shuttle_excluded_bg];
+        if (std::find(neighbors.begin(), neighbors.end(), enemy_anchor) != neighbors.end()) {
+            --adjacency_bonus;
         }
     }
 
@@ -156,19 +164,27 @@ ScoringResult score_region(Region region, const PublicState& pub) {
 
     int total_bgs = static_cast<int>(battleground_ids.size());
     bool shuttle_used = false;
+    // Shuttle Diplomacy (engine card_id 74; GMT print card #73): subtract one
+    // USSR-controlled BG from the USSR total for Asia/ME scoring. US counts
+    // are unaffected. total_bgs unchanged — lets USSR lose Control.
+    // Highest-stability USSR-controlled BG is the community tie-break heuristic.
+    CountryId shuttle_excluded_bg = kInvalidCountryId;
     if (pub.shuttle_diplomacy_active && (region == Region::Asia || region == Region::MiddleEast)) {
-        if (!battleground_ids.empty()) {
-            const auto top_bg = *std::max_element(
-                battleground_ids.begin(),
-                battleground_ids.end(),
+        shuttle_used = true;
+        std::vector<CountryId> ussr_ctrl_bgs;
+        for (const auto cid : battleground_ids) {
+            if (controls_country(Side::USSR, cid, pub)) {
+                ussr_ctrl_bgs.push_back(cid);
+            }
+        }
+        if (!ussr_ctrl_bgs.empty()) {
+            shuttle_excluded_bg = *std::max_element(
+                ussr_ctrl_bgs.begin(),
+                ussr_ctrl_bgs.end(),
                 [](CountryId lhs, CountryId rhs) {
                     return country_spec(lhs).stability < country_spec(rhs).stability;
                 }
             );
-            battleground_ids.erase(std::remove(battleground_ids.begin(), battleground_ids.end(), top_bg), battleground_ids.end());
-            region_ids.erase(std::remove(region_ids.begin(), region_ids.end(), top_bg), region_ids.end());
-            total_bgs = static_cast<int>(battleground_ids.size());
-            shuttle_used = true;
         }
     }
 
@@ -186,6 +202,9 @@ ScoringResult score_region(Region region, const PublicState& pub) {
             if (controls_country(side, cid, pub)) {
                 ++counts.non_battlegrounds;
             }
+        }
+        if (side == Side::USSR && shuttle_excluded_bg != kInvalidCountryId) {
+            --counts.battlegrounds;
         }
         counts.total = counts.battlegrounds + counts.non_battlegrounds;
         return counts;
@@ -207,10 +226,10 @@ ScoringResult score_region(Region region, const PublicState& pub) {
     }
 
     const auto ussr_score = side_score(
-        Side::USSR, ussr_tier, vp.presence, vp.domination, vp.control, ussr.battlegrounds, region_ids, pub
+        Side::USSR, ussr_tier, vp.presence, vp.domination, vp.control, ussr.battlegrounds, region_ids, pub, shuttle_excluded_bg
     );
     const auto us_score = side_score(
-        Side::US, us_tier, vp.presence, vp.domination, vp.control, us.battlegrounds, region_ids, pub
+        Side::US, us_tier, vp.presence, vp.domination, vp.control, us.battlegrounds, region_ids, pub, shuttle_excluded_bg
     );
     ScoringResult result;
     result.vp_delta = ussr_score - us_score;

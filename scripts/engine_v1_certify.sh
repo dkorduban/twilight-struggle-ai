@@ -7,21 +7,23 @@
 #   2. Python pytest suite passes clean (use -n 0 per pytest-Python3.14 workaround).
 #   3. Replay validator violation count is at or below the documented ceiling.
 #
-# Violation ceiling is set at 78 as of 2026-04-21 post-#127. All 78 are
-# classified as corpus-convention / log-truncation / blocked-on-#126 Shuttle
-# (see results/autonomous_decisions.log + engine_state_20260421 block in
-# results/continuation_plan.json). Any future regression that pushes count
-# above 78 indicates an engine-side change introduced real mismatches.
+# Violation ceiling is set at 74 as of 2026-04-21 post-#125 Shuttle fix.
+# Shuttle Diplomacy (engine card 74 / print card #73) now correctly subtracts
+# the top-stability USSR-controlled BG from the USSR total only, per verbatim
+# card text (twilightstrategy.com/card-list/).  Cleared 4 violations
+# (tsreplayer_29 T7, tsreplayer_44 T9, tsreplayer_47 T5, tsreplayer_54 T7).
+# Remaining 74 are corpus-convention / log-truncation edge cases; further
+# reductions come from #121 corpus expansion and #120 rules-lawyer oracle.
 #
-# Lowering ENGINE_V1_VIOLATION_CEILING is encouraged as Shuttle Diplomacy
-# (#125/#126) and corpus expansion (#121) land.
+# Any future regression that pushes count above 74 indicates an engine-side
+# change introduced real mismatches.
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-ENGINE_V1_VIOLATION_CEILING="${ENGINE_V1_VIOLATION_CEILING:-78}"
+ENGINE_V1_VIOLATION_CEILING="${ENGINE_V1_VIOLATION_CEILING:-74}"
 BUILD_DIR="${BUILD_DIR:-build-ninja}"
 LOG_DIR="${LOG_DIR:-data/raw_logs}"
 OUT_DIR="${OUT_DIR:-results/engine_cert}"
