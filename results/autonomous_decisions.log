@@ -10606,3 +10606,72 @@ Next priority: #119 TARGET_ILLEGAL (67 residuals) or triage the 71 Asia card-1 r
 2026-04-21 #119 SPEC RESTORE: restored 41,43 Honduras-Nicaragua edge per user confirmation.
   Validator TARGET_ILLEGAL: 2 -> 0. Full elimination of 67 initial violations.
   Final count: 141 edges. #119 fully resolved.
+
+2026-04-21 17:05 #125 SHUTTLE-DIPLOMACY INVESTIGATION:
+  - Bg-rules-lawyer (a44be81fdd1f8b6bd) completed without writing result.md.
+  - PDF primary-source extraction: docs/TS_Rules_Deluxe.pdf contains only
+    rulebook sections + historical flavor. NO per-card effect text.
+  - ENGINE BUG CONFIRMED (both Python scoring.py:222-229 and C++ scoring.cpp:158-172):
+    current impl removes top-stability BG from scoring entirely, on BOTH sides.
+    Card text is USSR-only per community knowledge.
+  - BLOCKED: cannot ship fix without verified canonical card text.
+    Three competing interpretations on the table (both-sides/non-phasing/USSR-only).
+  - Full analysis: .codex_tasks/shuttle_diplomacy_20260421/result.md
+  - #125 remains in_progress.
+
+2026-04-21 17:05 VALIDATOR VIOLATION SUMMARY (78 total SCORING_VP_MISMATCH):
+  - 71 Asia card-1: #124 CLOSED as corpus-encoding convention (rulebook verified).
+  - 4 log-truncation-at-game-end (tsreplayer_14/26/36/66): not engine bugs,
+    corpus artifacts (scoring card = last log line, no VP emitted).
+  - 2 Shuttle Diplomacy Mideast (tsreplayer_33/47): BLOCKED on card text.
+  - 1 unexplained (tsreplayer_71 T3 Mideast, 1-VP gap): manually verified all
+    rule components (tier/BG/adjacency). No valid rule explanation. Most likely
+    human miscalculation in the log — 1 VP off, rulebook gives +3, log says +4.
+  - Net: 7 non-Asia violations. 4 classified as corpus log-encoding artifacts.
+    Only 2 engine bugs remain (Shuttle, blocked). 1 is log miscalc.
+
+2026-04-21 17:05 NEXT CORRECTNESS STEPS:
+  (1) Fetch canonical Shuttle card text via external source (BGG/GMT/Vassal).
+  (2) Apply fix + add golden test.
+  (3) Add corpus-encoding-suppression flag to validator per #124 note.
+  (4) Document 4 log-truncation + 1 log-miscalc cases as known non-engine.
+
+[2026-04-21 17:20] Task #127 COMPLETE — engine spec fix for Mozambique + 4 nonexistent adjacencies
+  User forward-direction audit confirmed (prior message):
+    1. Mozambique does not exist on TS Deluxe board
+    2. Cameroon--Ivory Coast adjacency does not exist
+    3. Ivory Coast--Saharan States adjacency does not exist
+    6. Philippines--Taiwan adjacency does not exist
+    7. Philippines--Malaysia adjacency does not exist
+    Kept (confirmed): Japan--Philippines, South Korea--Taiwan
+  Changes:
+    data/spec/countries.csv: Mozambique (id=66) commented out with retention note
+    data/spec/adjacency.csv: removed 5 edges (58,66 / 59,62 / 62,68 / 78,84 / 78,85);
+                              count 141 -> 136; added second retraction header
+    python/tsrl/engine/events.py:
+      - _MOZAMBIQUE=66 renamed to _SE_AFRICAN_STATES=69
+      - Card 55 Portuguese Empire Crumbles: target Mozambique -> SE African States
+      - _SOUTH_AFRICA_NEIGHBORS [58,69,74] -> [57,58] (matches C++ kSaNeighbors for card 56)
+    cpp/tscore/step.cpp:
+      - kMozambiqueId removed, kSEAfricanStatesId=69 added
+      - Card 55 target: kMozambiqueId -> kSEAfricanStatesId
+    tests/python/test_events.py: updated card 55/56 tests to match
+  Verification:
+    C++ rebuild: clean
+    C++ tests: 95/98 pass (3 ISMCTS failures pre-existing; TorchScript StubModel schema drift)
+    Python tests/python/test_events.py: 172/172 pass
+    Python tests/python/test_{game_data,engine,correctness_fixes}.py: 125/125 pass
+    validate_replays: 78 violations (byte-identical to pre-fix) — no regressions
+    Runtime country count: Python 84, consistent with id=64 + id=66 both excluded
+
+[2026-04-21 17:22] Standing task queue status:
+  #127 COMPLETE (engine correctness) — ready to commit
+  #125 BLOCKED on #126 (Shuttle Diplomacy card text)
+  #126 PENDING (requires external BGG/Vassal/GMT errata lookup — can't do autonomously)
+  #122 PENDING (Week 3: engine v1.0 certification + golden regression gate)
+  #124 CLOSED (71 Asia cases = tsreplayer convention, not spec bug)
+  Next autonomous step candidates:
+    a) Pick up #122: design golden regression gate
+    b) Pick up #121: expand validator corpus via static replay scraping
+    c) Parallel scrape for Shuttle text (#126) — can write scraper but user confirmed
+       web game is browser JS and not accessible to Claude

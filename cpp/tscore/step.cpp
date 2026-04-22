@@ -314,7 +314,7 @@ constexpr CountryId kChileId = 49;
 constexpr CountryId kVenezuelaId = 55;
 constexpr CountryId kAngolaId = 57;
 constexpr CountryId kBotswanaId = 58;
-constexpr CountryId kMozambiqueId = 66;
+constexpr CountryId kSEAfricanStatesId = 69;
 constexpr CountryId kSouthAfricaId = 71;
 constexpr CountryId kZimbabweId = 74;
 constexpr CountryId kCzechoslovakiaId = 3;
@@ -1221,8 +1221,11 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_event(
             break;
 
         case 55:
+            // Portuguese Empire Crumbles: +2 USSR inf each to Angola and SE African States.
+            // (2026-04-21 retraction: previously used Mozambique; Mozambique does not
+            //  exist on TS Deluxe. Card text target is SE African States.)
             add_influence(next, Side::USSR, kAngolaId, 2);
-            add_influence(next, Side::USSR, kMozambiqueId, 2);
+            add_influence(next, Side::USSR, kSEAfricanStatesId, 2);
             break;
 
         case 56: {

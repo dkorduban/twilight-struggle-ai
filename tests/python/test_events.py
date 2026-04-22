@@ -459,14 +459,14 @@ def test_decolonization_no_mutation():
 # ---------------------------------------------------------------------------
 
 _ANGOLA = 57
-_MOZAMBIQUE = 66
+_SE_AFRICAN_STATES = 69
 
 
-def test_portuguese_empire_2_in_angola_and_mozambique():
+def test_portuguese_empire_2_in_angola_and_se_african_states():
     pub = _pub()
     new_pub, _, _ = _apply_event(pub, 55, Side.USSR, _rng0())
     assert new_pub.influence.get((Side.USSR, _ANGOLA), 0) == 2
-    assert new_pub.influence.get((Side.USSR, _MOZAMBIQUE), 0) == 2
+    assert new_pub.influence.get((Side.USSR, _SE_AFRICAN_STATES), 0) == 2
 
 
 def test_portuguese_empire_adds_to_existing():
@@ -488,7 +488,7 @@ def test_portuguese_empire_no_mutation():
 # ---------------------------------------------------------------------------
 
 _SOUTH_AFRICA = 71
-_SA_NEIGHBORS = {58, 69, 74}
+_SA_NEIGHBORS = {57, 58}  # Angola, Botswana (TS Deluxe board)
 
 
 def test_south_african_unrest_2_in_sa():

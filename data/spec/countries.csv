@@ -134,7 +134,14 @@ country_id,name,region,stability,is_battleground,us_start_influence,ussr_start_i
 # id=64: Libya was incorrectly placed in Africa. Libya is MiddleEast only (id=33).
 # id=64 is reserved for future reassignment. See FIXME note below.
 65,Morocco,Africa,3,false,0,0
-66,Mozambique,Africa,1,false,0,0
+# id=66 Mozambique: 2026-04-21 user forward-direction audit — Mozambique does
+# NOT exist on the TS Deluxe board. Row retained as commented placeholder so
+# historical serialized state / dataset rows indexing by country_id stay valid.
+# Previously had one remaining adjacency (58,66 Botswana--Mozambique) — removed.
+# Card 55 Portuguese Empire Crumbles redirected from Mozambique → SE African
+# States (id=69) in python/events.py and cpp/step.cpp.
+# Do NOT load this row into the country map.
+# (was: "66,Mozambique,Africa,1,false,0,0")
 67,Nigeria,Africa,1,true,0,0
 68,Saharan States,Africa,1,false,0,0
 69,SE African States,Africa,1,false,0,0

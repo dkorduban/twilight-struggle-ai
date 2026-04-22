@@ -73,7 +73,7 @@ _SAUDI_ARABIA = 34
 _LEBANON = 32
 _NICARAGUA = 43
 _ANGOLA = 57
-_MOZAMBIQUE = 66
+_SE_AFRICAN_STATES = 69
 _SOUTH_AFRICA = 71
 _CHILE = 49
 _VENEZUELA = 55
@@ -85,8 +85,10 @@ _BULGARIA = 83
 _HUNGARY = 9
 _CZECHOSLOVAKIA = 3
 
-# South Africa neighbors
-_SOUTH_AFRICA_NEIGHBORS = [58, 69, 74]  # Botswana(58), SEAfricanStates(69), Zimbabwe(74)
+# South Africa neighbors on TS Deluxe board: Angola (57), Botswana (58).
+# (2026-04-21 spec retraction: Mozambique does not exist; SE African States
+# and Zimbabwe are not direct neighbors of South Africa. Matches C++ kSaNeighbors.)
+_SOUTH_AFRICA_NEIGHBORS = [57, 58]
 
 # ---------------------------------------------------------------------------
 # Handler type
@@ -378,9 +380,13 @@ def _event_decolonization(
 def _event_portuguese_empire_crumbles(
     pub: PublicState, side: Side, rng: RNG
 ) -> tuple[PublicState, bool, Optional[Side]]:
-    """Card 55: Portuguese Empire Crumbles*. 2 USSR inf in Angola and Mozambique."""
+    """Card 55: Portuguese Empire Crumbles*. 2 USSR inf in Angola and SE African States.
+
+    (2026-04-21: Mozambique does not exist on the TS Deluxe board; canonical
+    targets per card text are Angola + SE African States.)
+    """
     _add_influence(pub, Side.USSR, _ANGOLA, 2)
-    _add_influence(pub, Side.USSR, _MOZAMBIQUE, 2)
+    _add_influence(pub, Side.USSR, _SE_AFRICAN_STATES, 2)
     return pub, False, None
 
 
