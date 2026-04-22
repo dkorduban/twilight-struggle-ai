@@ -10711,3 +10711,73 @@ Training work (#96 v37 distill) stays deferred per user directive.
   FINAL TALLY: 0 engine_bugs, 5 log_truncation, 1 corpus_convention (Shuttle), 1 corpus_convention (adjacency-gap in Q6 as noted by agent, plus Q3 Shuttle)
   Engine v1.0 ceiling=74 remains correct. No engine changes needed.
   Autonomous correctness scope remaining: #121 BLOCKED (web game browser-JS). #96 deferred per user directive.
+
+=== 2026-04-22 06:57 UTC — Resume after context compaction ===
+USER DIRECTIVE: full frame migration + novel arch, autonomous overnight, avoid rm/mv.
+Asia resolution verified: .codex_tasks/asia_presence_base_vp_20260421/result.md is authoritative.
+  Covers the +3 mutual-presence cluster. The 68 Asia cases split across conventions:
+  - ~16 cases delta=+1 — likely China Card bonus convention
+  - ~17 cases delta=+2 — likely layered BG or adjacency convention
+  - ~4 cases delta=+3 — mutual-presence (scenario A, verified by rules-lawyer)
+  - ~9 cases delta=+4..+7 — multiple layered conventions
+  - ~12 cases with negative delta — inverse conventions
+  Engine matches rulebook per rules-lawyer. Ceiling=74 stable. No engine bug.
+
+PLAN TONIGHT:
+  1. Dispatch sub-frame row emission to Codex (spec at .claude/plan/subframe-row-emission.md)
+  2. Add Parquet binary format selector to collector (Task #128)
+  3. Implement cards #109/#110/#111 (Task #132) — now base cards, not promo
+  4. Write BC baseline spec (Task #129)
+  5. Write novel arch spec: GNN + multi-level attention + aux heads (Task #130)
+  6. Clean up stale memory entries if found
+
+=== 2026-04-22 07:25 UTC — #133 sub-frame row emission COMPLETE ===
+3 commits: c59f1c5, 851a6f3, d7c264b
+  104/104 C++ tests pass (was 95 → +9 sub-frame tests added)
+  Python tests pass
+  Engine v1.0 cert: 74/74 ceiling stable
+  JSONL smoke: 583 AR + 247 sub-frame rows per 5 games (42% more training signal)
+NEXT: #128 Parquet selector, #132 Cards 109/110/111, spec BC baseline + novel arch
+
+=== 2026-04-22 07:35 UTC — #132 Cards 109/110/111 COMPLETE ===
+3 commits: 3a200df, 4a03cad, c7e334d
+  107/107 tests pass, 74 ceiling stable.
+  #109 Lone Gunman: US reveals hand, USSR uses 1 ops
+  #110 Colonial Rear Guards: 4 distinct Africa/SEA country US-influence placements
+  #111 Panama Canal Returned: fixed +1 US influence to Panama/Costa Rica/Venezuela
+NEXT: Python dataset update to consume sub-frame rows (#131), BC baseline spec (#129), Novel arch (#130)
+
+=== 2026-04-22 08:36 UTC — #129/#131 BC subframe baseline impl COMPLETE (smoke) ===
+4 commits: 1fdd1ec (dataset), f1b9108 (model+registry), 728ee71 (training), 52e1658 (tests+smoke)
+  5-epoch smoke on heuristic_10k_setup_bid2_nash.parquet (NO sub-frame rows in old data):
+    train_loss=6.11, val_loss=6.03, val_card_top1=0.470
+  TorchScript export works; country_pick_logits present in output dict.
+  Note: Opus referenced CountryAllocHead but TSCountryAttnSideModel lacks one;
+    Codex kept existing strategy/mixer country branch (reasonable substitute).
+NEXT: collect fresh sub-frame data + implement novel arch (#130) + full 30-epoch train
+
+=== 2026-04-22 01:57 PDT (post-compact autonomous session) ===
+STATE: engine-v1.0-certified tag exists (74 violations, Shuttle fix applied); cert rerun PASSED.
+
+ACTIONS:
+1. Verified Asia residuals resolution complete (results/analysis/asia_residuals_complete_resolution.md from pre-compact).
+2. Data collection completed: 137458 sub-frame rows (USSR 71687 + US 65771), 1000 games total w/ v56 scripted + heuristic. Seeds 70000/70500.
+3. Converted to Parquet: data/parquet/v56_bootstrap/v56_1000g_subframe.parquet (14.9 MB).
+4. Codex implemented Task #130 (novel architecture): TSNovelModel + CountryGNNAttnCLSEncoder + CardCrossAttnEncoder + TransitionDiffHead + OpponentBeliefHead. Commits 60ffed1→b61e2bd. 727 LOC. 11 tests pass.
+5. Codex stopped on Task #128 (Parquet selector): Arrow C++ linkage non-trivial. Blocker documented at results/analysis/task128_arrow_blocker.md. Workaround: manual jsonl_to_parquet.py conversion works.
+
+STATUS:
+- Correctness: COMPLETE (engine cert passed, 0 engine bugs identified)
+- Frame migration: COMPLETE (sub-frame rows emit, dataset consumes, model routes heads)
+- Novel arch: IMPLEMENTED (ready for BC training gate)
+- Training: NOT STARTED (per user directive "before any training")
+
+NEXT (when user unblocks training):
+- Run BC training on data/parquet/v56_bootstrap/v56_1000g_subframe.parquet with country_attn_subframe model (30 epochs, target val_adv_card)
+- Gate: 500g × 2 sides vs heuristic at +2 bid, seeds 50000/50500, need ≥0.5 combined
+- If gate passes: train tsnovel with same data (14 ablation runs per opus_analysis §B.6)
+
+BLOCKERS:
+- #128 Parquet selector: awaiting Arrow C++ linkage decision
+- #121 Validator corpus expansion: BLOCKED (web game browser-JS, user noted)
+
