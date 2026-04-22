@@ -218,12 +218,27 @@ def test_no_mode_illegal_on_real_game():
 
 
 def test_no_target_illegal_on_real_game():
-    """Clean game (vp20) has no TARGET_ILLEGAL violations."""
+    """Clean game (vp20) has at most the known mod-adjacency TARGET_ILLEGAL.
+
+    Post-#127 adjacency spec fix removed the non-existent 78,84 Philippines-Malaysia
+    edge. vp20 uses this mod adjacency exactly once (T1 US AR2 NATO* Malaysia placement);
+    all other placements remain rules-clean. Keeping this exact expectation lets the
+    test still catch new regressions introduced by future engine work.
+    """
     if not _CLEAN_GAME_PATH.exists():
         pytest.skip("vp20.txt not found")
     result = validate_game(_CLEAN_GAME_PATH.read_text(), "vp20", ALL_CARD_IDS)
     target_violations = [v for v in result.violations if v.kind == ViolationKind.TARGET_ILLEGAL]
-    assert target_violations == [], f"TARGET_ILLEGAL in vp20: {target_violations}"
+    # Known mod-adjacency case: NATO* place-influence into Malaysia via Philippines
+    # adjacency that the TSEspionage mod permits but Deluxe board does not.
+    assert len(target_violations) <= 1, (
+        f"unexpected TARGET_ILLEGAL count in vp20: {target_violations}"
+    )
+    if target_violations:
+        v = target_violations[0]
+        assert v.card_id == 21 and v.country_id == 84, (
+            f"unexpected TARGET_ILLEGAL case in vp20: {v}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -243,23 +258,29 @@ def test_validate_log_dir_runs():
 
 
 def test_validate_log_dir_no_hard_violations_across_corpus():
-    """vp20.txt (clean extras game) has zero hard violations.
+    """vp20.txt (cleanest extras game) has at most the one known mod-adjacency hit.
 
     Note: most TSEspionage games have accessibility violations where the mod
     allows placing influence in countries requiring an intermediate hop (e.g.
     Angola without prior SE African States influence).  These are systematic
-    mod bugs, not engine errors.  vp20.txt is the one extras game that happens
-    to have zero hard violations.
+    mod bugs, not engine errors.  vp20.txt is the cleanest extras game; post-#127
+    adjacency spec fix, vp20 has exactly one known violation (NATO* -> Malaysia
+    via the non-existent Philippines-Malaysia edge).
     """
     if not _CLEAN_GAME_PATH.exists():
         pytest.skip("vp20.txt not found")
     results = validate_log_dir(EXTRAS_DIR, all_card_ids=ALL_CARD_IDS)
     vp20 = results.get("vp20.txt")
     assert vp20 is not None, "vp20.txt not found in validate_log_dir output"
-    assert vp20.hard_violations == [], (
+    assert len(vp20.hard_violations) <= 1, (
         f"{len(vp20.hard_violations)} hard violations in vp20.txt:\n"
         + "\n".join(f"  {v}" for v in vp20.hard_violations)
     )
+    if vp20.hard_violations:
+        v = vp20.hard_violations[0]
+        assert v.kind == ViolationKind.TARGET_ILLEGAL and v.card_id == 21 and v.country_id == 84, (
+            f"unexpected hard violation in vp20: {v}"
+        )
 
 
 # ---------------------------------------------------------------------------
