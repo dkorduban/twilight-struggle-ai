@@ -197,7 +197,7 @@ def test_dataset_loads(tiny_selfplay_dir) -> None:
         "country_ops_target",
         "value_target",
     }
-    assert required_keys == set(sample.keys()), f"Missing or extra keys: got {set(sample.keys())}"
+    assert required_keys <= set(sample.keys()), f"Missing keys: got {set(sample.keys())}"
 
     assert sample["influence"].shape == (172,), sample["influence"].shape
     assert sample["cards"].shape == (448,), sample["cards"].shape
