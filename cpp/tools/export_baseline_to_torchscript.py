@@ -24,6 +24,7 @@ from tsrl.policies.model import (
     TSControlFeatModel,
     TSCountryAttnModel,
     TSCountryAttnSideModel,
+    TSCountryAttnSubframeModel,
     TSCountryEmbedModel,
     TSDirectCountryModel,
     TSFullEmbedModel,
@@ -37,6 +38,7 @@ _MODEL_REGISTRY = {
     "full_embed": TSFullEmbedModel,
     "country_attn": TSCountryAttnModel,
     "country_attn_side": TSCountryAttnSideModel,
+    "country_attn_subframe": TSCountryAttnSubframeModel,
     "direct_country": TSDirectCountryModel,
     "marginal_value": TSMarginalValueModel,
     "control_feat": TSControlFeatModel,
@@ -45,13 +47,16 @@ _MODEL_REGISTRY = {
 }
 
 
-def load_model(checkpoint_path: Path) -> tuple[torch.nn.Module, int]:
+def load_model(
+    checkpoint_path: Path,
+    model_type_override: str | None = None,
+) -> tuple[torch.nn.Module, int]:
     """Load model from checkpoint. Returns (model, scalar_dim) for export tracing."""
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     ckpt_args = checkpoint.get("args", {})
     hidden_dim = ckpt_args.get("hidden_dim", 256)
-    model_type = ckpt_args.get("model_type", "baseline")
+    model_type = model_type_override or ckpt_args.get("model_type", "baseline")
     dropout = ckpt_args.get("dropout", 0.1)
     num_strategies = ckpt_args.get("num_strategies", 4)
     cls = _MODEL_REGISTRY.get(model_type, TSBaselineModel)
@@ -85,8 +90,12 @@ def load_model(checkpoint_path: Path) -> tuple[torch.nn.Module, int]:
     return model, ckpt_scalar_dim
 
 
-def export_checkpoint(checkpoint_path: Path, output_path: Path) -> None:
-    model, ckpt_scalar_dim = load_model(checkpoint_path)
+def export_checkpoint(
+    checkpoint_path: Path,
+    output_path: Path,
+    model_type: str | None = None,
+) -> None:
+    model, ckpt_scalar_dim = load_model(checkpoint_path, model_type_override=model_type)
     try:
         scripted = torch.jit.script(model)
     except Exception:
@@ -104,12 +113,18 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, required=True, help="Input .pt checkpoint")
     parser.add_argument("--out", type=Path, required=True, help="Output TorchScript .pt file")
+    parser.add_argument(
+        "--model-type",
+        choices=sorted(_MODEL_REGISTRY.keys()),
+        default=None,
+        help="Override checkpoint model_type when exporting.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    export_checkpoint(args.checkpoint, args.out)
+    export_checkpoint(args.checkpoint, args.out, model_type=args.model_type)
     print(f"exported {args.checkpoint} -> {args.out}")
 
 

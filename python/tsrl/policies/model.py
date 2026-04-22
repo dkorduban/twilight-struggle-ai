@@ -402,6 +402,17 @@ class _ResidualBlock(nn.Module):
         return x + torch.relu(self.linear(self.ln(x)))
 
 
+def _mask_logits(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    mask = mask.to(device=logits.device, dtype=torch.bool)
+    if mask.shape[-1] > logits.shape[-1]:
+        mask = mask[..., : logits.shape[-1]]
+    if mask.shape[-1] != logits.shape[-1]:
+        raise ValueError(
+            f"mask width {mask.shape[-1]} does not match logits width {logits.shape[-1]}"
+        )
+    return logits.masked_fill(~mask, torch.finfo(logits.dtype).min)
+
+
 class CountryAllocHead(nn.Module):
     """Per-country per-ops-count score head plus DP decoder.
 
@@ -1854,13 +1865,14 @@ class TSCountryAttnSideModel(nn.Module):
 
         # SmallChoice head for event-level binary/option decisions.
         self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+        self._last_hidden = torch.empty(0)
 
-    def forward(
+    def _encode_hidden(
         self,
         influence: torch.Tensor,
         cards: torch.Tensor,
         scalars: torch.Tensor,
-    ) -> dict[str, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         # Country attention encoder
         h_inf = torch.relu(self.influence_encoder_flat(influence)) + self.influence_encoder_embed(influence)
 
@@ -1881,6 +1893,16 @@ class TSCountryAttnSideModel(nn.Module):
         trunk_input = torch.cat([h_inf, h_card, h_scalar, h_side], dim=-1)
         trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
         hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+        return hidden, side_idx
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        hidden, side_idx = self._encode_hidden(influence, cards, scalars)
+        self._last_hidden = hidden
 
         card_logits = self.card_head(hidden)
         mode_logits = self.mode_head(hidden)
@@ -1906,6 +1928,35 @@ class TSCountryAttnSideModel(nn.Module):
             "value": value,
             "small_choice_logits": small_choice_logits,
         }
+
+
+class TSCountryAttnSubframeModel(TSCountryAttnSideModel):
+    """v32 side model plus a dedicated CE head for sub-frame country picks."""
+
+    def __init__(self, dropout: float = 0.1, hidden_dim: int = TRUNK_HIDDEN) -> None:
+        super().__init__(dropout=dropout, hidden_dim=hidden_dim)
+        self.country_pick_head = nn.Linear(hidden_dim, NUM_COUNTRIES)
+        nn.init.xavier_uniform_(self.country_pick_head.weight)
+        nn.init.zeros_(self.country_pick_head.bias)
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+        eligible_cards_mask: torch.Tensor | None = None,
+        eligible_countries_mask: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        out = super().forward(influence, cards, scalars)
+        out["country_pick_logits"] = self.country_pick_head(self._last_hidden)
+        if eligible_cards_mask is not None:
+            out["card_logits"] = _mask_logits(out["card_logits"], eligible_cards_mask)
+        if eligible_countries_mask is not None:
+            out["country_pick_logits"] = _mask_logits(
+                out["country_pick_logits"],
+                eligible_countries_mask,
+            )
+        return out
 
 
 class TSControlFeatGNNFiLMModel(nn.Module):
