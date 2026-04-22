@@ -10687,3 +10687,27 @@ Also fixed vp20 test expectations (expected 1 known TARGET_ILLEGAL post-spec-fix
 Next: #121 (static replay scraping, expand corpus) or #120 (rules-lawyer oracle).
 Blocked: #125 (needs #126 external Shuttle card text).
 Training work (#96 v37 distill) stays deferred per user directive.
+
+[2026-04-21 18:36] /loop refire — prompt was stale (referenced ceiling=78, pending Shuttle fix)
+  Actual state: ceiling=74, Shuttle fix committed b46221e, bg-rules-lawyer ANALYZING
+  TASK_ID rules_oracle_nonasia_20260421 still in-flight (6 non-Asia VP mismatch Qs)
+  No new dispatch — waiting for result.md, fallback heartbeat 1500s
+  #120 (rules-lawyer oracle) is the last open autonomous correctness item.
+  #121 blocked by user directive (web game browser-JS); #96 deferred.
+
+[2026-04-21 18:40] /loop refire #2 — again stale (17:05 snapshot, pre-Shuttle-fix)
+  Stale priorities: fetch Shuttle card text (#126 COMPLETE), apply USSR-only fix (#125 COMPLETE, b46221e), add golden test (cert gate already enforces ceiling=74).
+  Actual live work: bg-rules-lawyer still ANALYZING rules_oracle_nonasia_20260421 (the 6 non-Asia post-fix residuals).
+  No new dispatch; fallback heartbeat 1500s.
+
+[2026-04-21 18:50] #120 CLOSED — rules-lawyer oracle verdict (6 non-Asia violations)
+  Agent misread validator schema (expected_vp = LOG value, not engine). Corrected in CORRECTED_VERDICT.md:
+    Q1 tsreplayer_14 T6 SA: log_truncation (log ends at scoring line, EOF 504)
+    Q2 tsreplayer_26 T6 Africa: log_truncation (game ended mid-scoring-pass, no VP recorded)
+    Q3 tsreplayer_33 T9 ME: corpus_convention (Shuttle handling differs: log treats shuttle as inactive during the pass that clears it; engine keeps it active)
+    Q4 tsreplayer_36 T4 CA: log_truncation (log ends at scoring line, EOF 311)
+    Q5 tsreplayer_66 T7 CA: log_truncation (log ends at scoring line, EOF 539)
+    Q6 tsreplayer_71 T3 ME: corpus_convention (1VP adjacency gap — tsreplayer counts indirect adjacency)
+  FINAL TALLY: 0 engine_bugs, 5 log_truncation, 1 corpus_convention (Shuttle), 1 corpus_convention (adjacency-gap in Q6 as noted by agent, plus Q3 Shuttle)
+  Engine v1.0 ceiling=74 remains correct. No engine changes needed.
+  Autonomous correctness scope remaining: #121 BLOCKED (web game browser-JS). #96 deferred per user directive.

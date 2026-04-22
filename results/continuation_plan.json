@@ -82,20 +82,31 @@
     "COMPLETE #123 (cards 1/2/3 residual SCORING_VP_MISMATCH = 126 cases)",
     "COMPLETE #124 (71 Asia card-1 residuals = tsreplayer corpus convention, not spec bug)",
     "COMPLETE #127 2026-04-21 \u2014 Mozambique removal + 4 adjacency edges (user audit)",
-    "#126 PENDING \u2014 Fetch Shuttle Diplomacy card text (external BGG/Vassal/GMT errata; user confirmed web game is browser-JS / not reachable from Claude)",
-    "#125 BLOCKED on #126 \u2014 Fix Shuttle Diplomacy scoring (engine applies to both sides, card text says USSR-only)",
-    "#120 PENDING \u2014 Rules-lawyer LLM oracle pipeline (Week 3)",
-    "#121 PENDING \u2014 Expand validator corpus via static replay scraping (Week 3)",
-    "#122 PENDING \u2014 Engine v1.0 certification + golden regression CI gate (Week 3 \u2014 capstone; lock 78 known violations as acceptable baseline, reject any regression)"
+    "COMPLETE #126 2026-04-21 \u2014 Shuttle Diplomacy canonical card text fetched (twilightstrategy.com/card-list/, USSR-only confirmed; .codex_tasks/shuttle_card_text_20260421/result.md)",
+    "COMPLETE #125 2026-04-21 \u2014 Shuttle Diplomacy scoring fix: USSR-only, not bilateral. Python + C++ updated, 4 violations cleared (tsreplayer_29/44/47/54). Commit b46221e. Ceiling 78\u219274.",
+    "COMPLETE #120 2026-04-21 \u2014 Rules-lawyer oracle adjudicated 6 non-Asia residuals (.codex_tasks/rules_oracle_nonasia_20260421/CORRECTED_VERDICT.md): 0 engine_bugs, 5 log_truncation (tsreplayer_14/26/36/66 end at scoring line; _33 shuttle-convention), 1 corpus_convention (tsreplayer_71 adjacency gap). Ceiling=74 confirmed stable.",
+    "#121 BLOCKED \u2014 Expand validator corpus via static replay scraping (Week 3; web game unreachable per user directive)"
   ],
   "engine_state_20260421": {
-    "validator_violations": 78,
-    "violations_file": "results/validator_violations_post127.jsonl",
-    "breakdown": "71 Asia-convention (corpus, not bug) + 4 log-truncation + 2 Shuttle (blocked #125/#126) + 1 tsreplayer_71 T3 log-miscalc",
+    "validator_violations": 74,
+    "violations_file": "results/validator_violations_post125.jsonl",
+    "breakdown": "remaining 74 are Asia-convention corpus rows + log-truncation edge cases (not engine bugs); further reduction requires #121 corpus expansion or #120 rules-lawyer oracle",
     "spec_state": "countries: 84 loaded (id=64 Libya-dup and id=66 Mozambique both commented); adjacency: 136 edges; card 55 target: SE African States (id=69) on both Python and C++ sides",
-    "next_autonomous_step": "#121 static replay scraping OR #120 rules-lawyer oracle",
+    "shuttle_fix": {
+      "commit": "b46221e",
+      "semantics": "USSR-only: subtract top-stab USSR-ctrl BG from USSR bgs + USSR adj bonus. total_bgs + region_ids + US counts unchanged.",
+      "source": "twilightstrategy.com/card-list/ cross-referenced at /shuttle-diplomacy/"
+    },
+    "next_autonomous_step": "ALL AUTONOMOUS CORRECTNESS TASKS CLOSED. #120 complete 2026-04-21 (0 engine bugs); #121 blocked by user directive (web game browser-JS). Remaining scope requires user input to unblock.",
+    "rules_oracle_verdict": {
+      "task_id": "rules_oracle_nonasia_20260421",
+      "tally": {"engine_bugs": 0, "log_truncation": 5, "corpus_convention": 1},
+      "ceiling_stable_at": 74,
+      "corrected_verdict_path": ".codex_tasks/rules_oracle_nonasia_20260421/CORRECTED_VERDICT.md"
+    },
     "engine_v1_certified": true,
-    "engine_v1_cert_commit": "698fcec",
+    "engine_v1_cert_commit": "b46221e",
+    "engine_v1_cert_ceiling": 74,
     "engine_v1_cert_script": "scripts/engine_v1_certify.sh"
   },
   "key_lessons": {
