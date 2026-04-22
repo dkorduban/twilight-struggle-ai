@@ -1,14 +1,11 @@
 {
   "record": {
-    "checkpoint": "results/ppo_country_attn_v6/ppo_iter0020.pt",
-    "combined": 0.459,
-    "ussr": 0.718,
-    "us": 0.2,
-    "bench_seeds": [
-      50000,
-      50500
-    ],
-    "note": "Also confirmed at seeds 60000/60500: combined=0.459"
+    "combined": 0.65,
+    "ussr": 0.788,
+    "us": 0.512,
+    "checkpoint": "results/ppo_v32_continue/v32_continue.iter0020.pt",
+    "scripted": "data/checkpoints/scripted_for_elo/v32_iter20_scripted.pt",
+    "note": "v32 iter20 \u2014 PPO ceiling with current architecture; config: clip_eps=0.05 heuristic-floor=0.50 lr=3e-6"
   },
   "current_best_practical": {
     "checkpoint": "results/ppo_country_attn_v13/ppo_iter0020_scripted.pt",
@@ -40,28 +37,64 @@
       "value_mse_root_cause": "BC v1 value_mse=0.77 (near-random). v13 game data in BC v2 already showing value_mse=0.58 at epoch4."
     },
     "v15_plan": {
-      "status": "PPO v15 RUNNING - pid=1052068. BC v3 gate failed (0.110). BC v4 (teacher distill, val_value_mse=0.675). PPO v15 iter1: panel=0.295, rollout_wr=0.449 (ussr=0.727, us=0.172). PROMISING.",
-      "bc_v2_killed": "Mixed data contamination (0.77→0.80 value_mse). Killed at epoch 15.",
+      "status": "COMPLETE 2026-04-20 FAILED. combined=0.112 (USSR=0.196, US=0.028). GNN approach FAILED. formal bench iter10=0.112 (panel best).",
+      "bc_v2_killed": "Mixed data contamination (0.77\u21920.80 value_mse). Killed at epoch 15.",
       "bc_v3_status": "RUNNING. Pure v13 3000g data. 80 epochs. Val_card_top1=0.686@ep12. Val_value_mse=0.81 (worsening - overfitting). BC v3 ep12 bench: combined=0.140 (gate FAIL at 0.20).",
       "bc_v3_root_cause": "winner_side target is too noisy for learned-model games. Value head memorizes train set (mse=0.09-0.17) but fails on val (mse=0.81+). Card accuracy improving but US side weak (0.040).",
       "teacher_targets_ready": "data/teacher_targets/v13_3000g_soft_teacher.parquet (334K rows, SOFT card/mode/value from v13_iter20 model forward pass. Card=111-dim softmax, mode=6-dim softmax, value=tanh[-1,1])",
       "bc_v4_plan": "If BC v3 fails gate: auto-launch BC v4 with --teacher-targets v13_3000g_soft_teacher.parquet + teacher-weight=0.5 + teacher-value-weight=1.0. Soft distillation from v13 should improve both policy and value quality.",
       "monitor": "/tmp/watch_bc_v3.sh auto-handles: gate check -> BC v4 fallback -> PPO v15",
       "ppo_launch": "results/launch_gnn_ppo_v15.sh (monitor will auto-fire from BC v3 or BC v4)",
-      "gate": "100g/side bench. combined >= 0.20 to launch PPO v15."
+      "gate": "100g/side bench. combined >= 0.20 to launch PPO v15.",
+      "formal_bench": {
+        "checkpoint": "results/ppo_gnn_side_v15/ppo_running_best_scripted.pt",
+        "ussr": 0.196,
+        "us": 0.028,
+        "combined": 0.112,
+        "bench_seeds": [
+          50000,
+          50500
+        ],
+        "conclusion": "FAIL. v13 baseline (0.427) not beaten. GNN BC warm-start approach exhausted."
+      }
     },
     "v15_collection_details": {
       "v13_data": "data/selfplay/gnn_warmstart_v13/v13_3000g.parquet (334K rows, 3000 games learned-vs-heuristic with v13_iter20)",
       "collection_method": "ts_collect_mcts_games_jsonl n-sim=1 (batched, fast), nash-temperatures"
+    },
+    "v15_post_mortem": {
+      "result": "FAILED combined=0.112 @ iter80 best (iter10 running_best). GNN BC\u2192PPO approach exhausted.",
+      "root_cause": "33pp warm-start gap (GNN BC=0.11 vs country_attn v56 warm-start=0.441) never recovered by PPO. PFSP echo chamber prevents recovery.",
+      "lesson": "GNN architecture needs a different warm-start path (weight transfer from v13 or direct MCTS distillation). BC\u2192PPO pipeline broken for new archs when warm-start <0.20.",
+      "do_not_run": "More GNN BC\u2192PPO attempts without weight transfer or fundamentally different warm-start."
+    },
+    "v9_v12_summary": {
+      "status": "COMPLETE 2026-04-20. All failed to beat v13.",
+      "v9": "combined=0.304 (USSR=0.43, US=0.178)",
+      "v10": "combined=0.215 (mid-bench)",
+      "v11": "combined=0.250 (iter70, panel=0.517 was noise)",
+      "v12": "combined=0.295 (iter30, panel=0.508 was noise)",
+      "lesson": "30-game panel SE=0.091 produces false positives. Always confirm with 100g+ formal bench."
     }
   },
   "next_tasks": [
-    "ACTIVE: Monitor PPO v15 (pid=1052068). Check iter10 panel (eval fires ~09:50 UTC). Bench iter20 at ~11:00 UTC.",
-    "Bench GNN PPO v15 at iter20 (500g/side, seeds 50000/50500). Target: >0.427 to beat country_attn_side",
-    "If v15 combined > 0.427 + 3pp = 0.457: match record range; update current_best_practical",
-    "Fix running_best selector: replace 30-game panel with 200g heuristic-only mini-bench",
-    "PIVOT 3: Try adding MCTS data (data/selfplay_mcts_dir/) to training mix for v16 if v15 beats v13"
+    "COMPLETE #115-#119 (Week 1-2 scoring + frame migration + TARGET_ILLEGAL)",
+    "COMPLETE #123 (cards 1/2/3 residual SCORING_VP_MISMATCH = 126 cases)",
+    "COMPLETE #124 (71 Asia card-1 residuals = tsreplayer corpus convention, not spec bug)",
+    "COMPLETE #127 2026-04-21 — Mozambique removal + 4 adjacency edges (user audit)",
+    "#126 PENDING — Fetch Shuttle Diplomacy card text (external BGG/Vassal/GMT errata; user confirmed web game is browser-JS / not reachable from Claude)",
+    "#125 BLOCKED on #126 — Fix Shuttle Diplomacy scoring (engine applies to both sides, card text says USSR-only)",
+    "#120 PENDING — Rules-lawyer LLM oracle pipeline (Week 3)",
+    "#121 PENDING — Expand validator corpus via static replay scraping (Week 3)",
+    "#122 PENDING — Engine v1.0 certification + golden regression CI gate (Week 3 — capstone; lock 78 known violations as acceptable baseline, reject any regression)"
   ],
+  "engine_state_20260421": {
+    "validator_violations": 78,
+    "violations_file": "results/validator_violations_post127.jsonl",
+    "breakdown": "71 Asia-convention (corpus, not bug) + 4 log-truncation + 2 Shuttle (blocked #125/#126) + 1 tsreplayer_71 T3 log-miscalc",
+    "spec_state": "countries: 84 loaded (id=64 Libya-dup and id=66 Mozambique both commented); adjacency: 136 edges; card 55 target: SE African States (id=69) on both Python and C++ sides",
+    "next_autonomous_step": "#122 engine v1.0 cert — write scripts/engine_v1_certify.sh that runs ctest + pytest + replay validator and asserts violation count <= 78; golden regression gate"
+  },
   "key_lessons": {
     "bc_warmstart_quality": "BC warm-start quality = bottleneck for new architectures. v14 (heuristic BC) = 0.192. Always use games from best learned model for BC warm-start. v13 selfplay \u2192 BC \u2192 GNN PPO is the right sequence.",
     "mcts_collection_speed": "collect_mcts_games_jsonl with n-sim=1 (direct policy, batched) is ~100x faster than collect_selfplay_rows_jsonl for learned models (batch vs sequential inference).",
@@ -69,5 +102,172 @@
     "pfsp_echo_chamber": "PFSP peaks at iter20. External fixtures starved even with heuristic-floor=0.15.",
     "seed_matters": "PPO ~10pp seed variance at iter20. Always use seed=42000.",
     "teacher_distillation": "ACTIVE for BC v4. Use data/teacher_targets/v13_3000g_teacher.parquet (mcts_root_value = v13 value head predictions). teacher_value_weight=1.0 to maximize value signal. BC v3 confirmed: winner_side alone insufficient (val_value_mse=0.81 overfitting)."
-  }
+  },
+  "pivot3_mcts_distillation": {
+    "status": "FAILED 2026-04-20",
+    "approach": "Fine-tune country_attn_side (v13_iter20) with MCTS visit-count soft targets from data/selfplay_mcts_dir/mcts_dir_1000g.parquet (105K rows, 50 sim each). Use visit counts as better policy targets than raw model predictions.",
+    "checkpoint": "results/ppo_country_attn_v13/ppo_iter0020.pt",
+    "mcts_data": "data/selfplay_mcts_dir/mcts_dir_1000g.parquet (105290 rows, n_sim=50, dir-alpha=0.3, dir-epsilon=0.25)",
+    "plan": {
+      "step1": "Generate soft MCTS teacher targets: normalize visit counts to policy distribution",
+      "step2": "BC v5: fine-tune v13_iter20 with MCTS soft targets (teacher_weight=0.7, teacher_value_weight=1.0, epochs=30, lr=2e-4)",
+      "step3": "PPO v16: warm-start from BC v5 checkpoint, same hyperparams as v15 but starting at ~0.427+",
+      "gate": "BC v5 must reach combined >= 0.40 (100g/side) to proceed to PPO v16"
+    },
+    "rationale": "v13 already at 0.427. MCTS visit counts (50 sims) provide better calibrated policy signal. Fine-tuning (not cold-start) should preserve v13 quality while improving on key positions.",
+    "bc_v5": {
+      "pid": 1067145,
+      "log": "results/bc_country_attn_v5/train.log",
+      "init_from": "results/ppo_country_attn_v13/ppo_iter0020.pt",
+      "data": "data/selfplay_mcts_dir (105K rows)",
+      "teacher": "data/teacher_targets/mcts_dir_1000g_soft.parquet (52.8K with visit counts)",
+      "hyperparams": "epochs=40, lr=2e-4, teacher_weight=0.7, teacher_value_weight=1.0",
+      "gate_result": {
+        "ussr": 0.17,
+        "us": 0.01,
+        "combined": 0.09,
+        "verdict": "GATE FAILED (need>=0.40)",
+        "root_cause": "MCTS game state distribution != heuristic opponent distribution. 40 epochs fine-tune on MCTS data caused catastrophic forgetting of heuristic-opponent strategies."
+      }
+    },
+    "lesson": "MCTS data fine-tuning destroys heuristic WR. MCTS positions (AI-vs-AI) have different state distribution than heuristic opponent games. Never fine-tune exclusively on MCTS data without mixing heuristic-opponent games."
+  },
+  "pivot4_league_redesign": {
+    "status": "IN PROGRESS 2026-04-20",
+    "hypothesis": "PFSP echo chamber causes training to peak at iter20. All PPO runs v6-v15 hit ceiling ~0.30-0.43. Need to break echo chamber.",
+    "approach": "Resume v13 PPO past iter20 with: (a) heuristic-floor=0.40 (higher than current 0.15), (b) fixture-only league (no PFSP), (c) lower entropy to preserve heuristic game quality",
+    "alternative_a": "Run PPO v16 from v13 with league_fixture_fadeout=0 (fixtures never fade) and heuristic-floor=0.50",
+    "alternative_b": "Pure heuristic training: eval-panel only, no PFSP pool at all",
+    "gate": "Must show iter30+ panel >= 0.450 to continue (vs v13 which peaked at iter20)",
+    "seed_sweep": {
+      "pid": 1074020,
+      "seeds": [
+        11111,
+        22222,
+        55555
+      ],
+      "warmstart": "data/checkpoints/ppo_v56_league/ppo_best_6mode.pt (v56, 0.441 combined)",
+      "n_iters": 20,
+      "rationale": "v6 (seed=42000, same warmstart) = 0.459 project record. Seed variance ~10pp. Best of 3 new seeds expected ~0.45+. All runs stop at iter20 before PFSP echo chamber.",
+      "log": "/tmp/seed_sweep.log"
+    },
+    "v16_result": {
+      "status": "FAILED 2026-04-20",
+      "bench": {
+        "ussr": 0.384,
+        "us": 0.054,
+        "combined": 0.219
+      },
+      "root_cause": "dir_alpha=0.3/dir_epsilon=0.25 at PPO rollout level (no MCTS) = 25% random moves. AlphaZero Dirichlet is for MCTS root node (averaged over 800 sims). Applied to raw policy rollouts it destroys trajectory quality.",
+      "lesson": "NEVER apply full AlphaZero Dirichlet (dir_epsilon=0.25) to PPO rollouts without MCTS. Designed for search, not direct sampling."
+    },
+    "v17_plan": {
+      "status": "PLANNED",
+      "approach": "Exact v13 recipe (seed=42000, v56 warmstart) + ONLY panel_heuristic_weight=3.0. Isolate panel fix. No Dirichlet, no temperature change.",
+      "hypothesis": "The panel fix (3x heuristic weight) prevents echo-chamber false positives. With correct running_best selection, training may continue improving past iter20.",
+      "warmstart": "data/checkpoints/ppo_v56_league/ppo_best_6mode.pt (same as v6/v13)"
+    },
+    "v17_result": {
+      "bench_iter20": {
+        "ussr": 0.422,
+        "us": 0.206,
+        "combined": 0.314
+      },
+      "bench_iter40": {
+        "combined": 0.26
+      },
+      "conclusion": "FAIL vs v13 (0.427). Root cause: PFSP variance \u2014 v13 was high seed roll. Panel_heuristic_weight=3.0 correctly slows degradation (5.4pp drop iter20\u219240 vs 17pp for v13). Absolute floor unchanged.",
+      "lesson": "Seed variance dominates. Same recipe gives 0.31-0.43 at iter20. Need seed sweep to find high rolls."
+    },
+    "v18_seed_sweep": {
+      "seeds": {
+        "11111": 0.372,
+        "22222": 0.383,
+        "33333": 0.407
+      },
+      "best_seed": 33333,
+      "best_combined": 0.407,
+      "conclusion": "Best-of-3 = 0.407. Mean ~0.387. seed=42000 (v17) was low roll at 0.314. Distribution ~0.37-0.41. Still below v13 (0.427) which was a high roll."
+    },
+    "v19_result": {
+      "best_bench": {
+        "ussr": 0.464,
+        "us": 0.134,
+        "combined": 0.299,
+        "iter": 30
+      },
+      "iter20_bench": 0.319,
+      "iter10_bench": 0.339,
+      "conclusion": "FAIL. Panel false positives: panel=0.479 at iter30 but bench=0.299. Panel SE=9.1% (30 games) too noisy.",
+      "lesson": "Panel-guided running_best unreliable at 30 games. All v56-warmstart runs 0.30-0.41 peak."
+    },
+    "v20_plan": {
+      "warmstart": "results/ppo_country_attn_v13/ppo_iter0020.pt (proven 0.427)",
+      "no_optimizer_reset": true,
+      "panel_heuristic_weight": 3.0,
+      "iters": 20,
+      "hypothesis": "Starting from 0.427 prevents early degradation; panel fix may maintain or improve"
+    },
+    "v22_result": {
+      "trajectory": {
+        "iter10": 0.354,
+        "iter20": 0.391,
+        "iter30": 0.458,
+        "iter40": 0.466
+      },
+      "record": true,
+      "conclusion": "NEW RECORD 0.466. Bug fix (remove us_win_w loss-weighting) + no UPGO fixed US degradation. Model improves iter10->40 for first time."
+    },
+    "v24_progress": {
+      "iter10": {
+        "combined": 0.489,
+        "ussr": 0.656,
+        "us": 0.322
+      },
+      "note": "Still running. Likely to improve further."
+    }
+  },
+  "current_run": {
+    "name": "ppo_v33_continue (background, finishing)",
+    "note": "v33b declining from 0.650 warmstart \u2014 confirms ceiling"
+  },
+  "status": "PPO ceiling reached at 0.650. Progressive warmstart chain exhausted. Phase 2 arch interventions evaluated 2026-04-20: R1 FALSIFIED (v32 already uses region scalars), R2 KILL (us_only_v5 weaker than v32 US-side), R3 MARGINAL (tau=0.1 +2pp at threshold), FiLM INSUFFICIENT (+0.002 AWR delta), card_attn BEHIND v32 (45% vs 65% heur), alloc_head KILLED (GPU bottleneck). Opus dispatched 2026-04-20 for structural rethink.",
+  "post_plateau_triage_20260420": {
+    "r1_region_scoring": "FALSIFIED - TSCountryAttnSideModel already consumes _REGION_SCALAR_DIM=42 (model.py:1816,1831,1871)",
+    "r2_us_specialist_distill": "KILL_CRITERION - us_only_v5 US=1195 Elo < v32_continue US=1326 Elo (teacher weaker than student)",
+    "r3_temperature_sweep": "MARGINAL - tau=0.1 combined=0.645 vs tau=0.0 combined=0.625 (+2.0pp right at +2pp wash threshold). File: results/analysis/v32_temperature_sweep.json",
+    "film_v2_diverse": "INSUFFICIENT - country_attn_film=0.674 vs gnn_side baseline=0.672 (+0.002 val_adv_card). country_attn_film_gated=0.671 (slightly worse).",
+    "card_attn_ppo": "BEHIND_V32 - ppo_warmstart_control_feat_gnn_card_attn 15 iters: 45.0% vs heuristic combined, avg_8panel=40.96% vs v32 ~65%",
+    "alloc_head": "GPU_BOTTLENECK - bounded_knapsack_dp Python loop makes training ~100x slower. Not practical.",
+    "opus_rethink_dispatched": "2026-04-20 - awaiting results/analysis/opus_analysis_20260420_post_plateau_v2.md"
+  },
+  "fresh_elo_panel_20260420": {
+    "file": "results/elo/elo_fresh_panel.json",
+    "anchor": "heuristic-USSR=1200 (bid+2, greedy)",
+    "top_chain_cluster_combined_elo": {
+      "v29_continue": 1374,
+      "v32_continue": 1370,
+      "v31_continue": 1364,
+      "v33_continue": 1356
+    },
+    "note": "400g SE=+/-20 Elo. v29/v31/v32/v33 statistically tied. v32_iter20 remains canonical record (0.650 combined vs heuristic). Chain +175 Elo above v56 warm-start root.",
+    "heur_vs_heur_real_data": "USSR 1439 / US 561 from 2000g bid+2 run (72/28 split); injected into match_cache",
+    "stub_bug_fixed": "scripts/run_elo_tournament.py:265-283 now returns bid+2 real split (prior stub was 50/50 and broke side-asymmetry inference)",
+    "runner": "scripts/run_fresh_elo_tournament.py (ProcessPoolExecutor, 18 workers x 1 torch thread, 60 g/s throughput)"
+  },
+  "mode": "ENGINE_CORRECTNESS_PIVOT",
+  "pivot_date": "2026-04-21",
+  "pivot_analysis": "results/analysis/opus_analysis_20260421_195500_engine_correctness_pivot.md",
+  "training_frozen_until": "engine-v1.0-certified git tag",
+  "frozen_training_tasks": {
+    "#96_v37_distill": "BLOCKED on cert",
+    "#109_bc_v32_fixed": "COMPLETE but bench deferred"
+  },
+  "do_not_launch": [
+    "No new PPO runs",
+    "No new BC runs",
+    "No new self-play collections",
+    "No new distillation runs",
+    "No new Elo tournaments (cert gate)"
+  ]
 }
