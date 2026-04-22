@@ -10675,3 +10675,15 @@ Next priority: #119 TARGET_ILLEGAL (67 residuals) or triage the 71 Asia card-1 r
     b) Pick up #121: expand validator corpus via static replay scraping
     c) Parallel scrape for Shuttle text (#126) — can write scraper but user confirmed
        web game is browser JS and not accessible to Claude
+
+--- 2026-04-21 #122 engine v1.0 cert DONE ---
+Commit: 698fcec
+Script: scripts/engine_v1_certify.sh
+Gate results (post-#127):
+  ctest: 95/95 pass (ISMCTS 26-28 excluded per shelf)
+  pytest: 45 pass + 1 xfail
+  validator: 78 violations (all classified as corpus/log-truncation/Shuttle-blocked)
+Also fixed vp20 test expectations (expected 1 known TARGET_ILLEGAL post-spec-fix).
+Next: #121 (static replay scraping, expand corpus) or #120 (rules-lawyer oracle).
+Blocked: #125 (needs #126 external Shuttle card text).
+Training work (#96 v37 distill) stays deferred per user directive.
