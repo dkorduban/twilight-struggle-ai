@@ -17,7 +17,7 @@ namespace ts {
 namespace {
 
 constexpr CountryId kWestGermanyId = 18;
-constexpr std::array<CardId, 17> kCatCCardIds = {5, 10, 26, 32, 36, 45, 46, 47, 52, 68, 78, 84, 88, 95, 98, 101, 108};
+constexpr std::array<CardId, 18> kCatCCardIds = {5, 10, 26, 32, 36, 45, 46, 47, 52, 68, 78, 84, 88, 95, 98, 101, 108, 109};
 
 bool is_cat_c_card(CardId card_id) {
     return std::find(kCatCCardIds.begin(), kCatCCardIds.end(), card_id) != kCatCCardIds.end();
@@ -99,6 +99,16 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
     Side side,
     Pcg64Rng& rng,
     const PolicyCallbackFn* policy_cb,
+    std::vector<DecisionFrame>* frame_log
+);
+
+std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
+    GameState& gs,
+    CardId card_id,
+    Side side,
+    Pcg64Rng& rng,
+    const PolicyCallbackFn* policy_cb,
+    std::span<const CountryId> preferred_targets,
     std::vector<DecisionFrame>* frame_log
 );
 
@@ -911,6 +921,30 @@ std::tuple<PublicState, bool, std::optional<Side>> apply_hand_event(
             }
             break;
 
+        case 109: {
+            const auto frame_count_before = frame_log == nullptr ? 0 : frame_log->size();
+            auto [ops_pub, ops_over, ops_winner] =
+                execute_deferred_ops(gs, card_id, Side::USSR, rng, policy_cb, {}, frame_log);
+            pub = ops_pub;
+            if (
+                gs.frame_stack_mode &&
+                policy_cb == nullptr &&
+                frame_log != nullptr &&
+                frame_log->size() > frame_count_before &&
+                frame_log->back().source_card == card_id
+            ) {
+                frame_log->back().parent_card = card_id;
+                gs.pub = pub;
+                return {pub, false, std::nullopt};
+            }
+            if (ops_over) {
+                card_played(pub, card_id, side);
+                gs.pub = pub;
+                return {pub, true, ops_winner};
+            }
+            break;
+        }
+
         default:
             break;
     }
@@ -940,7 +974,7 @@ std::tuple<PublicState, bool, std::optional<Side>> execute_deferred_ops(
             action.card_id == card_id &&
             action.mode != ActionMode::EventFirst &&
             action.mode != ActionMode::Event &&
-            action.mode != ActionMode::Space
+            (action.mode != ActionMode::Space || card_id == 109)
         ) {
             ops_actions.push_back(action);
         }

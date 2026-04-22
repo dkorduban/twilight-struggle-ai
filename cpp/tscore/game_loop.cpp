@@ -1525,7 +1525,7 @@ std::vector<ActionMode> deferred_ops_modes(const PublicState& pub, CardId source
             candidate.card_id != source_card ||
             candidate.mode == ActionMode::EventFirst ||
             candidate.mode == ActionMode::Event ||
-            candidate.mode == ActionMode::Space
+            (candidate.mode == ActionMode::Space && source_card != 109)
         ) {
             continue;
         }
@@ -1664,6 +1664,22 @@ void resume_deferred_ops(GameState& gs, const DecisionFrame& frame, const FrameA
         const auto mode_index =
             std::clamp(action.option_index, 0, static_cast<int>(modes.size()) - 1);
         const auto mode = modes[static_cast<size_t>(mode_index)];
+        if (mode == ActionMode::Space) {
+            const ActionEncoding ops_action{
+                .card_id = frame.source_card,
+                .mode = ActionMode::Space,
+                .targets = {},
+            };
+            auto [new_pub, over, winner] = apply_action(gs.pub, ops_action, frame.acting_side, rng);
+            gs.pub = new_pub;
+            if (over) {
+                gs.game_over = true;
+                gs.winner = winner;
+                return;
+            }
+            finish_deferred_ops(gs);
+            return;
+        }
         const auto country_steps = mode == ActionMode::Coup
             ? 1
             : (mode == ActionMode::Realign

@@ -256,3 +256,50 @@ TEST_CASE("We Will Bury You waits for the next US action round and UN can cancel
     REQUIRE_FALSE(canceled.pub.we_will_bury_you_pending);
     REQUIRE(canceled.pub.we_will_bury_you_turn_ar == -1);
 }
+
+TEST_CASE("Lone Gunman lets USSR use this card for one operation", "[cards][game_loop]") {
+    constexpr CardId kLoneGunman = 109;
+    constexpr CardId kUsHeldCard = 13;
+    constexpr CountryId kPoland = 12;
+
+    GameState gs;
+    gs.frame_stack_mode = true;
+    gs.pub.set_influence(Side::USSR, kPoland, 1);
+    gs.hands[to_index(Side::USSR)].set(kLoneGunman);
+    gs.hands[to_index(Side::US)].set(kUsHeldCard);
+
+    Pcg64Rng rng(0);
+    const auto [next, over, winner] = apply_action_live(
+        gs,
+        ActionEncoding{.card_id = kLoneGunman, .mode = ActionMode::Event, .targets = {}},
+        Side::USSR,
+        rng,
+        nullptr,
+        false,
+        &gs.frame_stack
+    );
+
+    REQUIRE_FALSE(over);
+    REQUIRE_FALSE(winner.has_value());
+    REQUIRE(next.influence_of(Side::USSR, kPoland) == 1);
+    REQUIRE(gs.frame_stack.size() == 1);
+    REQUIRE(gs.frame_stack.back().kind == FrameKind::DeferredOps);
+    REQUIRE(gs.frame_stack.back().source_card == kLoneGunman);
+    REQUIRE(gs.frame_stack.back().acting_side == Side::USSR);
+    REQUIRE(gs.frame_stack.back().parent_card == kLoneGunman);
+
+    const auto mode_step = engine_step_subframe(gs, FrameAction{.option_index = 0}, rng);
+    REQUIRE(mode_step.pushed_subframe);
+    REQUIRE(gs.frame_stack.size() == 1);
+    REQUIRE(gs.frame_stack.back().kind == FrameKind::DeferredOps);
+    REQUIRE(gs.frame_stack.back().eligible_countries.test(static_cast<size_t>(kPoland)));
+    REQUIRE(gs.frame_stack.back().parent_card == kLoneGunman);
+
+    const auto country_step = engine_step_subframe(gs, FrameAction{.country_id = kPoland}, rng);
+    REQUIRE_FALSE(country_step.pushed_subframe);
+    REQUIRE(gs.frame_stack.empty());
+    REQUIRE(gs.pub.influence_of(Side::USSR, kPoland) == 2);
+    REQUIRE(gs.hands[to_index(Side::US)].test(kUsHeldCard));
+    REQUIRE(gs.pub.removed.test(kLoneGunman));
+    REQUIRE_FALSE(gs.pub.discard.test(kLoneGunman));
+}
