@@ -668,6 +668,8 @@ class TS_SelfPlayDataset(Dataset):
             if row is None:
                 continue
             for raw_idx in row:
+                if raw_idx is None:
+                    continue
                 idx = int(raw_idx)
                 if one_indexed:
                     if 1 <= idx <= width:
