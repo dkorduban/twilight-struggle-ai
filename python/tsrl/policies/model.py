@@ -2277,6 +2277,211 @@ class TSCountryAttnSubframeModel(TSCountryAttnSideModel):
         return out
 
 
+class TSNovelModel(nn.Module):
+    """Novel GNN/attention architecture with sub-frame and auxiliary heads."""
+
+    __constants__ = [
+        '_REGION_SCALAR_DIM',
+        '_SIDE_SCALAR_IDX',
+        '_NUM_STRATEGIES',
+        '_NUM_COUNTRIES',
+    ]
+    _REGION_SCALAR_DIM = 42
+    _SIDE_SCALAR_IDX = 10
+    _NUM_STRATEGIES = NUM_STRATEGIES
+    _NUM_COUNTRIES = NUM_COUNTRIES
+
+    _FRAME_KIND_SMALL_CHOICE = 1
+    _FRAME_KIND_COUNTRY_PICK = 2
+    _FRAME_KIND_CARD_SELECT = 3
+    _FRAME_KIND_FORCED_DISCARD = 4
+    _FRAME_KIND_CANCEL_CHOICE = 5
+    _FRAME_KIND_FREE_OPS_INFLUENCE = 6
+    _FRAME_KIND_NORAD_INFLUENCE = 7
+    _FRAME_KIND_DEFERRED_OPS = 8
+    _FRAME_KIND_SETUP_PLACEMENT = 9
+
+    def __init__(
+        self,
+        dropout: float = 0.1,
+        hidden_dim: int = TRUNK_HIDDEN,
+        n_mp: int = 2,
+        attn_mask_mode: str = "full",
+        n_card_self_attn: int = 2,
+        use_cls: bool = True,
+    ) -> None:
+        super().__init__()
+        self.influence_encoder_flat = nn.Linear(INFLUENCE_DIM, INFLUENCE_HIDDEN)
+        self.influence_encoder_embed = CountryGNNAttnCLSEncoder(
+            n_mp=n_mp,
+            attn_mask_mode=attn_mask_mode,
+            use_cls=use_cls,
+        )
+        self.card_encoder = CardCrossAttnEncoder(n_self_attn=n_card_self_attn)
+
+        # Region scalars are intentionally inherited from the v32 GNN-side path.
+        self.region_encoder = ControlFeatGNNEncoder()
+        self.scalar_encoder = FrameContextScalarEncoder(
+            SCALAR_DIM + self._REGION_SCALAR_DIM,
+            SCALAR_HIDDEN,
+        )
+        self.side_embed = nn.Embedding(2, SIDE_EMBED_DIM)
+
+        self.trunk_proj = nn.Linear(TRUNK_IN + SIDE_EMBED_DIM, hidden_dim)
+        self.trunk_dropout = nn.Dropout(p=dropout)
+        self.trunk_block1 = _ResidualBlock(hidden_dim)
+        self.trunk_block2 = _ResidualBlock(hidden_dim)
+
+        self.card_head = nn.Linear(hidden_dim, NUM_PLAYABLE_CARDS)
+        self.mode_head = nn.Linear(hidden_dim, NUM_MODES)
+        self.strategy_heads = nn.Linear(hidden_dim, NUM_STRATEGIES * NUM_COUNTRIES)
+        self.strategy_mixer = nn.Linear(hidden_dim, NUM_STRATEGIES)
+        self.country_pick_head = nn.Linear(hidden_dim, NUM_COUNTRIES)
+        self.small_choice_head = nn.Linear(hidden_dim, SMALL_CHOICE_MAX)
+
+        self.value_branch_ussr = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_ussr = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+        self.value_branch_us = nn.Linear(hidden_dim, VALUE_BRANCH_HIDDEN)
+        self.value_head_us = nn.Linear(VALUE_BRANCH_HIDDEN, 1)
+
+        self.transition_diff_head = TransitionDiffHead(D=CountryGNNAttnCLSEncoder._EMBED_DIM)
+        self.belief_head = OpponentBeliefHead(D=CardCrossAttnEncoder._EMBED_DIM)
+        self._last_hidden = torch.empty(0)
+
+        nn.init.xavier_uniform_(self.country_pick_head.weight)
+        nn.init.zeros_(self.country_pick_head.bias)
+
+    def _frame_kind_from_scalars(self, scalars: torch.Tensor) -> torch.Tensor:
+        if scalars.shape[-1] < BASE_SCALAR_DIM + 1:
+            return scalars.new_zeros(scalars.shape[0], dtype=torch.long)
+        return (scalars[:, BASE_SCALAR_DIM] * 10.0).round().to(torch.long).clamp(0, 10)
+
+    def _route_subframe_logits(
+        self,
+        card_logits: torch.Tensor,
+        country_pick_logits: torch.Tensor,
+        small_choice_logits: torch.Tensor,
+        frame_kind: torch.Tensor,
+    ) -> torch.Tensor:
+        B = card_logits.shape[0]
+        routed = card_logits.new_full(
+            (B, NUM_PLAYABLE_CARDS),
+            torch.finfo(card_logits.dtype).min,
+        )
+
+        small_mask = (
+            (frame_kind == self._FRAME_KIND_SMALL_CHOICE)
+            | (frame_kind == self._FRAME_KIND_CANCEL_CHOICE)
+            | (frame_kind == self._FRAME_KIND_DEFERRED_OPS)
+        )
+        country_mask = (
+            (frame_kind == self._FRAME_KIND_COUNTRY_PICK)
+            | (frame_kind == self._FRAME_KIND_FREE_OPS_INFLUENCE)
+            | (frame_kind == self._FRAME_KIND_NORAD_INFLUENCE)
+            | (frame_kind == self._FRAME_KIND_SETUP_PLACEMENT)
+        )
+        card_mask = (
+            (frame_kind == self._FRAME_KIND_CARD_SELECT)
+            | (frame_kind == self._FRAME_KIND_FORCED_DISCARD)
+        )
+        default_card_mask = ~(small_mask | country_mask)
+
+        if default_card_mask.any():
+            routed[default_card_mask] = card_logits[default_card_mask]
+        if card_mask.any():
+            routed[card_mask] = card_logits[card_mask]
+        if country_mask.any():
+            routed[country_mask, :NUM_COUNTRIES] = country_pick_logits[country_mask]
+        if small_mask.any():
+            routed[small_mask, :SMALL_CHOICE_MAX] = small_choice_logits[small_mask]
+        return routed
+
+    def forward(
+        self,
+        influence: torch.Tensor,
+        cards: torch.Tensor,
+        scalars: torch.Tensor,
+        eligible_cards_mask: torch.Tensor | None = None,
+        eligible_countries_mask: torch.Tensor | None = None,
+        action_one_hot: torch.Tensor | None = None,
+        frame_kind: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
+        B = influence.shape[0]
+        h_inf_embed, country_tokens = self.influence_encoder_embed(influence)
+        h_inf = torch.relu(self.influence_encoder_flat(influence)) + h_inf_embed
+
+        h_card, card_tokens = self.card_encoder(cards, country_tokens)
+
+        _, region_scalars = self.region_encoder(influence)
+        scalars_extended = torch.cat([scalars, region_scalars], dim=-1)
+        h_scalar = torch.relu(self.scalar_encoder(scalars_extended))
+
+        side_idx = scalars[:, self._SIDE_SCALAR_IDX].long().clamp(0, 1)
+        h_side = self.side_embed(side_idx)
+
+        trunk_input = torch.cat([h_inf, h_card, h_scalar, h_side], dim=-1)
+        trunk_base = self.trunk_dropout(torch.relu(self.trunk_proj(trunk_input)))
+        hidden = self.trunk_block2(self.trunk_block1(trunk_base))
+        self._last_hidden = hidden
+
+        card_logits = self.card_head(hidden)
+        mode_logits = self.mode_head(hidden)
+        country_strategy_logits = self.strategy_heads(hidden).view(
+            B,
+            self._NUM_STRATEGIES,
+            self._NUM_COUNTRIES,
+        )
+        strategy_logits = self.strategy_mixer(hidden)
+        mixing = torch.softmax(strategy_logits, dim=1).unsqueeze(2)
+        strategy_probs = torch.softmax(country_strategy_logits, dim=2)
+        country_logits = (mixing * strategy_probs).sum(dim=1)
+        country_pick_logits = self.country_pick_head(hidden)
+        small_choice_logits = self.small_choice_head(hidden)
+
+        if eligible_cards_mask is not None:
+            card_logits = _mask_logits(card_logits, eligible_cards_mask)
+        if eligible_countries_mask is not None:
+            country_pick_logits = _mask_logits(country_pick_logits, eligible_countries_mask)
+
+        v_ussr = torch.tanh(self.value_head_ussr(torch.relu(self.value_branch_ussr(hidden))))
+        v_us = torch.tanh(self.value_head_us(torch.relu(self.value_branch_us(hidden))))
+        is_us = side_idx.unsqueeze(1).float()
+        value = (1.0 - is_us) * v_ussr + is_us * v_us
+
+        if action_one_hot is None:
+            action_one_hot = hidden.new_zeros(B, TransitionDiffHead._ACTION_ONE_HOT_DIM)
+        else:
+            action_one_hot = action_one_hot.to(device=hidden.device, dtype=hidden.dtype)
+
+        if frame_kind is None:
+            frame_kind = self._frame_kind_from_scalars(scalars)
+        else:
+            frame_kind = frame_kind.to(device=hidden.device, dtype=torch.long)
+
+        return {
+            "card_logits": card_logits,
+            "mode_logits": mode_logits,
+            "country_logits": country_logits,
+            "country_strategy_logits": country_strategy_logits,
+            "strategy_logits": strategy_logits,
+            "value": value,
+            "small_choice_logits": small_choice_logits,
+            "country_pick_logits": country_pick_logits,
+            "subframe_logits": self._route_subframe_logits(
+                card_logits,
+                country_pick_logits,
+                small_choice_logits,
+                frame_kind,
+            ),
+            "state_diff_pred": self.transition_diff_head(
+                country_tokens,
+                hidden,
+                action_one_hot,
+            ),
+            "belief_logits": self.belief_head(card_tokens),
+        }
+
+
 class TSControlFeatGNNFiLMModel(nn.Module):
     """TSControlFeatGNNSideModel with FiLM conditioning instead of side-embed concatenation.
 
