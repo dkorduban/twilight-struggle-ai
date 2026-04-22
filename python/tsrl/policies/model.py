@@ -1579,6 +1579,262 @@ class ControlFeatGNNEncoder(nn.Module):
         return h_inf, region_scalar_tensor
 
 
+class GNNMessagePasser(nn.Module):
+    """Mean-aggregator message passing over the fixed country graph."""
+
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.message_proj = nn.Linear(2 * dim, dim)
+
+    def forward(self, tokens: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
+        adj = adjacency.to(device=tokens.device, dtype=tokens.dtype)
+        neighbor_mean = torch.matmul(adj, tokens)
+        update = self.message_proj(torch.cat([tokens, neighbor_mean], dim=-1))
+        return torch.relu(tokens + update)
+
+
+class SelfAttnBlock(nn.Module):
+    """Residual multi-head self-attention block for token encoders."""
+
+    def __init__(self, dim: int, num_heads: int) -> None:
+        super().__init__()
+        if dim % num_heads != 0:
+            raise ValueError("dim must be divisible by num_heads")
+        self.dim = dim
+        self.num_heads = num_heads
+        self.qkv_proj = nn.Linear(dim, 3 * dim)
+        self.attn_out = nn.Linear(dim, dim)
+        self.attn_ln = nn.LayerNorm(dim)
+        self.ffn_in = nn.Linear(dim, 2 * dim)
+        self.ffn_out = nn.Linear(2 * dim, dim)
+        self.ffn_ln = nn.LayerNorm(dim)
+
+    def _split_heads(self, x: torch.Tensor) -> torch.Tensor:
+        B, S, D = x.shape
+        head_dim = D // self.num_heads
+        return x.view(B, S, self.num_heads, head_dim).transpose(1, 2)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        B, S, D = tokens.shape
+        q, k, v = self.qkv_proj(tokens).chunk(3, dim=-1)
+        attn = F.scaled_dot_product_attention(
+            self._split_heads(q),
+            self._split_heads(k),
+            self._split_heads(v),
+        )
+        attn = attn.transpose(1, 2).contiguous().view(B, S, D)
+        tokens = self.attn_ln(tokens + self.attn_out(attn))
+        ffn = self.ffn_out(torch.relu(self.ffn_in(tokens)))
+        return self.ffn_ln(tokens + ffn)
+
+
+class CountryGNNAttnCLSEncoder(nn.Module):
+    """Country GNN + self-attention encoder with learned CLS pooling."""
+
+    __constants__ = ['_EMBED_DIM', '_NUM_HEADS', '_NUM_REGIONS', '_NUM_COUNTRIES']
+    _EMBED_DIM = 128
+    _NUM_HEADS = 4
+    _NUM_REGIONS = 7
+    _NUM_COUNTRIES = NUM_COUNTRIES
+
+    def __init__(
+        self,
+        n_mp: int = 2,
+        attn_mask_mode: str = "full",
+        use_cls: bool = True,
+    ) -> None:
+        super().__init__()
+        if n_mp not in (0, 1, 2, 3):
+            raise ValueError("n_mp must be one of {0, 1, 2, 3}")
+        if attn_mask_mode not in ("full", "regional_local"):
+            raise ValueError("attn_mask_mode must be 'full' or 'regional_local'")
+
+        self.n_mp = n_mp
+        self.attn_mask_mode = attn_mask_mode
+        self.use_cls = use_cls
+
+        self.register_buffer("country_static", _COUNTRY_FEATS.clone())
+        self.register_buffer("region_masks", torch.stack([m.clone() for m in _REGION_MASKS]))
+        self.register_buffer("adjacency", _COUNTRY_ADJACENCY.clone())
+        self.register_buffer("attn_mask", self._build_attn_mask())
+
+        self.country_proj = nn.Linear(_COUNTRY_FEAT_DIM + 2, self._EMBED_DIM)
+        self.mp_layers = nn.ModuleList(
+            [GNNMessagePasser(self._EMBED_DIM) for _ in range(n_mp)]
+        )
+
+        self.qkv_proj = nn.Linear(self._EMBED_DIM, 3 * self._EMBED_DIM)
+        self.attn_out = nn.Linear(self._EMBED_DIM, self._EMBED_DIM)
+        self.attn_ln = nn.LayerNorm(self._EMBED_DIM)
+
+        if use_cls:
+            self.cls_token = nn.Parameter(torch.zeros(1, 1, self._EMBED_DIM))
+            nn.init.normal_(self.cls_token, std=0.02)
+            self.cls_q_proj = nn.Linear(self._EMBED_DIM, self._EMBED_DIM)
+            self.cls_kv_proj = nn.Linear(self._EMBED_DIM, 2 * self._EMBED_DIM)
+            self.cls_out = nn.Linear(self._EMBED_DIM, self._EMBED_DIM)
+            self.cls_ln = nn.LayerNorm(self._EMBED_DIM)
+
+        n_pool_components = (1 if use_cls else 0) + 1 + self._NUM_REGIONS
+        self.out_proj = nn.Linear(
+            n_pool_components * self._EMBED_DIM,
+            INFLUENCE_HIDDEN,
+        )
+
+    def _build_attn_mask(self) -> torch.Tensor:
+        if self.attn_mask_mode == "full":
+            return torch.ones(self._NUM_COUNTRIES, self._NUM_COUNTRIES, dtype=torch.bool)
+
+        region_onehot = _COUNTRY_FEATS[:, 2 : 2 + self._NUM_REGIONS] > 0.5
+        same_region = torch.matmul(
+            region_onehot.to(torch.float32),
+            region_onehot.to(torch.float32).t(),
+        ) > 0
+        neighbors = _COUNTRY_ADJACENCY > 0
+        self_edges = torch.eye(self._NUM_COUNTRIES, dtype=torch.bool)
+        return same_region | neighbors | self_edges
+
+    def _split_heads(self, x: torch.Tensor) -> torch.Tensor:
+        B, S, D = x.shape
+        head_dim = D // self._NUM_HEADS
+        return x.view(B, S, self._NUM_HEADS, head_dim).transpose(1, 2)
+
+    def _build_tokens(self, influence: torch.Tensor) -> torch.Tensor:
+        B = influence.shape[0]
+        ussr_inf = influence[:, :self._NUM_COUNTRIES] / 10.0
+        us_inf = influence[:, self._NUM_COUNTRIES:] / 10.0
+        static = self.country_static.to(dtype=influence.dtype).unsqueeze(0).expand(B, -1, -1)
+        dyn = torch.stack([ussr_inf, us_inf], dim=-1)
+        per_country = torch.cat([dyn, static], dim=-1)
+        return torch.relu(self.country_proj(per_country))
+
+    def _attn(self, tokens: torch.Tensor) -> torch.Tensor:
+        B, S, D = tokens.shape
+        q, k, v = self.qkv_proj(tokens).chunk(3, dim=-1)
+        attn_mask = self.attn_mask if self.attn_mask_mode == "regional_local" else None
+        attn = F.scaled_dot_product_attention(
+            self._split_heads(q),
+            self._split_heads(k),
+            self._split_heads(v),
+            attn_mask=attn_mask,
+        )
+        attn = attn.transpose(1, 2).contiguous().view(B, S, D)
+        return self.attn_out(attn)
+
+    def _cls_cross_attn(self, cls: torch.Tensor, tokens: torch.Tensor) -> torch.Tensor:
+        B, S, D = tokens.shape
+        q = self.cls_q_proj(cls)
+        k, v = self.cls_kv_proj(tokens).chunk(2, dim=-1)
+        head_dim = D // self._NUM_HEADS
+        q = q.view(B, 1, self._NUM_HEADS, head_dim).transpose(1, 2)
+        k = k.view(B, S, self._NUM_HEADS, head_dim).transpose(1, 2)
+        v = v.view(B, S, self._NUM_HEADS, head_dim).transpose(1, 2)
+        attn = F.scaled_dot_product_attention(q, k, v)
+        attn = attn.transpose(1, 2).contiguous().view(B, 1, D)
+        return self.cls_ln(cls + self.cls_out(attn)).squeeze(1)
+
+    def forward(self, influence: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        B = influence.shape[0]
+        tokens = self._build_tokens(influence)
+        for layer in self.mp_layers:
+            tokens = layer(tokens, self.adjacency)
+
+        tokens = self.attn_ln(tokens + self._attn(tokens))
+
+        sum_pool = tokens.mean(dim=1)
+        region_pools = [
+            _masked_mean_pool(tokens, self.region_masks[i])
+            for i in range(self._NUM_REGIONS)
+        ]
+
+        parts = []
+        if self.use_cls:
+            cls = self.cls_token.expand(B, -1, -1)
+            parts.append(self._cls_cross_attn(cls, tokens))
+        parts.append(sum_pool)
+        parts.extend(region_pools)
+        concat = torch.cat(parts, dim=-1)
+        return torch.relu(self.out_proj(concat)), tokens
+
+
+class CardCrossAttnEncoder(nn.Module):
+    """Card tokens cross-attend to countries, self-attend, then CLS-pool."""
+
+    __constants__ = ['_EMBED_DIM', '_NUM_HEADS', '_NUM_CARDS']
+    _EMBED_DIM = 128
+    _NUM_HEADS = 4
+    _NUM_CARDS = NUM_CARDS
+
+    def __init__(self, n_self_attn: int = 2) -> None:
+        super().__init__()
+        if n_self_attn not in (1, 2):
+            raise ValueError("n_self_attn must be 1 or 2")
+        self.register_buffer("card_static", _CARD_FEATS.clone())
+        self.card_proj = nn.Linear(4 + _CARD_FEAT_DIM, self._EMBED_DIM)
+
+        self.cross_q = nn.Linear(self._EMBED_DIM, self._EMBED_DIM)
+        self.cross_kv = nn.Linear(self._EMBED_DIM, 2 * self._EMBED_DIM)
+        self.cross_out = nn.Linear(self._EMBED_DIM, self._EMBED_DIM)
+        self.cross_ln = nn.LayerNorm(self._EMBED_DIM)
+
+        self.self_attn = nn.ModuleList(
+            [SelfAttnBlock(self._EMBED_DIM, self._NUM_HEADS) for _ in range(n_self_attn)]
+        )
+
+        self.card_pool_token = nn.Parameter(torch.zeros(1, 1, self._EMBED_DIM))
+        nn.init.normal_(self.card_pool_token, std=0.02)
+        self.pool_q = nn.Linear(self._EMBED_DIM, self._EMBED_DIM)
+        self.pool_kv = nn.Linear(self._EMBED_DIM, 2 * self._EMBED_DIM)
+        self.pool_out = nn.Linear(self._EMBED_DIM, CARD_HIDDEN)
+
+    def _split_heads(self, x: torch.Tensor) -> torch.Tensor:
+        B, S, D = x.shape
+        head_dim = D // self._NUM_HEADS
+        return x.view(B, S, self._NUM_HEADS, head_dim).transpose(1, 2)
+
+    def _cross_attn(self, tokens: torch.Tensor, country_tokens: torch.Tensor) -> torch.Tensor:
+        B, S, D = tokens.shape
+        q = self.cross_q(tokens)
+        k, v = self.cross_kv(country_tokens).chunk(2, dim=-1)
+        attn = F.scaled_dot_product_attention(
+            self._split_heads(q),
+            self._split_heads(k),
+            self._split_heads(v),
+        )
+        attn = attn.transpose(1, 2).contiguous().view(B, S, D)
+        return self.cross_out(attn)
+
+    def _pool(self, tokens: torch.Tensor) -> torch.Tensor:
+        B, S, D = tokens.shape
+        q = self.pool_q(self.card_pool_token.expand(B, -1, -1))
+        k, v = self.pool_kv(tokens).chunk(2, dim=-1)
+        attn = F.scaled_dot_product_attention(
+            self._split_heads(q),
+            self._split_heads(k),
+            self._split_heads(v),
+        )
+        attn = attn.transpose(1, 2).contiguous().view(B, 1, D).squeeze(1)
+        return torch.relu(self.pool_out(attn))
+
+    def forward(
+        self,
+        cards: torch.Tensor,
+        country_tokens: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        B = cards.shape[0]
+        status = cards.to(dtype=country_tokens.dtype).reshape(B, 4, self._NUM_CARDS)
+        status = status.permute(0, 2, 1)
+        static = self.card_static.to(dtype=country_tokens.dtype).unsqueeze(0).expand(B, -1, -1)
+        per_card = torch.cat([status, static], dim=-1)
+        tokens = torch.relu(self.card_proj(per_card))
+
+        tokens = self.cross_ln(tokens + self._cross_attn(tokens, country_tokens))
+        for block in self.self_attn:
+            tokens = block(tokens)
+
+        return self._pool(tokens), tokens
+
+
 class TSControlFeatGNNModel(nn.Module):
     """TSControlFeatModel with 2-round GNN over country adjacency.
 
