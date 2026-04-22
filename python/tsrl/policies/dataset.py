@@ -53,6 +53,52 @@ from torch.utils.data import Dataset
 _TEACHER_CARD_TARGET_SIZE = 111
 _TEACHER_MODE_TARGET_SIZE = 6  # NUM_MODES = 6 (Influence/Coup/Realign/Space/Event/EventFirst)
 
+NUM_SUBFRAME_CARD_SLOTS = 112
+NUM_SUBFRAME_COUNTRIES = 86
+
+ROW_KIND_AR = 0
+ROW_KIND_SUBFRAME = 1
+
+FRAME_KIND_TOP_LEVEL_AR = 0
+FRAME_KIND_SMALL_CHOICE = 1
+FRAME_KIND_COUNTRY_PICK = 2
+FRAME_KIND_CARD_SELECT = 3
+FRAME_KIND_FORCED_DISCARD = 4
+FRAME_KIND_CANCEL_CHOICE = 5
+FRAME_KIND_FREE_OPS_INFLUENCE = 6
+FRAME_KIND_NORAD_INFLUENCE = 7
+FRAME_KIND_DEFERRED_OPS = 8
+FRAME_KIND_SETUP_PLACEMENT = 9
+FRAME_KIND_HEADLINE = 10
+
+TARGET_HEAD_IGNORE = -1
+TARGET_HEAD_AR = 0
+TARGET_HEAD_SMALL_CHOICE = 1
+TARGET_HEAD_COUNTRY_PICK = 2
+TARGET_HEAD_CARD_PICK = 3
+TARGET_HEAD_HEADLINE = 4
+NUM_TARGET_HEADS = 5
+
+_SUBFRAME_NUMERIC_DEFAULTS: dict[str, int] = {
+    "frame_kind": FRAME_KIND_TOP_LEVEL_AR,
+    "source_card": 0,
+    "parent_card": 0,
+    "step_index": 0,
+    "total_steps": 1,
+    "budget_remaining": 0,
+    "stack_depth": 0,
+    "criteria_bits": 0,
+    "eligible_n": 0,
+    "chosen_option_index": 0,
+    "chosen_card": 0,
+    "chosen_country": 0,
+}
+
+_SUBFRAME_LIST_DEFAULTS: dict[str, list[int]] = {
+    "eligible_cards": [],
+    "eligible_countries": [],
+}
+
 
 def _load_teacher_targets(teacher_targets_path: str) -> pl.DataFrame:
     path = Path(teacher_targets_path)
@@ -176,7 +222,11 @@ class TS_SelfPlayDataset(Dataset):
                         _excluded_ids.add(_line)
             print(f"[dataset] Excluding {len(_excluded_ids):,} proxy-eval game_ids from {exclude_game_ids}", flush=True)
 
-        paths = sorted(glob.glob(os.path.join(data_dir, "*.parquet")))
+        data_path = Path(data_dir)
+        if data_path.is_file():
+            paths = [str(data_path)]
+        else:
+            paths = sorted(glob.glob(os.path.join(data_dir, "*.parquet")))
         if not paths:
             raise FileNotFoundError(f"No *.parquet files found in {data_dir!r}")
 
@@ -207,6 +257,11 @@ class TS_SelfPlayDataset(Dataset):
             "winner_side", "final_vp", "end_reason",
             # teacher join keys
             "game_id", "step_idx",
+            # optional sub-frame routing fields
+            "row_kind", "frame_kind", "source_card", "parent_card",
+            "step_index", "total_steps", "budget_remaining", "stack_depth",
+            "criteria_bits", "eligible_cards", "eligible_countries", "eligible_n",
+            "chosen_option_index", "chosen_card", "chosen_country", "target_head",
         }
 
         # Boolean active-effect columns (indices 11-27). Zeroed if column missing.
@@ -226,15 +281,6 @@ class TS_SelfPlayDataset(Dataset):
             return pl.read_parquet(p, columns=cols)
 
         frames = [_read_slim(p) for p in paths]
-        # Normalise column order before concat — files may have different
-        # column sets (e.g. older data lacks full-state columns). Use the
-        # intersection so all frames share the same schema.
-        col_sets = [set(f.columns) for f in frames]
-        common = col_sets[0]
-        for s in col_sets[1:]:
-            common &= s
-        canonical = [c for c in frames[0].columns if c in common]
-        frames = [f.select(canonical) for f in frames]
 
         # Normalise list/array column schemas: C++ JSONL→Parquet emits
         # Array(Int32, N) while Python collectors emit List(Int64).
@@ -253,6 +299,8 @@ class TS_SelfPlayDataset(Dataset):
             "lbl_actor_hand",
             "lbl_card_quality",
             "lbl_opponent_possible",
+            "eligible_cards",
+            "eligible_countries",
         ]
 
         def _normalize_frame(f: pl.DataFrame) -> pl.DataFrame:
@@ -264,8 +312,10 @@ class TS_SelfPlayDataset(Dataset):
 
         frames = [_normalize_frame(f) for f in frames]
 
-        df = pl.concat(frames, how="vertical_relaxed")
+        df = pl.concat(frames, how="diagonal_relaxed")
         del frames  # free individual frame memory
+
+        df = self._with_subframe_defaults(df)
 
         # Exclude proxy-eval games so they never appear in train or val.
         if _excluded_ids and "game_id" in df.columns:
@@ -346,7 +396,23 @@ class TS_SelfPlayDataset(Dataset):
 
         scalars = np.stack(core_scalars, axis=1).astype(np.float32)  # (N, 32)
         frame_ctx = np.zeros((N, 8), dtype=np.float32)
-        frame_ctx[:, 7] = 1.0
+        row_kind_arr = df["row_kind_i8"].to_numpy().astype(np.int8)
+        frame_kind_arr = df["frame_kind"].cast(pl.Int16).to_numpy().astype(np.int16)
+        step_index_arr = df["step_index"].cast(pl.Int16).to_numpy().astype(np.int16)
+        total_steps_arr = df["total_steps"].cast(pl.Int16).to_numpy().astype(np.int16)
+        budget_remaining_arr = df["budget_remaining"].cast(pl.Int16).to_numpy().astype(np.int16)
+        stack_depth_arr = df["stack_depth"].cast(pl.Int16).to_numpy().astype(np.int16)
+        source_card_arr = df["source_card"].cast(pl.Int16).to_numpy().astype(np.int16)
+        criteria_bits_arr = df["criteria_bits"].cast(pl.Int32).to_numpy().astype(np.int32)
+        safe_total_steps = np.maximum(total_steps_arr.astype(np.float32), 1.0)
+        frame_ctx[:, 0] = frame_kind_arr.astype(np.float32) / 10.0
+        frame_ctx[:, 1] = step_index_arr.astype(np.float32) / safe_total_steps
+        frame_ctx[:, 2] = total_steps_arr.astype(np.float32) / 16.0
+        frame_ctx[:, 3] = budget_remaining_arr.astype(np.float32) / 4.0
+        frame_ctx[:, 4] = stack_depth_arr.astype(np.float32) / 4.0
+        frame_ctx[:, 5] = source_card_arr.astype(np.float32) / 112.0
+        frame_ctx[:, 6] = (criteria_bits_arr & 0xFF).astype(np.float32) / 255.0
+        frame_ctx[:, 7] = (row_kind_arr == ROW_KIND_AR).astype(np.float32)
         self._scalars = torch.from_numpy(np.concatenate([scalars, frame_ctx], axis=1))
 
         # --- integer targets ---
@@ -354,6 +420,42 @@ class TS_SelfPlayDataset(Dataset):
             (df["action_card_id"].to_numpy() - 1).astype(np.int64)
         )  # (N,)
         self._mode_target = torch.from_numpy(df["action_mode"].to_numpy().astype(np.int64))  # (N,)
+
+        # --- sub-frame routing tensors ---
+        self._row_kind = torch.from_numpy(row_kind_arr.astype(np.int8))
+        self._frame_kind = torch.from_numpy(frame_kind_arr.astype(np.int8))
+        self._source_card = torch.from_numpy(source_card_arr.astype(np.int16))
+        self._parent_card = torch.from_numpy(df["parent_card"].cast(pl.Int16).to_numpy().astype(np.int16))
+        self._step_index = torch.from_numpy(step_index_arr.astype(np.int8))
+        self._total_steps = torch.from_numpy(total_steps_arr.astype(np.int8))
+        self._budget_remaining = torch.from_numpy(budget_remaining_arr.astype(np.int16))
+        self._stack_depth = torch.from_numpy(stack_depth_arr.astype(np.int8))
+        self._criteria_bits = torch.from_numpy(criteria_bits_arr.astype(np.int16))
+        self._eligible_n = torch.from_numpy(df["eligible_n"].cast(pl.Int16).to_numpy().astype(np.int16))
+        self._chosen_option_index = torch.from_numpy(
+            df["chosen_option_index"].cast(pl.Int16).to_numpy().astype(np.int8)
+        )
+        self._chosen_card = torch.from_numpy(df["chosen_card"].cast(pl.Int16).to_numpy().astype(np.int16))
+        self._chosen_country = torch.from_numpy(
+            df["chosen_country"].cast(pl.Int16).to_numpy().astype(np.int16)
+        )
+        target_head_arr = df["target_head_i8"].to_numpy().astype(np.int8)
+        self._target_head = torch.from_numpy(target_head_arr)
+        self._eligible_cards_mask = torch.from_numpy(
+            self._dense_mask(
+                df["eligible_cards"].to_list(),
+                width=NUM_SUBFRAME_CARD_SLOTS,
+                one_indexed=True,
+            )
+        )
+        self._eligible_countries_mask = torch.from_numpy(
+            self._dense_mask(
+                df["eligible_countries"].to_list(),
+                width=NUM_SUBFRAME_COUNTRIES,
+                one_indexed=False,
+            )
+        )
+        self.head_weights = self._compute_head_weights(target_head_arr)
 
         # --- country ops target (86,) — parsed from comma-separated string ---
         raw_targets = df["action_targets"].to_list()
@@ -460,7 +562,7 @@ class TS_SelfPlayDataset(Dataset):
             self._teacher_value = torch.from_numpy(teacher_value)
 
         # Store game_id for deterministic train/val splitting by game.
-        if "game_id" in canonical:
+        if "game_id" in df.columns:
             self._game_ids = df["game_id"].to_numpy().copy()
         else:
             self._game_ids = None
@@ -474,6 +576,115 @@ class TS_SelfPlayDataset(Dataset):
             f"[dataset] Loaded {N:,} rows from {len(paths)} file(s) in {elapsed:.1f}s",
             flush=True,
         )
+
+    @staticmethod
+    def _with_subframe_defaults(df: pl.DataFrame) -> pl.DataFrame:
+        if "row_kind" not in df.columns:
+            df = df.with_columns(pl.lit("ar").alias("row_kind"))
+
+        numeric_exprs = []
+        for col, default in _SUBFRAME_NUMERIC_DEFAULTS.items():
+            if col not in df.columns:
+                numeric_exprs.append(pl.lit(default, dtype=pl.Int16).alias(col))
+            else:
+                numeric_exprs.append(
+                    pl.col(col).fill_null(default).cast(pl.Int16).alias(col)
+                )
+        if numeric_exprs:
+            df = df.with_columns(numeric_exprs)
+        df = df.with_columns(
+            pl.when(pl.col("total_steps") <= 0)
+            .then(pl.lit(1, dtype=pl.Int16))
+            .otherwise(pl.col("total_steps"))
+            .alias("total_steps")
+        )
+
+        for col, default in _SUBFRAME_LIST_DEFAULTS.items():
+            if col not in df.columns:
+                df = df.with_columns(
+                    pl.Series(col, [default.copy() for _ in range(len(df))], dtype=pl.List(pl.Int32))
+                )
+            else:
+                df = df.with_columns(pl.col(col).cast(pl.List(pl.Int32)).alias(col))
+
+        row_kind_str = pl.col("row_kind").cast(pl.String).str.to_lowercase()
+        df = df.with_columns(
+            pl.when(row_kind_str.is_in(["subframe", "1"]))
+            .then(pl.lit(ROW_KIND_SUBFRAME, dtype=pl.Int8))
+            .otherwise(pl.lit(ROW_KIND_AR, dtype=pl.Int8))
+            .alias("row_kind_i8")
+        )
+
+        frame_kind = pl.col("frame_kind")
+        df = df.with_columns(
+            pl.when(pl.col("row_kind_i8") == ROW_KIND_AR)
+            .then(pl.lit(TARGET_HEAD_AR, dtype=pl.Int8))
+            .when(
+                frame_kind.is_in(
+                    [
+                        FRAME_KIND_SMALL_CHOICE,
+                        FRAME_KIND_CANCEL_CHOICE,
+                        FRAME_KIND_DEFERRED_OPS,
+                    ]
+                )
+            )
+            .then(pl.lit(TARGET_HEAD_SMALL_CHOICE, dtype=pl.Int8))
+            .when(
+                frame_kind.is_in(
+                    [
+                        FRAME_KIND_COUNTRY_PICK,
+                        FRAME_KIND_FREE_OPS_INFLUENCE,
+                        FRAME_KIND_NORAD_INFLUENCE,
+                        FRAME_KIND_SETUP_PLACEMENT,
+                    ]
+                )
+            )
+            .then(pl.lit(TARGET_HEAD_COUNTRY_PICK, dtype=pl.Int8))
+            .when(
+                frame_kind.is_in(
+                    [
+                        FRAME_KIND_CARD_SELECT,
+                        FRAME_KIND_FORCED_DISCARD,
+                    ]
+                )
+            )
+            .then(pl.lit(TARGET_HEAD_CARD_PICK, dtype=pl.Int8))
+            .when(frame_kind == FRAME_KIND_HEADLINE)
+            .then(pl.lit(TARGET_HEAD_HEADLINE, dtype=pl.Int8))
+            .otherwise(pl.lit(TARGET_HEAD_IGNORE, dtype=pl.Int8))
+            .alias("target_head_i8")
+        )
+        return df
+
+    @staticmethod
+    def _dense_mask(
+        rows: list,
+        *,
+        width: int,
+        one_indexed: bool,
+    ) -> np.ndarray:
+        mask = np.zeros((len(rows), width), dtype=np.uint8)
+        for row_idx, row in enumerate(rows):
+            if row is None:
+                continue
+            for raw_idx in row:
+                idx = int(raw_idx)
+                if one_indexed:
+                    if 1 <= idx <= width:
+                        mask[row_idx, idx - 1] = 1
+                elif 0 <= idx < width:
+                    mask[row_idx, idx] = 1
+        return mask
+
+    @staticmethod
+    def _compute_head_weights(target_head: np.ndarray) -> torch.Tensor:
+        valid = target_head[target_head >= 0]
+        counts = np.bincount(valid.astype(np.int64), minlength=NUM_TARGET_HEADS)
+        n_ar = max(1, int(counts[TARGET_HEAD_AR]))
+        weights = np.ones(NUM_TARGET_HEADS, dtype=np.float32)
+        for head in range(1, NUM_TARGET_HEADS):
+            weights[head] = np.clip(n_ar / max(1, int(counts[head])), 0.1, 10.0)
+        return torch.from_numpy(weights)
 
     def deterministic_split(
         self, val_fraction: float = 0.05, val_hash_salt: str = ""
@@ -539,6 +750,22 @@ class TS_SelfPlayDataset(Dataset):
             "mode_target": self._mode_target[idx],
             "country_ops_target": self._country_ops[idx],
             "value_target": self._value[idx],
+            "row_kind": self._row_kind[idx],
+            "frame_kind": self._frame_kind[idx],
+            "source_card": self._source_card[idx],
+            "parent_card": self._parent_card[idx],
+            "step_index": self._step_index[idx],
+            "total_steps": self._total_steps[idx],
+            "budget_remaining": self._budget_remaining[idx],
+            "stack_depth": self._stack_depth[idx],
+            "criteria_bits": self._criteria_bits[idx],
+            "eligible_n": self._eligible_n[idx],
+            "eligible_cards_mask": self._eligible_cards_mask[idx],
+            "eligible_countries_mask": self._eligible_countries_mask[idx],
+            "chosen_option_index": self._chosen_option_index[idx],
+            "chosen_card": self._chosen_card[idx],
+            "chosen_country": self._chosen_country[idx],
+            "target_head": self._target_head[idx],
         }
 
         if self._has_teacher is not None:
@@ -566,6 +793,22 @@ class TS_SelfPlayDataset(Dataset):
             "mode_target": self._mode_target[idx],
             "country_ops_target": self._country_ops[idx],
             "value_target": self._value[idx],
+            "row_kind": self._row_kind[idx],
+            "frame_kind": self._frame_kind[idx],
+            "source_card": self._source_card[idx],
+            "parent_card": self._parent_card[idx],
+            "step_index": self._step_index[idx],
+            "total_steps": self._total_steps[idx],
+            "budget_remaining": self._budget_remaining[idx],
+            "stack_depth": self._stack_depth[idx],
+            "criteria_bits": self._criteria_bits[idx],
+            "eligible_n": self._eligible_n[idx],
+            "eligible_cards_mask": self._eligible_cards_mask[idx],
+            "eligible_countries_mask": self._eligible_countries_mask[idx],
+            "chosen_option_index": self._chosen_option_index[idx],
+            "chosen_card": self._chosen_card[idx],
+            "chosen_country": self._chosen_country[idx],
+            "target_head": self._target_head[idx],
         }
 
         if self._has_teacher is not None:

@@ -57,6 +57,24 @@ _ARRAY_COLUMNS: list[tuple[str, int]] = [
 
 _ARRAY_COLUMN_NAMES: frozenset[str] = frozenset(c for c, _ in _ARRAY_COLUMNS)
 
+_SUBFRAME_NUMERIC_DEFAULTS: dict[str, int] = {
+    "frame_kind": 0,
+    "source_card": 0,
+    "parent_card": 0,
+    "step_index": 0,
+    "total_steps": 1,
+    "budget_remaining": 0,
+    "stack_depth": 0,
+    "criteria_bits": 0,
+    "eligible_n": 0,
+    "chosen_option_index": 0,
+    "chosen_card": 0,
+    "chosen_country": 0,
+    "target_head": 0,
+}
+
+_SUBFRAME_LIST_COLUMNS: tuple[str, ...] = ("eligible_cards", "eligible_countries")
+
 
 def _load_jsonl(path: Path) -> list[dict]:
     rows = []
@@ -82,6 +100,11 @@ def _rows_to_polars(rows: list[dict]) -> pl.DataFrame:
     array_cols: dict[str, list[list[int]]] = {name: [] for name, _ in _ARRAY_COLUMNS}
 
     for row in rows:
+        row.setdefault("row_kind", "ar")
+        for col, default in _SUBFRAME_NUMERIC_DEFAULTS.items():
+            row.setdefault(col, default)
+        for col in _SUBFRAME_LIST_COLUMNS:
+            row.setdefault(col, [])
         for col, _ in _ARRAY_COLUMNS:
             val = row.get(col)
             if val is None:
@@ -103,6 +126,7 @@ def _rows_to_polars(rows: list[dict]) -> pl.DataFrame:
             pl.Array(pl.Int32, length)
         )
         df = df.with_columns(series)
+    df = _with_subframe_defaults(df)
 
     return df
 
@@ -122,6 +146,28 @@ def _cast_array_columns(df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
+def _with_subframe_defaults(df: pl.DataFrame) -> pl.DataFrame:
+    """Ensure old JSONL and new sub-frame JSONL write a uniform Parquet schema."""
+    if "row_kind" not in df.columns:
+        df = df.with_columns(pl.lit("ar").alias("row_kind"))
+    exprs = []
+    for col, default in _SUBFRAME_NUMERIC_DEFAULTS.items():
+        if col not in df.columns:
+            exprs.append(pl.lit(default, dtype=pl.Int16).alias(col))
+        else:
+            exprs.append(pl.col(col).fill_null(default).cast(pl.Int16).alias(col))
+    if exprs:
+        df = df.with_columns(exprs)
+    for col in _SUBFRAME_LIST_COLUMNS:
+        if col not in df.columns:
+            df = df.with_columns(
+                pl.Series(col, [[] for _ in range(len(df))], dtype=pl.List(pl.Int32))
+            )
+        else:
+            df = df.with_columns(pl.col(col).cast(pl.List(pl.Int32)).alias(col))
+    return df
+
+
 def convert(
     input_paths: list[Path],
     output_path: Path,
@@ -136,6 +182,7 @@ def convert(
         try:
             df = pl.read_ndjson(path)
             df = _cast_array_columns(df)
+            df = _with_subframe_defaults(df)
             total += len(df)
             chunks.append(df)
             log.info("loaded %d rows from %s (running total: %d)", len(df), path, total)
