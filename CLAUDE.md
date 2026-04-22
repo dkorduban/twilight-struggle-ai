@@ -256,7 +256,8 @@ Preferred data tiers:
 Do not design the repo around the assumption that tens of thousands of clean logs will appear.
 
 ## Permanently out of scope / not supported
-- **Promo cards** (Lone Gunman #109, Colonial Rear Guards #110, Panama Canal Returned #111): IDs exist in cards.csv for log-parsing completeness, but their event effects are **not implemented** and they are excluded from self-play and training. Do not implement promo card events.
+(none currently — previously listed cards #109/#110/#111 are **base cards** in the
+Deluxe edition and must be implemented.)
 
 ## Out of scope for now
 Do not build these in the Month-1 critical path:
