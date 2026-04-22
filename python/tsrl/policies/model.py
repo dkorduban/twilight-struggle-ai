@@ -1835,6 +1835,68 @@ class CardCrossAttnEncoder(nn.Module):
         return self._pool(tokens), tokens
 
 
+class TransitionDiffHead(nn.Module):
+    """Auxiliary transition-delta head conditioned on a ground-truth action."""
+
+    _ACTION_ONE_HOT_DIM = NUM_PLAYABLE_CARDS + NUM_MODES + NUM_COUNTRIES + SMALL_CHOICE_MAX
+
+    def __init__(self, D: int = 128, D_a: int = 64, hidden: int = 128) -> None:
+        super().__init__()
+        self.action_enc = nn.Linear(self._ACTION_ONE_HOT_DIM, D_a)
+        self.per_country_mlp = nn.Sequential(
+            nn.Linear(D + D_a, hidden),
+            nn.ReLU(),
+            nn.Linear(hidden, 2),
+        )
+        self.global_mlp = nn.Sequential(
+            nn.Linear(D + D_a, hidden),
+            nn.ReLU(),
+            nn.Linear(hidden, 4),
+        )
+
+    def _coerce_action(self, a_one_hot: torch.Tensor) -> torch.Tensor:
+        expected = self.action_enc.in_features
+        if a_one_hot.shape[-1] == expected:
+            return a_one_hot
+        if a_one_hot.shape[-1] > expected:
+            return a_one_hot[..., :expected]
+        pad = a_one_hot.new_zeros(*a_one_hot.shape[:-1], expected - a_one_hot.shape[-1])
+        return torch.cat([a_one_hot, pad], dim=-1)
+
+    def forward(
+        self,
+        country_tokens: torch.Tensor,
+        trunk_hidden: torch.Tensor,
+        a_one_hot: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        del trunk_hidden
+        B = country_tokens.shape[0]
+        a = torch.relu(self.action_enc(self._coerce_action(a_one_hot)))
+        a_c = a.unsqueeze(1).expand(-1, NUM_COUNTRIES, -1)
+        per_c = torch.cat([country_tokens, a_c], dim=-1)
+        d_influence = self.per_country_mlp(per_c)
+
+        pooled = country_tokens.mean(dim=1)
+        global_in = torch.cat([pooled, a], dim=-1)
+        d_global = self.global_mlp(global_in)
+        return {"d_influence": d_influence, "d_global": d_global}
+
+
+class OpponentBeliefHead(nn.Module):
+    """Auxiliary per-card opponent-hand belief head."""
+
+    def __init__(self, D: int = 128, hidden: int = 64) -> None:
+        super().__init__()
+        self.per_card_mlp = nn.Sequential(
+            nn.Linear(D, hidden),
+            nn.ReLU(),
+            nn.Linear(hidden, 1),
+        )
+
+    def forward(self, card_tokens: torch.Tensor) -> torch.Tensor:
+        return self.per_card_mlp(card_tokens).squeeze(-1)
+
+
 class TSControlFeatGNNModel(nn.Module):
     """TSControlFeatModel with 2-round GNN over country adjacency.
 
