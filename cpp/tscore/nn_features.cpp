@@ -119,7 +119,7 @@ int model_base_scalar_dim(torch::jit::script::Module& model) {
         if (input_dim == kModelScalarDim + kRegionScalarDim) {
             return kModelScalarDim;
         }
-    } catch (const c10::Error&) {
+    } catch (const std::exception&) {
     }
     return kModelScalarDim;
 }

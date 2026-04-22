@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "legal_actions.hpp"
+#include "policy_callback.hpp"
 #include "rng.hpp"
 
 #if defined(TS_BUILD_TORCH_RUNTIME)
@@ -28,6 +29,11 @@ public:
         const PublicState& pub,
         const CardSet& hand,
         bool holds_china,
+        Pcg64Rng& rng
+    );
+    int choose_event_decision(
+        const PublicState& pub,
+        const EventDecision& decision,
         Pcg64Rng& rng
     );
 

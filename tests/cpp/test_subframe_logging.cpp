@@ -1,8 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <atomic>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "game_loop.hpp"
@@ -43,6 +48,26 @@ GameLoopConfig trace_test_config() {
     GameLoopConfig config;
     config.skip_setup_influence = true;
     return config;
+}
+
+std::filesystem::path find_collector_binary() {
+    const auto cwd = std::filesystem::current_path();
+    const std::vector<std::filesystem::path> candidates{
+        cwd / "cpp/tools/ts_collect_selfplay_rows_jsonl",
+        cwd.parent_path() / "cpp/tools/ts_collect_selfplay_rows_jsonl",
+        cwd.parent_path().parent_path() / "cpp/tools/ts_collect_selfplay_rows_jsonl",
+    };
+    for (const auto& candidate : candidates) {
+        if (std::filesystem::exists(candidate)) {
+            return candidate;
+        }
+    }
+    FAIL("ts_collect_selfplay_rows_jsonl binary was not found from " << cwd.string());
+    return {};
+}
+
+std::string shell_quote(const std::filesystem::path& path) {
+    return std::string("'") + path.string() + "'";
 }
 
 }  // namespace
@@ -110,6 +135,7 @@ TEST_CASE("test_traced_game_captures_subframes", "[subframe_logging]") {
     );
     REQUIRE(step != traced.steps.end());
     REQUIRE(step->sub_frames.front().kind == FrameKind::CountryPick);
+    REQUIRE(step->sub_frames.front().chosen_action.country_id != 0);
 }
 
 TEST_CASE("test_policy_cb_is_invoked_per_subframe", "[subframe_logging]") {
@@ -131,4 +157,40 @@ TEST_CASE("test_policy_cb_is_invoked_per_subframe", "[subframe_logging]") {
     );
 
     REQUIRE(callback_count.load() >= 1);
+}
+
+TEST_CASE("test_collect_selfplay_jsonl_emits_subframe_rows", "[subframe_logging]") {
+    const auto collector = find_collector_binary();
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto output = std::filesystem::path("/tmp") /
+        (std::string("ts_subframe_logging_") + std::to_string(stamp) + ".jsonl");
+    const auto command = shell_quote(collector) +
+        " --out " + shell_quote(output) +
+        " --games 3 --seed 24680 --ussr-policy minimal --us-policy minimal";
+
+    REQUIRE(std::system(command.c_str()) == 0);
+
+    std::ifstream in(output);
+    REQUIRE(in.good());
+
+    int ar_rows = 0;
+    int subframe_rows = 0;
+    bool saw_frame_kind = false;
+    bool saw_chosen_country = false;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.find("\"row_kind\":\"ar\"") != std::string::npos) {
+            ++ar_rows;
+        }
+        if (line.find("\"row_kind\":\"subframe\"") != std::string::npos) {
+            ++subframe_rows;
+            saw_frame_kind = saw_frame_kind || line.find("\"frame_kind\":") != std::string::npos;
+            saw_chosen_country = saw_chosen_country || line.find("\"chosen_country\":") != std::string::npos;
+        }
+    }
+
+    REQUIRE(ar_rows > 0);
+    REQUIRE(subframe_rows > 0);
+    REQUIRE(saw_frame_kind);
+    REQUIRE(saw_chosen_country);
 }

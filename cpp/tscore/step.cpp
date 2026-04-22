@@ -36,25 +36,29 @@ void record_option_frame(
     CardId card_id,
     Side side,
     int n_options,
-    std::vector<DecisionFrame>* frame_log
+    std::vector<DecisionFrame>* frame_log,
+    int chosen_option = 0
 ) {
     if (frame_log == nullptr) {
         return;
     }
-    frame_log->push_back(make_decision_frame(
+    auto frame = make_decision_frame(
         FrameKind::SmallChoice,
         card_id,
         side,
         static_cast<size_t>(n_options),
         *frame_log
-    ));
+    );
+    frame.chosen_action.option_index = chosen_option;
+    frame_log->push_back(frame);
 }
 
 void record_country_frame(
     CardId card_id,
     Side side,
     std::span<const CountryId> pool,
-    std::vector<DecisionFrame>* frame_log
+    std::vector<DecisionFrame>* frame_log,
+    CountryId chosen_country = 0
 ) {
     if (frame_log == nullptr) {
         return;
@@ -63,6 +67,7 @@ void record_country_frame(
     for (const auto cid : pool) {
         frame.eligible_countries.set(static_cast<size_t>(cid));
     }
+    frame.chosen_action.country_id = chosen_country;
     frame_log->push_back(frame);
 }
 
@@ -70,7 +75,8 @@ void record_card_frame(
     CardId card_id,
     Side side,
     std::span<const CardId> pool,
-    std::vector<DecisionFrame>* frame_log
+    std::vector<DecisionFrame>* frame_log,
+    CardId chosen_card = 0
 ) {
     if (frame_log == nullptr) {
         return;
@@ -79,6 +85,7 @@ void record_card_frame(
     for (const auto eligible_card : pool) {
         frame.eligible_cards.set(eligible_card);
     }
+    frame.chosen_action.card_id = chosen_card;
     frame_log->push_back(frame);
 }
 
@@ -117,7 +124,7 @@ int choose_option(
         return -1;
     }
     if (n_options == 1) {
-        record_option_frame(card_id, side, n_options, frame_log);
+        record_option_frame(card_id, side, n_options, frame_log, 0);
         return 0;
     }
     int choice = 0;
@@ -131,7 +138,7 @@ int choose_option(
     } else {
         choice = static_cast<int>(rng.choice_index(static_cast<size_t>(n_options)));
     }
-    record_option_frame(card_id, side, n_options, frame_log);
+    record_option_frame(card_id, side, n_options, frame_log, choice);
     return choice;
 }
 
@@ -154,7 +161,7 @@ CountryId choose_country(
         return kInvalidCountryId;
     }
     if (n_options == 1) {
-        record_country_frame(card_id, side, pool, frame_log);
+        record_country_frame(card_id, side, pool, frame_log, pool.front());
         return pool.front();
     }
     CountryId selected = 0;
@@ -172,7 +179,7 @@ CountryId choose_country(
     } else {
         selected = pool[rng.choice_index(pool.size())];
     }
-    record_country_frame(card_id, side, pool, frame_log);
+    record_country_frame(card_id, side, pool, frame_log, selected);
     return selected;
 }
 
@@ -195,7 +202,7 @@ CardId choose_card(
         return 0;
     }
     if (n_options == 1) {
-        record_card_frame(card_id, side, pool, frame_log);
+        record_card_frame(card_id, side, pool, frame_log, pool.front());
         return pool.front();
     }
     CardId selected = 0;
@@ -213,7 +220,7 @@ CardId choose_card(
     } else {
         selected = pool[rng.choice_index(pool.size())];
     }
-    record_card_frame(card_id, side, pool, frame_log);
+    record_card_frame(card_id, side, pool, frame_log, selected);
     return selected;
 }
 

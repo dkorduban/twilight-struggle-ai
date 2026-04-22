@@ -220,6 +220,177 @@ std::optional<ts::ActionEncoding> choose_action_with_temperature(
     return base_policy(pub, hand, holds_china, rng);
 }
 
+std::vector<int> frame_eligible_cards(const ts::DecisionFrame& frame) {
+    std::vector<int> ids;
+    for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
+        if (frame.eligible_cards.test(static_cast<size_t>(card_id))) {
+            ids.push_back(card_id);
+        }
+    }
+    return ids;
+}
+
+std::vector<int> frame_eligible_countries(const ts::DecisionFrame& frame) {
+    std::vector<int> ids;
+    for (int country_id = 0; country_id <= ts::kMaxCountryId; ++country_id) {
+        if (frame.eligible_countries.test(static_cast<size_t>(country_id))) {
+            ids.push_back(country_id);
+        }
+    }
+    return ids;
+}
+
+void write_selfplay_row(
+    std::ostream& out,
+    const std::string& game_id,
+    size_t step_idx,
+    const ts::StepTrace& step,
+    const ts::GameResult& result,
+    int vp_after,
+    const ts::DecisionFrame* frame
+) {
+    const auto& pub = step.pub_snapshot;
+    const char* row_kind = frame == nullptr ? "ar" : "subframe";
+    auto actor_hand_mask = card_mask(step.hand_snapshot);
+    std::vector<int> cq(ts::kCardSlots, 3);
+    for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
+        if (step.hand_snapshot.test(card_id)) {
+            cq[static_cast<size_t>(card_id)] = 0;
+        }
+    }
+    auto discard_mask = card_mask(pub.discard);
+    auto removed_mask = card_mask(pub.removed);
+    auto actor_known_not_in = card_mask(pub.discard | pub.removed);
+    auto opp_known_in = std::vector<int>(ts::kCardSlots, 0);
+    auto opp_known_not_in = card_mask(step.hand_snapshot | pub.discard | pub.removed);
+    auto opp_possible = std::vector<int>(ts::kCardSlots, 0);
+    auto lbl_opponent_possible = std::vector<int>(ts::kCardSlots, 0);
+    int actor_hand_size = 0;
+    for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
+        if (step.hand_snapshot.test(card_id) && card_id != ts::kChinaCardId) {
+            ++actor_hand_size;
+        }
+    }
+
+    out
+        << "{\"game_id\":\"" << game_id << "\""
+        << ",\"step_idx\":" << step_idx
+        << ",\"row_kind\":\"" << row_kind << "\""
+        << ",\"turn\":" << pub.turn
+        << ",\"ar\":" << pub.ar
+        << ",\"phasing\":" << static_cast<int>(step.side)
+        << ",\"action_kind\":-1"
+        << ",\"card_id\":" << static_cast<int>(step.action.card_id)
+        << ",\"country_id\":" << (step.action.targets.empty() ? -1 : static_cast<int>(step.action.targets.front()))
+        << ",\"action_card_id\":" << static_cast<int>(step.action.card_id)
+        << ",\"action_mode\":" << static_cast<int>(step.action.mode)
+        << ",\"action_targets\":\"" << targets_csv(step.action.targets) << "\""
+        << ",\"vp\":" << pub.vp
+        << ",\"defcon\":" << pub.defcon
+        << ",\"milops_ussr\":" << pub.milops[ts::to_index(ts::Side::USSR)]
+        << ",\"milops_us\":" << pub.milops[ts::to_index(ts::Side::US)]
+        << ",\"space_ussr\":" << pub.space[ts::to_index(ts::Side::USSR)]
+        << ",\"space_us\":" << pub.space[ts::to_index(ts::Side::US)]
+        << ",\"china_held_by\":" << static_cast<int>(pub.china_held_by)
+        << ",\"china_playable\":" << (pub.china_playable ? "true" : "false")
+        << ",\"ussr_influence\":";
+    write_int_array(out, influence_array(pub, ts::Side::USSR));
+    out << ",\"us_influence\":";
+    write_int_array(out, influence_array(pub, ts::Side::US));
+    out << ",\"discard_mask\":";
+    write_int_array(out, discard_mask);
+    out << ",\"removed_mask\":";
+    write_int_array(out, removed_mask);
+    out << ",\"actor_known_in\":";
+    write_int_array(out, actor_hand_mask);
+    out << ",\"actor_known_not_in\":";
+    write_int_array(out, actor_known_not_in);
+    out << ",\"actor_possible\":";
+    write_int_array(out, actor_hand_mask);
+    out << ",\"actor_hand_size\":" << actor_hand_size
+        << ",\"actor_holds_china\":" << (step.holds_china ? "true" : "false")
+        << ",\"opp_known_in\":";
+    write_int_array(out, opp_known_in);
+    out << ",\"opp_known_not_in\":";
+    write_int_array(out, opp_known_not_in);
+    out << ",\"opp_possible\":";
+    write_int_array(out, opp_possible);
+    out << ",\"opp_hand_size\":0"
+        << ",\"opp_holds_china\":" << ((pub.china_held_by != ts::Side::Neutral && !step.holds_china) ? "true" : "false")
+        << ",\"lbl_actor_hand\":";
+    write_int_array(out, actor_hand_mask);
+    out << ",\"lbl_step_quality\":0"
+        << ",\"lbl_card_quality\":";
+    write_int_array(out, cq);
+    out << ",\"lbl_opponent_possible\":";
+    write_int_array(out, lbl_opponent_possible);
+    out << ",\"warsaw_pact_played\":" << (pub.warsaw_pact_played ? "true" : "false")
+        << ",\"marshall_plan_played\":" << (pub.marshall_plan_played ? "true" : "false")
+        << ",\"truman_doctrine_played\":" << (pub.truman_doctrine_played ? "true" : "false")
+        << ",\"john_paul_ii_played\":" << (pub.john_paul_ii_played ? "true" : "false")
+        << ",\"nato_active\":" << (pub.nato_active ? "true" : "false")
+        << ",\"de_gaulle_active\":" << (pub.de_gaulle_active ? "true" : "false")
+        << ",\"willy_brandt_active\":" << (pub.willy_brandt_active ? "true" : "false")
+        << ",\"us_japan_pact_active\":" << (pub.us_japan_pact_active ? "true" : "false")
+        << ",\"nuclear_subs_active\":" << (pub.nuclear_subs_active ? "true" : "false")
+        << ",\"norad_active\":" << (pub.norad_active ? "true" : "false")
+        << ",\"shuttle_diplomacy_active\":" << (pub.shuttle_diplomacy_active ? "true" : "false")
+        << ",\"flower_power_active\":" << (pub.flower_power_active ? "true" : "false")
+        << ",\"flower_power_cancelled\":" << (pub.flower_power_cancelled ? "true" : "false")
+        << ",\"salt_active\":" << (pub.salt_active ? "true" : "false")
+        << ",\"opec_cancelled\":" << (pub.opec_cancelled ? "true" : "false")
+        << ",\"awacs_active\":" << (pub.awacs_active ? "true" : "false")
+        << ",\"north_sea_oil_extra_ar\":" << (pub.north_sea_oil_extra_ar ? "true" : "false")
+        << ",\"glasnost_free_ops\":" << pub.glasnost_free_ops
+        << ",\"glasnost_extra_ar\":" << (pub.glasnost_free_ops > 0 ? "true" : "false")
+        << ",\"formosan_active\":" << (pub.formosan_active ? "true" : "false")
+        << ",\"cuban_missile_crisis_active\":" << (pub.cuban_missile_crisis_active ? "true" : "false")
+        << ",\"vietnam_revolts_active\":" << (pub.vietnam_revolts_active ? "true" : "false")
+        << ",\"bear_trap_active\":" << (pub.bear_trap_active ? "true" : "false")
+        << ",\"quagmire_active\":" << (pub.quagmire_active ? "true" : "false")
+        << ",\"iran_hostage_crisis_active\":" << (pub.iran_hostage_crisis_active ? "true" : "false")
+        << ",\"handicap_ussr\":" << pub.handicap_ussr
+        << ",\"handicap_us\":" << pub.handicap_us
+        << ",\"ops_modifier\":[" << pub.ops_modifier[0] << "," << pub.ops_modifier[1] << "]";
+    const auto ussr_hand_ids = card_ids(step.side == ts::Side::USSR ? step.hand_snapshot : step.opp_hand_snapshot);
+    const auto us_hand_ids = card_ids(step.side == ts::Side::US ? step.hand_snapshot : step.opp_hand_snapshot);
+    const auto deck_ids = deck_to_ints(step.deck_snapshot);
+    out << ",\"ussr_hand\":";
+    write_int_array(out, ussr_hand_ids);
+    out << ",\"us_hand\":";
+    write_int_array(out, us_hand_ids);
+    out << ",\"deck\":";
+    write_int_array(out, deck_ids);
+    out << ",\"ussr_holds_china\":" << (step.ussr_holds_china_snapshot ? "true" : "false")
+        << ",\"us_holds_china\":" << (step.us_holds_china_snapshot ? "true" : "false")
+        << ",\"state_dict_complete\":true"
+        << ",\"game_result\":\"" << game_result_str(result.winner) << "\""
+        << ",\"winner_side\":" << winner_side_int(result.winner);
+    if (frame != nullptr) {
+        out << ",\"frame_kind\":" << static_cast<int>(frame->kind)
+            << ",\"source_card\":" << static_cast<int>(frame->source_card)
+            << ",\"parent_card\":" << static_cast<int>(frame->parent_card)
+            << ",\"step_index\":" << static_cast<int>(frame->step_index)
+            << ",\"total_steps\":" << static_cast<int>(frame->total_steps)
+            << ",\"budget_remaining\":" << static_cast<int>(frame->budget_remaining)
+            << ",\"stack_depth\":" << static_cast<int>(frame->stack_depth)
+            << ",\"criteria_bits\":" << static_cast<int>(frame->criteria_bits)
+            << ",\"eligible_cards\":";
+        write_int_array(out, frame_eligible_cards(*frame));
+        out << ",\"eligible_countries\":";
+        write_int_array(out, frame_eligible_countries(*frame));
+        out << ",\"eligible_n\":" << static_cast<int>(frame->eligible_n)
+            << ",\"chosen_option_index\":" << frame->chosen_action.option_index
+            << ",\"chosen_card\":" << static_cast<int>(frame->chosen_action.card_id)
+            << ",\"chosen_country\":" << static_cast<int>(frame->chosen_action.country_id);
+    }
+    out << ",\"vp_after\":" << vp_after
+        << ",\"defcon_after\":" << step.defcon_after
+        << ",\"final_vp\":" << result.final_vp
+        << ",\"end_turn\":" << result.end_turn
+        << ",\"end_reason\":\"" << result.end_reason << "\"}\n";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -394,142 +565,44 @@ int main(int argc, char** argv) {
                 rng
             );
         };
+        ts::Pcg64Rng subframe_rng(base_seed + static_cast<uint32_t>(game_index) + 0x9E3779B9U);
+        ts::PolicyCallbackFn subframe_cb =
+            [&](const ts::PublicState& pub, const ts::EventDecision& decision) -> int {
+                const auto side = ts::is_player_side(decision.acting_side) ? decision.acting_side : pub.phasing;
+                if (side == ts::Side::USSR && ussr_learned_policy.has_value()) {
+                    return ussr_learned_policy->choose_event_decision(pub, decision, subframe_rng);
+                }
+                if (side == ts::Side::US && us_learned_policy.has_value()) {
+                    return us_learned_policy->choose_event_decision(pub, decision, subframe_rng);
+                }
+                if (decision.n_options <= 1) {
+                    return 0;
+                }
+                return static_cast<int>(subframe_rng.choice_index(static_cast<size_t>(decision.n_options)));
+            };
+        const auto* subframe_cb_ptr = (ussr_learned_policy.has_value() || us_learned_policy.has_value())
+            ? &subframe_cb
+            : nullptr;
         const auto traced = ts::play_game_traced_fn(
             ussr_policy,
             us_policy,
             base_seed + static_cast<uint32_t>(game_index),
-            loop_config
+            loop_config,
+            subframe_cb_ptr
         );
         const auto game_id = std::string("selfplay_") + std::to_string(base_seed) + "_" + (game_index < 10 ? "000" : game_index < 100 ? "00" : game_index < 1000 ? "0" : "") + std::to_string(game_index);
         for (size_t step_idx = 0; step_idx < traced.steps.size(); ++step_idx) {
             const auto& step = traced.steps[step_idx];
-            const auto& pub = step.pub_snapshot;
             // vp_after: VP at the start of the next decision point (or final_vp if terminal).
             // Enables dense reward shaping: delta_vp = vp_after - vp (can be anneal-weighted at train time).
             const int vp_after = (step_idx + 1 < traced.steps.size())
                 ? traced.steps[step_idx + 1].pub_snapshot.vp
                 : traced.result.final_vp;
 
-            auto actor_hand_mask = card_mask(step.hand_snapshot);
-            std::vector<int> cq(ts::kCardSlots, 3);
-            for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
-                if (step.hand_snapshot.test(card_id)) {
-                    cq[static_cast<size_t>(card_id)] = 0;
-                }
+            write_selfplay_row(out, game_id, step_idx, step, traced.result, vp_after, nullptr);
+            for (const auto& frame : step.sub_frames) {
+                write_selfplay_row(out, game_id, step_idx, step, traced.result, vp_after, &frame);
             }
-            auto discard_mask = card_mask(pub.discard);
-            auto removed_mask = card_mask(pub.removed);
-            auto actor_known_not_in = card_mask(pub.discard | pub.removed);
-            auto opp_known_in = std::vector<int>(ts::kCardSlots, 0);
-            auto opp_known_not_in = card_mask(step.hand_snapshot | pub.discard | pub.removed);
-            auto opp_possible = std::vector<int>(ts::kCardSlots, 0);
-            auto lbl_opponent_possible = std::vector<int>(ts::kCardSlots, 0);
-            int actor_hand_size = 0;
-            for (int card_id = 1; card_id <= ts::kMaxCardId; ++card_id) {
-                if (step.hand_snapshot.test(card_id) && card_id != ts::kChinaCardId) {
-                    ++actor_hand_size;
-                }
-            }
-
-            out
-                << "{\"game_id\":\"" << game_id << "\""
-                << ",\"step_idx\":" << step_idx
-                << ",\"turn\":" << pub.turn
-                << ",\"ar\":" << pub.ar
-                << ",\"phasing\":" << static_cast<int>(step.side)
-                << ",\"action_kind\":-1"
-                << ",\"card_id\":" << static_cast<int>(step.action.card_id)
-                << ",\"country_id\":" << (step.action.targets.empty() ? -1 : static_cast<int>(step.action.targets.front()))
-                << ",\"action_card_id\":" << static_cast<int>(step.action.card_id)
-                << ",\"action_mode\":" << static_cast<int>(step.action.mode)
-                << ",\"action_targets\":\"" << targets_csv(step.action.targets) << "\""
-                << ",\"vp\":" << pub.vp
-                << ",\"defcon\":" << pub.defcon
-                << ",\"milops_ussr\":" << pub.milops[ts::to_index(ts::Side::USSR)]
-                << ",\"milops_us\":" << pub.milops[ts::to_index(ts::Side::US)]
-                << ",\"space_ussr\":" << pub.space[ts::to_index(ts::Side::USSR)]
-                << ",\"space_us\":" << pub.space[ts::to_index(ts::Side::US)]
-                << ",\"china_held_by\":" << static_cast<int>(pub.china_held_by)
-                << ",\"china_playable\":" << (pub.china_playable ? "true" : "false")
-                << ",\"ussr_influence\":";
-            write_int_array(out, influence_array(pub, ts::Side::USSR));
-            out << ",\"us_influence\":";
-            write_int_array(out, influence_array(pub, ts::Side::US));
-            out << ",\"discard_mask\":";
-            write_int_array(out, discard_mask);
-            out << ",\"removed_mask\":";
-            write_int_array(out, removed_mask);
-            out << ",\"actor_known_in\":";
-            write_int_array(out, actor_hand_mask);
-            out << ",\"actor_known_not_in\":";
-            write_int_array(out, actor_known_not_in);
-            out << ",\"actor_possible\":";
-            write_int_array(out, actor_hand_mask);
-            out << ",\"actor_hand_size\":" << actor_hand_size
-                << ",\"actor_holds_china\":" << (step.holds_china ? "true" : "false")
-                << ",\"opp_known_in\":";
-            write_int_array(out, opp_known_in);
-            out << ",\"opp_known_not_in\":";
-            write_int_array(out, opp_known_not_in);
-            out << ",\"opp_possible\":";
-            write_int_array(out, opp_possible);
-            out << ",\"opp_hand_size\":0"
-                << ",\"opp_holds_china\":" << ((pub.china_held_by != ts::Side::Neutral && !step.holds_china) ? "true" : "false")
-                << ",\"lbl_actor_hand\":";
-            write_int_array(out, actor_hand_mask);
-            out << ",\"lbl_step_quality\":0"
-                << ",\"lbl_card_quality\":";
-            write_int_array(out, cq);
-            out << ",\"lbl_opponent_possible\":";
-            write_int_array(out, lbl_opponent_possible);
-            // Full state fields for teacher search (game_state_from_dict compatible)
-            out << ",\"warsaw_pact_played\":" << (pub.warsaw_pact_played ? "true" : "false")
-                << ",\"marshall_plan_played\":" << (pub.marshall_plan_played ? "true" : "false")
-                << ",\"truman_doctrine_played\":" << (pub.truman_doctrine_played ? "true" : "false")
-                << ",\"john_paul_ii_played\":" << (pub.john_paul_ii_played ? "true" : "false")
-                << ",\"nato_active\":" << (pub.nato_active ? "true" : "false")
-                << ",\"de_gaulle_active\":" << (pub.de_gaulle_active ? "true" : "false")
-                << ",\"willy_brandt_active\":" << (pub.willy_brandt_active ? "true" : "false")
-                << ",\"us_japan_pact_active\":" << (pub.us_japan_pact_active ? "true" : "false")
-                << ",\"nuclear_subs_active\":" << (pub.nuclear_subs_active ? "true" : "false")
-                << ",\"norad_active\":" << (pub.norad_active ? "true" : "false")
-                << ",\"shuttle_diplomacy_active\":" << (pub.shuttle_diplomacy_active ? "true" : "false")
-                << ",\"flower_power_active\":" << (pub.flower_power_active ? "true" : "false")
-                << ",\"flower_power_cancelled\":" << (pub.flower_power_cancelled ? "true" : "false")
-                << ",\"salt_active\":" << (pub.salt_active ? "true" : "false")
-                << ",\"opec_cancelled\":" << (pub.opec_cancelled ? "true" : "false")
-                << ",\"awacs_active\":" << (pub.awacs_active ? "true" : "false")
-                << ",\"north_sea_oil_extra_ar\":" << (pub.north_sea_oil_extra_ar ? "true" : "false")
-                << ",\"glasnost_free_ops\":" << pub.glasnost_free_ops
-                << ",\"glasnost_extra_ar\":" << (pub.glasnost_free_ops > 0 ? "true" : "false")
-                << ",\"formosan_active\":" << (pub.formosan_active ? "true" : "false")
-                << ",\"cuban_missile_crisis_active\":" << (pub.cuban_missile_crisis_active ? "true" : "false")
-                << ",\"vietnam_revolts_active\":" << (pub.vietnam_revolts_active ? "true" : "false")
-                << ",\"bear_trap_active\":" << (pub.bear_trap_active ? "true" : "false")
-                << ",\"quagmire_active\":" << (pub.quagmire_active ? "true" : "false")
-                << ",\"iran_hostage_crisis_active\":" << (pub.iran_hostage_crisis_active ? "true" : "false")
-                << ",\"handicap_ussr\":" << pub.handicap_ussr
-                << ",\"handicap_us\":" << pub.handicap_us
-                << ",\"ops_modifier\":[" << pub.ops_modifier[0] << "," << pub.ops_modifier[1] << "]";
-            // Hands and deck (for MCTS teacher search)
-            const auto ussr_hand_ids = card_ids(step.side == ts::Side::USSR ? step.hand_snapshot : step.opp_hand_snapshot);
-            const auto us_hand_ids = card_ids(step.side == ts::Side::US ? step.hand_snapshot : step.opp_hand_snapshot);
-            const auto deck_ids = deck_to_ints(step.deck_snapshot);
-            out << ",\"ussr_hand\":";
-            write_int_array(out, ussr_hand_ids);
-            out << ",\"us_hand\":";
-            write_int_array(out, us_hand_ids);
-            out << ",\"deck\":";
-            write_int_array(out, deck_ids);
-            out << ",\"ussr_holds_china\":" << (step.ussr_holds_china_snapshot ? "true" : "false")
-                << ",\"us_holds_china\":" << (step.us_holds_china_snapshot ? "true" : "false")
-                << ",\"state_dict_complete\":true"
-                << ",\"game_result\":\"" << game_result_str(traced.result.winner) << "\""
-                << ",\"winner_side\":" << winner_side_int(traced.result.winner)
-                << ",\"vp_after\":" << vp_after
-                << ",\"final_vp\":" << traced.result.final_vp
-                << ",\"end_turn\":" << traced.result.end_turn
-                << ",\"end_reason\":\"" << traced.result.end_reason << "\"}\n";
         }
     }
 

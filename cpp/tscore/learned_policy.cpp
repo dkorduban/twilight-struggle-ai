@@ -106,6 +106,102 @@ std::optional<ActionEncoding> TorchScriptPolicy::choose_action(
     );
 }
 
+int TorchScriptPolicy::choose_event_decision(
+    const PublicState& pub,
+    const EventDecision& decision,
+    Pcg64Rng& rng
+) {
+    const auto n_options = std::clamp(decision.n_options, 0, EventDecision::kMaxEligible);
+    if (n_options <= 1) {
+        return 0;
+    }
+    if (exploration_rate_ > 0.0f && rng.bernoulli(static_cast<double>(exploration_rate_))) {
+        return static_cast<int>(rng.choice_index(static_cast<size_t>(n_options)));
+    }
+
+    const auto side = is_player_side(decision.acting_side) ? decision.acting_side : pub.phasing;
+    const auto holds_china = pub.china_held_by == side;
+
+    GameState gs;
+    gs.pub = pub;
+    gs.frame_stack_mode = true;
+
+    DecisionFrame frame;
+    frame.source_card = decision.source_card;
+    frame.acting_side = side;
+    frame.eligible_n = static_cast<uint8_t>(n_options);
+
+    CardSet hand;
+    switch (decision.kind) {
+        case DecisionKind::SmallChoice:
+            frame.kind = FrameKind::SmallChoice;
+            break;
+        case DecisionKind::CountrySelect:
+            frame.kind = FrameKind::CountryPick;
+            for (int option = 0; option < n_options; ++option) {
+                const auto country_id = decision.eligible_ids[option];
+                if (country_id >= 0 && country_id < kCountrySlots) {
+                    frame.eligible_countries.set(static_cast<size_t>(country_id));
+                }
+            }
+            break;
+        case DecisionKind::CardSelect:
+            frame.kind = FrameKind::CardSelect;
+            for (int option = 0; option < n_options; ++option) {
+                const auto card_id = decision.eligible_ids[option];
+                if (card_id >= 0 && card_id < kCardSlots) {
+                    frame.eligible_cards.set(static_cast<size_t>(card_id));
+                    hand.set(static_cast<size_t>(card_id));
+                }
+            }
+            break;
+    }
+    gs.frame_stack.push_back(frame);
+
+    const auto outputs = nn::forward_model(module_, gs, hand, holds_china, side);
+    const auto card_logits = get_tensor(outputs, "card_logits").index({0});
+    const auto country_logits_raw = get_tensor(outputs, "country_logits", false);
+    const auto small_choice_logits_raw = get_tensor(outputs, "small_choice_logits", false);
+    const auto country_logits = country_logits_raw.defined() ? country_logits_raw.index({0}) : torch::Tensor{};
+    const auto small_choice_logits = small_choice_logits_raw.defined()
+        ? small_choice_logits_raw.index({0})
+        : torch::Tensor{};
+
+    auto score_option = [&](int option) -> double {
+        if (decision.kind == DecisionKind::SmallChoice) {
+            if (small_choice_logits.defined() && option < small_choice_logits.size(0)) {
+                return small_choice_logits.index({option}).item<double>();
+            }
+            return 0.0;
+        }
+        if (decision.kind == DecisionKind::CardSelect) {
+            const auto card_id = decision.eligible_ids[option];
+            const auto logit_index = card_id - 1;
+            if (logit_index >= 0 && logit_index < card_logits.size(0)) {
+                return card_logits.index({logit_index}).item<double>();
+            }
+            return -std::numeric_limits<double>::infinity();
+        }
+
+        const auto country_id = decision.eligible_ids[option];
+        if (country_logits.defined() && country_id >= 0 && country_id < country_logits.size(0)) {
+            return country_logits.index({country_id}).item<double>();
+        }
+        return -std::numeric_limits<double>::infinity();
+    };
+
+    int best_option = 0;
+    auto best_score = score_option(0);
+    for (int option = 1; option < n_options; ++option) {
+        const auto score = score_option(option);
+        if (score > best_score) {
+            best_score = score;
+            best_option = option;
+        }
+    }
+    return best_option;
+}
+
 }  // namespace ts
 
 #endif
