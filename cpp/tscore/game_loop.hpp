@@ -40,6 +40,7 @@ struct StepTrace {
     InlineDeck deck_snapshot;
     bool ussr_holds_china_snapshot = false;
     bool us_holds_china_snapshot = false;
+    std::vector<DecisionFrame> sub_frames = {};
 };
 
 struct TracedGame {
@@ -127,7 +128,8 @@ std::optional<GameResult> run_extra_action_round_live(
     const PolicyFn& policy,
     Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps = nullptr,
-    const GameLoopConfig& config = {}
+    const GameLoopConfig& config = {},
+    const PolicyCallbackFn* subframe_cb = nullptr
 );
 
 std::optional<GameResult> run_headline_phase_live(
@@ -136,7 +138,8 @@ std::optional<GameResult> run_headline_phase_live(
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps = nullptr,
-    const GameLoopConfig& config = {}
+    const GameLoopConfig& config = {},
+    const PolicyCallbackFn* subframe_cb = nullptr
 );
 
 std::optional<GameResult> run_action_rounds_live(
@@ -146,7 +149,8 @@ std::optional<GameResult> run_action_rounds_live(
     Pcg64Rng& rng,
     int total_ars,
     std::vector<StepTrace>* trace_steps = nullptr,
-    const GameLoopConfig& config = {}
+    const GameLoopConfig& config = {},
+    const PolicyCallbackFn* subframe_cb = nullptr
 );
 
 /// Like play_game_traced_from_state_with_rng but takes GameState by reference.
@@ -157,7 +161,17 @@ TracedGame play_game_traced_from_state_ref_with_rng(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
-    const GameLoopConfig& config = {}
+    const GameLoopConfig& config = {},
+    const PolicyCallbackFn* subframe_cb = nullptr
+);
+
+TracedGame play_game_traced_from_state_with_rng(
+    GameState gs,
+    const PolicyFn& ussr_policy,
+    const PolicyFn& us_policy,
+    Pcg64Rng& rng,
+    const GameLoopConfig& config = {},
+    const PolicyCallbackFn* subframe_cb = nullptr
 );
 
 GameResult play_game_fn(
@@ -189,7 +203,8 @@ TracedGame play_game_traced_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     std::optional<uint32_t> seed = std::nullopt,
-    const GameLoopConfig& config = {}
+    const GameLoopConfig& config = {},
+    const PolicyCallbackFn* subframe_cb = nullptr
 );
 
 TracedGame play_game_traced_from_state_fn(
@@ -197,7 +212,8 @@ TracedGame play_game_traced_from_state_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     std::optional<uint32_t> seed = std::nullopt,
-    const GameLoopConfig& config = {}
+    const GameLoopConfig& config = {},
+    const PolicyCallbackFn* subframe_cb = nullptr
 );
 
 TracedGame play_game_traced_from_seed_words_fn(
@@ -205,7 +221,8 @@ TracedGame play_game_traced_from_seed_words_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     std::optional<uint32_t> seed = std::nullopt,
-    const GameLoopConfig& config = {}
+    const GameLoopConfig& config = {},
+    const PolicyCallbackFn* subframe_cb = nullptr
 );
 
 GameResult play_game(

@@ -292,7 +292,8 @@ std::optional<GameResult> run_headline_phase(
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
     gs.phase = GamePhase::Headline;
     gs.pub.ar = 0;
@@ -374,7 +375,15 @@ std::optional<GameResult> run_headline_phase(
         const auto vp_before = gs.pub.vp;
         const auto defcon_before = gs.pub.defcon;
         gs.pub.phasing = side;
-        auto [new_pub, over, winner] = apply_headline_event_with_hands(gs, action, side, rng);
+        std::vector<DecisionFrame> frame_log;
+        auto [new_pub, over, winner] = apply_headline_event_with_hands(
+            gs,
+            action,
+            side,
+            rng,
+            subframe_cb,
+            trace_steps != nullptr ? &frame_log : nullptr
+        );
         if (trace_steps != nullptr) {
             trace_steps->push_back(StepTrace{
                 .turn = gs.pub.turn,
@@ -392,6 +401,7 @@ std::optional<GameResult> run_headline_phase(
                 .deck_snapshot = deck_snapshot,
                 .ussr_holds_china_snapshot = ussr_holds_china_snap,
                 .us_holds_china_snapshot = us_holds_china_snap,
+                .sub_frames = std::move(frame_log),
             });
         }
         sync_china(gs);
@@ -415,7 +425,8 @@ std::optional<GameResult> run_action_rounds(
     Pcg64Rng& rng,
     int total_ars,
     std::vector<StepTrace>* trace_steps,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
     gs.phase = GamePhase::ActionRound;
     for (int ar = 1; ar <= kSpaceShuttleArs; ++ar) {
@@ -495,7 +506,15 @@ std::optional<GameResult> run_action_rounds(
             }
             const auto vp_before = gs.pub.vp;
             const auto defcon_before = gs.pub.defcon;
-            auto [new_pub, over, winner] = apply_action_with_hands(gs, *action, side, rng);
+            std::vector<DecisionFrame> frame_log;
+            auto [new_pub, over, winner] = apply_action_with_hands(
+                gs,
+                *action,
+                side,
+                rng,
+                subframe_cb,
+                trace_steps != nullptr ? &frame_log : nullptr
+            );
             if (trace_steps != nullptr) {
                 trace_steps->push_back(StepTrace{
                     .turn = gs.pub.turn,
@@ -513,6 +532,7 @@ std::optional<GameResult> run_action_rounds(
                     .deck_snapshot = deck_snapshot_ar,
                     .ussr_holds_china_snapshot = ussr_holds_china_snap_ar,
                     .us_holds_china_snapshot = us_holds_china_snap_ar,
+                    .sub_frames = std::move(frame_log),
                 });
             }
             sync_china(gs);
@@ -552,7 +572,8 @@ std::optional<GameResult> run_extra_action_round(
     const PolicyFn& policy,
     Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
     gs.pub.ar = std::max(gs.pub.ar, ars_for_turn(gs.pub.turn)) + 1;
     gs.pub.phasing = side;
@@ -624,7 +645,15 @@ std::optional<GameResult> run_extra_action_round(
     }
     const auto vp_before = gs.pub.vp;
     const auto defcon_before = gs.pub.defcon;
-    auto [new_pub, over, winner] = apply_action_with_hands(gs, *action, side, rng);
+    std::vector<DecisionFrame> frame_log;
+    auto [new_pub, over, winner] = apply_action_with_hands(
+        gs,
+        *action,
+        side,
+        rng,
+        subframe_cb,
+        trace_steps != nullptr ? &frame_log : nullptr
+    );
     if (trace_steps != nullptr) {
         trace_steps->push_back(StepTrace{
             .turn = gs.pub.turn,
@@ -642,6 +671,7 @@ std::optional<GameResult> run_extra_action_round(
             .deck_snapshot = deck_snapshot_extra,
             .ussr_holds_china_snapshot = ussr_holds_china_snap_extra,
             .us_holds_china_snapshot = us_holds_china_snap_extra,
+            .sub_frames = std::move(frame_log),
         });
     }
     sync_china(gs);
@@ -3440,9 +3470,10 @@ std::optional<GameResult> run_extra_action_round_live(
     const PolicyFn& policy,
     Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
-    return run_extra_action_round(gs, side, policy, rng, trace_steps, config);
+    return run_extra_action_round(gs, side, policy, rng, trace_steps, config, subframe_cb);
 }
 
 std::optional<GameResult> run_headline_phase_live(
@@ -3451,9 +3482,10 @@ std::optional<GameResult> run_headline_phase_live(
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
     std::vector<StepTrace>* trace_steps,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
-    return run_headline_phase(gs, ussr_policy, us_policy, rng, trace_steps, config);
+    return run_headline_phase(gs, ussr_policy, us_policy, rng, trace_steps, config, subframe_cb);
 }
 
 std::optional<GameResult> run_action_rounds_live(
@@ -3463,9 +3495,10 @@ std::optional<GameResult> run_action_rounds_live(
     Pcg64Rng& rng,
     int total_ars,
     std::vector<StepTrace>* trace_steps,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
-    return run_action_rounds(gs, ussr_policy, us_policy, rng, total_ars, trace_steps, config);
+    return run_action_rounds(gs, ussr_policy, us_policy, rng, total_ars, trace_steps, config, subframe_cb);
 }
 
 // --- Setup influence placement phase (TS Deluxe §3.0) ---
@@ -3571,6 +3604,7 @@ void run_setup_phase(
                     .deck_snapshot = {},
                     .ussr_holds_china_snapshot = false,
                     .us_holds_china_snapshot = false,
+                    .sub_frames = {},
                 });
             }
         }
@@ -3585,7 +3619,8 @@ TracedGame play_game_traced_from_state_ref_with_rng(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
     TracedGame traced;
 
@@ -3638,17 +3673,17 @@ TracedGame play_game_traced_from_state_ref_with_rng(
         deal_cards(gs, Side::USSR, rng);
         deal_cards(gs, Side::US, rng);
 
-        if (auto result = run_headline_phase(gs, ussr_policy, us_policy, rng, &traced.steps, config); result.has_value()) {
+        if (auto result = run_headline_phase(gs, ussr_policy, us_policy, rng, &traced.steps, config, subframe_cb); result.has_value()) {
             traced.result = *result;
             return traced;
         }
-        if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), &traced.steps, config); result.has_value()) {
+        if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), &traced.steps, config, subframe_cb); result.has_value()) {
             traced.result = *result;
             return traced;
         }
         if (gs.pub.north_sea_oil_extra_ar) {
             gs.pub.north_sea_oil_extra_ar = false;
-            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, &traced.steps, config); result.has_value()) {
+            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, &traced.steps, config, subframe_cb); result.has_value()) {
                 traced.result = *result;
                 return traced;
             }
@@ -3680,9 +3715,10 @@ TracedGame play_game_traced_from_state_with_rng(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     Pcg64Rng& rng,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
-    return play_game_traced_from_state_ref_with_rng(gs, ussr_policy, us_policy, rng, config);
+    return play_game_traced_from_state_ref_with_rng(gs, ussr_policy, us_policy, rng, config, subframe_cb);
 }
 
 GameResult play_game_fn(
@@ -3709,10 +3745,11 @@ TracedGame play_game_traced_from_state_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     std::optional<uint32_t> seed,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
     Pcg64Rng rng(seed.value_or(std::random_device{}()));
-    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng, config);
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, rng, config, subframe_cb);
 }
 
 GameResult play_game_from_mid_state_fn(
@@ -3750,15 +3787,15 @@ GameResult play_game_from_mid_state_fn(
             deal_cards(gs, Side::US, rng);
         }
 
-        if (auto result = run_headline_phase(gs, ussr_policy, us_policy, rng, nullptr, config); result.has_value()) {
+        if (auto result = run_headline_phase(gs, ussr_policy, us_policy, rng, nullptr, config, nullptr); result.has_value()) {
             return *result;
         }
-        if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), nullptr, config); result.has_value()) {
+        if (auto result = run_action_rounds(gs, ussr_policy, us_policy, rng, ars_for_turn(turn), nullptr, config, nullptr); result.has_value()) {
             return *result;
         }
         if (gs.pub.north_sea_oil_extra_ar) {
             gs.pub.north_sea_oil_extra_ar = false;
-            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, nullptr, config); result.has_value()) {
+            if (auto result = run_extra_action_round(gs, Side::US, us_policy, rng, nullptr, config, nullptr); result.has_value()) {
                 return *result;
             }
         }
@@ -3784,11 +3821,12 @@ TracedGame play_game_traced_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     std::optional<uint32_t> seed,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
     auto gs = reset_game(seed);
     Pcg64Rng runtime_rng(seed.value_or(std::random_device{}()));
-    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng, config);
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng, config, subframe_cb);
 }
 
 TracedGame play_game_traced_from_seed_words_fn(
@@ -3796,11 +3834,12 @@ TracedGame play_game_traced_from_seed_words_fn(
     const PolicyFn& ussr_policy,
     const PolicyFn& us_policy,
     std::optional<uint32_t> seed,
-    const GameLoopConfig& config
+    const GameLoopConfig& config,
+    const PolicyCallbackFn* subframe_cb
 ) {
     auto gs = reset_game_from_seed_words(words);
     Pcg64Rng runtime_rng(seed.value_or(std::random_device{}()));
-    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng, config);
+    return play_game_traced_from_state_with_rng(std::move(gs), ussr_policy, us_policy, runtime_rng, config, subframe_cb);
 }
 
 GameResult play_game(
